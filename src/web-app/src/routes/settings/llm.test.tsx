@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { requireValue } from '@/test/assert'
 
-import SettingsLlmRoute from './llm'
+import SettingsLlmRoute, { SettingsLlmPanel } from './llm'
 import '@/i18n'
 
 beforeEach(() => {
@@ -276,6 +276,36 @@ describe('/settings/llm quick setup', () => {
     expect(await screen.findByText('APIs (1)')).toBeInTheDocument()
     expect(screen.getByText('Role Bindings (optional, advanced)')).toBeInTheDocument()
     expect(screen.getByText('Agim Agent runtime settings')).toBeInTheDocument()
+  })
+
+  it('embedded (chat/Portal) advanced toggle skips admin-only runtime env panel', async () => {
+    mockLlmFetch({
+      backends: [
+        {
+          name: 'deepseek-agim',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM' },
+        },
+      ],
+      roles: { 'native-chat': 'deepseek-agim' },
+      config: { defaultAgent: 'agim' },
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <SettingsLlmPanel embedded />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /show advanced settings/i }))
+    expect(await screen.findByText('APIs (1)')).toBeInTheDocument()
+    expect(screen.queryByText('Agim Agent runtime settings')).not.toBeInTheDocument()
   })
 
   it('groups sibling DeepSeek backends under one provider cluster', async () => {

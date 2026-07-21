@@ -136,7 +136,7 @@ export function SettingsLlmPanel({
             onRefresh={() => { void listQuery.refetch() }}
           />
           {!embedded && <LlmNextStepCard data={listQuery.data} />}
-          <AdvancedLlmSection data={listQuery.data} />
+          <AdvancedLlmSection data={listQuery.data} embedded={embedded} />
         </>
       )}
     </div>
@@ -149,8 +149,11 @@ export default function SettingsLlmRoute(): JSX.Element {
 
 function AdvancedLlmSection({
   data,
+  embedded = false,
 }: {
   data: ReturnType<typeof useLlmList>['data']
+  /** Chat/Portal modal: skip admin-only env panel (GET /api/env). */
+  embedded?: boolean
 }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const [open, setOpen] = useState(false)
@@ -185,11 +188,17 @@ function AdvancedLlmSection({
           <BackendsCard data={data} />
           <AddBackendCard />
           <RolesCard data={data} />
-          <section id="agim-agent" className="rounded-md border border-border bg-surface px-4 py-3">
-            <h2 className="text-sm font-semibold">{t('llm.agimAgentRuntimeTitle')}</h2>
-            <p className="mt-1 text-xs text-text-dim">{t('llm.agimAgentRuntimeHint')}</p>
-          </section>
-          <NativeAgentSettingsPanel embedded />
+          {/* Runtime env knobs need admin GET /api/env — omit in chat/Portal
+              modals so role=user tokens never trip a privileged fetch. */}
+          {!embedded && (
+            <>
+              <section id="agim-agent" className="rounded-md border border-border bg-surface px-4 py-3">
+                <h2 className="text-sm font-semibold">{t('llm.agimAgentRuntimeTitle')}</h2>
+                <p className="mt-1 text-xs text-text-dim">{t('llm.agimAgentRuntimeHint')}</p>
+              </section>
+              <NativeAgentSettingsPanel embedded />
+            </>
+          )}
         </>
       )}
     </>

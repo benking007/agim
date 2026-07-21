@@ -49,10 +49,11 @@ export function describeError(err: unknown, t: TFunction): { code: string; messa
 }
 
 /**
- * isAuthError — true when the error indicates the user must re-auth.
- * Used by useAuth + the QueryClient to trigger the /login redirect.
+ * isAuthError — true when the error indicates the session is invalid
+ * and the user must re-auth. AUTH_ADMIN_REQUIRED is NOT included: the
+ * token is still valid, just not privileged (Portal / mobile QR).
  */
 export function isAuthError(err: unknown): boolean {
   return err instanceof ApiClientError
-    && (err.code === 'AUTH_INVALID' || err.code === 'AUTH_ADMIN_REQUIRED' || err.status === 401)
+    && (err.code === 'AUTH_INVALID' || err.status === 401)
 }

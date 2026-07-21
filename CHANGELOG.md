@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.
 - Agim Agent honors `thinkingFormat: off` at runtime (no longer forced high by DeepSeek/Kimi URL heuristics).
 - Built-in preset dedupe uses vendor host families (e.g. `moonshot.ai` ↔ `moonshot.cn`, `api.z.ai` ↔ GLM).
 - `GET /api/llm` redacts sensitive `extraHeaders` values; rejects `Authorization` overrides on create.

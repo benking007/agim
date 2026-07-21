@@ -135,21 +135,23 @@ async function request<T>(
       if (res.status === 404) code = 'NOT_FOUND'
       if (res.status === 413) code = 'PAYLOAD_TOO_LARGE'
     }
-    const adminRoleRequired = code === 'AUTH_ADMIN_REQUIRED'
-      || (res.status === 403 && message.toLowerCase() === 'admin role required')
-    const needsRelogin = res.status === 401 || adminRoleRequired
+    // Only a true session failure (HTTP 401) should wipe the token and
+    // bounce to /login. AUTH_ADMIN_REQUIRED (403) means the token is
+    // still valid but lacks admin — common for Portal / mobile QR
+    // (`role=user`). Logging those out broke /m/chat when the LLM
+    // dialog's "Advanced settings" mounted NativeAgentSettingsPanel
+    // (GET /api/env is admin-only).
+    const needsRelogin = res.status === 401
     if (needsRelogin && !path.startsWith('/api/auth/')) {
-      // Token missing / invalid / expired, or token is not admin for
-      // management APIs → kick the user to /login.
+      // Token missing / invalid / expired → kick the user to /login.
       // Skip when the failing call IS the auth endpoint, otherwise we
       // loop on a fresh invalid-token submission.
       try { localStorage.removeItem(TOKEN_STORAGE_KEY) } catch { /* private mode */ }
       const next = encodeURIComponent(location.pathname + location.search)
-      const reason = adminRoleRequired ? '&reason=admin' : ''
       // Only redirect from non-login pages to avoid loops with
       // pre-mount fetches against the auth endpoint itself.
       if (!location.pathname.startsWith('/login')) {
-        location.href = `/login?next=${next}${reason}`
+        location.href = `/login?next=${next}`
       }
     }
     throw new ApiClientError({ code, message, status: res.status })

@@ -82,10 +82,10 @@ describe('isAuthError', () => {
     ).toBe(true)
   })
 
-  it('true for AUTH_ADMIN_REQUIRED code', () => {
+  it('false for AUTH_ADMIN_REQUIRED (valid session, insufficient role)', () => {
     expect(
       isAuthError(new ApiClientError({ message: 'admin role required', code: 'AUTH_ADMIN_REQUIRED', status: 403 })),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('true for any 401 even if code is something else', () => {

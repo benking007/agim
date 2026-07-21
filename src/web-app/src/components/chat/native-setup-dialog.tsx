@@ -59,7 +59,7 @@ export function NativeSetupDialog({
   const [baseUrl, setBaseUrl] = useState(preset.baseUrl)
   const [model, setModel] = useState(preset.model)
   const [apiKey, setApiKey] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const isCustom = presetKey === 'custom'
 
   function applyPreset(next: LlmPresetKey): void {
     const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
@@ -67,7 +67,6 @@ export function NativeSetupDialog({
     setBaseUrl(p.baseUrl)
     setModel(p.model)
     setName(suggestLlmBackendName(p.baseName, existingNames))
-    if (next === 'custom') setShowAdvanced(true)
   }
 
   async function onSubmit(e: FormEvent): Promise<void> {
@@ -76,7 +75,11 @@ export function NativeSetupDialog({
       toast.error(t('chat.nativeSetupApiKeyRequired'))
       return
     }
-    if (presetKey === 'custom') {
+    if (isCustom) {
+      if (!name.trim()) {
+        toast.error(t('llm.nameRequired', { ns: 'settings' }))
+        return
+      }
       if (!baseUrl.trim() || !/^https?:\/\//i.test(baseUrl.trim())) {
         toast.error(t('llm.baseUrlRequired', { ns: 'settings' }))
         return
@@ -90,9 +93,14 @@ export function NativeSetupDialog({
       await quickEnable.mutateAsync({
         preset: presetKey,
         apiKey: apiKey.trim(),
-        name: name.trim() || undefined,
-        model: model.trim() || undefined,
-        baseUrl: baseUrl.trim() || undefined,
+        // Presets fill name/model/baseUrl server-side; custom supplies them.
+        ...(isCustom
+          ? {
+              name: name.trim(),
+              model: model.trim(),
+              baseUrl: baseUrl.trim(),
+            }
+          : {}),
       })
       toast.success(t('chat.nativeSetupSaved'))
       setApiKey('')
@@ -150,14 +158,16 @@ export function NativeSetupDialog({
                 autoComplete="off"
                 autoFocus
               />
-              <p className="mt-1 text-xs text-text-dim">
-                {presetKey === 'deepseek'
-                  ? t('chat.nativeSetupDeepseekHint')
-                  : t('chat.nativeSetupDialogRoleOptional')}
-              </p>
+              {!isCustom && preset.model && (
+                <p className="mt-1 text-xs text-text-dim">
+                  {presetKey === 'deepseek'
+                    ? t('chat.nativeSetupDeepseekHint')
+                    : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
+                </p>
+              )}
             </div>
 
-            {(showAdvanced || presetKey === 'custom') && (
+            {isCustom && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label className="text-xs font-medium">{t('llm.name', { ns: 'settings' })}</Label>
@@ -191,15 +201,6 @@ export function NativeSetupDialog({
           </div>
 
           <DialogFooter className="flex-wrap gap-2">
-            {!showAdvanced && presetKey !== 'custom' && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowAdvanced(true)}
-              >
-                {t('chat.nativeSetupDialogAdvanced')}
-              </Button>
-            )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('chat.nativeSetupDialogCancel')}
             </Button>

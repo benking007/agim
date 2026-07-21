@@ -161,11 +161,8 @@ describe('/settings/llm quick setup', () => {
     )
     expect(quickCall).toBeDefined()
     const quickRequest = requireValue(quickCall?.[1] as RequestInit | undefined, 'quick-enable request')
-    expect(JSON.parse(String(quickRequest.body))).toMatchObject({
-      name: 'deepseek-agim',
+    expect(JSON.parse(String(quickRequest.body))).toEqual({
       preset: 'deepseek',
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-v4-pro',
       apiKey: 'sk-test',
     })
     expect(
@@ -174,6 +171,25 @@ describe('/settings/llm quick setup', () => {
           && (c[1] as RequestInit | undefined)?.method === 'POST',
       ),
     ).toBe(true)
+  })
+
+  it('shows only API key for presets and custom fields for Custom', async () => {
+    mockLlmFetch()
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Quick-enable Agim Agent')).toBeInTheDocument())
+    expect(screen.getByPlaceholderText('sk-...')).toBeInTheDocument()
+    expect(screen.getByText(/Uses preinstalled model deepseek-v4-pro/i)).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('e.g. deepseek-cheap')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('https://api.example.com/v1')).not.toBeInTheDocument()
+
+    // Open the provider select and pick Custom
+    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name: /^Custom$/i }))
+
+    expect(await screen.findByPlaceholderText('e.g. deepseek-cheap')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('https://api.example.com/v1')).toBeInTheDocument()
+    expect(screen.queryByText(/Uses preinstalled model/i)).not.toBeInTheDocument()
   })
 
   it('enables an existing usable API without asking for another key', async () => {

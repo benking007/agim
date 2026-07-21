@@ -747,7 +747,8 @@
     },
     "quick": {
       "title": "快速启用 Agim Agent",
-      "subtitle": "选择供应商并粘贴 API Key；Agim 会保存 API、绑定默认角色，并做一次连通测试。",
+      "subtitle": "先选预装供应商（如 DeepSeek），只需粘贴 API Key；选 Custom 时可自行填写模型与 Base URL。",
+      "presetHint": "将使用预装模型 {{model}}",
       "readyTitle": "Agim Agent 已可用",
       "readyBadge": "已启用",
       "enableBadge": "待启用",

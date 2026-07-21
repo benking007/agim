@@ -747,7 +747,8 @@
     },
     "quick": {
       "title": "Quick-enable Agim Agent",
-      "subtitle": "Pick a provider and paste an API key. Agim saves the API, binds the default role, and runs one connection test.",
+      "subtitle": "Pick a preinstalled provider (e.g. DeepSeek) and paste an API key. Choose Custom to enter model, name, and Base URL yourself.",
+      "presetHint": "Uses preinstalled model {{model}}",
       "readyTitle": "Agim Agent is ready",
       "readyBadge": "enabled",
       "enableBadge": "needs enable",

@@ -270,24 +270,34 @@ function QuickAgentSetupCard({
     }
   }
 
+  const isCustom = presetKey === 'custom'
+  const selectedPreset = LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET
+
   async function onQuickSubmit(e: FormEvent): Promise<void> {
     e.preventDefault()
-    const backendName = name.trim()
-    const endpoint = baseUrl.trim()
-    const modelId = model.trim()
-    if (!backendName) { toast.error(t('llm.nameRequired')); return }
-    if (!endpoint || !/^https?:\/\//i.test(endpoint)) { toast.error(t('llm.baseUrlRequired')); return }
-    if (!modelId) { toast.error(t('llm.modelRequired')); return }
     if (!apiKey.trim()) { toast.error(t('llm.apiKeyRequired')); return }
+    if (isCustom) {
+      if (!name.trim()) { toast.error(t('llm.nameRequired')); return }
+      if (!baseUrl.trim() || !/^https?:\/\//i.test(baseUrl.trim())) {
+        toast.error(t('llm.baseUrlRequired'))
+        return
+      }
+      if (!model.trim()) { toast.error(t('llm.modelRequired')); return }
+    }
     setSetupResult(null)
     try {
       setPhase('saving')
       const enabled = await quickEnable.mutateAsync({
         preset: presetKey,
-        name: backendName,
-        baseUrl: endpoint,
-        model: modelId,
         apiKey: apiKey.trim(),
+        // Presets fill name/model/baseUrl server-side; custom supplies them.
+        ...(isCustom
+          ? {
+              name: name.trim(),
+              baseUrl: baseUrl.trim(),
+              model: model.trim(),
+            }
+          : {}),
       })
       await cfgQuery.refetch()
       onRefresh()
@@ -385,59 +395,73 @@ function QuickAgentSetupCard({
         </div>
       </div>
 
-      <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={(e) => void onQuickSubmit(e)}>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.preset')}</Label>
-          <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {LLM_PRESETS.map((p) => (
-                <SelectItem key={p.key} value={p.key}>
-                  {t(`llm.presets.${p.key}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <form className="space-y-3" onSubmit={(e) => void onQuickSubmit(e)}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label className="text-xs font-medium">{t('llm.preset')}</Label>
+            <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {LLM_PRESETS.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    {t(`llm.presets.${p.key}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs font-medium">{t('llm.apiKey')}</Label>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={t('llm.apiKeyPlaceholder')}
+              className="font-mono text-xs"
+              autoComplete="off"
+              autoFocus
+            />
+            {!isCustom && selectedPreset.model && (
+              <p className="mt-1 text-xs text-text-dim">
+                {t('llm.quick.presetHint', { model: selectedPreset.model })}
+              </p>
+            )}
+          </div>
         </div>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.apiKey')}</Label>
-          <Input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={t('llm.apiKeyPlaceholder')}
-            className="font-mono text-xs"
-            autoComplete="off"
-          />
-        </div>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.name')}</Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('llm.namePlaceholder')}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.model')}</Label>
-          <Input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder={t('llm.modelPlaceholder')}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <Label className="text-xs font-medium">{t('llm.baseUrl')}</Label>
-          <Input
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={t('llm.baseUrlPlaceholder')}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:items-center">
+
+        {isCustom && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs font-medium">{t('llm.name')}</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t('llm.namePlaceholder')}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium">{t('llm.model')}</Label>
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={t('llm.modelPlaceholder')}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs font-medium">{t('llm.baseUrl')}</Label>
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={t('llm.baseUrlPlaceholder')}
+                className="font-mono text-xs"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {setupResult && (
             <div className="flex min-w-0 items-center gap-2 text-xs text-text-dim">
               {setupResult.tone === 'success'

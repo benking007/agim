@@ -298,7 +298,7 @@
     "nativeSetupRequired": "Agim Agent 未配置。粘贴 DeepSeek API Key 即可一键启用（也可切换其他厂商）。",
     "nativeSetupAction": "去配置",
     "nativeSetupDialogTitle": "启用 Agim Agent（默认 DeepSeek）",
-    "nativeSetupDialogDesc": "默认预装 DeepSeek（deepseek-v4-pro）。粘贴 API Key 即可一键启用；需要时可切换其他厂商或展开高级选项。",
+    "nativeSetupDialogDesc": "默认预装 DeepSeek（deepseek-v4-pro）。粘贴 API Key 即可一键启用；可切换其他厂商，或选「自定义」自行填写模型与 Base URL。",
     "nativeSetupDialogReason": "最近一次错误信息",
     "nativeSetupDialogRoleOptional": "将自动绑定 native-chat / cheap / evaluator，并设为默认 Agent。",
     "nativeSetupDeepseekHint": "在 platform.deepseek.com 创建 API Key 后粘贴到这里即可。",

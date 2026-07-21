@@ -20,6 +20,7 @@ import { generateTraceId, createLogger, sanitizeUserText, logger as rootLogger }
 import { validateConfig } from './core/config-schema.js'
 import { workspaceRegistry } from './core/workspace.js'
 import { bootstrapAgentWorkspaces } from './core/agent-cwd.js'
+import { ensureBgjobInstalled } from './core/bgjob-install.js'
 import { approvalBus, threadKey } from './core/approval-bus.js'
 import { install as installApprovalRouter, tryHandleApprovalReply, platformToMessengerName } from './core/approval-router.js'
 import { tryConsumeReply as tryConsumePendingReminderReply } from './core/pending-reminder.js'
@@ -435,6 +436,12 @@ program
       for (const { agent, dir } of bootstrapped) {
         console.log(`📁 ${cliT(bootLang, 'start.agent_workspace', { agent, dir })}`)
       }
+      const bgjobPath = ensureBgjobInstalled()
+      if (bgjobPath) {
+        console.log(`🔧 bgjob → ${bgjobPath}`)
+      }
+      const { startBgjobWatch } = await import('./core/bgjob-watch.js')
+      startBgjobWatch()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')

@@ -1,6 +1,7 @@
-// bgjob-reader — read-only view into the bgjob directories used by Claude Code
-// and opencode. Format documented in /root/.claude/CLAUDE.md and the wrapper at
-// /root/.config/opencode/scripts/bgjob.
+// bgjob-reader — read-only view into bgjob directories.
+// Primary / write root is ~/.agim/bgjobs (shared by all agents via shipped
+// wrapper). Legacy Claude / opencode / Codex roots remain visible so older
+// jobs on mixed installs still show up.
 //
 // Layout per root:
 //   <root>/
@@ -11,12 +12,14 @@
 // We read these files directly (no Python wrapper subprocess). The wrapper is
 // the source of truth for writes; we are strictly the read side.
 //
-// Multiple roots are supported (claude / opencode are isolated by design).
 // Configurable via env AGIM_BGJOB_ROOTS — comma-separated absolute paths.
 
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, isAbsolute, resolve, basename } from 'node:path'
+import { AGIM_HOME } from './agim-paths.js'
+import { agimBgjobsDir } from './bgjob-install.js'
+import { refreshJobStatus } from './bgjob-status.js'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'bgjob-reader' })
@@ -30,6 +33,23 @@ export interface BgjobRoot {
   label: string
 }
 
+export interface BgjobOrigin {
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+}
+
+export interface BgjobProgress {
+  stage?: string
+  label?: string
+  done?: number
+  total?: number
+  rate_per_min?: number
+  eta_sec?: number
+  updated_at?: string
+}
+
 export interface BgjobSummary {
   id: string
   name: string
@@ -41,6 +61,10 @@ export interface BgjobSummary {
   restart_generation: number
   /** Source root id (e.g. 'claude' or 'opencode') — useful when caller mixes roots. */
   rootId: string
+  /** Thread that spawned the job (for Portal pet + exit notify). */
+  origin: BgjobOrigin | null
+  /** Optional progress.json from job out/. */
+  progress: BgjobProgress | null
 }
 
 export interface BgjobDetail extends BgjobSummary {
@@ -54,6 +78,7 @@ export interface BgjobDetail extends BgjobSummary {
 }
 
 const DEFAULT_ROOTS: BgjobRoot[] = [
+  { id: 'agim',     path: agimBgjobsDir(AGIM_HOME),                         label: 'Agim' },
   { id: 'claude',   path: join(homedir(), '.claude', 'bgjobs'),             label: 'Claude Code' },
   { id: 'opencode', path: join(homedir(), '.config', 'opencode', 'bgjobs'), label: 'opencode' },
   { id: 'codex',    path: join(homedir(), '.codex', 'bgjobs'),              label: 'Codex' },
@@ -102,6 +127,8 @@ interface MetaJson {
   workdir?: string
   status?: string
   pid?: number | null
+  pid_starttime?: number | null
+  pgid?: number | null
   started_at?: string | null
   ended_at?: string | null
   exit_code?: number | null
@@ -109,6 +136,7 @@ interface MetaJson {
   out_dir?: string
   restart_generation?: number
   resources?: { cpu_time?: number; rss_kb?: number; state?: string }
+  origin?: BgjobOrigin | null
 }
 
 /**
@@ -141,7 +169,7 @@ export async function listJobsForRoot(root: BgjobRoot): Promise<BgjobSummary[]> 
   for (const id of jobIds) {
     const meta = await readMeta(root, id)
     if (!meta) continue
-    out.push(metaToSummary(root, meta))
+    out.push(await metaToSummary(root, meta))
   }
   // newest first by started_at; fallback to id (lexical, contains timestamp prefix)
   out.sort((a, b) => {
@@ -158,13 +186,34 @@ async function readMeta(root: BgjobRoot, id: string): Promise<MetaJson | null> {
   if (id.includes('/') || id.includes('\\') || id === '..' || id === '.') return null
   try {
     const raw = await readFile(join(root.path, id, 'meta.json'), 'utf-8')
-    return safeJsonParse<MetaJson>(raw)
+    const meta = safeJsonParse<MetaJson>(raw)
+    if (!meta) return null
+    if (!meta.id) meta.id = id
+    // Same refresh the Python CLI does on status/list — otherwise Tasks /
+    // Portal keep showing "running" after the worker has already exited.
+    return await refreshJobStatus(root.path, meta)
   } catch {
     return null
   }
 }
 
-function metaToSummary(root: BgjobRoot, meta: MetaJson): BgjobSummary {
+async function metaToSummary(root: BgjobRoot, meta: MetaJson): Promise<BgjobSummary> {
+  const origin = meta.origin && meta.origin.platform && meta.origin.threadId
+    ? {
+        platform: String(meta.origin.platform),
+        channelId: String(meta.origin.channelId || ''),
+        threadId: String(meta.origin.threadId),
+        userId: String(meta.origin.userId || ''),
+      }
+    : null
+  let progress: BgjobProgress | null = null
+  const outDir = meta.out_dir || (meta.id ? join(root.path, meta.id, 'out') : null)
+  if (outDir) {
+    try {
+      const raw = await readFile(join(outDir, 'progress.json'), 'utf-8')
+      progress = safeJsonParse<BgjobProgress>(raw)
+    } catch { /* optional */ }
+  }
   return {
     id: meta.id || '',
     name: meta.name || '',
@@ -175,6 +224,8 @@ function metaToSummary(root: BgjobRoot, meta: MetaJson): BgjobSummary {
     exit_code: typeof meta.exit_code === 'number' ? meta.exit_code : null,
     restart_generation: typeof meta.restart_generation === 'number' ? meta.restart_generation : 0,
     rootId: root.id,
+    origin,
+    progress,
   }
 }
 
@@ -190,7 +241,7 @@ export async function getJobDetail(
   const meta = await readMeta(root, id)
   if (!meta) return null
 
-  const summary = metaToSummary(root, meta)
+  const summary = await metaToSummary(root, meta)
   const logPath = meta.log || join(root.path, id, 'log.txt')
   const logTail = await readLogTail(logPath, tailLines)
 

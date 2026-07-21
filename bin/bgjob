@@ -1,0 +1,1169 @@
+#!/usr/bin/env python3
+"""
+bgjob — Background job manager for long-running agent tasks.
+
+Shipped with Agim and installed to ~/.agim/scripts/bgjob on `agim start`.
+Detaches long-running work from IM / agent turn timeouts. Jobs survive agent
+restarts, can be inspected across conversations, and write outputs to a stable
+directory. All agents (Agim / Claude / opencode / Codex / …) share one data
+root under ~/.agim so the Web console can manage them in one place.
+
+Usage
+-----
+  bgjob start <name> [--dir <workdir>] [--env KEY1,KEY2,...] [--json] -- <cmd...>
+  bgjob restart <id> [--env KEY1,KEY2,...]     # reuse old cmd+workdir+out_dir
+  bgjob list [--running] [--name <name>]
+  bgjob status <id> [--json|--short]
+  bgjob tail <id> [-n <lines>] [-f|--follow]
+  bgjob head <id> [-n <lines>]
+  bgjob log <id>
+  bgjob ls <id>
+  bgjob kill <id>
+  bgjob rm <id> [--force]
+  bgjob prune [--status STATES] [--older-than DUR] [--keep-last N] [--dry-run]
+  bgjob help
+
+<id> arguments accept unique prefix / substring matches.
+
+Layout
+------
+  $BGJOB_ROOT / $AGIM_BGJOBS (default ~/.agim/bgjobs)
+    index.json
+    events.log                     # audit trail of all bgjob commands
+    <id>/
+      meta.json                    # pid, pid_starttime, pgid, status, ...
+      cmd.sh                       # wrapper script launched
+      env.sh                       # (optional) persisted env (0600)
+      log.txt                      # merged stdout+stderr
+      exit_code                    # atomic write by wrapper on exit
+      out/                         # job-specific output (0700, $BGJOB_OUT_DIR)
+
+progress.json protocol (optional; tasks that write this file get richer
+status output):
+
+  {
+    "stage": "B1",
+    "label": "fina_indicator",
+    "done": 5000,
+    "total": 5836,
+    "rate_per_min": 65,
+    "eta_sec": 770,
+    "updated_at": "2026-04-29T22:30:09+08:00"
+  }
+"""
+
+from __future__ import annotations
+
+import argparse
+import errno
+import fcntl
+import json
+import os
+import re
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def _default_root() -> Path:
+    """Shared Agim home. Prefer explicit overrides, else ~/.agim/bgjobs."""
+    for key in ("BGJOB_ROOT", "AGIM_BGJOBS"):
+        raw = os.environ.get(key, "").strip()
+        if raw:
+            return Path(raw).expanduser()
+    home = os.environ.get("AGIM_HOME", "").strip()
+    if home:
+        return Path(home).expanduser() / "bgjobs"
+    return Path.home() / ".agim" / "bgjobs"
+
+
+ROOT = _default_root()
+INDEX = ROOT / "index.json"
+AUDIT_LOG = ROOT / "events.log"
+ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
+ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# --------------------------------------------------------------------------
+# Low-level helpers
+# --------------------------------------------------------------------------
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+def _parse_iso(s: str) -> float | None:
+    try:
+        return datetime.fromisoformat(s).timestamp()
+    except Exception:
+        return None
+
+def _ensure_root() -> None:
+    ROOT.mkdir(parents=True, exist_ok=True)
+    if not INDEX.exists():
+        _write_index({"jobs": []})
+
+def _read_index() -> dict:
+    if not INDEX.exists():
+        return {"jobs": []}
+    return json.loads(INDEX.read_text())
+
+def _write_index(data: dict) -> None:
+    tmp = INDEX.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    tmp.replace(INDEX)
+
+def _with_index_lock(fn):
+    """Execute fn(index_dict) under exclusive file lock; persist result."""
+    _ensure_root()
+    lock_path = ROOT / ".index.lock"
+    with open(lock_path, "w") as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        data = _read_index()
+        result = fn(data)
+        _write_index(data)
+        return result
+
+def _audit(event: str, job_id: str = "", **fields) -> None:
+    """Append one JSON-per-line event to events.log under its own lock."""
+    _ensure_root()
+    entry = {"ts": _now(), "event": event, "job_id": job_id, "pid": os.getpid(), **fields}
+    lock_path = ROOT / ".events.lock"
+    try:
+        with open(lock_path, "w") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+            with open(AUDIT_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # audit failures must not break command execution
+
+def _job_dir(job_id: str) -> Path:
+    if not ID_RE.match(job_id):
+        raise ValueError(f"Invalid job id: {job_id}")
+    return ROOT / job_id
+
+def _meta_path(job_id: str) -> Path:
+    return _job_dir(job_id) / "meta.json"
+
+def _read_meta(job_id: str) -> dict:
+    p = _meta_path(job_id)
+    if not p.exists():
+        raise FileNotFoundError(f"No such job: {job_id}")
+    return json.loads(p.read_text())
+
+def _write_meta(job_id: str, meta: dict) -> None:
+    p = _meta_path(job_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    tmp.replace(p)
+
+# --------------------------------------------------------------------------
+# Process introspection (A1/A2/B6)
+# --------------------------------------------------------------------------
+
+def _get_proc_starttime(pid: int) -> int | None:
+    """Read /proc/<pid>/stat field 22 (starttime in clock ticks since boot).
+    Guards against PID reuse: a new process will have a different starttime."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, PermissionError):
+        return None
+    # `comm` (field 2) is enclosed in parens and may itself contain spaces/parens.
+    # Find the LAST ')' and parse fields after it.
+    try:
+        rparen = stat.rindex(')')
+    except ValueError:
+        return None
+    tail = stat[rparen + 2:].split()  # skip ") " and split the rest
+    # Fields 3..N are here at index 0..N-3. starttime is field 22 -> index 19.
+    if len(tail) < 20:
+        return None
+    try:
+        return int(tail[19])
+    except ValueError:
+        return None
+
+def _get_proc_pgid(pid: int) -> int | None:
+    try:
+        return os.getpgid(pid)
+    except (ProcessLookupError, PermissionError):
+        return None
+
+def _get_proc_stats(pid: int) -> dict | None:
+    """Return dict with cpu_time (sec), rss_kb, state letter. None if pid gone."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        status = Path(f"/proc/{pid}/status").read_text()
+    except (FileNotFoundError, PermissionError):
+        return None
+    try:
+        rparen = stat.rindex(')')
+        tail = stat[rparen + 2:].split()
+        state = tail[0]
+        # utime=13, stime=14 in absolute field numbers -> index 10, 11 here
+        utime = int(tail[10])
+        stime = int(tail[11])
+        ticks_per_sec = os.sysconf("SC_CLK_TCK")
+        cpu_time = (utime + stime) / ticks_per_sec
+        rss_kb = 0
+        for line in status.splitlines():
+            if line.startswith("VmRSS:"):
+                rss_kb = int(line.split()[1])
+                break
+        return {"cpu_time": cpu_time, "rss_kb": rss_kb, "state": state}
+    except (ValueError, IndexError):
+        return None
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # process exists but not ours
+
+def _assert_job_pid_alive(meta: dict) -> bool:
+    """True only if pid exists, starttime matches, and pgid matches.
+    Guards against PID reuse and unrelated processes with same pid."""
+    pid = meta.get("pid", 0)
+    if not pid or not _pid_alive(pid):
+        return False
+    rec_starttime = meta.get("pid_starttime")
+    if rec_starttime is not None:
+        cur = _get_proc_starttime(pid)
+        if cur is None or cur != rec_starttime:
+            return False
+    rec_pgid = meta.get("pgid")
+    if rec_pgid is not None:
+        cur = _get_proc_pgid(pid)
+        if cur is None or cur != rec_pgid:
+            return False
+    return True
+
+def _refresh_status(meta: dict) -> dict:
+    """If job is marked running/paused but process is actually gone (or stolen), update meta."""
+    s = meta.get("status", "")
+    if s not in ("running", "paused"):
+        return meta
+    if _assert_job_pid_alive(meta):
+        # Running process — check if it was SIGSTOP'd externally.
+        if s == "running":
+            stats = _get_proc_stats(meta.get("pid", 0))
+            if stats and stats.get("state") == "T":
+                meta["status"] = "paused"
+                _write_meta(meta["id"], meta)
+        return meta
+    # Process gone or stolen — derive outcome from exit_code file.
+    job_dir = ROOT / meta["id"]
+    exit_file = job_dir / "exit_code"
+    if exit_file.exists():
+        try:
+            code = int(exit_file.read_text().strip() or "-1")
+        except ValueError:
+            code = -1
+    else:
+        code = -1
+    meta["status"] = "completed" if code == 0 else "failed"
+    meta["exit_code"] = code
+    if not meta.get("ended_at"):
+        meta["ended_at"] = _now()
+    _write_meta(meta["id"], meta)
+    return meta
+
+# --------------------------------------------------------------------------
+# Short id resolution (C2)
+# --------------------------------------------------------------------------
+
+def _all_job_ids() -> list[str]:
+    _ensure_root()
+    return sorted([p.name for p in ROOT.iterdir()
+                   if p.is_dir() and ID_RE.match(p.name) and (p / "meta.json").exists()])
+
+def _resolve_id(partial: str) -> str:
+    """Expand a partial id (prefix or substring) to full id. Exact match wins."""
+    if not partial:
+        raise ValueError("Empty job id")
+    if (ROOT / partial).is_dir() and ID_RE.match(partial):
+        return partial
+    all_ids = _all_job_ids()
+    prefix = [i for i in all_ids if i.startswith(partial)]
+    if len(prefix) == 1:
+        return prefix[0]
+    if len(prefix) > 1:
+        raise ValueError(f"Ambiguous id prefix '{partial}'. Candidates:\n  " + "\n  ".join(prefix))
+    substr = [i for i in all_ids if partial in i]
+    if len(substr) == 1:
+        return substr[0]
+    if len(substr) > 1:
+        raise ValueError(f"Ambiguous id substring '{partial}'. Candidates:\n  " + "\n  ".join(substr))
+    raise FileNotFoundError(f"No job matching '{partial}'")
+
+# --------------------------------------------------------------------------
+# Progress / env / formatting
+# --------------------------------------------------------------------------
+
+def _read_progress(out_dir: Path) -> dict | None:
+    p = out_dir / "progress.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+# Auto-persisted into env.sh when present (worker + exit helpers).
+_AUTO_ENV_KEYS = (
+    "AGIM_RPC_SOCKET",
+    "AGIM_RPC_TOKEN",
+    "AGIM_ORIGIN_PLATFORM",
+    "AGIM_ORIGIN_CHANNEL_ID",
+    "AGIM_ORIGIN_THREAD_ID",
+    "AGIM_ORIGIN_USER_ID",
+)
+
+
+def _origin_from_env() -> dict | None:
+    """Bind job to the IM / Portal thread that spawned `bgjob start`."""
+    platform = os.environ.get("AGIM_ORIGIN_PLATFORM", "").strip()
+    thread_id = os.environ.get("AGIM_ORIGIN_THREAD_ID", "").strip()
+    if not platform or not thread_id:
+        return None
+    return {
+        "platform": platform,
+        "channelId": os.environ.get("AGIM_ORIGIN_CHANNEL_ID", "").strip(),
+        "threadId": thread_id,
+        "userId": os.environ.get("AGIM_ORIGIN_USER_ID", "").strip(),
+    }
+
+
+def _write_envs(job_dir: Path, env_keys: list[str]) -> list[str]:
+    """Write env.sh (0600) containing `export K='V'` lines. Returns list of empty keys."""
+    env_path = job_dir / "env.sh"
+    empty = []
+    lines = ["# bgjob env persistence — loaded by cmd.sh via `source env.sh`\n"]
+    seen: set[str] = set()
+    for k in list(env_keys) + list(_AUTO_ENV_KEYS):
+        if k in seen:
+            continue
+        seen.add(k)
+        if not ENV_KEY_RE.match(k):
+            raise ValueError(f"Invalid env key: {k!r}")
+        v = os.environ.get(k, "")
+        if not v:
+            if k in env_keys:
+                empty.append(k)
+            continue
+        lines.append(f"export {k}={shlex.quote(v)}\n")
+    if len(lines) > 1:
+        env_path.write_text("".join(lines))
+        env_path.chmod(0o600)
+    return empty
+
+def _format_bytes(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024:
+            return f"{n:.1f}{unit}" if unit != "B" else f"{n}{unit}"
+        n /= 1024
+    return f"{n:.1f}PB"
+
+def _format_duration(sec: float) -> str:
+    sec = int(sec)
+    if sec < 60:
+        return f"{sec}s"
+    if sec < 3600:
+        return f"{sec//60}m{sec%60:02d}s"
+    if sec < 86400:
+        h, r = sec // 3600, sec % 3600
+        return f"{h}h{r//60:02d}m"
+    d, r = sec // 86400, sec % 86400
+    return f"{d}d{r//3600:02d}h"
+
+def _parse_duration(s: str) -> float:
+    """Parse human duration: 30d, 12h, 2w, 1h30m. Returns seconds."""
+    if not s:
+        raise ValueError("empty duration")
+    units = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+    total = 0.0
+    i = 0
+    n_re = re.compile(r"(\d+(?:\.\d+)?)([smhdw])")
+    for m in n_re.finditer(s):
+        total += float(m.group(1)) * units[m.group(2)]
+        i = m.end()
+    if i == 0 or i < len(s.strip()):
+        raise ValueError(f"Invalid duration: {s!r}")
+    return total
+
+# --------------------------------------------------------------------------
+# Log tail
+# --------------------------------------------------------------------------
+
+def _tail_lines(path: Path, n: int) -> list[str]:
+    if not path.exists() or n <= 0:
+        return []
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        block = 8192
+        data = b""
+        while size > 0 and data.count(b"\n") <= n:
+            read = min(block, size)
+            size -= read
+            f.seek(size)
+            data = f.read(read) + data
+        lines = data.splitlines()[-n:]
+    return [l.decode("utf-8", errors="replace") for l in lines]
+
+# --------------------------------------------------------------------------
+# Kill abstraction (A4)
+# --------------------------------------------------------------------------
+
+def _kill_job_by_id(job_id: str, grace_sec: float = 5.0, wait_death_sec: float = 10.0) -> dict:
+    """Send SIGTERM, then SIGKILL after grace period. Wait until pid is gone or
+    wait_death_sec elapses. Marks meta as 'killed'. Returns updated meta."""
+    meta = _refresh_status(_read_meta(job_id))
+    if meta.get("status") not in ("running", "paused"):
+        return meta
+    pid = meta.get("pid", 0)
+    pgid = meta.get("pgid", pid)
+    # Safety: only kill if we still own this pid (A1+A2)
+    if not _assert_job_pid_alive(meta):
+        return _refresh_status(meta)
+    # If paused, resume first so it can react to SIGTERM
+    if meta.get("status") == "paused":
+        try:
+            os.killpg(pgid, signal.SIGCONT)
+        except ProcessLookupError:
+            pass
+        meta["status"] = "running"
+    # SIGTERM the whole process group
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    # Wait up to grace_sec
+    deadline = time.time() + grace_sec
+    while time.time() < deadline and _pid_alive(pid):
+        time.sleep(0.2)
+    # SIGKILL if still alive
+    if _pid_alive(pid) and _assert_job_pid_alive(meta):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    # Final wait for pid to actually disappear (protects against rmtree race)
+    deadline = time.time() + wait_death_sec
+    while time.time() < deadline and _pid_alive(pid):
+        time.sleep(0.1)
+    meta["status"] = "killed"
+    meta["ended_at"] = _now()
+    if meta.get("exit_code") is None:
+        meta["exit_code"] = -15  # -signum convention
+    _write_meta(job_id, meta)
+    return meta
+
+# --------------------------------------------------------------------------
+# wrapper script generation
+# --------------------------------------------------------------------------
+
+def _render_cmd_sh(job_dir: Path, workdir: str, cmd_args: list[str], has_env: bool) -> str:
+    """Generate the cmd.sh wrapper. Uses atomic exit_code write; optionally loads env.sh."""
+    cmd_str = " ".join(shlex.quote(a) for a in cmd_args)
+    env_src = ""
+    if has_env:
+        env_src = f'if [ -f {shlex.quote(str(job_dir / "env.sh"))} ]; then\n'
+        env_src += f'    source {shlex.quote(str(job_dir / "env.sh"))}\n'
+        env_src += 'fi\n'
+    exit_file = job_dir / "exit_code"
+    exit_tmp  = job_dir / "exit_code.tmp"
+    return (
+        "#!/bin/bash\n"
+        "# Auto-generated by bgjob. Do not edit directly; use `bgjob restart` to re-run.\n"
+        f"cd {shlex.quote(workdir)}\n"
+        f"{env_src}"
+        f"export BGJOB_ID={shlex.quote(job_dir.name)}\n"
+        f"export BGJOB_OUT_DIR={shlex.quote(str(job_dir / 'out'))}\n"
+        f"export BGJOB_LOG={shlex.quote(str(job_dir / 'log.txt'))}\n"
+        f"{cmd_str}\n"
+        "rc=$?\n"
+        f"echo $rc > {shlex.quote(str(exit_tmp))} && mv {shlex.quote(str(exit_tmp))} {shlex.quote(str(exit_file))}\n"
+        "exit $rc\n"
+    )
+
+# --------------------------------------------------------------------------
+# Commands
+# --------------------------------------------------------------------------
+
+def _spawn_job(job_id: str, job_dir: Path, log_path: Path, cmd_script: Path, inherited_out_dir: Path | None = None) -> dict:
+    """Shared launcher used by cmd_start and cmd_restart. Writes meta and starts process.
+    Returns the persisted meta dict."""
+    with open(log_path, "ab") as logf:
+        logf.write(f"[bgjob] start {job_id}  at={_now()}\n".encode())
+        logf.flush()
+        proc = subprocess.Popen(
+            ["/bin/bash", str(cmd_script)],
+            stdin=subprocess.DEVNULL,
+            stdout=logf,
+            stderr=logf,
+            start_new_session=True,
+            close_fds=True,
+        )
+    # Capture starttime + pgid immediately after spawn (race-free enough: kernel
+    # assigns these atomically on fork/exec).
+    pid = proc.pid
+    starttime = _get_proc_starttime(pid)
+    pgid = _get_proc_pgid(pid) or pid
+    return {"pid": pid, "pid_starttime": starttime, "pgid": pgid}
+
+def cmd_start(args: argparse.Namespace) -> int:
+    if not NAME_RE.match(args.name):
+        print(f"Error: invalid job name: {args.name}", file=sys.stderr)
+        return 2
+    if not args.cmd:
+        print("Error: no command supplied after `--`", file=sys.stderr)
+        print("Usage: bgjob start <name> [--dir DIR] [--env K1,K2] -- <cmd...>", file=sys.stderr)
+        return 2
+    _ensure_root()
+
+    ts_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    rand = os.urandom(2).hex()
+    job_id = f"{ts_str}-{args.name}-{rand}"
+    job_dir = ROOT / job_id
+    out_dir = job_dir / "out"
+    # D2: out/ is 0700 to protect any secrets inside
+    out_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    log_path = job_dir / "log.txt"
+    cmd_script = job_dir / "cmd.sh"
+
+    workdir = str(Path(args.workdir).resolve()) if args.workdir else str(Path.cwd())
+    if not Path(workdir).is_dir():
+        print(f"Error: workdir not a directory: {workdir}", file=sys.stderr)
+        return 2
+
+    # B2: env persistence (+ auto AGIM_RPC_* / AGIM_ORIGIN_*)
+    env_keys = []
+    if args.env:
+        env_keys = [k.strip() for k in args.env.split(",") if k.strip()]
+    try:
+        empty = _write_envs(job_dir, env_keys)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    if empty:
+        print(f"Warning: env vars unset or empty: {', '.join(empty)}", file=sys.stderr)
+    has_env = (job_dir / "env.sh").exists()
+
+    cmd_script.write_text(_render_cmd_sh(job_dir, workdir, args.cmd, has_env=has_env))
+    cmd_script.chmod(0o755)
+
+    origin = _origin_from_env()
+    meta = {
+        "id": job_id,
+        "name": args.name,
+        "cmd": args.cmd,
+        "workdir": workdir,
+        "env_keys": env_keys,
+        "status": "running",
+        "pid": None,
+        "pid_starttime": None,
+        "pgid": None,
+        "started_at": _now(),
+        "ended_at": None,
+        "exit_code": None,
+        "log": str(log_path),
+        "out_dir": str(out_dir),
+        "restarted_from": None,
+        "restart_generation": 0,
+        "origin": origin,
+        "notify_on_exit": bool(origin),
+        "notified_at": None,
+    }
+    _write_meta(job_id, meta)
+
+    launch = _spawn_job(job_id, job_dir, log_path, cmd_script)
+    meta.update(launch)
+    _write_meta(job_id, meta)
+    _with_index_lock(lambda idx: idx["jobs"].append({"id": job_id, "name": args.name, "started_at": meta["started_at"]}))
+    _audit("start", job_id, name=args.name, cmd=args.cmd, workdir=workdir, env_keys=env_keys, pid=launch["pid"])
+
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "ok": True,
+            "id": job_id,
+            "name": args.name,
+            "pid": launch["pid"],
+            "pgid": launch.get("pgid"),
+            "workdir": workdir,
+            "cmd": args.cmd,
+            "log": str(log_path),
+            "out_dir": str(out_dir),
+        }, ensure_ascii=False))
+        return 0
+
+    print(f"Started job {job_id}")
+    print(f"  pid     : {launch['pid']}  (pgid={launch['pgid']})")
+    print(f"  workdir : {workdir}")
+    print(f"  cmd     : {' '.join(shlex.quote(a) for a in args.cmd)}")
+    if env_keys:
+        print(f"  env     : {', '.join(env_keys)}")
+    print(f"  log     : {log_path}")
+    print(f"  out_dir : {out_dir}")
+    print()
+    print("Monitor with:")
+    print(f"  bgjob status {job_id}")
+    print(f"  bgjob tail   {job_id} -f")
+    return 0
+
+def cmd_restart(args: argparse.Namespace) -> int:
+    """Re-launch an existing (non-running) job: same cmd + workdir, SHARED out_dir
+    (so the task's own checkpoint/resume logic kicks in). Env is re-captured fresh
+    from current environment unless --env overrides."""
+    try:
+        old_id = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    old = _refresh_status(_read_meta(old_id))
+    if old.get("status") in ("running", "paused"):
+        print(f"Error: job {old_id} is still {old['status']}. Kill or stop it first if you want to restart.", file=sys.stderr)
+        return 1
+
+    gen = int(old.get("restart_generation", 0)) + 1
+    ts_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+    rand = os.urandom(2).hex()
+    new_id = f"{ts_str}-{old['name']}-r{gen}-{rand}"
+    new_dir = ROOT / new_id
+    new_dir.mkdir(parents=True, exist_ok=True)
+    log_path = new_dir / "log.txt"
+    cmd_script = new_dir / "cmd.sh"
+    # out_dir points back to the ORIGINAL job's out so script resumes from its state.
+    orig_id = old.get("restarted_from") or old_id
+    orig_out = Path(_read_meta(orig_id)["out_dir"])
+    orig_out.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    # Env: override via --env, else reuse old env_keys (re-reading values from current env).
+    env_keys = old.get("env_keys", [])
+    if args.env is not None:
+        env_keys = [k.strip() for k in args.env.split(",") if k.strip()]
+    try:
+        empty = _write_envs(new_dir, env_keys)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    if empty:
+        print(f"Warning: env vars unset or empty: {', '.join(empty)}", file=sys.stderr)
+    has_env = (new_dir / "env.sh").exists()
+
+    # Symlink the new out/ to the original out/ so `bgjob ls` on new id sees it.
+    (new_dir / "out").symlink_to(orig_out, target_is_directory=True)
+    workdir = old["workdir"]
+    # Render cmd.sh pointing to the shared out via BGJOB_OUT_DIR = orig_out (the symlink
+    # above is convenience; BGJOB_OUT_DIR must be the real path for scripts).
+    cmd_sh_text = _render_cmd_sh(new_dir, workdir, old["cmd"], has_env=has_env)
+    # Patch BGJOB_OUT_DIR to point at shared orig_out directly
+    cmd_sh_text = cmd_sh_text.replace(
+        f"export BGJOB_OUT_DIR={shlex.quote(str(new_dir / 'out'))}",
+        f"export BGJOB_OUT_DIR={shlex.quote(str(orig_out))}")
+    cmd_script.write_text(cmd_sh_text)
+    cmd_script.chmod(0o755)
+
+    origin = old.get("origin") or _origin_from_env()
+    meta = {
+        "id": new_id,
+        "name": old["name"],
+        "cmd": old["cmd"],
+        "workdir": workdir,
+        "env_keys": env_keys,
+        "status": "running",
+        "pid": None, "pid_starttime": None, "pgid": None,
+        "started_at": _now(),
+        "ended_at": None,
+        "exit_code": None,
+        "log": str(log_path),
+        "out_dir": str(orig_out),
+        "restarted_from": orig_id,
+        "restart_generation": gen,
+        "origin": origin,
+        "notify_on_exit": bool(origin),
+        "notified_at": None,
+    }
+    _write_meta(new_id, meta)
+
+    launch = _spawn_job(new_id, new_dir, log_path, cmd_script)
+    meta.update(launch)
+    _write_meta(new_id, meta)
+    _with_index_lock(lambda idx: idx["jobs"].append({"id": new_id, "name": old["name"], "started_at": meta["started_at"]}))
+    _audit("restart", new_id, restarted_from=orig_id, gen=gen, pid=launch["pid"])
+
+    print(f"Restarted as {new_id} (generation r{gen}, based on {orig_id})")
+    print(f"  pid     : {launch['pid']}  (pgid={launch['pgid']})")
+    print(f"  out_dir : {orig_out}  (shared)")
+    print(f"  log     : {log_path}")
+    print()
+    print("Monitor with:")
+    print(f"  bgjob tail {new_id} -f")
+    return 0
+
+def cmd_list(args: argparse.Namespace) -> int:
+    _ensure_root()
+    idx = _read_index()
+    rows = []
+    for entry in idx["jobs"]:
+        try:
+            meta = _refresh_status(_read_meta(entry["id"]))
+        except FileNotFoundError:
+            continue
+        if args.name and meta.get("name") != args.name:
+            continue
+        if args.running and meta.get("status") not in ("running", "paused"):
+            continue
+        rows.append(meta)
+    rows.sort(key=lambda m: m.get("started_at", ""), reverse=True)
+    if not rows:
+        print("(no jobs)")
+        return 0
+    # Column widths
+    header = f"{'ID':<48} {'NAME':<22} {'STATUS':<10} {'PID':<8} {'STARTED':<25} {'PROGRESS':<22} {'EXIT':<5}"
+    print(header)
+    print("-" * len(header))
+    for m in rows:
+        prog = _read_progress(Path(m.get("out_dir", "")))
+        prog_str = "-"
+        if prog and prog.get("total"):
+            pct = 100 * prog.get("done", 0) / prog["total"]
+            prog_str = f"{prog.get('stage','?')} {prog.get('done',0)}/{prog['total']} ({pct:.0f}%)"
+        print(f"{m['id']:<48} {m.get('name',''):<22} {m.get('status',''):<10} "
+              f"{str(m.get('pid') or '-'):<8} {m.get('started_at',''):<25} "
+              f"{prog_str:<22} {str(m.get('exit_code') if m.get('exit_code') is not None else '-'):<5}")
+    return 0
+
+def cmd_status(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _refresh_status(_read_meta(full))
+    prog = _read_progress(Path(meta.get("out_dir", "")))
+
+    if args.json:
+        out = dict(meta)
+        if prog is not None:
+            out["progress"] = prog
+        if meta.get("status") == "running" and meta.get("pid"):
+            stats = _get_proc_stats(meta["pid"])
+            if stats:
+                out["resources"] = stats
+        print(json.dumps(out, ensure_ascii=False))
+        return 0
+
+    if args.short:
+        parts = [meta["id"][-12:], meta.get("status", "?")]
+        if prog and prog.get("total"):
+            pct = 100 * prog.get("done", 0) / prog["total"]
+            parts.append(f"{prog.get('stage','')} {prog.get('done',0)}/{prog['total']} ({pct:.0f}%)")
+        if prog and prog.get("eta_sec"):
+            parts.append(f"ETA {_format_duration(prog['eta_sec'])}")
+        if meta.get("status") == "running" and meta.get("pid"):
+            parts.append(f"pid {meta['pid']}")
+        if meta.get("exit_code") is not None and meta.get("status") != "running":
+            parts.append(f"exit {meta['exit_code']}")
+        print("  ".join(parts))
+        return 0
+
+    # Verbose default
+    print(json.dumps(meta, indent=2, ensure_ascii=False))
+    if prog is not None:
+        print("\n[progress]")
+        print(json.dumps(prog, indent=2, ensure_ascii=False))
+
+    # Resources for running jobs
+    if meta.get("status") == "running" and meta.get("pid"):
+        stats = _get_proc_stats(meta["pid"])
+        if stats:
+            started_ts = _parse_iso(meta.get("started_at", ""))
+            runtime_str = _format_duration(time.time() - started_ts) if started_ts else "?"
+            print(f"\n[resources]  cpu={stats['cpu_time']:.1f}s  rss={_format_bytes(stats['rss_kb']*1024)}  state={stats['state']}  runtime={runtime_str}")
+
+    # Log size + large warning
+    log = Path(meta.get("log", ""))
+    if log.exists():
+        size = log.stat().st_size
+        warn = "  (large)" if size > 100 * 1024 * 1024 else ""
+        print(f"\n[log]  {log}  ({_format_bytes(size)}){warn}")
+
+    # Failed: auto-append tail (C4)
+    if meta.get("status") == "failed" and log.exists():
+        print("\n[log tail — last 20 lines]")
+        for l in _tail_lines(log, 20):
+            print(f"  {l}")
+
+    # Out dir summary
+    out = Path(meta.get("out_dir", ""))
+    if out.is_dir():
+        entries = sorted(out.iterdir())
+        if entries:
+            print(f"\n[out/]  {len(entries)} entries:")
+            for e in entries[:20]:
+                if e.is_dir():
+                    print(f"  {e.name}/")
+                else:
+                    try:
+                        print(f"  {e.name}  ({_format_bytes(e.stat().st_size)})")
+                    except OSError:
+                        print(f"  {e.name}")
+    return 0
+
+def cmd_tail(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _read_meta(full)
+    log_path = Path(meta["log"])
+    # Print last N lines
+    for l in _tail_lines(log_path, args.lines):
+        print(l)
+    if not args.follow:
+        return 0
+    # Follow mode: seek to end, poll for new data, exit when job ends
+    if not log_path.exists():
+        time.sleep(0.5)
+        if not log_path.exists():
+            return 0
+    try:
+        with open(log_path, "r", errors="replace") as f:
+            f.seek(0, os.SEEK_END)
+            while True:
+                line = f.readline()
+                if line:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                    continue
+                # No new data — check job state
+                try:
+                    meta2 = _refresh_status(_read_meta(full))
+                except FileNotFoundError:
+                    break
+                if meta2.get("status") != "running":
+                    # Drain any final writes and exit
+                    for remaining in f:
+                        sys.stdout.write(remaining)
+                    sys.stdout.write(f"\n[bgjob] job ended with status={meta2.get('status')}, exit_code={meta2.get('exit_code')}\n")
+                    sys.stdout.flush()
+                    break
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+def cmd_head(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _read_meta(full)
+    log = Path(meta["log"])
+    if not log.exists():
+        return 0
+    with open(log, "r", errors="replace") as f:
+        for i, line in enumerate(f):
+            if i >= args.lines:
+                break
+            sys.stdout.write(line)
+    return 0
+
+def cmd_log(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _read_meta(full)
+    log = Path(meta["log"])
+    if not log.exists():
+        return 0
+    size = log.stat().st_size
+    if size > 100 * 1024 * 1024:
+        print(f"[bgjob] warning: log is {_format_bytes(size)}; consider `bgjob tail` instead", file=sys.stderr)
+    sys.stdout.write(log.read_text(errors="replace"))
+    return 0
+
+def cmd_ls(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _read_meta(full)
+    out = Path(meta["out_dir"])
+    if not out.is_dir():
+        print("(no out dir)")
+        return 0
+    for e in sorted(out.iterdir()):
+        if e.is_dir():
+            print(f"  {e.name}/")
+        else:
+            try:
+                print(f"  {e.name}  ({_format_bytes(e.stat().st_size)})")
+            except OSError:
+                print(f"  {e.name}")
+    return 0
+
+def cmd_kill(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _refresh_status(_read_meta(full))
+    if meta.get("status") != "running":
+        print(f"Job {full} is not running (status={meta.get('status')}).")
+        return 1
+    _audit("kill_request", full, pid=meta.get("pid"))
+    meta = _kill_job_by_id(full)
+    _audit("kill_complete", full, final_status=meta.get("status"), exit_code=meta.get("exit_code"))
+    print(f"Killed job {full} (pid={meta.get('pid')}).")
+    return 0
+
+def cmd_pause(args: argparse.Namespace) -> int:
+    """Send SIGSTOP to the job's process group, freezing execution."""
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _refresh_status(_read_meta(full))
+    if meta.get("status") != "running":
+        print(f"Job {full} is not running (status={meta.get('status')}).", file=sys.stderr)
+        return 1
+    pgid = meta.get("pgid", meta.get("pid", 0))
+    pid = meta.get("pid", 0)
+    if not _assert_job_pid_alive(meta):
+        print(f"Job {full} pid {pid} is no longer valid.", file=sys.stderr)
+        _refresh_status(meta)
+        return 1
+    _audit("pause", full, pid=pid)
+    try:
+        os.killpg(pgid, signal.SIGSTOP)
+    except ProcessLookupError:
+        print(f"Job {full}: process already gone.", file=sys.stderr)
+        return 1
+    meta["status"] = "paused"
+    _write_meta(full, meta)
+    print(f"Paused job {full} (pid={pid}). Resume with `bgjob resume {full}`.")
+    return 0
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Send SIGCONT to the job's process group, resuming from pause."""
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _read_meta(full)
+    if meta.get("status") != "paused":
+        # Allow resuming running jobs too (no-op, harmless)
+        if meta.get("status") != "running":
+            print(f"Job {full} is not paused (status={meta.get('status')}).", file=sys.stderr)
+            return 1
+    pgid = meta.get("pgid", meta.get("pid", 0))
+    pid = meta.get("pid", 0)
+    if not _assert_job_pid_alive(meta):
+        print(f"Job {full} pid {pid} is no longer valid.", file=sys.stderr)
+        _refresh_status(meta)
+        return 1
+    _audit("resume", full, pid=pid)
+    try:
+        os.killpg(pgid, signal.SIGCONT)
+    except ProcessLookupError:
+        print(f"Job {full}: process already gone.", file=sys.stderr)
+        return 1
+    meta["status"] = "running"
+    _write_meta(full, meta)
+    print(f"Resumed job {full} (pid={pid}).")
+    return 0
+
+def cmd_rm(args: argparse.Namespace) -> int:
+    try:
+        full = _resolve_id(args.id)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    meta = _refresh_status(_read_meta(full))
+    if meta.get("status") in ("running", "paused"):
+        if not args.force:
+            print(f"Refusing to remove running job {full}. Use --force or `bgjob kill` first.", file=sys.stderr)
+            return 1
+        # Force kill + wait until pid gone
+        _kill_job_by_id(full, wait_death_sec=15.0)
+        pid = meta.get("pid", 0)
+        deadline = time.time() + 15.0
+        while time.time() < deadline and _pid_alive(pid):
+            time.sleep(0.2)
+    _audit("rm", full, final_status=meta.get("status"))
+    jd = _job_dir(full)
+    if jd.exists():
+        shutil.rmtree(jd)
+    _with_index_lock(lambda idx: idx.__setitem__("jobs", [j for j in idx["jobs"] if j["id"] != full]))
+    print(f"Removed job {full}.")
+    return 0
+
+def cmd_prune(args: argparse.Namespace) -> int:
+    _ensure_root()
+    idx = _read_index()
+    allowed = set()
+    if args.status:
+        allowed = set(s.strip() for s in args.status.split(",") if s.strip())
+    cutoff_sec = None
+    if args.older_than:
+        try:
+            cutoff_sec = time.time() - _parse_duration(args.older_than)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr); return 2
+
+    candidates = []
+    for entry in idx["jobs"]:
+        try:
+            meta = _refresh_status(_read_meta(entry["id"]))
+        except FileNotFoundError:
+            continue
+        if meta.get("status") in ("running", "paused"):
+            continue  # never prune running or paused
+        if allowed and meta.get("status") not in allowed:
+            continue
+        if cutoff_sec is not None:
+            ref = meta.get("ended_at") or meta.get("started_at") or ""
+            t = _parse_iso(ref)
+            if t is None or t > cutoff_sec:
+                continue
+        candidates.append(meta)
+
+    # Keep last N (most recent first)
+    candidates.sort(key=lambda m: m.get("ended_at", m.get("started_at", "")), reverse=True)
+    if args.keep_last is not None and args.keep_last > 0:
+        candidates = candidates[args.keep_last:]
+
+    if not candidates:
+        print("(nothing to prune)")
+        return 0
+    print(f"{'Would remove' if args.dry_run else 'Removing'} {len(candidates)} jobs:")
+    for m in candidates:
+        print(f"  {m['id']:<48} {m.get('status','?'):<10} started={m.get('started_at','')}")
+    if args.dry_run:
+        print("\n(dry-run; pass --yes to actually remove)")
+        return 0
+    if not args.yes:
+        print("\nRefusing to delete without --yes. Showing candidates only.", file=sys.stderr)
+        return 1
+    for m in candidates:
+        try:
+            shutil.rmtree(ROOT / m["id"])
+            _audit("prune", m["id"], status=m.get("status"))
+        except Exception as e:
+            print(f"  failed to remove {m['id']}: {e}", file=sys.stderr)
+    _with_index_lock(lambda idx: idx.__setitem__(
+        "jobs", [j for j in idx["jobs"] if j["id"] not in {m["id"] for m in candidates}]))
+    print(f"\nRemoved {len(candidates)} jobs.")
+    return 0
+
+# --------------------------------------------------------------------------
+# Parser + main
+# --------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="bgjob", description="Background job manager for long-running agent tasks.")
+    sub = p.add_subparsers(dest="subcmd", required=True)
+
+    sp = sub.add_parser("start", help="start a detached background job")
+    sp.add_argument("name", help="short label, e.g. growth100-rebuild")
+    sp.add_argument("--dir", dest="workdir", default=None, help="working directory (default: cwd)")
+    sp.add_argument("--env", default=None, help="comma-separated env var keys to persist (e.g. TUSHARE_TOKEN,MX_APIKEY)")
+    sp.add_argument("--json", action="store_true", help="machine-friendly JSON on success")
+    sp.add_argument("cmd", nargs="*", help="command to run (prefix with `--`)")
+    sp.set_defaults(func=cmd_start)
+
+    sp = sub.add_parser("restart", help="re-launch a previously-stopped job (shares its out/ for resume)")
+    sp.add_argument("id")
+    sp.add_argument("--env", default=None, help="override env whitelist")
+    sp.set_defaults(func=cmd_restart)
+
+    sp = sub.add_parser("list", help="list jobs")
+    sp.add_argument("--running", action="store_true", help="only running")
+    sp.add_argument("--name", default=None, help="filter by name")
+    sp.set_defaults(func=cmd_list)
+
+    sp = sub.add_parser("status", help="show job status + meta + progress + resources")
+    sp.add_argument("id")
+    g = sp.add_mutually_exclusive_group()
+    g.add_argument("--json",  action="store_true", help="machine-friendly JSON")
+    g.add_argument("--short", action="store_true", help="one-line summary")
+    sp.set_defaults(func=cmd_status)
+
+    sp = sub.add_parser("tail", help="tail the job log")
+    sp.add_argument("id")
+    sp.add_argument("-n", "--lines", type=int, default=50)
+    sp.add_argument("-f", "--follow", action="store_true", help="follow log until job ends")
+    sp.set_defaults(func=cmd_tail)
+
+    sp = sub.add_parser("head", help="show the beginning of the job log")
+    sp.add_argument("id")
+    sp.add_argument("-n", "--lines", type=int, default=50)
+    sp.set_defaults(func=cmd_head)
+
+    sp = sub.add_parser("log", help="print the full job log")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_log)
+
+    sp = sub.add_parser("ls", help="list files in the job's out/ dir")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_ls)
+
+    sp = sub.add_parser("kill", help="terminate a running job (SIGTERM, then SIGKILL after 5s)")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_kill)
+
+    sp = sub.add_parser("pause", help="suspend (SIGSTOP) a running job — reversible with resume")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_pause)
+
+    sp = sub.add_parser("resume", help="continue (SIGCONT) a paused job")
+    sp.add_argument("id")
+    sp.set_defaults(func=cmd_resume)
+
+    sp = sub.add_parser("rm", help="remove a job's entire directory")
+    sp.add_argument("id")
+    sp.add_argument("--force", action="store_true", help="force removal even if running (kills first)")
+    sp.set_defaults(func=cmd_rm)
+
+    sp = sub.add_parser("prune", help="bulk-remove old finished jobs")
+    sp.add_argument("--status", default=None, help="comma list of statuses to consider (default: all non-running)")
+    sp.add_argument("--older-than", dest="older_than", default=None, help="duration threshold (e.g. 30d, 2w, 12h)")
+    sp.add_argument("--keep-last", dest="keep_last", type=int, default=None, help="always retain N most recent matches")
+    sp.add_argument("--dry-run", action="store_true", help="show what would be removed without removing")
+    sp.add_argument("--yes", action="store_true", help="actually delete (required unless --dry-run)")
+    sp.set_defaults(func=cmd_prune)
+
+    sp = sub.add_parser("help", help="print detailed usage")
+    sp.set_defaults(func=lambda a: (print(__doc__), 0)[-1])
+
+    return p
+
+def _split_argv(argv: list[str]) -> tuple[list[str], list[str] | None]:
+    """Split argv on the first '--' for `start` (and only start). Returns (front, cmd_tail_or_None)."""
+    if not argv or argv[0] != "start" or "--" not in argv:
+        return argv, None
+    idx = argv.index("--")
+    return argv[:idx], argv[idx + 1:]
+
+def main(argv: list[str] | None = None) -> int:
+    argv = argv if argv is not None else sys.argv[1:]
+    front, cmd_tail = _split_argv(argv)
+    parser = build_parser()
+    args = parser.parse_args(front)
+    if cmd_tail is not None:
+        # start: cmd_tail becomes the full command vector
+        args.cmd = cmd_tail
+    return args.func(args) or 0
+
+if __name__ == "__main__":
+    sys.exit(main())

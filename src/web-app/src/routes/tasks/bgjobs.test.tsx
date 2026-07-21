@@ -1,12 +1,10 @@
 /**
- * /tasks/bgjobs smoke — verifies the bgjobs list flattens the
- * `groups` response shape into a single DataTable, surfaces the
- * root label via the join with `data.roots`, and renders the
- * empty state when the API returns no jobs.
+ * /tasks/bgjobs smoke — flattens `groups`, surfaces root labels (with
+ * legacy badge), status i18n, and opens the detail dialog on row click.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
@@ -48,15 +46,15 @@ describe('/tasks/bgjobs', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       jsonResponse({
         roots: [
+          { id: 'agim', path: '/a', label: 'Agim' },
           { id: 'claude', path: '/c', label: 'Claude Code' },
-          { id: 'opencode', path: '/o', label: 'opencode' },
         ],
         groups: [
-          { rootId: 'claude',   jobs: [
-            { id: 'a1', name: 'compile', status: 'running', pid: 123, started_at: '2026-05-18T08:00:00Z', ended_at: null, exit_code: null, restart_generation: 1, rootId: 'claude' },
+          { rootId: 'agim', jobs: [
+            { id: '20260518-080000-compile-ab12', name: 'compile', status: 'running', pid: 123, started_at: '2026-05-18T08:00:00Z', ended_at: null, exit_code: null, restart_generation: 1, rootId: 'agim' },
           ] },
-          { rootId: 'opencode', jobs: [
-            { id: 'b1', name: 'fmt', status: 'completed', pid: null, started_at: '2026-05-18T07:00:00Z', ended_at: '2026-05-18T07:00:05Z', exit_code: 0, restart_generation: 1, rootId: 'opencode' },
+          { rootId: 'claude', jobs: [
+            { id: '20260518-070000-fmt-cd34', name: 'fmt', status: 'completed', pid: null, started_at: '2026-05-18T07:00:00Z', ended_at: '2026-05-18T07:00:05Z', exit_code: 0, restart_generation: 1, rootId: 'claude' },
           ] },
         ],
       }),
@@ -68,11 +66,60 @@ describe('/tasks/bgjobs', () => {
     })
     const table = screen.getByRole('table')
     expect(within(table).getByText('fmt')).toBeInTheDocument()
-    // Root label join via data.roots is what we want to assert
+    expect(within(table).getByText('Agim')).toBeInTheDocument()
     expect(within(table).getByText('Claude Code')).toBeInTheDocument()
-    expect(within(table).getByText('opencode')).toBeInTheDocument()
-    // Exit code rendering — 0 → "ok"
+    expect(within(table).getByText('legacy')).toBeInTheDocument()
+    expect(within(table).getByText('Running')).toBeInTheDocument()
     expect(within(table).getByText('ok')).toBeInTheDocument()
+    expect(screen.getByText('1 running')).toBeInTheDocument()
+  })
+
+  it('opens detail dialog on row click', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('/api/bgjobs/job-1')) {
+        return jsonResponse({
+          job: {
+            id: 'job-1',
+            name: 'train',
+            status: 'completed',
+            pid: null,
+            started_at: '2026-05-18T08:00:00Z',
+            ended_at: '2026-05-18T08:01:00Z',
+            exit_code: 0,
+            restart_generation: 1,
+            rootId: 'agim',
+            cmd: ['python', 'train.py'],
+            workdir: '/tmp/work',
+            out_dir: '/a/job-1/out',
+            log_path: '/a/job-1/log.txt',
+            resources: null,
+            log_tail: 'epoch 1 done\n',
+          },
+        })
+      }
+      return jsonResponse({
+        roots: [{ id: 'agim', path: '/a', label: 'Agim' }],
+        groups: [
+          { rootId: 'agim', jobs: [
+            { id: 'job-1', name: 'train', status: 'completed', pid: null, started_at: '2026-05-18T08:00:00Z', ended_at: '2026-05-18T08:01:00Z', exit_code: 0, restart_generation: 1, rootId: 'agim' },
+          ] },
+        ],
+      })
+    })
+
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText('train').length).toBeGreaterThan(0)
+    })
+    // Desktop table + mobile cards both mount; click the table cell.
+    fireEvent.click(within(screen.getByRole('table')).getByText('train'))
+    await waitFor(() => {
+      expect(screen.getByText('python train.py')).toBeInTheDocument()
+    })
+    expect(screen.getByText('/tmp/work')).toBeInTheDocument()
+    expect(screen.getByText(/epoch 1 done/)).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/bgjobs/job-1'))).toBe(true)
   })
 
   it('renders empty state when no jobs found', async () => {

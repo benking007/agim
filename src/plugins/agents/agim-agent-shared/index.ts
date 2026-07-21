@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync as fsExistsSync, readFileSync as fsReadFileSync, statSync as fsStatSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path'
 import { approvalBus } from '../../../core/approval-bus.js'
+import { AGIM_BGJOB_WRAPPER_EXPR } from '../../../core/agent-cwd.js'
 import { type LlmProvider, getAnyProvider, getProvider } from '../../../core/llm/index.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import {
@@ -118,6 +119,22 @@ export function buildSystemPrompt(
     '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
     '  - For file/list/search/fetch requests, use native tools first; reserve call_agent for work that genuinely needs another CLI agent.',
     '  - Closure rule: the FINAL assistant message (the hop with no more tool calls) MUST contain the full user-readable conclusion in Chinese — tables, lists, findings, next steps. Do NOT end with only a status line like「盘点完成」/「已完成」/「报告输出完毕」; put the complete answer in that last message (you may still call tools earlier in the turn).',
+    '',
+    'IM reply shape (chat clients, not a terminal):',
+    '  - Short paragraphs + bullets. No markdown tables. Prefer plain URLs over [text](url).',
+    '  - Code/data longer than ~10 lines or ~50 list rows: write a file and send the path.',
+    '  - Default: no emoji. Errors: one-line cause + "需要详情吗？" — no stack dumps unless asked.',
+    '',
+    'Long-task / bgjob (IM hard timeout ≈ 30 minutes):',
+    '  - Estimate first. <5m sync; 5–10m sync with mid-checkpoint files every 1–2 minutes;',
+    '    >10m MUST use bgjob. Unclear ETA → probe 3–5 minutes, then re-choose.',
+    '  - For >10m estimates: show plan + ETA and get confirmation before starting.',
+    '  - Start via agim_exec with the portable wrapper (shell-expanded absolute path):',
+    `      ${AGIM_BGJOB_WRAPPER_EXPR} start <slug> -- <cmd...>`,
+    '    Bare `bgjob`, host-hardcoded /home/<user>/... paths, and `nohup … &` are forbidden.',
+    '  - Write the worker script first (agim_write_file), then start; reply with full job id + log path and end the sync turn.',
+    '  - Jobs land in ${AGIM_HOME:-$HOME/.agim}/bgjobs (all agents). Follow up: status / tail / list --running on the same wrapper expr.',
+    '  - long_task//goal tracks objectives across turns — it is NOT a background process.',
     '',
     'Verification subagent:',
     '  - After a substantive result, use call_agent with a fresh verifier when a second pass is valuable.',

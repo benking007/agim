@@ -139,16 +139,33 @@ export interface ListSubtasksResponse {
  * ============================================================ */
 
 export interface BgjobRoot {
-  /** Stable id — 'claude' / 'opencode' / 'codex' / custom-basename. */
+  /** Stable id — 'agim' (shared write root) / legacy 'claude'|'opencode'|'codex' / custom. */
   id: string
   label: string
   path: string
 }
 
+export interface BgjobOrigin {
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+}
+
+export interface BgjobProgress {
+  stage?: string
+  label?: string
+  done?: number
+  total?: number
+  rate_per_min?: number
+  eta_sec?: number
+  updated_at?: string
+}
+
 export interface BgjobSummary {
   id: string
   name: string
-  /** Free-form: running / completed / failed / killed / stale / … */
+  /** Free-form: running / completed / failed / killed / stale / paused / … */
   status: string
   pid: number | null
   started_at: string | null
@@ -156,11 +173,37 @@ export interface BgjobSummary {
   exit_code: number | null
   restart_generation: number
   rootId: string
+  origin?: BgjobOrigin | null
+  progress?: BgjobProgress | null
+}
+
+export interface BgjobDetail extends BgjobSummary {
+  cmd: string[]
+  workdir: string | null
+  out_dir: string | null
+  log_path: string | null
+  resources: { cpu_time?: number; rss_kb?: number; state?: string } | null
+  log_tail: string | null
 }
 
 export interface ListBgjobsQuery {
   /** Filter to a single root id; omit for all roots. */
   root?: string
+  /** Comma-separated statuses, e.g. `running,paused`. */
+  status?: string
+  /** Origin thread filter (Portal pet). */
+  threadId?: string
+  platform?: string
+}
+
+export interface GetBgjobQuery {
+  root?: string
+  /** Log tail line count (backend clamps 1..5000). */
+  tail?: number
+}
+
+export interface GetBgjobResponse {
+  job: BgjobDetail
 }
 
 /** Response shape varies based on whether `root` is set:

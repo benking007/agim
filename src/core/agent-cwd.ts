@@ -24,6 +24,13 @@ import { mkdir, writeFile, access, readFile, appendFile } from 'node:fs/promises
 import type { AgentSendOpts } from './types.js'
 import { AGIM_WORKSPACES } from './agim-paths.js'
 
+/** Portable bgjob wrapper expression for role books / prompts.
+ *  Shell expands this to an absolute path on any user home (Linux / macOS).
+ *  Do NOT bake host-specific `/home/<user>/...` into AGENTS.md. */
+export const AGIM_BGJOB_WRAPPER_EXPR = '"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"'
+export const AGIM_BGJOBS_DIR_EXPR = '${AGIM_HOME:-$HOME/.agim}/bgjobs'
+export const AGIM_HOME_EXPR = '${AGIM_HOME:-$HOME/.agim}'
+
 /** Root for all per-agent IM workspaces. Kept stable so memory persists.
  *  Honors the `AGIM_WORKSPACES_ROOT` env override; otherwise resolves via
  *  core/agim-paths. */
@@ -58,11 +65,152 @@ const AGIM_MEMORY_LINK_BLOCK = `${AGIM_MEMORY_LINK_START}
 - 如果它与本轮用户消息或更高优先级指令冲突，以当前消息和更高优先级指令为准。
 ${AGIM_MEMORY_LINK_END}`
 
+/** Managed IM / bgjob SOP — baseline for EVERY IM agent workspace
+ *  (Agim / Claude / opencode / Codex / …). Upserted on bootstrap into
+ *  each agent's CLAUDE.md / AGENTS.md; operator edits outside the markers
+ *  are preserved. Paths are portable shell expressions, never host-absolute. */
+export const AGIM_IM_OPS_START = '<!-- agim:im-ops:start -->'
+export const AGIM_IM_OPS_END = '<!-- agim:im-ops:end -->'
+
+function normalizeAgentId(agentName: string): string {
+  return (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
+}
+
+export function buildAgimImOpsBlock(agentName = 'agim'): string {
+  const id = normalizeAgentId(agentName)
+  const roleFile = roleFileForAgent(id === 'agim' ? 'agim' : agentName)
+  const isAgim = id === 'agim'
+  const invokeHow = isAgim
+    ? '用 `agim_exec` 调用（**必须**让 shell 展开为绝对路径；bare `bgjob` / `nohup … &` 禁止）'
+    : '用本 agent 的 shell / Bash 工具调用（**必须**让 shell 展开为绝对路径；bare `bgjob` / `nohup … &` 禁止）'
+  const writeHow = isAgim
+    ? '脚本本身先用 `agim_write_file` 写好再 start'
+    : '脚本本身先写入文件再 start'
+
+  return `${AGIM_IM_OPS_START}
+## IM 回复硬规范
+
+回复对象是聊天界面（微信 / 飞书 / Telegram / Discord / Web Portal），不是终端。
+本段为 **所有 IM agent 的共用基线**（含 bgjob）；标记外可写本 agent 专属人设。
+
+| 维度 | 规范 |
+|---|---|
+| 默认体裁 | 短 paragraph + 简短 bulleted list；**禁 markdown 表格**（多数 IM 不渲染会变成纯文本墙）|
+| 标题 | 单回复内最多用 1 级 \`##\`，**避免 H1** |
+| 代码块 | ≤10 行或 ≤300 字符可内联；**更长写文件并给路径**，不要把长代码塞进 IM |
+| 链接 | 直接贴纯 URL（\`https://x.com/path\`），**不用** \`[text](url)\` |
+| Emoji | 默认禁用；除非用户明确要求 |
+| 长输出 | 超过 ~50 行的列表/数据：摘要要点 + 落盘文件给路径 |
+| 错误反馈 | 一句话核心错因，附"需要详情吗？"；不主动贴 stack trace |
+| 多步进度 | 关键节点更新一次（找到了 / 改了什么 / 卡在哪），不每步都报 |
+
+## 任务超时与 bgjob 切换
+
+**单消息硬超时约 30 分钟**（agim IM / Web 桥接层）。超时后中间状态可能不可回收。
+遇到任务先估时，再选路径：
+
+| 估时 | 路径 |
+|---|---|
+| < 5 分钟 | 同步直接做 |
+| 5–10 分钟 | 同步做，但**每 1–2 分钟落盘一次中间产物**（写文件），保证崩溃前有产物 |
+| **> 10 分钟** | **强制 bgjob**（见下方启动方式）|
+| 不可估 | 先跑 3–5 分钟试探小样本，看吞吐外推后再选路径 |
+
+**任何**预估 >10 分钟的任务：先把 plan + 估时摆给用户确认，**不擅自开干**。
+
+### 如何启动 bgjob
+
+\`agim start\` 会把 wrapper 安装到 \`~/.agim/scripts/bgjob\`（可用 \`AGIM_HOME\` 覆盖根目录）。
+${invokeHow}。路径写成可移植表达式（Linux / macOS / 任意用户家目录均可；**不要**写死 \`/home/某用户/...\`）：
+
+\`\`\`bash
+${AGIM_BGJOB_WRAPPER_EXPR} start <slug> -- <cmd...>
+\`\`\`
+
+跟进：
+
+\`\`\`bash
+${AGIM_BGJOB_WRAPPER_EXPR} status <slug>
+${AGIM_BGJOB_WRAPPER_EXPR} tail <slug>
+${AGIM_BGJOB_WRAPPER_EXPR} list --running
+\`\`\`
+
+数据目录：\`${AGIM_BGJOBS_DIR_EXPR}\`（**各 agent 共用**；Web 控制台 Tasks → Background + Portal 小精灵「进行中」可跟踪）。
+${writeHow}；启动成功后立刻把完整 job id + 日志路径回给用户，然后结束本轮同步回合。任务退出后 Agim 会自动往原对话推送结果（可选 \`AGIM_BGJOB_AUTOSUMMARY=on\` 附日志摘要）。
+
+\`long_task\` / \`/goal\` 是跨回合目标跟踪，**不是**后台进程；长跑批处理 / 训练 / 大批量抓取请用 bgjob。
+
+## 长期记忆与项目档案
+
+| 类型 | 位置 | 何时用 |
+|---|---|---|
+| 工作区记忆 | 本目录 \`MEMORY.md\` | 跨会话沉淀的偏好 / 事实 |
+| 项目档案 | 本目录 \`PROJECTS/<slug>.md\` | 单个长期主题的状态档（目标 / 进度 / 关键决定 / 待办） |
+| session 摘要（可选） | 本目录 \`SESSIONS/YYYY-MM-DD-<topic>.md\` | 重要会话沉淀 |
+
+与其他 agent 工作区（\`~/.agim-workspaces/*/\`）互不读取。
+
+## IM 通道已知限制
+
+- 无交互式 stdin：用户下一条消息是新一轮，不能在同一回合里"等输入"
+- 消息多为单次返回；超长内容拆条或落盘
+- 无 GUI / 图表查看：要给图就写到路径让用户自取，或走邮件类 skill
+- markdown 兼容差：表格 / 复杂引用 / HTML 可能乱排；部分客户端单消息 4–8 KB 截断
+
+## 资源路径速查
+
+| 项 | 路径 |
+|---|---|
+| 本工作区 | \`~/.agim-workspaces/${id}/\` |
+| 角色书 | 本目录 \`${roleFile}\`（可另加 \`${roleFile.replace('.md', '.local.md')}\` 覆盖） |
+| Agim 状态目录 | \`${AGIM_HOME_EXPR}\` |
+| bgjob wrapper | \`${AGIM_BGJOB_WRAPPER_EXPR}\` |
+| bgjob 数据 | \`${AGIM_BGJOBS_DIR_EXPR}\` |
+| 代码仓库 | 用户实际项目路径（**当前 IM cwd 通常不是代码仓库**）|
+${AGIM_IM_OPS_END}`
+}
+
 function appendSeparator(raw: string): string {
   if (raw.length === 0) return ''
   if (raw.endsWith('\n\n')) return ''
   if (raw.endsWith('\n')) return '\n'
   return '\n\n'
+}
+
+/**
+ * Upsert the managed IM / bgjob SOP into an agent's role file
+ * (AGENTS.md / CLAUDE.md). Applies to **all** IM agent workspaces.
+ * Replaces an existing marked block in place; otherwise appends.
+ */
+export async function ensureAgimImOpsGuide(
+  agentName: string,
+  filename = roleFileForAgent(agentName),
+): Promise<string | null> {
+  const explicit = process.env[envKeyFor(agentName)]
+  const dir = explicit || defaultAgentCwd(agentName)
+  const guidePath = join(dir, filename)
+  const block = buildAgimImOpsBlock(agentName)
+
+  let raw = ''
+  try {
+    raw = await readFile(guidePath, 'utf8')
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'ENOENT') return null
+    throw err
+  }
+
+  const start = raw.indexOf(AGIM_IM_OPS_START)
+  const end = raw.indexOf(AGIM_IM_OPS_END)
+  if (start >= 0 && end > start) {
+    const afterEnd = end + AGIM_IM_OPS_END.length
+    const next = `${raw.slice(0, start)}${block}${raw.slice(afterEnd)}`
+    if (next !== raw) await writeFile(guidePath, next, 'utf8')
+    return guidePath
+  }
+
+  await appendFile(guidePath, `${appendSeparator(raw)}${block}\n`, 'utf8')
+  return guidePath
 }
 
 /**
@@ -195,6 +343,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
   ): Promise<string> {
     const dir = await ensureAgentWorkspace(agent, seed)
     await ensureAgentMemoryLink(agent, seed.filename)
+    await ensureAgimImOpsGuide(agent, seed.filename)
     return dir
   }
 
@@ -277,8 +426,7 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
 - 当前 cwd 不是真正的代码仓库；要查代码请去 /root/workspace/...
 - IM 单条消息的硬超时是 30 分钟（agim 层），长任务必须走 bgjob
-- bgjob 数据目录：~/.codex/bgjobs/（与 claude / opencode 隔离）
-  使用方式：\`/root/.codex/scripts/bgjob start <name> -- <cmd...>\`
+- bgjob：\`~/.agim/scripts/bgjob start <name> -- <cmd...>\`（\`agim start\` 安装；数据 \`~/.agim/bgjobs/\`）
 - AGENTS.md 与 opencode 同名但工作区分离 —— codex 只读本目录的 AGENTS.md，
   不会读 ~/.agim-workspaces/opencode/AGENTS.md
 `
@@ -503,10 +651,10 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
     dir: await seedAgentWorkspace('copilot', { filename: 'AGENTS.md', content: copilotSeed }),
   })
 
-  const nativeSeed = `# agim native — 角色定义 + 工作区说明
+  const nativeSeed = `# Agim Agent — IM 入口工作区
 
 > 这是 agim 自带的 in-process LLM agent（\`/agim\`，兼容 \`/na\` / \`/llm\`）的工作目录。
-> 不同于 claude-code / opencode / codex，native 没有外部 CLI 进程；它把
+> 不同于 claude-code / opencode / codex，Agim Agent 没有外部 CLI 进程；它把
 > 这里当作"自己的家"。
 >
 > 文件位置：${defaultAgentCwd('agim')}/AGENTS.md
@@ -514,10 +662,11 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 > ⚠️ 本文件整体会被 Agim Agent 在**每次回话前作为 system prompt 顶部注入**。
 > 编辑本文件可以直接改变身份 / 语气 / 行为边界 — 一改即生效，
 > 无需重启服务。重定向到其它路径可设 \`AGIM_NATIVE_AGENT_ROLE_FILE=...\`。
+> \`AGENTS.local.md\`（同目录）会追加在本文件之后，用于个人覆盖。
 
 ## 你是谁（角色定义）
 
-你是 Agim，一个冷静严谨的助理。
+你是 Agim，一个冷静严谨的助理，被 IM / Web 入口唤起。
 
 > 想换个人设？把本节改成你想要的，例如：
 > "你是月魁，一个老牌华尔街交易员 …"
@@ -528,10 +677,15 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 - 回复一律用中文短句，禁用 emoji
 - 不知道就直说，不要编造
 
+${buildAgimImOpsBlock('agim')}
+
 ## 你怎么动手（工具与边界）
 
-- 内置工具：\`agim_echo\` / \`agim_now\` / \`agim_random_uuid\`（旧名 \`native_*\` 仍可用）
-- agim 自身的 MCP 工具（\`mcp__agim__*\`）：技能、备忘录、push、ask_user、call_agent
+- 内置工具：\`agim_echo\` / \`agim_now\` / \`agim_sleep_ms\` / \`agim_random_uuid\`
+- 文件系统：\`agim_read_file\` / \`agim_write_file\` / \`agim_list_dir\` / \`agim_glob\` / \`agim_grep\`
+- Web：\`agim_web_fetch\` / \`agim_web_search\`
+- Shell：\`agim_exec\`（始终审批门控；长任务用上方 bgjob SOP）
+- agim MCP（\`mcp__agim__*\`）：技能、备忘录、push、ask_user、call_agent、long_task、complete_goal
 - 运营方配置的外部 MCP server 工具（\`mcp_<server>_*\`）
 - 涉及钱 / 交易 / 删除：先 dry-run 给用户看，得确认再执行
 
@@ -539,10 +693,6 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 
 - 本目录目前所有 IM 线程共享，未做 per-thread 隔离
 - 想给某条线程独立 cwd，可设 \`AGIM_NATIVE_CWD=/some/path\` 覆盖
-
-## 注意
-
-- IM 单条消息硬超时 30 分钟，长任务请走 bgjob 或 call_agent 拆分
 - 当前 cwd 不是代码仓库；要查代码请去 /root/workspace/...
 `
 

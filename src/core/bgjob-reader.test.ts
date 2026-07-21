@@ -39,8 +39,9 @@ describe('resolveRoots', () => {
   it('returns defaults when env unset', () => {
     delete process.env.AGIM_BGJOB_ROOTS
     const roots = resolveRoots()
-    expect(roots.length).toBe(3)
-    expect(roots.map((r) => r.id).sort()).toEqual(['claude', 'codex', 'opencode'])
+    expect(roots.length).toBe(4)
+    expect(roots.map((r) => r.id).sort()).toEqual(['agim', 'claude', 'codex', 'opencode'])
+    expect(roots[0]?.id).toBe('agim')
   })
 
   it('parses comma-separated absolute paths from env, with id= prefix', () => {
@@ -53,7 +54,7 @@ describe('resolveRoots', () => {
   it('falls back to default when env contains no valid entries', () => {
     process.env.AGIM_BGJOB_ROOTS = 'relative/path'
     const roots = resolveRoots()
-    expect(roots.length).toBe(3) // back to defaults
+    expect(roots.length).toBe(4) // back to defaults
   })
 
   it('uses basename as id when no id= prefix', () => {
@@ -78,7 +79,8 @@ describe('listJobsForRoot', () => {
       exit_code: 0,
     })
     await writeJob(tmp, 'j2', {
-      id: 'j2', name: 'task-b', status: 'running', pid: 200,
+      // Use this process's live pid so refresh keeps status=running.
+      id: 'j2', name: 'task-b', status: 'running', pid: process.pid,
       started_at: '2026-05-01T11:00:00+08:00',
       ended_at: null, exit_code: null,
     })
@@ -92,6 +94,23 @@ describe('listJobsForRoot', () => {
     expect(jobs[1].status).toBe('completed')
     expect(jobs[1].exit_code).toBe(0)
     expect(jobs.every((j) => j.rootId === 'test')).toBe(true)
+  })
+
+  it('refreshes stale running meta when exit_code file exists and pid is gone', async () => {
+    await writeFile(join(tmp, 'index.json'), JSON.stringify({
+      jobs: [{ id: 'stale', name: 'done-ish', started_at: '2026-05-01T12:00:00+08:00' }],
+    }))
+    await writeJob(tmp, 'stale', {
+      id: 'stale', name: 'done-ish', status: 'running',
+      pid: 1_000_000_012, started_at: '2026-05-01T12:00:00+08:00',
+      ended_at: null, exit_code: null,
+    })
+    await writeFile(join(tmp, 'stale', 'exit_code'), '0')
+
+    const jobs = await listJobsForRoot({ id: 'test', path: tmp, label: 'test' })
+    expect(jobs.length).toBe(1)
+    expect(jobs[0].status).toBe('completed')
+    expect(jobs[0].exit_code).toBe(0)
   })
 
   it('falls back to directory scan when index.json is missing', async () => {

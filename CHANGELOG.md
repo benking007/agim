@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Shipped full `bin/bgjob` (server-grade: index lock, restart/prune/progress/env, pid+starttime guards) — installed on `agim start` to `~/.agim/scripts/bgjob`. **All agents share** job data under `~/.agim/bgjobs/` (`BGJOB_ROOT` / `AGIM_BGJOBS` override). Agim Agent IM / long-task SOP points at that absolute path (not `~/.claude/`). bwrap carve-out + Tasks → Background prefer the Agim root; legacy Claude/opencode/Codex roots remain readable.
+- **Tasks → Background UI**: row-click detail dialog (cmd / workdir / log tail), status filter, running count chip, Agim vs legacy root labels, duration column, localized statuses.
+- **Portal `/m/chat` pet task slot**: running bgjobs for the current thread appear alongside approvals / asks / runs (grouped: 需要你 → 本轮 → 后台; badge = total; progress bar when `progress.json` present). `agim start` watches `~/.agim/bgjobs` and **L1-pushes** exit status to the origin thread; set `AGIM_BGJOB_AUTOSUMMARY=on` for an L2 log-tail digest.
+- **IM/bgjob SOP baseline for all agents**: managed `<!-- agim:im-ops -->` upserts into every IM workspace role file (not only Agim). Paths use portable `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"` — no host-absolute `/home/<user>/...` baked into AGENTS.md.
+- Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` ships IM reply norms + **bgjob SOP** (>10 min → absolute `~/.agim/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block upserts on bootstrap. Framework system prompt carries a condensed safety-net copy. See `docs/im-workspaces-guide.md`.
+
 ### Fixed
 
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.

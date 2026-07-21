@@ -12,7 +12,7 @@
     "overview": "总览",
     "jobs": "作业",
     "subtasks": "子任务",
-    "bgjobs": "后台脚本",
+    "bgjobs": "后台任务",
     "schedules": "定时任务",
     "outbox": "投递队列",
     "a2a": "Agent 互调",
@@ -179,24 +179,50 @@
     }
   },
   "bgjobs": {
-    "title": "后台脚本",
-    "subtitle": "Agent 封装（Claude Code / opencode / codex）通过 bgjob 启动的长任务进程。",
+    "title": "后台任务",
+    "subtitle": "各 Agent 通过 ~/.agim/scripts/bgjob 启动的长任务，数据集中在 ~/.agim/bgjobs/。点击行可查看命令与日志。",
+    "runningCount": "{{count}} 个运行中",
+    "rootPrimaryHint": "共用写入根",
+    "rootLegacy": "旧版",
     "empty": {
-      "title": "暂无后台脚本",
-      "description": "当 Agent 使用其 bgjob 封装时，记录会在这里出现。Root 路径默认取 ~/.claude/bgjobs/、~/.config/opencode/bgjobs/、~/.codex/bgjobs/（可通过 AGIM_BGJOB_ROOTS 覆盖）。"
+      "title": "暂无后台任务",
+      "description": "Agent 用 ~/.agim/scripts/bgjob start <name> -- <cmd> 启动后会出现在这里。数据默认写入 ~/.agim/bgjobs/；仍可查看旧的 Claude / opencode / Codex 目录。"
     },
     "filter": {
-      "root": "Root",
-      "rootAny": "全部 Root"
+      "root": "数据根",
+      "rootAny": "全部",
+      "status": "状态",
+      "statusAny": "全部状态"
     },
     "col": {
       "name": "名称",
       "status": "状态",
-      "root": "Root",
+      "root": "数据根",
       "pid": "PID",
       "startedAt": "开始时间",
       "endedAt": "结束时间",
+      "duration": "耗时",
       "exit": "退出码"
+    },
+    "status": {
+      "running": "运行中",
+      "paused": "已暂停",
+      "starting": "启动中",
+      "completed": "已完成",
+      "failed": "失败",
+      "killed": "已终止",
+      "stale": "僵死"
+    },
+    "detail": {
+      "workdir": "工作目录",
+      "cmd": "命令",
+      "outDir": "输出目录",
+      "logPath": "日志路径",
+      "logTail": "日志尾部",
+      "logEmpty": "（暂无日志）",
+      "resources": "资源",
+      "restartGen": "重启代数",
+      "loadError": "加载详情失败"
     },
     "exitOk": "ok",
     "stillRunning": "—"

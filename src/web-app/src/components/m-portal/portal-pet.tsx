@@ -3,22 +3,25 @@
  *
  * - Mood follows run state; idle/tap still keep emotional phrases.
  * - Tap toggles a left-expanding panel of in-flight portal tasks
- *   (runs / approvals / asks).
+ *   (approvals / asks / runs / bgjobs). Multiple items are grouped by
+ *   kind with a scrollable list; badge shows the total count.
  * - Completion announcements float left as drifting bubbles.
  */
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, Loader2, MessageCircleQuestion, ShieldAlert, X } from 'lucide-react'
+import { CheckCircle2, Loader2, MessageCircleQuestion, ShieldAlert, Terminal, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type PetTaskKind = 'run' | 'approval' | 'ask'
+export type PetTaskKind = 'run' | 'approval' | 'ask' | 'bgjob'
 
 export interface PetTaskItem {
   id: string
   kind: PetTaskKind
   label: string
   detail?: string
+  /** 0–100 for bgjob progress bar; omit when unknown. */
+  progressPct?: number | null
 }
 
 export interface PetAnnounce {
@@ -39,6 +42,8 @@ export interface PortalPetProps {
 }
 
 type Mood = 'idle' | 'busy' | 'happy'
+
+const KIND_ORDER: PetTaskKind[] = ['approval', 'ask', 'run', 'bgjob']
 
 /** 16×16 pixel art. Values are palette keys; `.` = empty. */
 const IDLE: string[] = [
@@ -160,7 +165,21 @@ function PixelSprite({
 function KindIcon({ kind, className }: { kind: PetTaskKind; className?: string }): JSX.Element {
   if (kind === 'approval') return <ShieldAlert className={className} />
   if (kind === 'ask') return <MessageCircleQuestion className={className} />
+  if (kind === 'bgjob') return <Terminal className={className} />
   return <Loader2 className={cn(className, 'animate-spin')} />
+}
+
+function kindTone(kind: PetTaskKind): string {
+  if (kind === 'approval') return 'text-amber-400'
+  if (kind === 'ask') return 'text-sky-400'
+  if (kind === 'bgjob') return 'text-violet-400'
+  return 'text-teal-500'
+}
+
+function sectionKey(kind: PetTaskKind): string {
+  if (kind === 'approval' || kind === 'ask') return 'needsYou'
+  if (kind === 'bgjob') return 'background'
+  return 'running'
 }
 
 export function PortalPet({
@@ -217,7 +236,6 @@ export function PortalPet({
     setMood('happy')
     setBubble(null)
     if (!open) {
-      // Opening panel — skip random emoji bubble.
       window.setTimeout(() => setMood(busy ? 'busy' : 'idle'), 900)
       return
     }
@@ -241,9 +259,28 @@ export function PortalPet({
     setBubble(pickPhrase(t('chat.portal.pet.running', { returnObjects: true }), '…'))
   }, [busy, open, t])
 
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort(
+      (a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind),
+    )
+  }, [tasks])
+
+  const sections = useMemo(() => {
+    const groups: Array<{ key: string; items: PetTaskItem[] }> = []
+    for (const item of sortedTasks) {
+      const key = sectionKey(item.kind)
+      const last = groups[groups.length - 1]
+      if (last && last.key === key) last.items.push(item)
+      else groups.push({ key, items: [item] })
+    }
+    return groups
+  }, [sortedTasks])
+
+  const showSections = sections.length > 1
   const grid = mood === 'busy' ? BUSY : mood === 'happy' ? HAPPY : IDLE
   const colors = palette(dark)
   const taskCount = tasks.length
+  const needsYou = tasks.filter((t) => t.kind === 'approval' || t.kind === 'ask').length
 
   return (
     <div id={panelId} className={cn('pointer-events-auto relative', className)}>
@@ -272,57 +309,84 @@ export function PortalPet({
       {open && (
         <div
           className={cn(
-            'absolute bottom-0 right-full mr-2 w-[min(16.5rem,72vw)] origin-bottom-right animate-in fade-in slide-in-from-right-2 rounded-2xl border p-2 shadow-xl duration-200',
+            'absolute bottom-0 right-full mr-2 w-[min(17.5rem,78vw)] origin-bottom-right animate-in fade-in slide-in-from-right-2 rounded-2xl border p-2 shadow-xl duration-200',
             dark ? 'border-zinc-800 bg-zinc-950/95 text-zinc-100' : 'border-zinc-200 bg-white/95 text-zinc-800',
           )}
           role="dialog"
           aria-label={t('chat.portal.pet.panelTitle')}
         >
-          <div className="mb-1.5 flex items-center justify-between px-1">
+          <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
               {t('chat.portal.pet.panelTitle')}
             </p>
-            <span className={cn(
-              'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
-              taskCount > 0
-                ? (dark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-50 text-teal-700')
-                : 'bg-zinc-500/10 text-zinc-400',
-            )}>
-              {taskCount}
-            </span>
+            <div className="flex items-center gap-1">
+              {needsYou > 0 && (
+                <span className={cn(
+                  'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+                  dark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-50 text-amber-700',
+                )}>
+                  {t('chat.portal.pet.needsYouCount', { count: needsYou })}
+                </span>
+              )}
+              <span className={cn(
+                'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+                taskCount > 0
+                  ? (dark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-50 text-teal-700')
+                  : 'bg-zinc-500/10 text-zinc-400',
+              )}>
+                {taskCount}
+              </span>
+            </div>
           </div>
           {taskCount === 0 ? (
             <p className="px-1 py-3 text-center text-[11px] text-zinc-400">
               {t('chat.portal.pet.empty')}
             </p>
           ) : (
-            <ul className="max-h-40 space-y-1 overflow-y-auto scrollbar-none">
-              {tasks.map((item) => (
-                <li
-                  key={item.id}
-                  className={cn(
-                    'flex items-start gap-2 rounded-xl px-2 py-1.5 text-[11px]',
-                    dark ? 'bg-zinc-900/80' : 'bg-zinc-50',
+            <div className="max-h-56 space-y-2 overflow-y-auto scrollbar-none">
+              {sections.map((sec) => (
+                <div key={sec.key}>
+                  {showSections && (
+                    <p className="mb-1 px-1 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                      {t(`chat.portal.pet.section.${sec.key}`)}
+                    </p>
                   )}
-                >
-                  <KindIcon
-                    kind={item.kind}
-                    className={cn(
-                      'mt-0.5 h-3.5 w-3.5 shrink-0',
-                      item.kind === 'approval' ? 'text-amber-400'
-                        : item.kind === 'ask' ? 'text-sky-400'
-                          : 'text-teal-500',
-                    )}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold">{item.label}</p>
-                    {item.detail && (
-                      <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-400">{item.detail}</p>
-                    )}
-                  </div>
-                </li>
+                  <ul className="space-y-1">
+                    {sec.items.map((item) => (
+                      <li
+                        key={item.id}
+                        className={cn(
+                          'flex items-start gap-2 rounded-xl px-2 py-1.5 text-[11px]',
+                          dark ? 'bg-zinc-900/80' : 'bg-zinc-50',
+                        )}
+                      >
+                        <KindIcon
+                          kind={item.kind}
+                          className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', kindTone(item.kind))}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold">{item.label}</p>
+                          {item.detail && (
+                            <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-400">{item.detail}</p>
+                          )}
+                          {item.progressPct != null && item.progressPct >= 0 && (
+                            <div className={cn(
+                              'mt-1.5 h-1 overflow-hidden rounded-full',
+                              dark ? 'bg-zinc-800' : 'bg-zinc-200',
+                            )}>
+                              <div
+                                className="h-full rounded-full bg-violet-500 transition-[width] duration-500"
+                                style={{ width: `${Math.min(100, Math.max(0, item.progressPct))}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       )}
@@ -365,7 +429,10 @@ export function PortalPet({
       >
         <PixelSprite grid={grid} colors={colors} />
         {taskCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-teal-500 px-0.5 text-[8px] font-bold text-white shadow">
+          <span className={cn(
+            'absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[8px] font-bold text-white shadow',
+            needsYou > 0 ? 'bg-amber-500' : 'bg-teal-500',
+          )}>
             {taskCount > 9 ? '9+' : taskCount}
           </span>
         )}

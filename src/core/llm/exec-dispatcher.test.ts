@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AGIM_BGJOB_WRAPPER_EXPR } from '../agent-cwd.js'
+import { AGIM_HOME } from '../agim-paths.js'
+import { agimBgjobScript } from '../bgjob-install.js'
 import {
   getExecTools,
   isExecToolName,
   buildExecDispatcher,
   isBgjobInvocation,
+  rewriteBgjobCommand,
   buildExecEnv,
   clampTimeout,
 } from './exec-dispatcher.js'
@@ -83,6 +87,18 @@ describe('exec-dispatcher', () => {
       expect(env.AGIM_RPC_TOKEN).toBe('tok')
       expect(env.AGIM_RPC_SOCKET).toBe('/run/x.sock')
       expect(env.OPENAI_API_KEY).toBeUndefined()
+    })
+
+    it('always stamps resolved AGIM_HOME for portable SOP expansion', () => {
+      touch('AGIM_HOME', undefined)
+      const env = buildExecEnv()
+      expect(env.AGIM_HOME).toBe(AGIM_HOME)
+    })
+
+    it('forwards custom AGIM_HOME even when not on AGIM_EXEC_ENV_PASS', () => {
+      touch('AGIM_HOME', '/custom/agim-home')
+      const env = buildExecEnv()
+      expect(env.AGIM_HOME).toBe('/custom/agim-home')
     })
   })
 
@@ -292,37 +308,63 @@ describe('exec-dispatcher', () => {
   // bgjob wrapper itself is at the start — otherwise a payload like
   // `/root/.claude/scripts/bgjob status x && cat /etc/shadow` would
   // get the cat to run unsandboxed.
-  describe('isBgjobInvocation (v1.2.99 hardened)', () => {
-    it('matches the Claude Code wrapper path standalone', () => {
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob start foo -- /usr/bin/sleep 60')).toBe(true)
+  describe('rewriteBgjobCommand / portable SOP carve-out', () => {
+    const agimPath = agimBgjobScript()
+
+    it('expands the taught AGIM_BGJOB_WRAPPER_EXPR to the absolute script', () => {
+      const raw = `${AGIM_BGJOB_WRAPPER_EXPR} start foo -- /usr/bin/sleep 60`
+      expect(rewriteBgjobCommand(raw)).toBe(`${agimPath} start foo -- /usr/bin/sleep 60`)
     })
-    it('matches the opencode wrapper path standalone', () => {
-      expect(isBgjobInvocation('/root/.config/opencode/scripts/bgjob list --running')).toBe(true)
+
+    it('isBgjobInvocation accepts portable SOP after rewrite (no $ meta false-negative)', () => {
+      expect(isBgjobInvocation(`${AGIM_BGJOB_WRAPPER_EXPR} start foo -- /usr/bin/sleep 60`)).toBe(true)
+      expect(isBgjobInvocation(`   ${AGIM_BGJOB_WRAPPER_EXPR} status abc`)).toBe(true)
+    })
+
+    it('still REFUSES portable prefix chained with && / $()', () => {
+      expect(isBgjobInvocation(`${AGIM_BGJOB_WRAPPER_EXPR} status x && cat /etc/shadow`)).toBe(false)
+      expect(isBgjobInvocation(`${AGIM_BGJOB_WRAPPER_EXPR} status $(id)`)).toBe(false)
+    })
+  })
+
+  describe('isBgjobInvocation (v1.2.99 hardened)', () => {
+    const agimPath = agimBgjobScript()
+    const claudePath = join(homedir(), '.claude', 'scripts', 'bgjob')
+    const opencodePath = join(homedir(), '.config', 'opencode', 'scripts', 'bgjob')
+
+    it('matches the Agim-installed wrapper path standalone', () => {
+      expect(isBgjobInvocation(`${agimPath} start foo -- /usr/bin/sleep 60`)).toBe(true)
+    })
+    it('matches the legacy Claude Code wrapper path standalone', () => {
+      expect(isBgjobInvocation(`${claudePath} start foo -- /usr/bin/sleep 60`)).toBe(true)
+    })
+    it('matches the legacy opencode wrapper path standalone', () => {
+      expect(isBgjobInvocation(`${opencodePath} list --running`)).toBe(true)
     })
     it('tolerates leading whitespace', () => {
-      expect(isBgjobInvocation('   /root/.claude/scripts/bgjob status abc')).toBe(true)
+      expect(isBgjobInvocation(`   ${agimPath} status abc`)).toBe(true)
     })
 
     // v1.2.99 — these used to be accepted (would have leaked sandbox).
     // Now they must all be refused.
     it('REFUSES when chained via && (CR finding A1)', () => {
-      expect(isBgjobInvocation('cd /tmp && /root/.claude/scripts/bgjob status abc')).toBe(false)
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob status abc && cat /etc/shadow')).toBe(false)
+      expect(isBgjobInvocation(`cd /tmp && ${agimPath} status abc`)).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} status abc && cat /etc/shadow`)).toBe(false)
     })
     it('REFUSES when wrapped in a subshell', () => {
-      expect(isBgjobInvocation('(/root/.claude/scripts/bgjob tail abc)')).toBe(false)
+      expect(isBgjobInvocation(`(${agimPath} tail abc)`)).toBe(false)
     })
     it('REFUSES when chained via ; or |', () => {
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob list; rm -rf /tmp/junk')).toBe(false)
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob list | tee /tmp/log')).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} list; rm -rf /tmp/junk`)).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} list | tee /tmp/log`)).toBe(false)
     })
     it('REFUSES backtick / $() command substitution payload', () => {
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob status `whoami`')).toBe(false)
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob status $(id)')).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} status \`whoami\``)).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} status $(id)`)).toBe(false)
     })
     it('REFUSES redirection payload', () => {
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob list > /tmp/out')).toBe(false)
-      expect(isBgjobInvocation('/root/.claude/scripts/bgjob list < /tmp/in')).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} list > /tmp/out`)).toBe(false)
+      expect(isBgjobInvocation(`${agimPath} list < /tmp/in`)).toBe(false)
     })
 
     it('does NOT match a bare `bgjob` PATH lookup (attacker-controlled shim risk)', () => {
@@ -330,7 +372,7 @@ describe('exec-dispatcher', () => {
     })
     it('does NOT match unrelated paths that contain "bgjob" as a substring', () => {
       expect(isBgjobInvocation('echo /home/user/bgjobs/x.txt')).toBe(false)
-      expect(isBgjobInvocation('cat /root/.claude/scripts/bgjob.backup')).toBe(false)
+      expect(isBgjobInvocation(`cat ${claudePath}.backup`)).toBe(false)
     })
     it('does NOT match an empty / whitespace command', () => {
       expect(isBgjobInvocation('')).toBe(false)

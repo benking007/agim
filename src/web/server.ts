@@ -3457,11 +3457,28 @@ async function handleListBgjobs(_req: IncomingMessage, res: ServerResponse, url:
   try {
     const { resolveRoots, listJobsForRoot, listAllJobs } = await import('../core/bgjob-reader.js')
     const rootId = url.searchParams.get('root')
+    const statusFilter = (url.searchParams.get('status') || '').trim().toLowerCase()
+    const threadId = (url.searchParams.get('threadId') || '').trim()
+    const platform = (url.searchParams.get('platform') || '').trim()
+    const filterJobs = <T extends { status: string; origin?: { platform: string; threadId: string } | null }>(
+      jobs: T[],
+    ): T[] => {
+      let out = jobs
+      if (statusFilter) {
+        const want = new Set(statusFilter.split(',').map((s) => s.trim()).filter(Boolean))
+        out = out.filter((j) => want.has(j.status.toLowerCase()))
+      }
+      if (threadId) {
+        out = out.filter((j) => j.origin?.threadId === threadId
+          && (!platform || j.origin?.platform === platform))
+      }
+      return out
+    }
     if (rootId) {
       // Single-root view — used by the dashboard's root selector.
       const root = resolveRoots().find((r) => r.id === rootId)
       if (!root) { sendJson(res, 404, { error: `bgjob root "${rootId}" not configured` }); return }
-      const jobs = await listJobsForRoot(root)
+      const jobs = filterJobs(await listJobsForRoot(root))
       sendJson(res, 200, { roots: [{ id: root.id, label: root.label, path: root.path }], jobs })
       return
     }
@@ -3469,7 +3486,7 @@ async function handleListBgjobs(_req: IncomingMessage, res: ServerResponse, url:
     const all = await listAllJobs()
     sendJson(res, 200, {
       roots: all.map(({ root }) => ({ id: root.id, label: root.label, path: root.path })),
-      groups: all.map(({ root, jobs }) => ({ rootId: root.id, jobs })),
+      groups: all.map(({ root, jobs }) => ({ rootId: root.id, jobs: filterJobs(jobs) })),
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

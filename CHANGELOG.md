@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Chat lists (Portal `/m/chat` and web console `/`): scrolling up to read history no longer gets yanked back to the bottom when the live turn streams or tool-activity steps grow. Follow resumes when the user returns near the bottom or sends a message.
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.
 - Agim Agent honors `thinkingFormat: off` at runtime (no longer forced high by DeepSeek/Kimi URL heuristics).
 - Built-in preset dedupe uses vendor host families (e.g. `moonshot.ai` ↔ `moonshot.cn`, `api.z.ai` ↔ GLM).

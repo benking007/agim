@@ -102,11 +102,13 @@ export default function ChatRoute(): JSX.Element {
     [state.messages],
   )
 
-  useChatFollowBottom({
+  const latestActivitySteps = state.messages.at(-1)?.activity?.steps.length ?? 0
+  const { stickToBottom } = useChatFollowBottom({
     listRef,
     messageCount,
     latestMessageContent,
     streaming: state.currentReplyId != null,
+    followSignal: latestActivitySteps,
   })
   useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
   useBlurComposerOnUserScroll(listRef, inputRef)
@@ -131,6 +133,7 @@ export default function ChatRoute(): JSX.Element {
       toast.error(t('chat.notConnected', { defaultValue: 'Not connected. Reconnecting…' }))
       return
     }
+    stickToBottom()
     send(v)
     setInput('')
   }

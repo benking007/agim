@@ -19,6 +19,7 @@ import {
 import { toast } from 'sonner'
 
 import { useChat, type ChatMessage } from '@/hooks/use-chat'
+import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
 import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
@@ -298,7 +299,7 @@ export function AgentPortal(): JSX.Element {
   const [textCaret, setTextCaret] = useState(0)
   const [slashTriggerStart, setSlashTriggerStart] = useState(0)
   const [atTriggerStart, setAtTriggerStart] = useState(0)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesListRef = useRef<HTMLDivElement>(null)
   const activityStatusRef = useRef<Map<string, string>>(new Map())
   const composerFormRef = useRef<HTMLFormElement>(null)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
@@ -466,11 +467,16 @@ export function AgentPortal(): JSX.Element {
     }
   }, [])
 
-  // Scroll on new messages / streaming — intentional broad deps.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when transcript grows or streams
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages.length, chatMessages[chatMessages.length - 1]?.content, isTyping, chatMessages[chatMessages.length - 1]?.activity?.steps.length])
+  // Follow the bottom only while the user is near it. Scrolling up to
+  // read history pauses follow so streaming / tool steps do not yank
+  // the viewport back down.
+  const { stickToBottom } = useChatFollowBottom({
+    listRef: messagesListRef,
+    messageCount: chatMessages.length,
+    latestMessageContent: chatMessages[chatMessages.length - 1]?.content ?? '',
+    streaming: isTyping,
+    followSignal: chatMessages[chatMessages.length - 1]?.activity?.steps.length ?? 0,
+  })
 
   const agentsCatalog = useMemo(() => {
     return state.agents.map((id) => {
@@ -519,6 +525,7 @@ export function AgentPortal(): JSX.Element {
       setInputMessage('')
       setSlashOpen(false)
       setAtOpen(false)
+      stickToBottom()
       send(body)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('chat.portal.attach.uploadFailed', {
@@ -855,13 +862,19 @@ export function AgentPortal(): JSX.Element {
       </header>
 
       {/* Chat */}
-      {activeTab === 'chat' && (
-        <div className={cn(
+      {/* Keep the chat scroller mounted (hidden on Explore) so scroll
+          position + follow-latch survive tab switches. */}
+      <div
+        ref={messagesListRef}
+        className={cn(
           // pt-0 so sticky user chips sit flush under the header (no py gap when pinned).
           // pb leaves room for composer + perched pet.
           'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-0 pb-40 transition-colors duration-300 scrollbar-none',
           dark ? 'bg-zinc-950' : 'bg-zinc-100',
-        )}>
+          activeTab !== 'chat' && 'hidden',
+        )}
+        aria-hidden={activeTab !== 'chat'}
+      >
           <div className="mx-auto flex w-full max-w-[750px] flex-col space-y-4">
           {chatMessages.length === 0 && (
             <div className="flex animate-in fade-in flex-col items-center space-y-4 py-12 text-center duration-500">
@@ -1000,10 +1013,8 @@ export function AgentPortal(): JSX.Element {
               />
             </div>
           )}
-          <div ref={messagesEndRef} />
           </div>
-        </div>
-      )}
+      </div>
 
       {/* Explore */}
       {activeTab === 'explore' && (

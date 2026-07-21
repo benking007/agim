@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Agim Agent stuck-loop guards prefer **soft-steer** over an immediate hard stop: identical tool failures get one ephemeral “change approach” nudge (then hard-stop only if ignored). Semantic stuck-loop also requires recent failures (≥2 of last 3), so successful multi-tool debugging of the same URL/path is no longer treated as a dead loop.
 - Approval wait defaults **15 → 30 minutes** (`AGIM_APPROVAL_TIMEOUT_MS` + matching `AGIM_NATIVE_TURN_TIMEOUT_MS`) so human review of tool cards is less likely to race the turn watchdog.
 - Agim `AGENTS.md` seed + managed `<!-- agim:im-ops -->` baseline: 对话逻辑（>8k 落盘仍须完整回复；Viewer + IM 要点；Web/Portal/macOS 禁止截断）、说话/任务执行规则收紧为「对话给全」，去掉旧「一两句收尾 / 写文件代替回复」口径。
 

@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Chat lists (Portal `/m/chat` and web console `/`): scrolling up to read history no longer gets yanked back to the bottom when the live turn streams or tool-activity steps grow. Follow resumes when the user returns near the bottom or sends a message.
 - Active goal + missing bwrap: `agim_exec` escalates to an explicit approval card that still bypasses global auto-approve, but now offers **本类自动放行** (session pin by command family) alongside Allow / Deny. Detached/`nohup`/`&` still hard-blocked.
 - Chat composer Enter semantics: **desktop browser / Agim macOS shell** — Enter sends, Ctrl/⌘+Enter newlines; **Agim iOS shell / mobile browser** — Enter newlines, Send button submits. Shells inject `window.__AGIM_SHELL__` (`ios`|`macos`) for precise detection (no viewport heuristics).
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.

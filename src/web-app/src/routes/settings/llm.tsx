@@ -61,6 +61,7 @@ import {
   type LlmPresetKey,
 } from '@/lib/llm-presets'
 import { NativeAgentSettingsPanel } from '@/routes/settings/native-agent'
+import { cn } from '@/lib/utils'
 
 const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
 const UNBIND_SENTINEL = '__unbind__'
@@ -70,26 +71,56 @@ interface ProbeErrorState {
   message: string
 }
 
-export default function SettingsLlmRoute(): JSX.Element {
+export interface SettingsLlmPanelProps {
+  /** Hide the page-level title (used inside modals). */
+  embedded?: boolean
+  className?: string
+}
+
+/** Shared LLM settings body — full page and modal both render this. */
+export function SettingsLlmPanel({
+  embedded = false,
+  className,
+}: SettingsLlmPanelProps): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const listQuery = useLlmList()
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <header className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold">{t('llm.title')}</h1>
-        <Button
-          variant="ghost" size="sm" className="ml-auto"
-          onClick={() => void listQuery.refetch()}
-          disabled={listQuery.isFetching}
-          aria-label={t('actions.refresh', { ns: 'common' })}
-        >
-          {listQuery.isFetching
-            ? <Loader2 className="h-4 w-4 animate-spin" />
-            : <RefreshCcw className="h-4 w-4" />}
-          <span className="hidden sm:inline">{t('llm.refresh')}</span>
-        </Button>
-      </header>
-      <p className="text-sm text-text-dim">{t('llm.subtitle')}</p>
+    <div className={cn('flex flex-col gap-6', !embedded && 'mx-auto max-w-5xl', className)}>
+      {!embedded && (
+        <>
+          <header className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold">{t('llm.title')}</h1>
+            <Button
+              variant="ghost" size="sm" className="ml-auto"
+              onClick={() => void listQuery.refetch()}
+              disabled={listQuery.isFetching}
+              aria-label={t('actions.refresh', { ns: 'common' })}
+            >
+              {listQuery.isFetching
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCcw className="h-4 w-4" />}
+              <span className="hidden sm:inline">{t('llm.refresh')}</span>
+            </Button>
+          </header>
+          <p className="text-sm text-text-dim">{t('llm.subtitle')}</p>
+        </>
+      )}
+
+      {embedded && (
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 text-sm text-text-dim">{t('llm.subtitle')}</p>
+          <Button
+            variant="ghost" size="sm"
+            onClick={() => void listQuery.refetch()}
+            disabled={listQuery.isFetching}
+            aria-label={t('actions.refresh', { ns: 'common' })}
+          >
+            {listQuery.isFetching
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <RefreshCcw className="h-4 w-4" />}
+          </Button>
+        </div>
+      )}
 
       {listQuery.isLoading ? (
         <div className="h-64 rounded-md bg-surface-2 animate-pulse" />
@@ -99,12 +130,16 @@ export default function SettingsLlmRoute(): JSX.Element {
             data={listQuery.data}
             onRefresh={() => { void listQuery.refetch() }}
           />
-          <LlmNextStepCard data={listQuery.data} />
+          {!embedded && <LlmNextStepCard data={listQuery.data} />}
           <AdvancedLlmSection data={listQuery.data} />
         </>
       )}
     </div>
   )
+}
+
+export default function SettingsLlmRoute(): JSX.Element {
+  return <SettingsLlmPanel />
 }
 
 function AdvancedLlmSection({

@@ -307,6 +307,20 @@
     "nativeSetupDialogAdvanced": "Advanced",
     "nativeSetupApiKeyRequired": "API key is required",
     "nativeSetupSaved": "Agim Agent enabled. Switching…",
+    "statusBar": {
+      "modelHint": "Open LLM settings",
+      "noModel": "Configure model",
+      "noAgent": "No agent",
+      "thinkingOn": "Thinking",
+      "thinkingOff": "Think off",
+      "contextTitle": "Context Usage",
+      "full": "Full",
+      "conversation": "Conversation",
+      "systemPrompt": "System prompt",
+      "free": "Free",
+      "contextApprox": "Approximate from conversation length until live token usage is available.",
+      "llmDialogDesc": "Configure Agim Agent model APIs without leaving the chat."
+    },
     "pendingApprovals": "Pending approvals",
     "quickPrompt": {
       "plan": "Tell me who you are",

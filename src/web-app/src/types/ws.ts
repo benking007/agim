@@ -35,8 +35,10 @@ export type ChatOutgoing =
 /** Server → Client */
 export type ChatIncoming =
   | { type: 'init'; agents: string[]; defaultAgent: string; clientId: string }
-  | { type: 'history'; messages: HistoryMessage[]; agent: string; planMode?: boolean }
+  | { type: 'history'; messages: HistoryMessage[]; agent: string; planMode?: boolean; thinkVariant?: string }
   | { type: 'plan-mode'; enabled: boolean }
+  /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
+  | { type: 'think-mode'; variant: string }
   | { type: 'agents'; agents: string[] }
   | { type: 'agent-switched'; agent: string }
   | { type: 'chunk'; text: string; runId?: string }

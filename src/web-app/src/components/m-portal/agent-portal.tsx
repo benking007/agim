@@ -19,7 +19,10 @@ import {
 import { toast } from 'sonner'
 
 import { useChat, type ChatMessage } from '@/hooks/use-chat'
+import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
 import { isNativeSetupError } from '@/components/chat/error-hints'
+import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
+import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
@@ -239,6 +242,13 @@ export function AgentPortal(): JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+  const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
+  const modelStatus = useComposerModelStatus(state.agent, state.messages)
+  const thinkVariant = optimisticThink ?? state.thinkVariant
+  useEffect(() => {
+    setOptimisticThink(null)
+  }, [state.thinkVariant])
   // Persist the left rail on large screens (Cursor-like); drawer only below lg.
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
@@ -710,6 +720,10 @@ export function AgentPortal(): JSX.Element {
         dark ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900',
       )}
     >
+      <LlmSettingsDialog
+        open={llmSettingsOpen}
+        onOpenChange={setLlmSettingsOpen}
+      />
       <NativeSetupDialog
         open={nativeSetupDialogOpen}
         reason={nativeSetupReason}
@@ -1274,6 +1288,29 @@ export function AgentPortal(): JSX.Element {
                 )}
               </div>
             </form>
+            <ComposerStatusBar
+              dark={dark}
+              modelLabel={modelStatus.modelLabel}
+              modelMissing={modelStatus.modelMissing}
+              thinkVariant={thinkVariant}
+              showThinking={modelStatus.showThinking}
+              contextUsed={modelStatus.contextUsed}
+              contextWindow={modelStatus.contextWindow}
+              breakdown={modelStatus.breakdown}
+              disabled={state.status !== 'open'}
+              onModelClick={() => setLlmSettingsOpen(true)}
+              onSendCommand={(cmd) => {
+                if (state.status !== 'open') {
+                  toast.error('Not connected')
+                  return
+                }
+                if (cmd.startsWith('/think')) {
+                  const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
+                  setOptimisticThink(level)
+                }
+                send(cmd)
+              }}
+            />
           </div>
           </div>
         </div>

@@ -307,6 +307,20 @@
     "nativeSetupDialogAdvanced": "高级选项",
     "nativeSetupApiKeyRequired": "请填写 API Key",
     "nativeSetupSaved": "已启用 Agim Agent，正在切换…",
+    "statusBar": {
+      "modelHint": "打开 LLM 设置",
+      "noModel": "配置模型",
+      "noAgent": "未选择 Agent",
+      "thinkingOn": "思考中",
+      "thinkingOff": "思考关",
+      "contextTitle": "上下文用量",
+      "full": "已用",
+      "conversation": "对话",
+      "systemPrompt": "系统提示",
+      "free": "剩余",
+      "contextApprox": "目前按对话长度估算；后续会接入实时 token 用量。",
+      "llmDialogDesc": "在对话内配置 Agim Agent 的模型 API，无需离开当前页面。"
+    },
     "pendingApprovals": "待审批数",
     "quickPrompt": {
       "plan": "告诉我你是谁",

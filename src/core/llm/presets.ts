@@ -21,6 +21,11 @@ export interface LlmPresetDef {
   model: string
   /** Optional cheaper model for cheap / evaluator roles. */
   cheapModel?: string
+  /**
+   * All models to register under one API key on quick-enable.
+   * Defaults to `[model, cheapModel?]` when omitted.
+   */
+  models?: readonly string[]
   /** Suggested backend name stem (unique-ified by callers). */
   baseName: string
   /** Where operators get an API key. */
@@ -42,6 +47,7 @@ export const LLM_PRESETS: readonly LlmPresetDef[] = [
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
     cheapModel: 'deepseek-v4-flash',
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
     baseName: 'deepseek-agim',
     apiKeyDoc: 'platform.deepseek.com → API Keys',
     defaultThinking: 'high',
@@ -98,6 +104,29 @@ export const DEFAULT_LLM_PRESET: LlmPresetDef = LLM_PRESETS[0] as LlmPresetDef
 export function getLlmPreset(key: string | undefined | null): LlmPresetDef | undefined {
   if (!key) return undefined
   return LLM_PRESETS.find((p) => p.key === key)
+}
+
+/** Models registered for a preset (primary first). */
+export function presetModels(preset: LlmPresetDef): string[] {
+  if (preset.models && preset.models.length > 0) {
+    return [...new Set(preset.models.filter((m) => !!m.trim()))]
+  }
+  const out = [preset.model]
+  if (preset.cheapModel && preset.cheapModel !== preset.model) out.push(preset.cheapModel)
+  return out.filter((m) => !!m.trim())
+}
+
+/**
+ * Backend name stem for the Nth model of a preset.
+ * Primary keeps `baseName`; others append a short slug (e.g. `-flash`).
+ */
+export function presetBackendStem(baseName: string, model: string, index: number): string {
+  if (index <= 0) return baseName
+  const m = model.toLowerCase()
+  if (m.includes('flash')) return `${baseName}-flash`
+  if (m.includes('cheap') || m.includes('mini') || m.includes('air')) return `${baseName}-cheap`
+  const slug = m.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return slug ? `${baseName}-${slug}` : `${baseName}-${index + 1}`
 }
 
 export function suggestLlmBackendName(base: string, existing: string[]): string {

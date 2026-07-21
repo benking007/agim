@@ -2,19 +2,20 @@
  * ComposerStatusBar — Cursor-like row under the chat input:
  *   [model ▾]  Thinking ▾  high ▾          (context ring)
  *
- * Model opens the LLM settings dialog (parent owns the dialog).
- * Thinking / effort send `/think …` via onSendCommand.
+ * Model dropdown lists sibling backends under the same preset; last item
+ * opens the LLM settings dialog. Thinking / effort send `/think …`.
  * Context ring opens an approximate usage breakdown popover.
  */
 
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Brain, ChevronDown, X } from 'lucide-react'
+import { Brain, Check, ChevronDown, Settings2, X } from 'lucide-react'
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -28,10 +29,18 @@ export interface ContextBreakdownItem {
   color: string
 }
 
+export interface ModelOption {
+  backendName: string
+  model: string
+}
+
 export interface ComposerStatusBarProps {
   dark?: boolean
   modelLabel: string
   modelMissing?: boolean
+  /** Sibling models under the current preset (Agim). */
+  modelOptions?: ModelOption[]
+  activeBackendName?: string
   thinkVariant: string
   /** When false, hide thinking controls (non-Agim agents). */
   showThinking?: boolean
@@ -39,7 +48,8 @@ export interface ComposerStatusBarProps {
   contextWindow: number
   breakdown?: ContextBreakdownItem[]
   disabled?: boolean
-  onModelClick: () => void
+  onSelectModel?: (backendName: string) => void
+  onConfigureModel: () => void
   onSendCommand: (cmd: string) => void
   className?: string
 }
@@ -114,13 +124,16 @@ export function ComposerStatusBar({
   dark = false,
   modelLabel,
   modelMissing = false,
+  modelOptions = [],
+  activeBackendName,
   thinkVariant,
   showThinking = true,
   contextUsed,
   contextWindow,
   breakdown = [],
   disabled = false,
-  onModelClick,
+  onSelectModel,
+  onConfigureModel,
   onSendCommand,
   className,
 }: ComposerStatusBarProps): JSX.Element {
@@ -179,16 +192,38 @@ export function ComposerStatusBar({
         className,
       )}
     >
-      <button
-        type="button"
-        className={cn(chip, modelMissing && (dark ? 'text-amber-400' : 'text-amber-600'))}
-        onClick={onModelClick}
-        disabled={disabled}
-        title={t('chat.statusBar.modelHint', { defaultValue: 'Open LLM settings' })}
-      >
-        <span className="truncate">{modelLabel}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <button
+            type="button"
+            className={cn(chip, modelMissing && (dark ? 'text-amber-400' : 'text-amber-600'))}
+            title={t('chat.statusBar.modelHint', { defaultValue: 'Switch model or open LLM settings' })}
+          >
+            <span className="truncate">{modelLabel}</span>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[12rem]">
+          {modelOptions.map((opt) => {
+            const active = opt.backendName === activeBackendName
+            return (
+              <DropdownMenuItem
+                key={opt.backendName}
+                onSelect={() => onSelectModel?.(opt.backendName)}
+                className="font-mono text-xs"
+              >
+                <Check className={cn('h-3.5 w-3.5', active ? 'opacity-100' : 'opacity-0')} />
+                <span className="truncate">{opt.model}</span>
+              </DropdownMenuItem>
+            )
+          })}
+          {modelOptions.length > 0 && <DropdownMenuSeparator />}
+          <DropdownMenuItem onSelect={() => onConfigureModel()}>
+            <Settings2 className="h-3.5 w-3.5" />
+            <span>{t('chat.statusBar.configureLlm', { defaultValue: 'Configure models…' })}</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {showThinking && (
         <>

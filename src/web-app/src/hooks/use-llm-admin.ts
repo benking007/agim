@@ -19,6 +19,8 @@ export interface LlmBackendRow {
   provider: 'openai-compat' | 'anthropic'
   baseUrl?: string
   model: string
+  /** Preset key when created via quick-enable (deepseek / …). */
+  label?: string
   secret: { source: 'env' | 'file' | 'vendor' | 'none'; envKey: string }
 }
 
@@ -50,6 +52,7 @@ export interface LlmQuickEnableResult {
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
+  backends?: Array<{ name: string; model: string }>
   roles: Record<string, string>
   defaultAgent: string
   preset: string

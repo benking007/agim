@@ -95,6 +95,7 @@ function mockLlmFetch(opts: {
       const name = body.name?.trim() || 'deepseek-agim'
       const model = body.model?.trim() || 'deepseek-v4-pro'
       const baseUrl = body.baseUrl?.trim() || 'https://api.deepseek.com'
+      const flashName = 'deepseek-agim-flash'
       backends.push({
         name,
         provider: 'openai-compat',
@@ -102,10 +103,17 @@ function mockLlmFetch(opts: {
         model,
         secret: { source: 'file', envKey: `AGIM_LLM_SECRET_${name.toUpperCase()}` },
       })
+      backends.push({
+        name: flashName,
+        provider: 'openai-compat',
+        baseUrl,
+        model: 'deepseek-v4-flash',
+        secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM_FLASH' },
+      })
       Object.assign(roles, {
         'native-chat': name,
-        cheap: name,
-        evaluator: name,
+        cheap: flashName,
+        evaluator: flashName,
       })
       config.defaultAgent = 'agim'
       if (!Array.isArray(config.agents)) config.agents = []
@@ -115,6 +123,10 @@ function mockLlmFetch(opts: {
         provider: 'openai-compat',
         baseUrl,
         model,
+        backends: [
+          { name, model },
+          { name: flashName, model: 'deepseek-v4-flash' },
+        ],
         roles: { ...roles },
         defaultAgent: 'agim',
         preset: body.preset || 'deepseek',
@@ -179,7 +191,7 @@ describe('/settings/llm quick setup', () => {
 
     await waitFor(() => expect(screen.getByText('Quick-enable Agim Agent')).toBeInTheDocument())
     expect(screen.getByPlaceholderText('sk-...')).toBeInTheDocument()
-    expect(screen.getByText(/Uses preinstalled model deepseek-v4-pro/i)).toBeInTheDocument()
+    expect(screen.getByText(/Registers preinstalled models deepseek-v4-pro/i)).toBeInTheDocument()
     // Custom-only fields stay hidden until Custom is selected.
     expect(screen.queryByPlaceholderText('e.g. deepseek-cheap')).not.toBeInTheDocument()
     expect(screen.queryByPlaceholderText('model-id')).not.toBeInTheDocument()

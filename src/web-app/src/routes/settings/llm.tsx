@@ -456,9 +456,12 @@ function QuickAgentSetupCard({
               autoComplete="off"
               autoFocus
             />
-            {!isCustom && selectedPreset.model && (
+            {!isCustom && (
               <p className="mt-1 text-xs text-text-dim">
-                {t('llm.quick.presetHint', { model: selectedPreset.model })}
+                {t('llm.quick.presetHint', {
+                  model: (selectedPreset.models
+                    ?? [selectedPreset.model, selectedPreset.cheapModel].filter(Boolean)).join(', '),
+                })}
               </p>
             )}
           </div>
@@ -728,48 +731,78 @@ function RolesCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): J
 function AddBackendCard(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const addBackend = useLlmAddBackend()
-  const [presetIdx, setPresetIdx] = useState(0)
+  const quickEnable = useLlmQuickEnable()
+  const listQuery = useLlmList()
+  const [presetKey, setPresetKey] = useState<LlmPresetKey>(DEFAULT_LLM_PRESET.key)
   const [name, setName] = useState('')
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_LLM_PRESET.baseUrl)
-  const [model, setModel] = useState(DEFAULT_LLM_PRESET.model)
+  const [baseUrl, setBaseUrl] = useState('')
+  const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
+  const isCustom = presetKey === 'custom'
+  const selected = LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET
+  const busy = addBackend.isPending || quickEnable.isPending
 
   function fail(message: string): void {
     setFormError(message)
     toast.error(message)
   }
 
-  function onPickPreset(idx: number): void {
-    setPresetIdx(idx)
-    const p = LLM_PRESETS[idx]
-    if (!p) return
-    setBaseUrl(p.baseUrl)
-    setModel(p.model)
+  function onPickPreset(next: LlmPresetKey): void {
+    setPresetKey(next)
+    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    if (next === 'custom') {
+      setBaseUrl('')
+      setModel('')
+      setName(p.baseName)
+    } else {
+      setBaseUrl(p.baseUrl)
+      setModel(p.model)
+      setName('')
+    }
   }
 
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
-    const p = LLM_PRESETS[presetIdx]
-    if (!p) { fail(t('llm.invalidPreset')); return }
-    if (!name.trim()) { fail(t('llm.nameRequired')); return }
-    if (!baseUrl.trim()) { fail(t('llm.baseUrlRequired')); return }
-    if (!model.trim()) { fail(t('llm.modelRequired')); return }
     if (!apiKey.trim()) { fail(t('llm.apiKeyRequired')); return }
     try {
-      await addBackend.mutateAsync({
-        name: name.trim(),
-        provider: p.provider,
-        baseUrl: baseUrl.trim(),
-        model: model.trim(),
-        apiKey: apiKey.trim(),
-      })
+      if (isCustom) {
+        if (!name.trim()) { fail(t('llm.nameRequired')); return }
+        if (!baseUrl.trim() || !/^https?:\/\//i.test(baseUrl.trim())) {
+          fail(t('llm.baseUrlRequired'))
+          return
+        }
+        if (!model.trim()) { fail(t('llm.modelRequired')); return }
+        await addBackend.mutateAsync({
+          name: name.trim(),
+          provider: selected.provider,
+          baseUrl: baseUrl.trim(),
+          model: model.trim(),
+          apiKey: apiKey.trim(),
+        })
+        toast.success(t('llm.addedWithKey', { name: name.trim() }))
+      } else {
+        // Preset path: same as Quick-enable — API key only; register all models.
+        const enabled = await quickEnable.mutateAsync({
+          preset: presetKey,
+          apiKey: apiKey.trim(),
+          bindCheapRoles: true,
+          setDefaultAgent: false,
+        })
+        const models = (enabled.backends ?? [{ name: enabled.name, model: enabled.model }])
+          .map((b) => b.model)
+          .join(', ')
+        toast.success(t('llm.addedPresetModels', {
+          preset: t(`llm.presets.${presetKey}`),
+          models,
+          defaultValue: 'Added {{preset}}: {{models}}',
+        }))
+      }
       setFormError(null)
-      toast.success(t('llm.addedWithKey', { name: name.trim() }))
-      setName(''); setApiKey('')
+      setApiKey('')
+      void listQuery.refetch()
     } catch (err) {
-      const message = ((err as Error)?.message ?? String(err))
-      fail(message)
+      fail((err as Error)?.message ?? String(err))
     }
   }
 
@@ -777,69 +810,80 @@ function AddBackendCard(): JSX.Element {
     <section className="rounded-md border border-border bg-surface">
       <header className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">{t('llm.addTitle')}</h2>
+        <p className="mt-1 text-xs text-text-dim">{t('llm.addSubtitle')}</p>
       </header>
-      <form onSubmit={(e) => void onSubmit(e)} className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-        <div>
-          <Label className="text-xs font-medium">{t('llm.preset')}</Label>
-          <Select value={String(presetIdx)} onValueChange={(v) => onPickPreset(Number(v))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {LLM_PRESETS.map((p, i) => (
-                <SelectItem key={p.key} value={String(i)}>
-                  {t(`llm.presets.${p.key}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.name')}</Label>
-          <Input
-            value={name} onChange={(e) => setName(e.target.value)}
-            placeholder={t('llm.namePlaceholder')}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div className="sm:col-span-2">
-          <Label className="text-xs font-medium">{t('llm.baseUrl')}</Label>
-          <Input
-            value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={t('llm.baseUrlPlaceholder')}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.model')}</Label>
-          <Input
-            value={model} onChange={(e) => setModel(e.target.value)}
-            placeholder={t('llm.modelPlaceholder')}
-            className="font-mono text-xs"
-          />
-        </div>
-        <div>
-          <Label className="text-xs font-medium">{t('llm.apiKey')}</Label>
-          <Input
-            type="password"
-            value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-            placeholder={t('llm.apiKeyPlaceholder')}
-            className="font-mono text-xs"
-            autoComplete="off"
-          />
-        </div>
-        <div className="sm:col-span-2 flex">
-          <div className="flex w-full flex-col gap-2 sm:items-end">
-            {formError && (
-              <p className="text-xs text-danger">{formError}</p>
-            )}
-            <Button
-              type="submit"
-              disabled={addBackend.isPending}
-              className="ml-auto"
-            >
-              {addBackend.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {t('llm.addBackend')}
-            </Button>
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-3 p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label className="text-xs font-medium">{t('llm.preset')}</Label>
+            <Select value={presetKey} onValueChange={(v) => onPickPreset(v as LlmPresetKey)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {LLM_PRESETS.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    {t(`llm.presets.${p.key}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          <div>
+            <Label className="text-xs font-medium">{t('llm.apiKey')}</Label>
+            <Input
+              type="password"
+              value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+              placeholder={t('llm.apiKeyPlaceholder')}
+              className="font-mono text-xs"
+              autoComplete="off"
+            />
+            {!isCustom && (
+              <p className="mt-1 text-xs text-text-dim">
+                {t('llm.addPresetHint', {
+                  models: (selected.models ?? [selected.model, selected.cheapModel].filter(Boolean)).join(', '),
+                  defaultValue: 'Will register: {{models}}',
+                })}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {isCustom && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs font-medium">{t('llm.name')}</Label>
+              <Input
+                value={name} onChange={(e) => setName(e.target.value)}
+                placeholder={t('llm.namePlaceholder')}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium">{t('llm.model')}</Label>
+              <Input
+                value={model} onChange={(e) => setModel(e.target.value)}
+                placeholder={t('llm.modelPlaceholder')}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs font-medium">{t('llm.baseUrl')}</Label>
+              <Input
+                value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={t('llm.baseUrlPlaceholder')}
+                className="font-mono text-xs"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 sm:items-end">
+          {formError && (
+            <p className="text-xs text-danger">{formError}</p>
+          )}
+          <Button type="submit" disabled={busy} className="sm:ml-auto">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {t('llm.addBackend')}
+          </Button>
         </div>
       </form>
     </section>

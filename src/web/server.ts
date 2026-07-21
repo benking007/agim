@@ -5684,6 +5684,10 @@ async function handleClientMessage(
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'think-mode', variant: sess?.variant || 'auto' })
           }
+          if (parsed.type === 'model') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({ type: 'session-model', model: sess?.model || '' })
+          }
           emit({
             type: 'usage',
             runId,
@@ -5935,6 +5939,7 @@ async function sendSessionHistory(
       agent: history.session.agent,
       planMode: !!history.session.planMode,
       thinkVariant: history.session.variant || 'auto',
+      sessionModel: history.session.model || '',
     })
   }
   const { getActiveRun } = await import('./active-runs.js')

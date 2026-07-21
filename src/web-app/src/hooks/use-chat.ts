@@ -151,6 +151,8 @@ export interface ChatState {
   planMode: boolean
   /** Live session /think variant (from history / think-mode events). */
   thinkVariant: string
+  /** Live session `/model` backend name (empty = native-chat role default). */
+  sessionModel: string
   /** WebSocket thread id (web-…). Used for media upload subdir. */
   clientId: string | null
 }
@@ -168,6 +170,7 @@ const initialState: ChatState = {
   error: null,
   planMode: false,
   thinkVariant: 'auto',
+  sessionModel: '',
   clientId: null,
 }
 
@@ -175,9 +178,17 @@ type Action =
   | { kind: 'WS_STATUS'; status: WsStatus }
   | { kind: 'INIT'; agents: string[]; defaultAgent: string; clientId?: string }
   | { kind: 'SET_CLIENT_ID'; clientId: string }
-  | { kind: 'HISTORY'; messages: ChatMessage[]; agent: string; planMode?: boolean; thinkVariant?: string }
+  | {
+      kind: 'HISTORY'
+      messages: ChatMessage[]
+      agent: string
+      planMode?: boolean
+      thinkVariant?: string
+      sessionModel?: string
+    }
   | { kind: 'PLAN_MODE'; enabled: boolean }
   | { kind: 'THINK_MODE'; variant: string }
+  | { kind: 'SESSION_MODEL'; model: string }
   | {
       kind: 'ACTIVE_RUN'
       runId: string
@@ -322,6 +333,7 @@ function reducer(s: ChatState, a: Action): ChatState {
           agent: a.agent || s.agent,
           planMode: a.planMode ?? s.planMode,
           thinkVariant: a.thinkVariant ?? s.thinkVariant,
+          sessionModel: a.sessionModel ?? s.sessionModel,
         }
       }
       return {
@@ -332,11 +344,14 @@ function reducer(s: ChatState, a: Action): ChatState {
         activeRunId: a.messages.length > 0 ? null : s.activeRunId,
         planMode: a.planMode ?? s.planMode,
         thinkVariant: a.thinkVariant ?? s.thinkVariant,
+        sessionModel: a.sessionModel ?? s.sessionModel,
       }
     case 'PLAN_MODE':
       return { ...s, planMode: a.enabled }
     case 'THINK_MODE':
       return { ...s, thinkVariant: a.variant || 'auto' }
+    case 'SESSION_MODEL':
+      return { ...s, sessionModel: a.model || '' }
     case 'ACTIVE_RUN': {
       // Replayed after HISTORY on reconnect/refresh. Bind the snapshot
       // onto the last assistant bubble (or create a streaming placeholder).
@@ -814,6 +829,7 @@ function reducer(s: ChatState, a: Action): ChatState {
         error: null,
         planMode: false,
         thinkVariant: 'auto',
+        sessionModel: '',
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }
@@ -975,6 +991,7 @@ export function useChat(): UseChat {
           agent: msg.agent,
           planMode: msg.planMode,
           thinkVariant: msg.thinkVariant,
+          sessionModel: msg.sessionModel,
           messages: msg.messages.map((h, i): ChatMessage => {
             const activity = h.activity
               ? {
@@ -1025,6 +1042,9 @@ export function useChat(): UseChat {
         return
       case 'think-mode':
         dispatch({ kind: 'THINK_MODE', variant: msg.variant || 'auto' })
+        return
+      case 'session-model':
+        dispatch({ kind: 'SESSION_MODEL', model: msg.model || '' })
         return
       case 'active-run': {
         const normStep = (st: (typeof msg.steps)[number]): ChatActivityStep => ({

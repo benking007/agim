@@ -37,6 +37,8 @@ interface RawBackend {
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
+  /** Preset key (deepseek / …) when created via quick-enable. */
+  label?: string
   apiKeyEnv?: string
   costPer1kIn?: number
   costPer1kOut?: number
@@ -132,6 +134,7 @@ function handlePresets(res: ServerResponse): void {
       baseUrl: p.baseUrl,
       model: p.model,
       cheapModel: p.cheapModel,
+      models: p.models ?? [p.model, p.cheapModel].filter(Boolean),
       baseName: p.baseName,
       apiKeyDoc: p.apiKeyDoc,
       defaultThinking: p.defaultThinking,
@@ -190,6 +193,7 @@ async function handleList(res: ServerResponse): Promise<void> {
       provider: b.provider,
       baseUrl: b.baseUrl,
       model: b.model,
+      ...(b.label ? { label: b.label } : {}),
       secret: {
         source: src.source,
         envKey: src.envKey,

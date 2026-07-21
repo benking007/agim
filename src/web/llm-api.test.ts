@@ -233,9 +233,16 @@ describe('handleLlmApi — presets + quick-enable', () => {
     )
     expect(handled).toBe(true)
     expect(res.statusCode).toBe(201)
-    const body = JSON.parse(res.body) as { model: string; roles: Record<string, string>; defaultAgent: string }
+    const body = JSON.parse(res.body) as {
+      model: string
+      backends?: Array<{ name: string; model: string }>
+      roles: Record<string, string>
+      defaultAgent: string
+    }
     expect(body.model).toBe('deepseek-v4-pro')
+    expect(body.backends?.map((b) => b.model)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
     expect(body.roles['native-chat']).toBeTruthy()
+    expect(body.roles.cheap).toBe(body.backends?.[1]?.name)
     expect(body.defaultAgent).toBe('agim')
   })
 })

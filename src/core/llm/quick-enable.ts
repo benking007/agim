@@ -1,6 +1,9 @@
 // One-shot enable path: pick a vendor preset + paste API key → write
 // llmBackends + secret + role bindings + defaultAgent=agim.
 // Used by `agim setup llm quick`, POST /api/llm/quick-enable, and Web dialogs.
+//
+// Presets with multiple models (e.g. DeepSeek pro + flash) register every
+// model under the same API key so chat can switch with `/model <backend>`.
 
 import { configSchema } from '../config-schema.js'
 import { readConfigObject, updateConfigObject } from '../config-store.js'
@@ -10,6 +13,8 @@ import { saveSecret } from './secrets.js'
 import {
   DEFAULT_LLM_PRESET,
   getLlmPreset,
+  presetBackendStem,
+  presetModels,
   suggestLlmBackendName,
   type LlmPresetKey,
 } from './presets.js'
@@ -18,23 +23,32 @@ export interface QuickEnableInput {
   /** Preset key; defaults to DeepSeek. */
   preset?: LlmPresetKey | string
   apiKey: string
-  /** Override backend name (else unique stem from preset.baseName). */
+  /** Override primary backend name (else unique stem from preset.baseName). */
   name?: string
-  /** Override primary model (else preset.model). */
+  /** Override primary model (else preset.model). Custom-only for multi-field. */
   model?: string
   /** Override base URL (else preset.baseUrl). Required for `custom`. */
   baseUrl?: string
-  /** Also bind cheap/evaluator to the same backend (default true). */
+  /** Also bind cheap/evaluator (default true; prefers secondary model). */
   bindCheapRoles?: boolean
   /** Set defaultAgent to agim (default true). */
   setDefaultAgent?: boolean
 }
 
+export interface QuickEnableBackend {
+  name: string
+  model: string
+}
+
 export interface QuickEnableResult {
+  /** Primary backend name (native-chat). */
   name: string
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
+  /** Primary model id. */
   model: string
+  /** All backends created in this call (primary first). */
+  backends: QuickEnableBackend[]
   roles: Record<string, string>
   defaultAgent: string
   preset: string
@@ -73,43 +87,71 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
   const preset = getLlmPreset(input.preset) ?? DEFAULT_LLM_PRESET
   const provider = preset.provider
   const baseUrl = (input.baseUrl?.trim() || preset.baseUrl).trim()
-  const model = (input.model?.trim() || preset.model).trim()
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
     throw new QuickEnableError('validation', 'baseUrl must be an http(s) URL')
   }
-  if (!model) throw new QuickEnableError('validation', 'model is required')
+
+  const isCustom = preset.key === 'custom'
+  let models = isCustom
+    ? [(input.model?.trim() || preset.model).trim()].filter(Boolean)
+    : presetModels(preset)
+  if (input.model?.trim() && isCustom) {
+    models = [input.model.trim()]
+  }
+  if (models.length === 0 || !models[0]) {
+    throw new QuickEnableError('validation', 'model is required')
+  }
 
   const current = (await readConfigObject()) as RawConfig
   const existingNames = (current.llmBackends ?? []).map((b) => b.name)
-  const name = (input.name?.trim()
-    || suggestLlmBackendName(preset.baseName, existingNames)).trim()
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) {
-    throw new QuickEnableError('validation', 'name must match [A-Za-z0-9][A-Za-z0-9-]*')
+  const usedNames = [...existingNames]
+  const planned: RawBackend[] = []
+
+  for (let i = 0; i < models.length; i += 1) {
+    const modelId = models[i]!
+    const stem = i === 0 && input.name?.trim()
+      ? input.name.trim()
+      : presetBackendStem(preset.baseName, modelId, i)
+    const name = i === 0 && input.name?.trim()
+      ? input.name.trim()
+      : suggestLlmBackendName(stem, usedNames)
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) {
+      throw new QuickEnableError('validation', 'name must match [A-Za-z0-9][A-Za-z0-9-]*')
+    }
+    if (usedNames.some((n) => n.toLowerCase() === name.toLowerCase())) {
+      throw new QuickEnableError('conflict', `backend "${name}" already exists`)
+    }
+    usedNames.push(name)
+    planned.push({
+      name,
+      provider,
+      baseUrl,
+      model: modelId,
+      label: isCustom ? undefined : preset.key,
+    })
   }
 
   const bindCheap = input.bindCheapRoles !== false
   const setDefault = input.setDefaultAgent !== false
+  const primary = planned[0]!
+  const secondary = planned[1]
 
   let result: QuickEnableResult | undefined
   try {
     const update = await updateConfigObject((stored) => {
       const cfg = stored as RawConfig
       const backends = cfg.llmBackends ?? []
-      if (backends.some((b) => b.name === name)) {
-        throw new QuickEnableError('conflict', `backend "${name}" already exists`)
-      }
-      const nextBackend: RawBackend = {
-        name,
-        provider,
-        baseUrl,
-        model,
-        label: preset.key === 'custom' ? undefined : preset.key,
+      for (const b of planned) {
+        if (backends.some((x) => x.name === b.name)) {
+          throw new QuickEnableError('conflict', `backend "${b.name}" already exists`)
+        }
       }
       const roles: Record<string, string> = { ...(cfg.llmRoles ?? {}) }
-      roles['native-chat'] = name
+      roles['native-chat'] = primary.name
       if (bindCheap) {
-        roles.cheap = name
-        roles.evaluator = name
+        const cheapName = secondary?.name ?? primary.name
+        roles.cheap = cheapName
+        roles.evaluator = cheapName
       }
       const agents = Array.isArray(cfg.agents) ? [...cfg.agents] : []
       if (!agents.includes('agim') && !agents.includes('native')) {
@@ -117,7 +159,7 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
       }
       const next: RawConfig = {
         ...cfg,
-        llmBackends: [...backends, nextBackend],
+        llmBackends: [...backends, ...planned],
         llmRoles: roles,
         agents,
         ...(setDefault ? { defaultAgent: 'agim' } : {}),
@@ -130,10 +172,11 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
         )
       }
       result = {
-        name,
+        name: primary.name,
         provider,
         baseUrl,
-        model,
+        model: primary.model,
+        backends: planned.map((b) => ({ name: b.name, model: b.model })),
         roles,
         defaultAgent: String(next.defaultAgent ?? 'agim'),
         preset: preset.key,
@@ -146,8 +189,10 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
     throw err
   }
 
-  saveSecret(name, apiKey)
-  // Reload registry so Agim Agent sees the new backend immediately.
+  for (const b of planned) {
+    saveSecret(b.name, apiKey)
+  }
+  // Reload registry so Agim Agent sees the new backends immediately.
   try {
     const cfg = (await readConfigObject()) as RawConfig
     loadLlmFromConfig({

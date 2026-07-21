@@ -308,7 +308,8 @@
     "nativeSetupApiKeyRequired": "API key is required",
     "nativeSetupSaved": "Agim Agent enabled. Switching…",
     "statusBar": {
-      "modelHint": "Open LLM settings",
+      "modelHint": "Switch model or open LLM settings",
+      "configureLlm": "Configure models…",
       "noModel": "Configure model",
       "noAgent": "No agent",
       "thinkingOn": "Thinking",

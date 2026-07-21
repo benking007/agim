@@ -748,7 +748,7 @@
     "quick": {
       "title": "Quick-enable Agim Agent",
       "subtitle": "Pick a preinstalled provider (e.g. DeepSeek) and paste an API key. Choose Custom to enter model, name, and Base URL yourself.",
-      "presetHint": "Uses preinstalled model {{model}}",
+      "presetHint": "Registers preinstalled models {{model}}",
       "readyTitle": "Agim Agent is ready",
       "readyBadge": "enabled",
       "enableBadge": "needs enable",
@@ -769,6 +769,9 @@
     "rolesTitle": "Role Bindings (optional, advanced)",
     "rolesOptionalHint": "Role bindings are optional. Native auto-uses any usable API.",
     "addTitle": "Add API",
+    "addSubtitle": "Preinstalled providers only need an API key — all preset models are registered at once. Choose Custom to enter name, model, and Base URL yourself.",
+    "addPresetHint": "Will register: {{models}}",
+    "addedPresetModels": "Added {{preset}}: {{models}}",
     "col": {
       "name": "Name",
       "provider": "Provider",

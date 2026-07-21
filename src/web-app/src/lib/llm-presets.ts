@@ -14,6 +14,7 @@ export interface LlmPresetDef {
   baseUrl: string
   model: string
   cheapModel?: string
+  models?: string[]
   baseName: string
   defaultThinking?: 'off' | 'high' | 'max'
 }
@@ -25,6 +26,7 @@ export const LLM_PRESETS: LlmPresetDef[] = [
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
     cheapModel: 'deepseek-v4-flash',
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
     baseName: 'deepseek-agim',
     defaultThinking: 'high',
   },
@@ -66,6 +68,15 @@ export const LLM_PRESETS: LlmPresetDef[] = [
 ]
 
 export const DEFAULT_LLM_PRESET: LlmPresetDef = LLM_PRESETS[0] as LlmPresetDef
+
+export function presetModels(preset: LlmPresetDef): string[] {
+  if (preset.models && preset.models.length > 0) {
+    return [...new Set(preset.models.filter((m) => !!m.trim()))]
+  }
+  const out = [preset.model]
+  if (preset.cheapModel && preset.cheapModel !== preset.model) out.push(preset.cheapModel)
+  return out.filter((m) => !!m.trim())
+}
 
 export function suggestLlmBackendName(base: string, existing: string[]): string {
   const used = new Set(existing.map((n) => n.toLowerCase()))

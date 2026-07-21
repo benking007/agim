@@ -3,14 +3,18 @@ import {
   DEFAULT_LLM_PRESET,
   isDeepSeekBaseUrl,
   mapVariantToThinkingLevel,
+  presetBackendStem,
+  presetModels,
   suggestLlmBackendName,
 } from './presets.js'
 
 describe('llm presets', () => {
-  it('defaults Agim Agent preset to DeepSeek v4 pro', () => {
+  it('defaults Agim Agent preset to DeepSeek v4 pro + flash', () => {
     expect(DEFAULT_LLM_PRESET.key).toBe('deepseek')
     expect(DEFAULT_LLM_PRESET.model).toBe('deepseek-v4-pro')
     expect(DEFAULT_LLM_PRESET.cheapModel).toBe('deepseek-v4-flash')
+    expect(presetModels(DEFAULT_LLM_PRESET)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
+    expect(presetBackendStem('deepseek-agim', 'deepseek-v4-flash', 1)).toBe('deepseek-agim-flash')
     expect(DEFAULT_LLM_PRESET.baseUrl).toBe('https://api.deepseek.com')
   })
 

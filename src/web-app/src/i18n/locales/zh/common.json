@@ -308,7 +308,8 @@
     "nativeSetupApiKeyRequired": "请填写 API Key",
     "nativeSetupSaved": "已启用 Agim Agent，正在切换…",
     "statusBar": {
-      "modelHint": "打开 LLM 设置",
+      "modelHint": "切换模型或打开大模型配置",
+      "configureLlm": "去配置大模型",
       "noModel": "配置模型",
       "noAgent": "未选择 Agent",
       "thinkingOn": "思考中",

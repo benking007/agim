@@ -65,12 +65,16 @@ export default function ChatRoute(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
-  const modelStatus = useComposerModelStatus(state.agent, state.messages)
+  const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
   const thinkVariant = optimisticThink ?? state.thinkVariant
+  const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
   useEffect(() => {
     setOptimisticThink(null)
   }, [state.thinkVariant])
+  useEffect(() => {
+    setOptimisticModel(null)
+  }, [state.sessionModel])
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const keyboardInset = useKeyboardInset()
@@ -252,15 +256,30 @@ export default function ChatRoute(): JSX.Element {
               </Badge>
             ) : null}
             <ComposerStatusBar
-              modelLabel={modelStatus.modelLabel}
+              modelLabel={
+                optimisticModel
+                  ? (modelStatus.modelOptions.find((o) => o.backendName === optimisticModel)?.model
+                    ?? modelStatus.modelLabel)
+                  : modelStatus.modelLabel
+              }
               modelMissing={modelStatus.modelMissing}
+              modelOptions={modelStatus.modelOptions}
+              activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
               thinkVariant={thinkVariant}
               showThinking={modelStatus.showThinking}
               contextUsed={modelStatus.contextUsed}
               contextWindow={modelStatus.contextWindow}
               breakdown={modelStatus.breakdown}
               disabled={state.status !== 'open'}
-              onModelClick={() => setLlmSettingsOpen(true)}
+              onConfigureModel={() => setLlmSettingsOpen(true)}
+              onSelectModel={(backendName) => {
+                if (state.status !== 'open') {
+                  toast.error(t('chat.notConnected', { defaultValue: 'Not connected. Reconnecting…' }))
+                  return
+                }
+                setOptimisticModel(backendName)
+                send(`/model ${backendName}`)
+              }}
               onSendCommand={(cmd) => {
                 if (state.status !== 'open') {
                   toast.error(t('chat.notConnected', { defaultValue: 'Not connected. Reconnecting…' }))

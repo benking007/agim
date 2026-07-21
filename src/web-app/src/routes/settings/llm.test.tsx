@@ -153,6 +153,22 @@ function mockLlmFetch(opts: {
         sampleText: 'pong',
       })
     }
+    const del = u.match(/^\/api\/llm\/backends\/([^/?]+)$/)
+    if (del && method === 'DELETE') {
+      const name = decodeURIComponent(del[1]!)
+      const idx = backends.findIndex((b) => b.name === name)
+      let removedRoles = 0
+      if (idx >= 0) {
+        backends.splice(idx, 1)
+        for (const [role, bound] of Object.entries(roles)) {
+          if (bound === name) {
+            delete roles[role]
+            removedRoles += 1
+          }
+        }
+      }
+      return jsonResponse({ removedRoles })
+    }
     return jsonResponse({})
   })
 }
@@ -292,6 +308,8 @@ describe('/settings/llm quick setup', () => {
     expect(screen.getByText(/Grouped by provider \(1 groups\)/i)).toBeInTheDocument()
     expect(screen.getByText('2 models')).toBeInTheDocument()
     expect(screen.getAllByText('DeepSeek').length).toBeGreaterThanOrEqual(1)
+    // Delete lives on the group, not on each model row.
+    expect(screen.getByRole('button', { name: /Remove provider "DeepSeek"/i })).toBeInTheDocument()
     // Groups start collapsed — models stay hidden until expand.
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     const groupToggle = screen.getByRole('button', { expanded: false })
@@ -301,6 +319,93 @@ describe('/settings/llm quick setup', () => {
     // Name column matches model id (model + name cells; other UI may also cite the id).
     expect(screen.getAllByText('deepseek-v4-pro').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText('deepseek-v4-flash').length).toBeGreaterThanOrEqual(2)
+    // Row actions keep Ping only — no per-model Remove.
+    expect(screen.getAllByRole('button', { name: /^Ping$/i })).toHaveLength(2)
+    expect(screen.queryAllByRole('button', { name: /^Remove$/i })).toHaveLength(0)
+  })
+
+  it('marks installed built-in presets as already added in the Add API dropdown', async () => {
+    // jsdom lacks scrollIntoView; Radix Select calls it when opening.
+    Element.prototype.scrollIntoView = vi.fn()
+    mockLlmFetch({
+      backends: [
+        {
+          name: 'mimo-v2.5-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.xiaomimimo.com/v1',
+          model: 'mimo-v2.5-pro',
+          label: 'mimo',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_MIMO' },
+        },
+        {
+          name: 'mimo-v2.5',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.xiaomimimo.com/v1',
+          model: 'mimo-v2.5',
+          label: 'mimo',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_MIMO_2' },
+        },
+      ],
+      roles: { 'native-chat': 'mimo-v2.5-pro' },
+      config: { defaultAgent: 'agim' },
+    })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /show advanced settings/i }))
+    expect(await screen.findByRole('heading', { name: 'Add API' })).toBeInTheDocument()
+    const form = screen.getByRole('heading', { name: 'Add API' }).closest('section')
+    expect(form).toBeTruthy()
+    const presetTrigger = form!.querySelector('[role="combobox"]') as HTMLElement
+    fireEvent.click(presetTrigger)
+    const options = await screen.findAllByRole('option')
+    const byLabel = Object.fromEntries(options.map((o) => [o.textContent?.trim() ?? '', o]))
+    expect(byLabel['MiMo (already added)']).toBeTruthy()
+    expect(
+      byLabel['MiMo (already added)']!.getAttribute('aria-disabled') === 'true'
+      || byLabel['MiMo (already added)']!.hasAttribute('data-disabled'),
+    ).toBe(true)
+    expect(byLabel.DeepSeek?.getAttribute('aria-disabled')).not.toBe('true')
+    expect(byLabel.Custom?.getAttribute('aria-disabled')).not.toBe('true')
+  })
+
+  it('removes an entire provider group from the group-level delete control', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fetchSpy = mockLlmFetch({
+      backends: [
+        {
+          name: 'deepseek-v4-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+          label: 'deepseek',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_V4_PRO' },
+        },
+        {
+          name: 'deepseek-v4-flash',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+          label: 'deepseek',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_V4_FLASH' },
+        },
+      ],
+      roles: { 'native-chat': 'deepseek-v4-pro', cheap: 'deepseek-v4-flash' },
+      config: { defaultAgent: 'agim' },
+    })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /show advanced settings/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Remove provider "DeepSeek"/i }))
+    expect(confirmSpy).toHaveBeenCalled()
+    await waitFor(() => {
+      const deletes = fetchSpy.mock.calls.filter(
+        (c) => String(c[0]).startsWith('/api/llm/backends/') && (c[1] as RequestInit | undefined)?.method === 'DELETE',
+      )
+      expect(deletes.map((c) => String(c[0])).sort()).toEqual([
+        '/api/llm/backends/deepseek-v4-flash',
+        '/api/llm/backends/deepseek-v4-pro',
+      ])
+    })
   })
 
   it('opens a details dialog when the quick probe fails', async () => {

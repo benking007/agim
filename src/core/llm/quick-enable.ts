@@ -103,7 +103,21 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
   }
 
   const current = (await readConfigObject()) as RawConfig
-  const existingNames = (current.llmBackends ?? []).map((b) => b.name)
+  const existingBackends = current.llmBackends ?? []
+  // Built-in presets are one-shot: once a vendor label is present, refuse
+  // a second quick-enable (operators must delete the group first).
+  if (!isCustom) {
+    const already = existingBackends.some(
+      (b) => (b.label ?? '').trim().toLowerCase() === preset.key,
+    )
+    if (already) {
+      throw new QuickEnableError(
+        'conflict',
+        `provider preset "${preset.key}" is already configured`,
+      )
+    }
+  }
+  const existingNames = existingBackends.map((b) => b.name)
   const usedNames = [...existingNames]
   const planned: RawBackend[] = []
 

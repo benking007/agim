@@ -11,7 +11,7 @@
  * the existing settings pages' shadcn look without bespoke chrome.
  */
 
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -57,6 +57,8 @@ import {
 import { useConfig, useUpdateConfig } from '@/hooks/use-settings'
 import {
   DEFAULT_LLM_PRESET,
+  firstAvailablePreset,
+  installedBuiltinPresetKeys,
   LLM_PRESETS,
   suggestLlmBackendName,
   type LlmPresetKey,
@@ -275,7 +277,13 @@ function QuickAgentSetupCard({
   const defaultIsNative = cfgQuery.data?.defaultAgent === 'agim' || cfgQuery.data?.defaultAgent === 'native'
   const alreadyReady = Boolean(activeBackend && nativeRole && defaultIsNative)
 
-  const [presetKey, setPresetKey] = useState<LlmPresetKey>('deepseek')
+  const installedPresets = useMemo(
+    () => installedBuiltinPresetKeys(data?.backends ?? []),
+    [data?.backends],
+  )
+  const [presetKey, setPresetKey] = useState<LlmPresetKey>(() =>
+    firstAvailablePreset(installedBuiltinPresetKeys([])),
+  )
   const [name, setName] = useState(() => suggestLlmBackendName(DEFAULT_LLM_PRESET.baseName, existingNames))
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LLM_PRESET.baseUrl)
   const [model, setModel] = useState(DEFAULT_LLM_PRESET.model)
@@ -287,12 +295,20 @@ function QuickAgentSetupCard({
   const busy = phase !== 'idle' || addBackend.isPending || quickEnable.isPending || putRoles.isPending || updateConfig.isPending || ping.isPending
 
   function applyPreset(next: LlmPresetKey): void {
+    if (next !== 'custom' && installedPresets.has(next)) return
     const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
     setPresetKey(next)
     setBaseUrl(p.baseUrl)
     setModel(p.model)
     setName(suggestLlmBackendName(p.baseName, existingNames))
   }
+
+  useEffect(() => {
+    if (presetKey !== 'custom' && installedPresets.has(presetKey)) {
+      applyPreset(firstAvailablePreset(installedPresets))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installedPresets, presetKey])
 
   async function enableExistingBackend(backendName: string): Promise<void> {
     try {
@@ -312,6 +328,10 @@ function QuickAgentSetupCard({
   async function onQuickSubmit(e: FormEvent): Promise<void> {
     e.preventDefault()
     if (!apiKey.trim()) { toast.error(t('llm.apiKeyRequired')); return }
+    if (!isCustom && installedPresets.has(presetKey)) {
+      toast.error(t('llm.presetAlreadyAddedError', { preset: t(`llm.presets.${presetKey}`) }))
+      return
+    }
     if (isCustom) {
       if (!name.trim()) { toast.error(t('llm.nameRequired')); return }
       if (!baseUrl.trim() || !/^https?:\/\//i.test(baseUrl.trim())) {
@@ -438,11 +458,16 @@ function QuickAgentSetupCard({
             <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {LLM_PRESETS.map((p) => (
-                  <SelectItem key={p.key} value={p.key}>
-                    {t(`llm.presets.${p.key}`)}
-                  </SelectItem>
-                ))}
+                {LLM_PRESETS.map((p) => {
+                  const added = p.key !== 'custom' && installedPresets.has(p.key)
+                  return (
+                    <SelectItem key={p.key} value={p.key} disabled={added}>
+                      {added
+                        ? t('llm.presetAlreadyAdded', { preset: t(`llm.presets.${p.key}`) })
+                        : t(`llm.presets.${p.key}`)}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -603,11 +628,22 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
   /** Provider groups start collapsed; expand to see models. */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
-  async function onRemove(name: string): Promise<void> {
-    if (!confirm(t('llm.removeConfirm', { name }))) return
+  async function onRemoveGroup(group: BackendGroup): Promise<void> {
+    if (!confirm(t('llm.removeGroupConfirm', {
+      title: group.title,
+      count: group.backends.length,
+    }))) return
     try {
-      const r = await removeBackend.mutateAsync(name)
-      toast.success(t('llm.removedToast', { count: r.removedRoles }))
+      let removedRoles = 0
+      for (const b of group.backends) {
+        const r = await removeBackend.mutateAsync(b.name)
+        removedRoles += r.removedRoles
+      }
+      toast.success(t('llm.removedGroupToast', {
+        title: group.title,
+        count: group.backends.length,
+        roles: removedRoles,
+      }))
     } catch (err) {
       toast.error(((err as Error)?.message ?? String(err)))
     }
@@ -670,35 +706,53 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
           const open = expanded[group.key] === true
           return (
             <div key={group.key} className="px-4 py-3">
-              <button
-                type="button"
-                className="flex w-full items-start gap-2 text-left"
-                aria-expanded={open}
-                onClick={() => setExpanded((m) => ({ ...m, [group.key]: !open }))}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-semibold">{group.title}</h3>
-                    <Badge variant="outline">
-                      {t('llm.groupModelCount', {
-                        count: group.backends.length,
-                        defaultValue: '{{count}} models',
-                      })}
-                    </Badge>
-                    <span className="font-mono text-[11px] text-text-dim">{group.provider}</span>
-                    {keyBadge}
-                  </div>
-                  {group.baseUrl && (
-                    <p className="mt-1 break-all font-mono text-[11px] text-text-dim">{group.baseUrl}</p>
-                  )}
-                </div>
-                <span
-                  className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-dim hover:bg-surface-2"
-                  aria-hidden
+              <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                  aria-expanded={open}
+                  onClick={() => setExpanded((m) => ({ ...m, [group.key]: !open }))}
                 >
-                  {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </span>
-              </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold">{group.title}</h3>
+                      <Badge variant="outline">
+                        {t('llm.groupModelCount', {
+                          count: group.backends.length,
+                          defaultValue: '{{count}} models',
+                        })}
+                      </Badge>
+                      <span className="font-mono text-[11px] text-text-dim">{group.provider}</span>
+                      {keyBadge}
+                    </div>
+                    {group.baseUrl && (
+                      <p className="mt-1 break-all font-mono text-[11px] text-text-dim">{group.baseUrl}</p>
+                    )}
+                  </div>
+                  <span
+                    className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-dim hover:bg-surface-2"
+                    aria-hidden
+                  >
+                    {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </span>
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-0.5 shrink-0 text-danger hover:text-danger"
+                  disabled={removeBackend.isPending}
+                  aria-label={t('llm.removeGroup', { title: group.title })}
+                  title={t('llm.removeGroup', { title: group.title })}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void onRemoveGroup(group)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t('llm.remove')}</span>
+                </Button>
+              </div>
               {open && (
                 <div className="mt-3">
                   <Table>
@@ -734,15 +788,6 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
                               >
                                 <Zap className="h-4 w-4" />
                                 <span>{t('llm.ping')}</span>
-                              </Button>
-                              <Button
-                                variant="ghost" size="sm"
-                                onClick={() => void onRemove(b.name)}
-                                disabled={removeBackend.isPending}
-                                className="text-danger hover:text-danger"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                <span className="hidden sm:inline">{t('llm.remove')}</span>
                               </Button>
                               {pingResults[b.name] && (
                                 <span className="ml-2 text-[11px] text-text-dim">{pingResults[b.name]}</span>
@@ -865,7 +910,13 @@ function AddBackendCard(): JSX.Element {
   const addBackend = useLlmAddBackend()
   const quickEnable = useLlmQuickEnable()
   const listQuery = useLlmList()
-  const [presetKey, setPresetKey] = useState<LlmPresetKey>(DEFAULT_LLM_PRESET.key)
+  const installedPresets = useMemo(
+    () => installedBuiltinPresetKeys(listQuery.data?.backends ?? []),
+    [listQuery.data?.backends],
+  )
+  const [presetKey, setPresetKey] = useState<LlmPresetKey>(() =>
+    firstAvailablePreset(installedBuiltinPresetKeys([])),
+  )
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
@@ -874,6 +925,7 @@ function AddBackendCard(): JSX.Element {
   const isCustom = presetKey === 'custom'
   const selected = LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET
   const busy = addBackend.isPending || quickEnable.isPending
+  const presetAlreadyAdded = !isCustom && installedPresets.has(presetKey)
 
   function fail(message: string): void {
     setFormError(message)
@@ -881,6 +933,7 @@ function AddBackendCard(): JSX.Element {
   }
 
   function onPickPreset(next: LlmPresetKey): void {
+    if (next !== 'custom' && installedPresets.has(next)) return
     setPresetKey(next)
     const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
     if (next === 'custom') {
@@ -894,9 +947,22 @@ function AddBackendCard(): JSX.Element {
     }
   }
 
+  // If the selected built-in is already installed (or becomes so), jump to
+  // the next available option so the form never submits a duplicate.
+  useEffect(() => {
+    if (presetKey !== 'custom' && installedPresets.has(presetKey)) {
+      onPickPreset(firstAvailablePreset(installedPresets))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to install set / key
+  }, [installedPresets, presetKey])
+
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     if (!apiKey.trim()) { fail(t('llm.apiKeyRequired')); return }
+    if (presetAlreadyAdded) {
+      fail(t('llm.presetAlreadyAddedError', { preset: t(`llm.presets.${presetKey}`) }))
+      return
+    }
     try {
       if (isCustom) {
         if (!name.trim()) { fail(t('llm.nameRequired')); return }
@@ -951,11 +1017,16 @@ function AddBackendCard(): JSX.Element {
             <Select value={presetKey} onValueChange={(v) => onPickPreset(v as LlmPresetKey)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {LLM_PRESETS.map((p) => (
-                  <SelectItem key={p.key} value={p.key}>
-                    {t(`llm.presets.${p.key}`)}
-                  </SelectItem>
-                ))}
+                {LLM_PRESETS.map((p) => {
+                  const added = p.key !== 'custom' && installedPresets.has(p.key)
+                  return (
+                    <SelectItem key={p.key} value={p.key} disabled={added}>
+                      {added
+                        ? t('llm.presetAlreadyAdded', { preset: t(`llm.presets.${p.key}`) })
+                        : t(`llm.presets.${p.key}`)}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -1012,7 +1083,7 @@ function AddBackendCard(): JSX.Element {
           {formError && (
             <p className="text-xs text-danger">{formError}</p>
           )}
-          <Button type="submit" disabled={busy} className="sm:ml-auto">
+          <Button type="submit" disabled={busy || presetAlreadyAdded} className="sm:ml-auto">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {t('llm.addBackend')}
           </Button>

@@ -89,3 +89,45 @@ export function suggestLlmBackendName(base: string, existing: string[]): string 
   }
   return `${base}-${Date.now()}`
 }
+
+function hostnameOf(url: string | undefined | null): string | null {
+  if (!url?.trim()) return null
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Built-in presets already present among configured backends.
+ * Matches `label` first (quick-enable writes preset key), then hostname.
+ * `custom` is never considered "installed" — operators may add many customs.
+ */
+export function installedBuiltinPresetKeys(
+  backends: Array<{ label?: string; baseUrl?: string }>,
+): Set<LlmPresetKey> {
+  const installed = new Set<LlmPresetKey>()
+  const builtin = LLM_PRESETS.filter((p) => p.key !== 'custom')
+  for (const b of backends) {
+    const label = b.label?.trim().toLowerCase() as LlmPresetKey | undefined
+    if (label && label !== 'custom' && builtin.some((p) => p.key === label)) {
+      installed.add(label)
+      continue
+    }
+    const host = hostnameOf(b.baseUrl)
+    if (!host) continue
+    const matched = builtin.find((p) => {
+      const presetHost = hostnameOf(p.baseUrl)
+      return !!presetHost && presetHost === host
+    })
+    if (matched) installed.add(matched.key)
+  }
+  return installed
+}
+
+/** First preset that is still available (custom always ok). */
+export function firstAvailablePreset(installed: Set<LlmPresetKey>): LlmPresetKey {
+  const next = LLM_PRESETS.find((p) => p.key === 'custom' || !installed.has(p.key))
+  return next?.key ?? 'custom'
+}

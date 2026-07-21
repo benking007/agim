@@ -115,6 +115,17 @@ describe('quickEnableLlmPreset', () => {
     expect(describeSecretSource('mimo-v2.5').source).not.toBe('none')
   })
 
+  it('rejects a second quick-enable for the same built-in preset', async () => {
+    await quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-1' })
+    await expect(
+      quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-2' }),
+    ).rejects.toMatchObject({
+      name: 'QuickEnableError',
+      code: 'conflict',
+      message: expect.stringMatching(/already configured/i),
+    })
+  })
+
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })

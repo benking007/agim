@@ -65,16 +65,21 @@ export default function ChatRoute(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
+  const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
   const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
   const thinkVariant = optimisticThink ?? state.thinkVariant
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
+  const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
   const [searchParams] = useSearchParams()
-  useEffect(() => {
+  // Clear optimistic overrides when the server session catches up (render-time sync).
+  if (state.thinkVariant !== thinkBaseline) {
+    setThinkBaseline(state.thinkVariant)
     setOptimisticThink(null)
-  }, [state.thinkVariant])
-  useEffect(() => {
+  }
+  if (state.sessionModel !== modelBaseline) {
+    setModelBaseline(state.sessionModel)
     setOptimisticModel(null)
-  }, [state.sessionModel])
+  }
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const keyboardInset = useKeyboardInset()

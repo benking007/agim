@@ -244,15 +244,20 @@ export function AgentPortal(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
+  const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
   const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
   const thinkVariant = optimisticThink ?? state.thinkVariant
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
-  useEffect(() => {
+  const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
+  // Clear optimistic overrides when the server session catches up (render-time sync).
+  if (state.thinkVariant !== thinkBaseline) {
+    setThinkBaseline(state.thinkVariant)
     setOptimisticThink(null)
-  }, [state.thinkVariant])
-  useEffect(() => {
+  }
+  if (state.sessionModel !== modelBaseline) {
+    setModelBaseline(state.sessionModel)
     setOptimisticModel(null)
-  }, [state.sessionModel])
+  }
   // Persist the left rail on large screens (Cursor-like); drawer only below lg.
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')

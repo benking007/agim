@@ -96,7 +96,7 @@ function ContextRing({
       aria-label="Context usage"
       title={`${Math.round(pct * 100)}%`}
     >
-      <svg width="18" height="18" viewBox="0 0 16 16" className="block">
+      <svg width="18" height="18" viewBox="0 0 16 16" className="block" aria-hidden="true">
         <circle
           cx="8"
           cy="8"

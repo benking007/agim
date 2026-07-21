@@ -70,12 +70,18 @@ export const LLM_PRESETS: readonly LlmPresetDef[] = [
   },
   {
     key: 'zhipu',
-    label: 'Zhipu GLM',
+    // Brand label (Web i18n: 智谱 GLM / GLM).
+    label: 'GLM',
     provider: 'openai-compat',
+    // OpenAI-compatible PaaS v4 (docs.bigmodel.cn). Intl: api.z.ai/api/paas/v4.
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-air',
-    baseName: 'zhipu-agim',
-    apiKeyDoc: 'open.bigmodel.cn',
+    model: 'glm-5.2',
+    cheapModel: 'glm-4.7-flash',
+    models: ['glm-5.2', 'glm-4.7-flash'],
+    baseName: 'glm-agim',
+    apiKeyDoc: 'open.bigmodel.cn → API Keys',
+    // GLM-5.2 thinking defaults on; high matches Agim composer effort chips.
+    defaultThinking: 'high',
   },
   {
     key: 'openai',
@@ -193,8 +199,34 @@ export function isKimiModel(model: string | undefined | null): boolean {
 }
 
 /**
+ * Detect Zhipu / GLM endpoints (China `bigmodel.cn` + international `z.ai`).
+ */
+export function isZhipuBaseUrl(baseUrl: string | undefined | null): boolean {
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host.includes('bigmodel.cn')
+      || host.includes('bigmodel.com')
+      || host === 'api.z.ai'
+      || host.endsWith('.z.ai')
+  } catch {
+    return /bigmodel\.cn|bigmodel\.com|(^|[/.])z\.ai/i.test(baseUrl)
+  }
+}
+
+/** GLM-5.2+ — `thinking.type` + `reasoning_effort` (max/high/…). */
+export function isGlm52Model(model: string | undefined | null): boolean {
+  return /^glm-5\.2\b/i.test((model ?? '').trim())
+}
+
+/** Any current GLM chat model id (`glm-4.x` / `glm-5…`). */
+export function isGlmModel(model: string | undefined | null): boolean {
+  return /^glm-/i.test((model ?? '').trim())
+}
+
+/**
  * Default /think fallback for a backend URL (and optional model id).
- * DeepSeek + Kimi default to their preset's `defaultThinking` (usually high).
+ * DeepSeek / Kimi / GLM default to their preset's `defaultThinking`.
  */
 export function resolveDefaultThinking(
   baseUrl: string | undefined | null,
@@ -206,13 +238,16 @@ export function resolveDefaultThinking(
   if (isKimiBaseUrl(baseUrl) || isKimiModel(model)) {
     return getLlmPreset('moonshot')?.defaultThinking ?? 'high'
   }
+  if (isZhipuBaseUrl(baseUrl) || isGlmModel(model)) {
+    return getLlmPreset('zhipu')?.defaultThinking ?? 'high'
+  }
   return 'off'
 }
 
 /**
  * Map agim session.variant (/think) → pi-ai ThinkingLevel.
- * DeepSeek / Kimi map xhigh→max; unsupported mid levels stay as-is for
- * providers that accept them (Kimi K3 supports low/high/max).
+ * DeepSeek / Kimi / GLM map xhigh→max; unsupported mid levels stay as-is
+ * for providers that accept them (Kimi K3 / GLM-5.2 support low/high/max).
  */
 export function mapVariantToThinkingLevel(
   variant: string | undefined | null,

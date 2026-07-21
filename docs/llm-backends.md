@@ -94,6 +94,7 @@ export AGIM_LLM_SECRET_DEEPSEEK_MAIN=sk-xxxx
 | OpenAI | openai-compat | `https://api.openai.com/v1` |
 | DeepSeek（推荐默认） | openai-compat | `https://api.deepseek.com`（模型：`deepseek-v4-pro` / `deepseek-v4-flash`） |
 | Kimi（Moonshot） | openai-compat | `https://api.moonshot.cn/v1`（模型：`kimi-k3` / `kimi-k2.6`；国际站 `https://api.moonshot.ai/v1`；思考：`reasoning_effort` / `thinking.type`） |
+| 智谱 GLM | openai-compat | `https://open.bigmodel.cn/api/paas/v4`（模型：`glm-5.2` / `glm-4.7-flash`；思考：`thinking.type` + `reasoning_effort`；见 docs.bigmodel.cn） |
 | Qwen 兼容网关 | openai-compat | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | Ollama | openai-compat | `http://localhost:11434/v1` |
 | vLLM | openai-compat | `http://localhost:8000/v1` |

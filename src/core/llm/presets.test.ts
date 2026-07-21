@@ -3,9 +3,11 @@ import {
   DEFAULT_LLM_PRESET,
   getLlmPreset,
   isDeepSeekBaseUrl,
+  isGlm52Model,
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
+  isZhipuBaseUrl,
   mapVariantToThinkingLevel,
   presetBackendStem,
   presetModels,
@@ -51,6 +53,22 @@ describe('llm presets', () => {
     expect(isKimiK2Model('kimi-k2.7-code-highspeed')).toBe(true)
     expect(isKimiK3Model('kimi-k2.6')).toBe(false)
     expect(resolveDefaultThinking('https://api.moonshot.cn/v1', 'kimi-k3')).toBe('high')
+  })
+
+  it('ships a built-in GLM preset (5.2 + 4.7-flash) with thinking defaults', () => {
+    const glm = getLlmPreset('zhipu')!
+    expect(glm.label).toBe('GLM')
+    expect(glm.model).toBe('glm-5.2')
+    expect(glm.cheapModel).toBe('glm-4.7-flash')
+    expect(presetModels(glm)).toEqual(['glm-5.2', 'glm-4.7-flash'])
+    expect(glm.baseUrl).toBe('https://open.bigmodel.cn/api/paas/v4')
+    expect(glm.defaultThinking).toBe('high')
+    expect(presetBackendStem(glm.baseName, 'glm-5.2', 0)).toBe('glm-5.2')
+    expect(presetBackendStem(glm.baseName, 'glm-4.7-flash', 1)).toBe('glm-4.7-flash')
+    expect(isZhipuBaseUrl('https://open.bigmodel.cn/api/paas/v4')).toBe(true)
+    expect(isZhipuBaseUrl('https://api.z.ai/api/paas/v4')).toBe(true)
+    expect(isGlm52Model('glm-5.2')).toBe(true)
+    expect(resolveDefaultThinking('https://open.bigmodel.cn/api/paas/v4', 'glm-5.2')).toBe('high')
   })
 
   it('maps /think variants onto pi thinking levels', () => {

@@ -825,7 +825,7 @@
     "presets": {
       "deepseek": "DeepSeek",
       "moonshot": "Kimi",
-      "zhipu": "Zhipu GLM",
+      "zhipu": "GLM",
       "openai": "OpenAI",
       "anthropic": "Anthropic",
       "custom": "Custom"

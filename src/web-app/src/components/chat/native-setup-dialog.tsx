@@ -164,7 +164,9 @@ export function NativeSetupDialog({
                     ? t('chat.nativeSetupDeepseekHint')
                     : presetKey === 'moonshot'
                       ? t('chat.nativeSetupKimiHint')
-                      : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
+                      : presetKey === 'zhipu'
+                        ? t('chat.nativeSetupZhipuHint')
+                        : t('llm.quick.presetHint', { ns: 'settings', model: preset.model })}
                 </p>
               )}
             </div>

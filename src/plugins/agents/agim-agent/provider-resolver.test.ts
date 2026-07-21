@@ -68,6 +68,35 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.contextWindow).toBeGreaterThanOrEqual(256_000)
   })
 
+  it('enables GLM-5.2 thinking via thinking.type + reasoning_effort', () => {
+    const binding = bindingToPiModel({
+      name: 'glm-5.2',
+      providerType: 'openai-compat',
+      model: 'glm-5.2',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(binding.model.compat?.supportsReasoningEffort).toBe(true)
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(binding.model.thinkingLevelMap?.low).toBe('high')
+    expect(binding.model.contextWindow).toBe(1_000_000)
+  })
+
+  it('enables GLM-4.7-flash thinking without reasoning_effort', () => {
+    const binding = bindingToPiModel({
+      name: 'glm-4.7-flash',
+      providerType: 'openai-compat',
+      model: 'glm-4.7-flash',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    })!
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.compat?.thinkingFormat).toBe('deepseek')
+    expect(binding.model.compat?.supportsReasoningEffort).toBe(false)
+    expect(binding.model.contextWindow).toBe(200_000)
+  })
+
   it('maps an anthropic backend to anthropic-messages', () => {
     const binding = bindingToPiModel({
       name: 'claude',

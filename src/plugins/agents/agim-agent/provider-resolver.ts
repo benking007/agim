@@ -21,10 +21,13 @@ import {
 } from '../../../core/llm/registry.js'
 import {
   isDeepSeekBaseUrl,
+  isGlm52Model,
+  isGlmModel,
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
   isKimiModel,
+  isZhipuBaseUrl,
 } from '../../../core/llm/presets.js'
 import type { NativeModelBinding } from './index.js'
 import { findCatalogModel } from '../../../core/llm/model-catalog.js'
@@ -72,18 +75,43 @@ const KIMI_K2_THINKING_LEVEL_MAP = {
   xhigh: 'max',
 } as const
 
-function resolveKimiContextWindow(modelId: string): number | undefined {
+/**
+ * GLM-5.2+: `thinking: { type }` + `reasoning_effort`.
+ * Docs map low/medium → high, xhigh → max; none/minimal abandon thinking.
+ */
+const GLM52_THINKING_LEVEL_MAP = {
+  minimal: 'none',
+  low: 'high',
+  medium: 'high',
+  high: 'high',
+  xhigh: 'max',
+} as const
+
+/** Older GLM thinking models (4.5–4.7 / 5.x without effort): type only. */
+const GLM_THINKING_LEVEL_MAP = {
+  minimal: null,
+  low: null,
+  medium: null,
+  high: 'high',
+  xhigh: 'max',
+} as const
+
+function resolveVendorContextWindow(modelId: string): number | undefined {
   if (isKimiK3Model(modelId)) return 1_000_000
-  if (/^kimi-k2\.7/i.test(modelId)) return 256_000
-  if (/^kimi-k2\.6/i.test(modelId)) return 256_000
-  if (/^kimi-k2\.5/i.test(modelId)) return 256_000
+  if (/^kimi-k2\./i.test(modelId)) return 256_000
   if (isKimiModel(modelId)) return 256_000
+  if (isGlm52Model(modelId) || /^glm-5\b/i.test(modelId)) return 1_000_000
+  if (/^glm-4\.7/i.test(modelId)) return 200_000
+  if (isGlmModel(modelId)) return 128_000
   return undefined
 }
 
-function resolveKimiMaxTokens(modelId: string): number | undefined {
+function resolveVendorMaxTokens(modelId: string): number | undefined {
   if (isKimiK3Model(modelId)) return 131_072
   if (isKimiK2Model(modelId)) return 32_768
+  if (isGlm52Model(modelId)) return 128_000
+  if (/^glm-4\.7/i.test(modelId)) return 65_536
+  if (isGlmModel(modelId)) return 16_384
   return undefined
 }
 
@@ -101,11 +129,66 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     || isKimiModel(b.model)
   const kimiK3 = kimi && isKimiK3Model(b.model)
   const kimiK2 = kimi && isKimiK2Model(b.model)
-  // Prefer catalog reasoning; DeepSeek / Kimi endpoints always support
+  const zhipu = isZhipuBaseUrl(baseUrl)
+    || catalogModel?.provider === 'zhipu'
+    || isGlmModel(b.model)
+  const glm52 = zhipu && isGlm52Model(b.model)
+  // Prefer catalog reasoning; DeepSeek / Kimi / GLM endpoints always support
   // thinking mode even when the model id is not yet in pi-ai's table.
-  const reasoning = catalogModel?.reasoning === true || deepseek || kimi
-  const kimiContext = resolveKimiContextWindow(b.model)
-  const kimiMaxTokens = resolveKimiMaxTokens(b.model)
+  const reasoning = catalogModel?.reasoning === true || deepseek || kimi || zhipu
+  const vendorContext = resolveVendorContextWindow(b.model)
+  const vendorMaxTokens = resolveVendorMaxTokens(b.model)
+  // Vendor maps win when we recognize the endpoint/model — pi catalog may
+  // only carry partial compat (e.g. glm-5.2 → maxTokensField only).
+  const vendorThinkingLevelMap = deepseek
+    ? { ...DEEPSEEK_THINKING_LEVEL_MAP }
+    : kimiK3
+      ? { ...KIMI_K3_THINKING_LEVEL_MAP }
+      : kimiK2 || kimi
+        ? { ...KIMI_K2_THINKING_LEVEL_MAP }
+        : glm52
+          ? { ...GLM52_THINKING_LEVEL_MAP }
+          : zhipu
+            ? { ...GLM_THINKING_LEVEL_MAP }
+            : undefined
+  const thinkingLevelMap = vendorThinkingLevelMap
+    ?? (catalogModel?.thinkingLevelMap
+      ? { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) }
+      : undefined)
+  const vendorCompat = deepseek
+    ? {
+        thinkingFormat: 'deepseek' as const,
+        requiresReasoningContentOnAssistantMessages: true,
+      }
+    : kimiK3
+      ? {
+          thinkingFormat: 'openai' as const,
+          supportsReasoningEffort: true,
+          supportsDeveloperRole: false,
+          requiresReasoningContentOnAssistantMessages: true,
+          maxTokensField: 'max_completion_tokens' as const,
+        }
+      : kimiK2 || kimi
+        ? {
+            thinkingFormat: 'deepseek' as const,
+            supportsDeveloperRole: false,
+            requiresReasoningContentOnAssistantMessages: true,
+          }
+        : zhipu
+          ? {
+              // GLM OpenAI-compat: thinking.type (+ reasoning_effort on 5.2+).
+              thinkingFormat: 'deepseek' as const,
+              supportsReasoningEffort: glm52,
+              supportsDeveloperRole: false,
+              requiresReasoningContentOnAssistantMessages: true,
+            }
+          : undefined
+  const catalogCompat = catalogModel?.compat
+    ? { ...(catalogModel.compat as Record<string, unknown>) }
+    : undefined
+  const compat = vendorCompat
+    ? { ...(catalogCompat ?? {}), ...vendorCompat }
+    : catalogCompat
   const model = {
     id: b.model,
     name: b.model,
@@ -117,52 +200,14 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     reasoning,
     input: (catalogModel?.input?.length
       ? [...catalogModel.input]
-      : (kimi ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
+      : (kimi || zhipu ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
     cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // Uncatalogued / private endpoints must not inherit a 128k assumption —
     // that delays compaction until the provider already overflows.
-    contextWindow: catalogModel?.contextWindow ?? kimiContext ?? unknownContextWindow,
-    maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? kimiMaxTokens ?? 8192,
-    ...(catalogModel?.thinkingLevelMap
-      ? { thinkingLevelMap: { ...(catalogModel.thinkingLevelMap as Record<string, string | null>) } }
-      : deepseek
-        ? { thinkingLevelMap: { ...DEEPSEEK_THINKING_LEVEL_MAP } }
-        : kimiK3
-          ? { thinkingLevelMap: { ...KIMI_K3_THINKING_LEVEL_MAP } }
-          : kimiK2 || kimi
-            ? { thinkingLevelMap: { ...KIMI_K2_THINKING_LEVEL_MAP } }
-            : {}),
-    ...(catalogModel?.compat
-      ? { compat: { ...(catalogModel.compat as Record<string, unknown>) } }
-      : deepseek
-        ? {
-            compat: {
-              thinkingFormat: 'deepseek' as const,
-              requiresReasoningContentOnAssistantMessages: true,
-            },
-          }
-        : kimiK3
-          ? {
-              // K3: top-level reasoning_effort (openai format) + preserve
-              // reasoning_content across tool turns.
-              compat: {
-                thinkingFormat: 'openai' as const,
-                supportsReasoningEffort: true,
-                supportsDeveloperRole: false,
-                requiresReasoningContentOnAssistantMessages: true,
-                maxTokensField: 'max_completion_tokens' as const,
-              },
-            }
-          : kimiK2 || kimi
-            ? {
-                // K2.x: thinking: { type } (+ reasoning_effort when mapped).
-                compat: {
-                  thinkingFormat: 'deepseek' as const,
-                  supportsDeveloperRole: false,
-                  requiresReasoningContentOnAssistantMessages: true,
-                },
-              }
-            : {}),
+    contextWindow: catalogModel?.contextWindow ?? vendorContext ?? unknownContextWindow,
+    maxTokens: b.maxTokens ?? catalogModel?.maxTokens ?? vendorMaxTokens ?? 8192,
+    ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
+    ...(compat ? { compat } : {}),
   } as Model<string>
   return {
     model,

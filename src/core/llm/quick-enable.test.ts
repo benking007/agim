@@ -72,6 +72,27 @@ describe('quickEnableLlmPreset', () => {
     expect(describeSecretSource('kimi-k2.6').source).not.toBe('none')
   })
 
+  it('writes GLM backends (5.2 + 4.7-flash) + roles from an API key', async () => {
+    const result = await quickEnableLlmPreset({
+      preset: 'zhipu',
+      apiKey: 'sk-test-glm',
+    })
+    expect(result.preset).toBe('zhipu')
+    expect(result.name).toBe('glm-5.2')
+    expect(result.model).toBe('glm-5.2')
+    expect(result.backends?.map((b) => b.model)).toEqual(['glm-5.2', 'glm-4.7-flash'])
+    expect(result.backends?.map((b) => b.name)).toEqual(['glm-5.2', 'glm-4.7-flash'])
+    expect(result.roles['native-chat']).toBe('glm-5.2')
+    expect(result.roles.cheap).toBe('glm-4.7-flash')
+
+    const cfg = await readConfigObject() as {
+      llmBackends?: Array<{ name: string; model: string; baseUrl: string; label?: string }>
+    }
+    expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://open.bigmodel.cn/api/paas/v4')
+    expect(cfg.llmBackends?.every((b) => b.label === 'zhipu')).toBe(true)
+    expect(describeSecretSource('glm-5.2').source).not.toBe('none')
+  })
+
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })

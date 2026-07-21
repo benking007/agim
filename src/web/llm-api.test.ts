@@ -229,6 +229,10 @@ describe('handleLlmApi — presets + quick-enable', () => {
     expect(kimi?.model).toBe('kimi-k3')
     expect(kimi?.cheapModel).toBe('kimi-k2.6')
     expect(kimi?.models).toEqual(['kimi-k3', 'kimi-k2.6'])
+    const glm = body.presets.find((p) => p.key === 'zhipu')
+    expect(glm?.model).toBe('glm-5.2')
+    expect(glm?.cheapModel).toBe('glm-4.7-flash')
+    expect(glm?.models).toEqual(['glm-5.2', 'glm-4.7-flash'])
   })
 
   it('POST /api/llm/quick-enable creates DeepSeek backend and roles', async () => {

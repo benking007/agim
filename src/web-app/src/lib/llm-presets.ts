@@ -44,8 +44,11 @@ export const LLM_PRESETS: LlmPresetDef[] = [
     key: 'zhipu',
     provider: 'openai-compat',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-air',
-    baseName: 'zhipu-agim',
+    model: 'glm-5.2',
+    cheapModel: 'glm-4.7-flash',
+    models: ['glm-5.2', 'glm-4.7-flash'],
+    baseName: 'glm-agim',
+    defaultThinking: 'high',
   },
   {
     key: 'openai',

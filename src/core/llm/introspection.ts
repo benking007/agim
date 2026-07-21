@@ -10,7 +10,13 @@
 import { logger as rootLogger } from '../logger.js'
 import { getBackendBindingByName, getProvider, type LlmRole } from './registry.js'
 import { LlmProviderError, type LlmMessage, type LlmUsage } from './provider-base.js'
-import { isDeepSeekBaseUrl, isKimiBaseUrl, isKimiK2Model, isKimiK3Model } from './presets.js'
+import {
+  isDeepSeekBaseUrl,
+  isKimiBaseUrl,
+  isKimiK2Model,
+  isKimiK3Model,
+  isZhipuBaseUrl,
+} from './presets.js'
 
 const log = rootLogger.child({ component: 'llm-introspection' })
 
@@ -78,11 +84,11 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
   if (wantsJson) {
     providerOptions.response_format = { type: 'json_object' }
   }
-  // DeepSeek / Kimi K2.x OpenAICompat path defaults thinking off
+  // DeepSeek / Kimi K2.x / Zhipu OpenAICompat path defaults thinking off
   // (see openai-compat-provider). K3 always thinks — prefer low effort.
   const binding = getBackendBindingByName(provider.name)
   const modelId = input.model || binding?.model
-  if (isDeepSeekBaseUrl(binding?.baseUrl)) {
+  if (isDeepSeekBaseUrl(binding?.baseUrl) || isZhipuBaseUrl(binding?.baseUrl)) {
     providerOptions.thinking = { type: 'disabled' }
   } else if (isKimiBaseUrl(binding?.baseUrl) && isKimiK2Model(modelId)) {
     providerOptions.thinking = { type: 'disabled' }

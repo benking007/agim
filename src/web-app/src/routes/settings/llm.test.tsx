@@ -43,6 +43,7 @@ interface BackendRow {
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
+  label?: string
   secret: { source: 'file' | 'none'; envKey: string }
 }
 
@@ -257,6 +258,40 @@ describe('/settings/llm quick setup', () => {
     expect(await screen.findByText('APIs (1)')).toBeInTheDocument()
     expect(screen.getByText('Role Bindings (optional, advanced)')).toBeInTheDocument()
     expect(screen.getByText('Agim Agent runtime settings')).toBeInTheDocument()
+  })
+
+  it('groups sibling DeepSeek backends under one provider cluster', async () => {
+    mockLlmFetch({
+      backends: [
+        {
+          name: 'deepseek-agim',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+          label: 'deepseek',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM' },
+        },
+        {
+          name: 'deepseek-agim-flash',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+          label: 'deepseek',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM_FLASH' },
+        },
+      ],
+      roles: { 'native-chat': 'deepseek-agim' },
+      config: { defaultAgent: 'agim' },
+    })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /show advanced settings/i }))
+    expect(await screen.findByText('APIs (2)')).toBeInTheDocument()
+    expect(screen.getByText(/Grouped by provider \(1 groups\)/i)).toBeInTheDocument()
+    expect(screen.getByText('2 models')).toBeInTheDocument()
+    expect(screen.getAllByText('DeepSeek').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('deepseek-v4-pro')).toBeInTheDocument()
+    expect(screen.getByText('deepseek-v4-flash')).toBeInTheDocument()
   })
 
   it('opens a details dialog when the quick probe fails', async () => {

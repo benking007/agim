@@ -765,6 +765,8 @@
       "testFailed": "连通测试未通过；API 已保存，可检查 Key、模型或 Base URL。"
     },
     "backendsTitle": "API ({{count}})",
+    "backendsGroupedHint": "已按供应商聚类（{{groups}} 组）",
+    "groupModelCount": "{{count}} 个模型",
     "backendsEmpty": "尚未配置大模型 API。请先在下方添加 API。",
     "rolesTitle": "角色绑定（可选，高级）",
     "rolesOptionalHint": "角色绑定是可选增强项；不配置也会自动使用可用 API。",

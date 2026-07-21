@@ -765,6 +765,8 @@
       "testFailed": "Connection test failed. The API is saved; check the key, model, or Base URL."
     },
     "backendsTitle": "APIs ({{count}})",
+    "backendsGroupedHint": "Grouped by provider ({{groups}} groups)",
+    "groupModelCount": "{{count}} models",
     "backendsEmpty": "No model APIs configured yet. Add one below.",
     "rolesTitle": "Role Bindings (optional, advanced)",
     "rolesOptionalHint": "Role bindings are optional. Native auto-uses any usable API.",

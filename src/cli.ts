@@ -440,6 +440,8 @@ program
       if (bgjobPath) {
         console.log(`🔧 bgjob → ${bgjobPath}`)
       }
+      const { startBgjobWatch } = await import('./core/bgjob-watch.js')
+      startBgjobWatch()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')

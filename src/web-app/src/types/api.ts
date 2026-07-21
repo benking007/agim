@@ -145,6 +145,23 @@ export interface BgjobRoot {
   path: string
 }
 
+export interface BgjobOrigin {
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+}
+
+export interface BgjobProgress {
+  stage?: string
+  label?: string
+  done?: number
+  total?: number
+  rate_per_min?: number
+  eta_sec?: number
+  updated_at?: string
+}
+
 export interface BgjobSummary {
   id: string
   name: string
@@ -156,6 +173,8 @@ export interface BgjobSummary {
   exit_code: number | null
   restart_generation: number
   rootId: string
+  origin?: BgjobOrigin | null
+  progress?: BgjobProgress | null
 }
 
 export interface BgjobDetail extends BgjobSummary {
@@ -170,6 +189,11 @@ export interface BgjobDetail extends BgjobSummary {
 export interface ListBgjobsQuery {
   /** Filter to a single root id; omit for all roots. */
   root?: string
+  /** Comma-separated statuses, e.g. `running,paused`. */
+  status?: string
+  /** Origin thread filter (Portal pet). */
+  threadId?: string
+  platform?: string
 }
 
 export interface GetBgjobQuery {

@@ -185,10 +185,19 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   // to construct a client (raises RuntimeError on missing env).
   let extraEnv: NodeJS.ProcessEnv | undefined
   if (ctx.rpcCtx) {
+    // Always stamp origin thread so `bgjob start` can bind the job to this
+    // chat / IM thread (pet slot + exit notify). RPC token is best-effort.
+    extraEnv = {
+      AGIM_ORIGIN_PLATFORM: ctx.rpcCtx.platform,
+      AGIM_ORIGIN_CHANNEL_ID: ctx.rpcCtx.channelId,
+      AGIM_ORIGIN_THREAD_ID: ctx.rpcCtx.threadId,
+      AGIM_ORIGIN_USER_ID: ctx.rpcCtx.userId,
+    }
     try {
       const { mintRpcToken, resolveSocketPath } = await import('./agim-rpc-server.js')
       const { token } = mintRpcToken(ctx.rpcCtx, 'native_exec')
-      extraEnv = { AGIM_RPC_SOCKET: resolveSocketPath(), AGIM_RPC_TOKEN: token }
+      extraEnv.AGIM_RPC_SOCKET = resolveSocketPath()
+      extraEnv.AGIM_RPC_TOKEN = token
     } catch (err) {
       log.debug({
         event: 'exec.rpc_mint_failed',

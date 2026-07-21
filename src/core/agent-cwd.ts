@@ -112,8 +112,8 @@ ${agimBgjobScript()} tail <slug>
 ${agimBgjobScript()} list --running
 \`\`\`
 
-数据目录：\`${agimBgjobsDir()}\`（**各 agent 共用**；Web 控制台 Tasks → Background 一处可管）。
-脚本本身先用 \`agim_write_file\` 写好再 \`bgjob start\`；启动成功后立刻把完整 job id + 日志路径回给用户，然后结束本轮同步回合。
+数据目录：\`${agimBgjobsDir()}\`（**各 agent 共用**；Web 控制台 Tasks → Background + Portal 小精灵「进行中」可跟踪）。
+脚本本身先用 \`agim_write_file\` 写好再 \`bgjob start\`；启动成功后立刻把完整 job id + 日志路径回给用户，然后结束本轮同步回合。任务退出后 Agim 会自动往原对话推送结果（可选 \`AGIM_BGJOB_AUTOSUMMARY=on\` 附日志摘要）。
 
 \`long_task\` / \`/goal\` 是跨回合目标跟踪，**不是**后台进程；长跑批处理 / 训练 / 大批量抓取请用 bgjob。
 

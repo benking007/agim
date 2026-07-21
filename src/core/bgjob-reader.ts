@@ -32,6 +32,23 @@ export interface BgjobRoot {
   label: string
 }
 
+export interface BgjobOrigin {
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+}
+
+export interface BgjobProgress {
+  stage?: string
+  label?: string
+  done?: number
+  total?: number
+  rate_per_min?: number
+  eta_sec?: number
+  updated_at?: string
+}
+
 export interface BgjobSummary {
   id: string
   name: string
@@ -43,6 +60,10 @@ export interface BgjobSummary {
   restart_generation: number
   /** Source root id (e.g. 'claude' or 'opencode') — useful when caller mixes roots. */
   rootId: string
+  /** Thread that spawned the job (for Portal pet + exit notify). */
+  origin: BgjobOrigin | null
+  /** Optional progress.json from job out/. */
+  progress: BgjobProgress | null
 }
 
 export interface BgjobDetail extends BgjobSummary {
@@ -112,6 +133,7 @@ interface MetaJson {
   out_dir?: string
   restart_generation?: number
   resources?: { cpu_time?: number; rss_kb?: number; state?: string }
+  origin?: BgjobOrigin | null
 }
 
 /**
@@ -144,7 +166,7 @@ export async function listJobsForRoot(root: BgjobRoot): Promise<BgjobSummary[]> 
   for (const id of jobIds) {
     const meta = await readMeta(root, id)
     if (!meta) continue
-    out.push(metaToSummary(root, meta))
+    out.push(await metaToSummary(root, meta))
   }
   // newest first by started_at; fallback to id (lexical, contains timestamp prefix)
   out.sort((a, b) => {
@@ -167,7 +189,23 @@ async function readMeta(root: BgjobRoot, id: string): Promise<MetaJson | null> {
   }
 }
 
-function metaToSummary(root: BgjobRoot, meta: MetaJson): BgjobSummary {
+async function metaToSummary(root: BgjobRoot, meta: MetaJson): Promise<BgjobSummary> {
+  const origin = meta.origin && meta.origin.platform && meta.origin.threadId
+    ? {
+        platform: String(meta.origin.platform),
+        channelId: String(meta.origin.channelId || ''),
+        threadId: String(meta.origin.threadId),
+        userId: String(meta.origin.userId || ''),
+      }
+    : null
+  let progress: BgjobProgress | null = null
+  const outDir = meta.out_dir || (meta.id ? join(root.path, meta.id, 'out') : null)
+  if (outDir) {
+    try {
+      const raw = await readFile(join(outDir, 'progress.json'), 'utf-8')
+      progress = safeJsonParse<BgjobProgress>(raw)
+    } catch { /* optional */ }
+  }
   return {
     id: meta.id || '',
     name: meta.name || '',
@@ -178,6 +216,8 @@ function metaToSummary(root: BgjobRoot, meta: MetaJson): BgjobSummary {
     exit_code: typeof meta.exit_code === 'number' ? meta.exit_code : null,
     restart_generation: typeof meta.restart_generation === 'number' ? meta.restart_generation : 0,
     rootId: root.id,
+    origin,
+    progress,
   }
 }
 
@@ -193,7 +233,7 @@ export async function getJobDetail(
   const meta = await readMeta(root, id)
   if (!meta) return null
 
-  const summary = metaToSummary(root, meta)
+  const summary = await metaToSummary(root, meta)
   const logPath = meta.log || join(root.path, id, 'log.txt')
   const logTail = await readLogTail(logPath, tailLines)
 

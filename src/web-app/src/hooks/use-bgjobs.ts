@@ -22,10 +22,11 @@ export const bgjobsKeys = {
     ['bgjobs', 'detail', id, root] as const,
 }
 
-export function useBgjobs(query: ListBgjobsQuery) {
+export function useBgjobs(query: ListBgjobsQuery, opts?: { enabled?: boolean }) {
   return useQuery<ListBgjobsResponse>({
     queryKey: bgjobsKeys.list(query),
     queryFn: () => api.listBgJobs(query),
+    enabled: opts?.enabled !== false,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
   })

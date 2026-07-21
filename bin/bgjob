@@ -319,20 +319,52 @@ def _read_progress(out_dir: Path) -> dict | None:
     except Exception:
         return None
 
+# Auto-persisted into env.sh when present (worker + exit helpers).
+_AUTO_ENV_KEYS = (
+    "AGIM_RPC_SOCKET",
+    "AGIM_RPC_TOKEN",
+    "AGIM_ORIGIN_PLATFORM",
+    "AGIM_ORIGIN_CHANNEL_ID",
+    "AGIM_ORIGIN_THREAD_ID",
+    "AGIM_ORIGIN_USER_ID",
+)
+
+
+def _origin_from_env() -> dict | None:
+    """Bind job to the IM / Portal thread that spawned `bgjob start`."""
+    platform = os.environ.get("AGIM_ORIGIN_PLATFORM", "").strip()
+    thread_id = os.environ.get("AGIM_ORIGIN_THREAD_ID", "").strip()
+    if not platform or not thread_id:
+        return None
+    return {
+        "platform": platform,
+        "channelId": os.environ.get("AGIM_ORIGIN_CHANNEL_ID", "").strip(),
+        "threadId": thread_id,
+        "userId": os.environ.get("AGIM_ORIGIN_USER_ID", "").strip(),
+    }
+
+
 def _write_envs(job_dir: Path, env_keys: list[str]) -> list[str]:
     """Write env.sh (0600) containing `export K='V'` lines. Returns list of empty keys."""
     env_path = job_dir / "env.sh"
     empty = []
     lines = ["# bgjob env persistence — loaded by cmd.sh via `source env.sh`\n"]
-    for k in env_keys:
+    seen: set[str] = set()
+    for k in list(env_keys) + list(_AUTO_ENV_KEYS):
+        if k in seen:
+            continue
+        seen.add(k)
         if not ENV_KEY_RE.match(k):
             raise ValueError(f"Invalid env key: {k!r}")
         v = os.environ.get(k, "")
         if not v:
-            empty.append(k)
+            if k in env_keys:
+                empty.append(k)
+            continue
         lines.append(f"export {k}={shlex.quote(v)}\n")
-    env_path.write_text("".join(lines))
-    env_path.chmod(0o600)
+    if len(lines) > 1:
+        env_path.write_text("".join(lines))
+        env_path.chmod(0o600)
     return empty
 
 def _format_bytes(n: int) -> str:
@@ -516,21 +548,23 @@ def cmd_start(args: argparse.Namespace) -> int:
         print(f"Error: workdir not a directory: {workdir}", file=sys.stderr)
         return 2
 
-    # B2: env persistence
+    # B2: env persistence (+ auto AGIM_RPC_* / AGIM_ORIGIN_*)
     env_keys = []
     if args.env:
         env_keys = [k.strip() for k in args.env.split(",") if k.strip()]
-        try:
-            empty = _write_envs(job_dir, env_keys)
-        except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 2
-        if empty:
-            print(f"Warning: env vars unset or empty: {', '.join(empty)}", file=sys.stderr)
+    try:
+        empty = _write_envs(job_dir, env_keys)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    if empty:
+        print(f"Warning: env vars unset or empty: {', '.join(empty)}", file=sys.stderr)
+    has_env = (job_dir / "env.sh").exists()
 
-    cmd_script.write_text(_render_cmd_sh(job_dir, workdir, args.cmd, has_env=bool(env_keys)))
+    cmd_script.write_text(_render_cmd_sh(job_dir, workdir, args.cmd, has_env=has_env))
     cmd_script.chmod(0o755)
 
+    origin = _origin_from_env()
     meta = {
         "id": job_id,
         "name": args.name,
@@ -548,6 +582,9 @@ def cmd_start(args: argparse.Namespace) -> int:
         "out_dir": str(out_dir),
         "restarted_from": None,
         "restart_generation": 0,
+        "origin": origin,
+        "notify_on_exit": bool(origin),
+        "notified_at": None,
     }
     _write_meta(job_id, meta)
 
@@ -615,20 +652,20 @@ def cmd_restart(args: argparse.Namespace) -> int:
     env_keys = old.get("env_keys", [])
     if args.env is not None:
         env_keys = [k.strip() for k in args.env.split(",") if k.strip()]
-    if env_keys:
-        try:
-            empty = _write_envs(new_dir, env_keys)
-        except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr); return 2
-        if empty:
-            print(f"Warning: env vars unset or empty: {', '.join(empty)}", file=sys.stderr)
+    try:
+        empty = _write_envs(new_dir, env_keys)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr); return 2
+    if empty:
+        print(f"Warning: env vars unset or empty: {', '.join(empty)}", file=sys.stderr)
+    has_env = (new_dir / "env.sh").exists()
 
     # Symlink the new out/ to the original out/ so `bgjob ls` on new id sees it.
     (new_dir / "out").symlink_to(orig_out, target_is_directory=True)
     workdir = old["workdir"]
     # Render cmd.sh pointing to the shared out via BGJOB_OUT_DIR = orig_out (the symlink
     # above is convenience; BGJOB_OUT_DIR must be the real path for scripts).
-    cmd_sh_text = _render_cmd_sh(new_dir, workdir, old["cmd"], has_env=bool(env_keys))
+    cmd_sh_text = _render_cmd_sh(new_dir, workdir, old["cmd"], has_env=has_env)
     # Patch BGJOB_OUT_DIR to point at shared orig_out directly
     cmd_sh_text = cmd_sh_text.replace(
         f"export BGJOB_OUT_DIR={shlex.quote(str(new_dir / 'out'))}",
@@ -636,6 +673,7 @@ def cmd_restart(args: argparse.Namespace) -> int:
     cmd_script.write_text(cmd_sh_text)
     cmd_script.chmod(0o755)
 
+    origin = old.get("origin") or _origin_from_env()
     meta = {
         "id": new_id,
         "name": old["name"],
@@ -651,6 +689,9 @@ def cmd_restart(args: argparse.Namespace) -> int:
         "out_dir": str(orig_out),
         "restarted_from": orig_id,
         "restart_generation": gen,
+        "origin": origin,
+        "notify_on_exit": bool(origin),
+        "notified_at": None,
     }
     _write_meta(new_id, meta)
 

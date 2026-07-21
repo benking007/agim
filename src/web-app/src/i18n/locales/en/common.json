@@ -472,6 +472,18 @@
         "runLabel": "Agent running",
         "approvalLabel": "Awaiting approval",
         "askLabel": "Awaiting your reply",
+        "bgjobDone": "Background job finished",
+        "needsYouCount": "{{count}} need you",
+        "section": {
+          "needsYou": "Needs you",
+          "running": "This turn",
+          "background": "Background"
+        },
+        "bgjobStatus": {
+          "running": "Running",
+          "paused": "Paused",
+          "starting": "Starting"
+        },
         "doneOk": "{{agent}} finished",
         "doneErr": "{{agent}} failed"
       },

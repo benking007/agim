@@ -66,4 +66,28 @@ describe('bin/bgjob', () => {
     const body = JSON.parse(r.stdout ?? '') as { id: string; log: string }
     expect(body.log.startsWith(alt)).toBe(true)
   })
+
+  it('stamps origin from AGIM_ORIGIN_* into meta.json', () => {
+    const r = spawnSync('python3', [SCRIPT, 'start', 'bound', '--json', '--', 'true'], {
+      env: {
+        ...process.env,
+        AGIM_HOME: HOME,
+        AGIM_BGJOBS: BGJOBS,
+        AGIM_ORIGIN_PLATFORM: 'web',
+        AGIM_ORIGIN_CHANNEL_ID: '',
+        AGIM_ORIGIN_THREAD_ID: 'thread-abc',
+        AGIM_ORIGIN_USER_ID: 'web:thread-abc',
+      },
+      encoding: 'utf8',
+    })
+    expect(r.status).toBe(0)
+    const body = JSON.parse(r.stdout ?? '') as { id: string }
+    const meta = JSON.parse(readFileSync(join(BGJOBS, body.id, 'meta.json'), 'utf8')) as {
+      origin?: { platform: string; threadId: string }
+      notify_on_exit?: boolean
+    }
+    expect(meta.origin?.platform).toBe('web')
+    expect(meta.origin?.threadId).toBe('thread-abc')
+    expect(meta.notify_on_exit).toBe(true)
+  })
 })

@@ -54,6 +54,8 @@ import {
   PortalSlashPopup,
 } from './portal-composer-menus'
 import { mentionLabel } from './portal-mention-chip'
+import { useBgjobs } from '@/hooks/use-bgjobs'
+import type { BgjobSummary } from '@/types/api'
 import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
 import { PortalRunStatus } from './portal-run-status'
 import {
@@ -343,6 +345,45 @@ export function AgentPortal(): JSX.Element {
   const streamingFallback = isTyping && !currentReplyInList
   const canStop = isTyping || state.activeRunId != null
 
+  const portalThreadId = state.clientId
+  const { data: bgjobData } = useBgjobs(
+    {
+      root: 'agim',
+      status: 'running,paused,starting',
+      threadId: portalThreadId ?? undefined,
+      platform: 'web',
+    },
+    { enabled: Boolean(portalThreadId) },
+  )
+  const threadBgjobs = useMemo((): BgjobSummary[] => {
+    if (!bgjobData) return []
+    const rows = bgjobData.jobs
+      ?? bgjobData.groups?.flatMap((g) => g.jobs)
+      ?? []
+    if (!portalThreadId) return []
+    return rows.filter((j) => j.origin?.threadId === portalThreadId)
+  }, [bgjobData, portalThreadId])
+
+  const seenBgjobIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const live = new Set(threadBgjobs.map((j) => j.id))
+    // First paint: seed without announcing historical completions.
+    if (seenBgjobIdsRef.current.size === 0 && live.size > 0) {
+      seenBgjobIdsRef.current = live
+      return
+    }
+    for (const id of seenBgjobIdsRef.current) {
+      if (live.has(id)) continue
+      seenBgjobIdsRef.current.delete(id)
+      setPetAnnounce({
+        id: `bgjob-done-${id}-${Date.now()}`,
+        text: t('chat.portal.pet.bgjobDone'),
+        tone: 'ok',
+      })
+    }
+    for (const id of live) seenBgjobIdsRef.current.add(id)
+  }, [threadBgjobs, t])
+
   const petTasks = useMemo((): PetTaskItem[] => {
     const items: PetTaskItem[] = []
     for (const msg of chatMessages) {
@@ -385,6 +426,28 @@ export function AgentPortal(): JSX.Element {
         detail: ask.prompt?.body || ask.prompt?.title || undefined,
       })
     }
+    for (const job of threadBgjobs) {
+      const prog = job.progress
+      let detail = t(`chat.portal.pet.bgjobStatus.${job.status}`, { defaultValue: job.status })
+      let progressPct: number | null = null
+      if (prog?.total && prog.total > 0 && prog.done != null) {
+        progressPct = Math.round((100 * prog.done) / prog.total)
+        const stage = prog.stage || prog.label || ''
+        detail = stage
+          ? `${stage} ${prog.done}/${prog.total}`
+          : `${prog.done}/${prog.total}`
+        if (prog.eta_sec != null && prog.eta_sec > 0) {
+          detail += ` · ETA ${Math.ceil(prog.eta_sec / 60)}m`
+        }
+      }
+      items.push({
+        id: `bgjob-${job.id}`,
+        kind: 'bgjob',
+        label: job.name || job.id,
+        detail,
+        progressPct,
+      })
+    }
     if (demoPet) {
       items.push(
         {
@@ -399,6 +462,13 @@ export function AgentPortal(): JSX.Element {
           label: t('chat.portal.pet.askLabel'),
           detail: '要用简洁版还是详细版？',
         },
+        {
+          id: 'demo-bgjob',
+          kind: 'bgjob',
+          label: 'train-smoke',
+          detail: 'B1 120/500 · ETA 6m',
+          progressPct: 24,
+        },
       )
     }
     return items
@@ -408,6 +478,7 @@ export function AgentPortal(): JSX.Element {
     state.currentReplyId,
     state.pendingApprovals,
     state.pendingAsks,
+    threadBgjobs,
     agentId,
     demoPet,
     t,
@@ -1171,7 +1242,7 @@ export function AgentPortal(): JSX.Element {
           <div className="relative">
             <PortalPet
               dark={dark}
-              busy={canStop || demoPet}
+              busy={canStop || threadBgjobs.length > 0 || demoPet}
               tasks={petTasks}
               announce={petAnnounce}
               onAnnounceDone={(id) => {

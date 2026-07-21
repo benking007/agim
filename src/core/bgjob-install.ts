@@ -16,9 +16,11 @@ export function agimBgjobScript(home = AGIM_HOME): string {
   return join(home, 'scripts', 'bgjob')
 }
 
-/** Absolute path of the default job data root. */
+/** Absolute path of the shared job data root (all agents).
+ *  Override order: BGJOB_ROOT → AGIM_BGJOBS → $AGIM_HOME/bgjobs. */
 export function agimBgjobsDir(home = AGIM_HOME): string {
-  return process.env.AGIM_BGJOBS?.trim()
+  return process.env.BGJOB_ROOT?.trim()
+    || process.env.AGIM_BGJOBS?.trim()
     || join(home, 'bgjobs')
 }
 

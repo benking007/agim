@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Shipped `bin/bgjob` — installed on `agim start` to `~/.agim/scripts/bgjob` (job data `~/.agim/bgjobs/`). Agim Agent IM / long-task SOP now points at this path (not `~/.claude/`). bwrap carve-out + Tasks → Background reader prefer the Agim root; legacy Claude/opencode/Codex roots still work.
+- Shipped full `bin/bgjob` (server-grade: index lock, restart/prune/progress/env, pid+starttime guards) — installed on `agim start` to `~/.agim/scripts/bgjob`. **All agents share** job data under `~/.agim/bgjobs/` (`BGJOB_ROOT` / `AGIM_BGJOBS` override). Agim Agent IM / long-task SOP points at that absolute path (not `~/.claude/`). bwrap carve-out + Tasks → Background prefer the Agim root; legacy Claude/opencode/Codex roots remain readable.
 - Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` ships IM reply norms + **bgjob SOP** (>10 min → absolute `~/.agim/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block upserts on bootstrap. Framework system prompt carries a condensed safety-net copy. See `docs/im-workspaces-guide.md`.
 
 ### Fixed

@@ -183,7 +183,7 @@
     "subtitle": "Long-running scripts the agent wrappers (Claude Code / opencode / codex) launched via bgjob.",
     "empty": {
       "title": "No background jobs",
-      "description": "Background jobs show up here once an agent has used its bgjob wrapper. Roots come from ~/.claude/bgjobs/, ~/.config/opencode/bgjobs/, ~/.codex/bgjobs/ (override via AGIM_BGJOB_ROOTS)."
+      "description": "Background jobs show up here once an agent uses ~/.agim/scripts/bgjob. The shared data root is ~/.agim/bgjobs/ (all agents); legacy Claude / opencode / Codex roots remain readable (override via AGIM_BGJOB_ROOTS)."
     },
     "filter": {
       "root": "Root",

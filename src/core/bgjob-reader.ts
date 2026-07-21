@@ -1,6 +1,7 @@
 // bgjob-reader — read-only view into bgjob directories.
-// Default root is ~/.agim/bgjobs (shipped wrapper). Legacy Claude / opencode /
-// Codex roots remain visible so mixed installs keep working.
+// Primary / write root is ~/.agim/bgjobs (shared by all agents via shipped
+// wrapper). Legacy Claude / opencode / Codex roots remain visible so older
+// jobs on mixed installs still show up.
 //
 // Layout per root:
 //   <root>/

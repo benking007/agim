@@ -38,7 +38,8 @@ describe('bgjob-install', () => {
     expect(existsSync(dest!)).toBe(true)
     expect(existsSync(join(home, 'scripts', 'agim_rpc.py'))).toBe(true)
     expect(existsSync(join(home, 'bgjobs'))).toBe(true)
-    expect(readFileSync(dest!, 'utf8')).toContain('agim bgjob')
+    expect(readFileSync(dest!, 'utf8')).toContain('Background job manager')
+    expect(readFileSync(dest!, 'utf8')).toContain('~/.agim/bgjobs')
   })
 
   it('is idempotent and refreshes a stale installed copy', () => {
@@ -50,7 +51,7 @@ describe('bgjob-install', () => {
     chmodSync(dest, 0o755)
     ensureBgjobInstalled(home)
     const body = readFileSync(dest, 'utf8')
-    expect(body).toContain('agim bgjob')
+    expect(body).toContain('Background job manager')
     expect(body).not.toContain('echo stale')
   })
 })

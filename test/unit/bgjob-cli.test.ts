@@ -25,16 +25,17 @@ function run(args: string[]): { status: number | null; stdout: string; stderr: s
 describe('bin/bgjob', () => {
   it('starts a detached job, reports status, and lists it', async () => {
     expect(existsSync(SCRIPT)).toBe(true)
-    const start = run(['start', 'smoke', '--', 'python3', '-c', 'print("hello-bgjob")'])
+    const start = run(['start', 'smoke', '--json', '--', 'python3', '-c', 'print("hello-bgjob")'])
     expect(start.status).toBe(0)
     const started = JSON.parse(start.stdout) as { id: string; log: string; ok: boolean }
     expect(started.ok).toBe(true)
     expect(started.id).toContain('smoke')
+    expect(started.log).toContain(BGJOBS)
 
-    // Wait for supervisor to finish the short command.
+    // Wait for the short command to finish (wrapper writes exit_code + meta).
     let statusJson: { status?: string; exit_code?: number | null } = {}
-    for (let i = 0; i < 40; i++) {
-      const st = run(['status', started.id])
+    for (let i = 0; i < 60; i++) {
+      const st = run(['status', started.id, '--json'])
       expect(st.status).toBe(0)
       statusJson = JSON.parse(st.stdout) as typeof statusJson
       if (statusJson.status === 'completed' || statusJson.status === 'failed') break
@@ -50,8 +51,19 @@ describe('bin/bgjob', () => {
     expect(list.status).toBe(0)
     expect(list.stdout).toContain(started.id)
 
-    const tail = run(['tail', started.id, '--lines', '20'])
+    const tail = run(['tail', started.id, '-n', '20'])
     expect(tail.status).toBe(0)
     expect(tail.stdout).toContain('hello-bgjob')
+  })
+
+  it('honours BGJOB_ROOT over AGIM_BGJOBS', () => {
+    const alt = join(HOME, 'alt-root')
+    const r = spawnSync('python3', [SCRIPT, 'start', 'rootpick', '--json', '--', 'true'], {
+      env: { ...process.env, AGIM_HOME: HOME, AGIM_BGJOBS: BGJOBS, BGJOB_ROOT: alt },
+      encoding: 'utf8',
+    })
+    expect(r.status).toBe(0)
+    const body = JSON.parse(r.stdout ?? '') as { id: string; log: string }
+    expect(body.log.startsWith(alt)).toBe(true)
   })
 })

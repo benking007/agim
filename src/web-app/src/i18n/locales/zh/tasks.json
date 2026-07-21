@@ -183,7 +183,7 @@
     "subtitle": "Agent 封装（Claude Code / opencode / codex）通过 bgjob 启动的长任务进程。",
     "empty": {
       "title": "暂无后台脚本",
-      "description": "当 Agent 使用其 bgjob 封装时，记录会在这里出现。Root 路径默认取 ~/.claude/bgjobs/、~/.config/opencode/bgjobs/、~/.codex/bgjobs/（可通过 AGIM_BGJOB_ROOTS 覆盖）。"
+      "description": "当 Agent 使用 ~/.agim/scripts/bgjob 时，记录会出现在这里。默认数据根为 ~/.agim/bgjobs/（各 agent 共用）；仍可读 legacy Claude / opencode / Codex 根（可通过 AGIM_BGJOB_ROOTS 覆盖）。"
     },
     "filter": {
       "root": "Root",

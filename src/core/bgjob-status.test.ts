@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { refreshJobStatus } from './bgjob-status.js'
+import { refreshJobStatus, type RefreshableJobMeta } from './bgjob-status.js'
 
 describe('refreshJobStatus', () => {
   const dirs: string[] = []
@@ -23,12 +23,13 @@ describe('refreshJobStatus', () => {
     dirs.push(root)
     // PID that cannot be alive (kernel reserved / never assigned to user jobs)
     seed(root, 'job-ok', { status: 'running', pid: 1_000_000_007, exit_code: null }, '0')
-    const meta = await refreshJobStatus(root, {
+    const input: RefreshableJobMeta = {
       id: 'job-ok',
       status: 'running',
       pid: 1_000_000_007,
       exit_code: null,
-    })
+    }
+    const meta = await refreshJobStatus(root, input)
     expect(meta.status).toBe('completed')
     expect(meta.exit_code).toBe(0)
     expect(meta.ended_at).toBeTruthy()
@@ -44,11 +45,12 @@ describe('refreshJobStatus', () => {
     const root = mkdtempSync(join(tmpdir(), 'bgjob-status-fail-'))
     dirs.push(root)
     seed(root, 'job-fail', { status: 'running', pid: 1_000_000_008 }, '7')
-    const meta = await refreshJobStatus(root, {
+    const input: RefreshableJobMeta = {
       id: 'job-fail',
       status: 'running',
       pid: 1_000_000_008,
-    })
+    }
+    const meta = await refreshJobStatus(root, input)
     expect(meta.status).toBe('failed')
     expect(meta.exit_code).toBe(7)
   })
@@ -56,12 +58,13 @@ describe('refreshJobStatus', () => {
   it('leaves terminal status untouched', async () => {
     const root = mkdtempSync(join(tmpdir(), 'bgjob-status-term-'))
     dirs.push(root)
-    const meta = await refreshJobStatus(root, {
+    const input: RefreshableJobMeta = {
       id: 'job-done',
       status: 'completed',
       pid: null,
       exit_code: 0,
-    })
+    }
+    const meta = await refreshJobStatus(root, input)
     expect(meta.status).toBe('completed')
   })
 
@@ -69,11 +72,12 @@ describe('refreshJobStatus', () => {
     const root = mkdtempSync(join(tmpdir(), 'bgjob-status-missing-'))
     dirs.push(root)
     seed(root, 'job-miss', { status: 'running', pid: 1_000_000_009 })
-    const meta = await refreshJobStatus(root, {
+    const input: RefreshableJobMeta = {
       id: 'job-miss',
       status: 'running',
       pid: 1_000_000_009,
-    })
+    }
+    const meta = await refreshJobStatus(root, input)
     expect(meta.status).toBe('failed')
     expect(meta.exit_code).toBe(-1)
   })

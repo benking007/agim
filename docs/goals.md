@@ -104,6 +104,22 @@ CREATE TABLE goals (
 
 Override path with `AGIM_GOALS_DB=/path/to/goals.db`.
 
+## `agim_exec` under an active goal
+
+While a goal is **active**, `agim_exec` is **not** hard-blocked (missing
+`bwrap`, detached/`nohup` forms, etc.). Instead the approval gate
+forces a one-time human decision (`requiresExplicitDecision`):
+
+- Bypasses `AGIM_AUTO_APPROVE`, remembered allow rules, and allow-on-timeout.
+- Operator clicks **allow** once → the command runs; the goal stays active.
+- Soft risk notes (no sandbox / detached form) may appear on the card.
+- Operator deny-list / `deny-all` still hard-deny without a card.
+- Headless / CI (no IM notifier): the gate allows so tests do not hang;
+  the exec sandbox still applies when `bwrap` is present.
+
+You do **not** need `/goal complete` just to run a script under a
+long-lived goal.
+
 ## Failure modes
 
 - **DB unavailable** (e.g. better-sqlite3 binding missing on bun in

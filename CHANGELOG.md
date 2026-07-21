@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Active `/goal` no longer hard-blocks `agim_exec` (missing `bwrap` / detached forms). The approval gate forces one explicit HITL decision (`requiresExplicitDecision`, bypasses `AGIM_AUTO_APPROVE`) so long-lived goals do not require `/goal complete` just to run a script. Soft risk notes may appear on the card; deny-list / deny-all still hard-deny. See `docs/goals.md`.
+
 ### Fixed
 
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.

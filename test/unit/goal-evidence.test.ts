@@ -106,7 +106,7 @@ describeSqlite('goal evidence ledger', () => {
     expect(getGoalById(goal.id)?.mutationEpoch).toBe(1)
   })
 
-  it('tool bridge blocks detached exec while a versioned goal is active', async () => {
+  it('tool bridge allows detached exec under an active goal (approval gate owns HITL)', async () => {
     _truncateForTests()
     const goal = setActiveGoal({
       platform: 'test',
@@ -139,12 +139,15 @@ describeSqlite('goal evidence ledger', () => {
         },
       },
     )
-    await expect(tool.execute(
+    // Hard-block removed: long-lived goals escalate agim_exec via the
+    // approval gate (requiresExplicitDecision) instead of throwing here.
+    const result = await tool.execute(
       'detached-call',
       { command: 'nohup worker &' },
       new AbortController().signal,
-    )).rejects.toThrow(/bwrap|detached/)
-    expect(dispatches).toBe(0)
+    )
+    expect(dispatches).toBe(1)
+    expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('started') })
   })
 
   it('invalidates old evidence after mutation and accepts current verification', () => {

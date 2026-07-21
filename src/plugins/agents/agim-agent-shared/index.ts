@@ -240,6 +240,13 @@ export function buildNativeAskUser(opts: {
   channelId: string
   threadId: string
   userId: string
+  /**
+   * When true (or when the predicate returns true for this call), the
+   * approval card bypasses AGIM_AUTO_APPROVE / remembered allow / allow-on-
+   * timeout — the operator must click once. Used for Plan Mode exit and for
+   * agim_exec under an active /goal.
+   */
+  requiresExplicitDecision?: boolean | ((call: ToolCallRequest) => boolean)
 }): (call: ToolCallRequest, signal?: AbortSignal) => Promise<'allow' | 'deny'> {
   const baseCtx = {
     platform: opts.platform,
@@ -251,6 +258,9 @@ export function buildNativeAskUser(opts: {
   return async (call: ToolCallRequest, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
     if (signal?.aborted) return 'deny'
     const reqId = randomUUID()
+    const requiresExplicitDecision = typeof opts.requiresExplicitDecision === 'function'
+      ? opts.requiresExplicitDecision(call)
+      : opts.requiresExplicitDecision === true
     return await new Promise<'allow' | 'deny'>((resolve, reject) => {
       let settled = false
       const cleanup = () => signal?.removeEventListener('abort', onAbort)
@@ -272,6 +282,7 @@ export function buildNativeAskUser(opts: {
         reqId,
         toolName: call.name,
         input: call.arguments,
+        requiresExplicitDecision: requiresExplicitDecision || undefined,
         ctx: baseCtx,
         dispatch: (decision) => finish(decision.behavior),
       }).then(() => {

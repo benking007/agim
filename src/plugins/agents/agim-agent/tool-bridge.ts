@@ -18,14 +18,11 @@
 //   - per-tool wall timeout (AGIM_NATIVE_TOOL_TIMEOUT_MS / ToolDef.timeoutMs):
 //     a wedged agim_exec / MCP call would otherwise hang the whole turn.
 
-import { toolNameMatches } from '../../../core/llm/tool-names.js'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {
   beginGoalToolOperation,
   classifyGoalEvidence,
   finishGoalToolOperation,
-  isDetachedGoalCommand,
-  isGoalExecContainmentAvailable,
   type GoalEvidenceContext,
 } from '../../../core/goal-evidence.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
@@ -171,14 +168,10 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
       const parsedArgs = (args ?? {}) as Record<string, unknown>
       const evidenceKind = classifyGoalEvidence(def.name, parsedArgs, parallelSafe)
       const goalEvidence = opts.resolveGoalEvidence?.() ?? opts.goalEvidence ?? null
-      if (goalEvidence && toolNameMatches(def.name, 'agim_exec')) {
-        if (!isGoalExecContainmentAvailable()) {
-          throw new Error('agim_exec requires bwrap process containment while a versioned goal is active')
-        }
-        if (isDetachedGoalCommand(parsedArgs)) {
-          throw new Error('detached/background exec is not allowed while a versioned goal is active')
-        }
-      }
+      // Goal + agim_exec is no longer hard-blocked here (missing bwrap /
+      // detached forms). Escalation to an explicit HITL approval happens in
+      // buildPiApprovalGate so long-lived goals do not force "complete goal"
+      // just to run a script.
       let operation: ReturnType<typeof beginGoalToolOperation> = null
       if (goalEvidence) {
         try {

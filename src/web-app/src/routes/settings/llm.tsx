@@ -540,6 +540,37 @@ function backendGroupKey(b: LlmBackendRow): string {
   return `solo:${b.name}`
 }
 
+/** Resolve a human brand title (DeepSeek / OpenAI / …), never a bare hostname. */
+function resolveGroupBrandTitle(
+  b: LlmBackendRow,
+  key: string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const fromLabel = (key.startsWith('label:') ? key.slice('label:'.length) : b.label?.trim().toLowerCase()) || ''
+  if (fromLabel) {
+    return t(`llm.presets.${fromLabel}`, { defaultValue: fromLabel })
+  }
+  const matched = LLM_PRESETS.find((p) => {
+    if (p.key === 'custom' || !p.baseUrl || !b.baseUrl) return false
+    try {
+      return new URL(p.baseUrl).hostname === new URL(b.baseUrl).hostname
+    } catch {
+      return b.baseUrl.includes(p.baseUrl) || p.baseUrl.includes(b.baseUrl)
+    }
+  })
+  if (matched) return t(`llm.presets.${matched.key}`)
+  if (b.baseUrl) {
+    try {
+      const host = new URL(b.baseUrl).hostname.replace(/^api\./, '')
+      const brand = host.split('.')[0] || host
+      return brand ? brand.charAt(0).toUpperCase() + brand.slice(1) : host
+    } catch {
+      return b.baseUrl
+    }
+  }
+  return b.name
+}
+
 function groupBackends(
   rows: LlmBackendRow[],
   titleFor: (b: LlmBackendRow, key: string) => string,
@@ -569,6 +600,8 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
   const ping = useLlmPing()
   const [pingResults, setPingResults] = useState<Record<string, string>>({})
   const [probeError, setProbeError] = useState<ProbeErrorState | null>(null)
+  /** Provider groups start collapsed; expand to see models. */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   async function onRemove(name: string): Promise<void> {
     if (!confirm(t('llm.removeConfirm', { name }))) return
@@ -598,20 +631,7 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
 
   const rows = data?.backends ?? []
   const groups = useMemo(
-    () => groupBackends(data?.backends ?? [], (b, key) => {
-      if (key.startsWith('label:')) {
-        const label = key.slice('label:'.length)
-        return t(`llm.presets.${label}`, { defaultValue: label })
-      }
-      if (b.baseUrl) {
-        try {
-          return new URL(b.baseUrl).hostname
-        } catch {
-          return b.baseUrl
-        }
-      }
-      return b.name
-    }),
+    () => groupBackends(data?.backends ?? [], (b, key) => resolveGroupBrandTitle(b, key, t)),
     [data?.backends, t],
   )
 
@@ -647,69 +667,94 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
           const keyBadge = allMissing
             ? <Badge variant="outline">{t('llm.secretMissing')}</Badge>
             : <Badge variant="success">{[...secretSources].filter((s) => s !== 'none').join(' / ') || 'file'}</Badge>
+          const open = expanded[group.key] === true
           return (
             <div key={group.key} className="px-4 py-3">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold">{group.title}</h3>
-                <Badge variant="outline">
-                  {t('llm.groupModelCount', {
-                    count: group.backends.length,
-                    defaultValue: '{{count}} models',
-                  })}
-                </Badge>
-                <span className="font-mono text-[11px] text-text-dim">{group.provider}</span>
-                {keyBadge}
-              </div>
-              {group.baseUrl && (
-                <p className="mb-2 break-all font-mono text-[11px] text-text-dim">{group.baseUrl}</p>
-              )}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('llm.col.model')}</TableHead>
-                    <TableHead>{t('llm.col.name')}</TableHead>
-                    <TableHead>{t('llm.col.apiKey')}</TableHead>
-                    <TableHead>{t('llm.col.actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {group.backends.map((b) => {
-                    const rowKey = b.secret.source === 'none'
-                      ? <Badge variant="outline">{t('llm.secretMissing')}</Badge>
-                      : <Badge variant="success">{b.secret.source}</Badge>
-                    return (
-                      <TableRow key={b.name}>
-                        <TableCell className="font-mono text-xs font-medium">{b.model}</TableCell>
-                        <TableCell className="font-mono text-[11px] text-text-dim">{b.name}</TableCell>
-                        <TableCell>{rowKey}</TableCell>
-                        <TableCell className="flex flex-col gap-1 sm:flex-row sm:items-center">
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => void onPing(b.name)}
-                            disabled={ping.isPending || b.secret.source === 'none'}
-                            title={b.secret.source === 'none' ? t('llm.setKeyFirst') : t('llm.pingHint')}
-                          >
-                            <Zap className="h-4 w-4" />
-                            <span>{t('llm.ping')}</span>
-                          </Button>
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => void onRemove(b.name)}
-                            disabled={removeBackend.isPending}
-                            className="text-danger hover:text-danger"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">{t('llm.remove')}</span>
-                          </Button>
-                          {pingResults[b.name] && (
-                            <span className="ml-2 text-[11px] text-text-dim">{pingResults[b.name]}</span>
-                          )}
-                        </TableCell>
+              <button
+                type="button"
+                className="flex w-full items-start gap-2 text-left"
+                aria-expanded={open}
+                onClick={() => setExpanded((m) => ({ ...m, [group.key]: !open }))}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold">{group.title}</h3>
+                    <Badge variant="outline">
+                      {t('llm.groupModelCount', {
+                        count: group.backends.length,
+                        defaultValue: '{{count}} models',
+                      })}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-text-dim">{group.provider}</span>
+                    {keyBadge}
+                  </div>
+                  {group.baseUrl && (
+                    <p className="mt-1 break-all font-mono text-[11px] text-text-dim">{group.baseUrl}</p>
+                  )}
+                </div>
+                <span
+                  className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-dim hover:bg-surface-2"
+                  aria-hidden
+                >
+                  {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </span>
+              </button>
+              {open && (
+                <div className="mt-3">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('llm.col.model')}</TableHead>
+                        <TableHead>{t('llm.col.name')}</TableHead>
+                        <TableHead>{t('llm.col.apiKey')}</TableHead>
+                        <TableHead>{t('llm.col.actions')}</TableHead>
                       </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {group.backends.map((b) => {
+                        const rowKey = b.secret.source === 'none'
+                          ? <Badge variant="outline">{t('llm.secretMissing')}</Badge>
+                          : <Badge variant="success">{b.secret.source}</Badge>
+                        // Show model id as the human “name” so operators aren’t
+                        // confused by internal stems like deepseek-agim.
+                        const displayName = b.model || b.name
+                        return (
+                          <TableRow key={b.name}>
+                            <TableCell className="font-mono text-xs font-medium">{b.model}</TableCell>
+                            <TableCell className="font-mono text-[11px] text-text-dim" title={b.name}>
+                              {displayName}
+                            </TableCell>
+                            <TableCell>{rowKey}</TableCell>
+                            <TableCell className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                              <Button
+                                variant="ghost" size="sm"
+                                onClick={() => void onPing(b.name)}
+                                disabled={ping.isPending || b.secret.source === 'none'}
+                                title={b.secret.source === 'none' ? t('llm.setKeyFirst') : t('llm.pingHint')}
+                              >
+                                <Zap className="h-4 w-4" />
+                                <span>{t('llm.ping')}</span>
+                              </Button>
+                              <Button
+                                variant="ghost" size="sm"
+                                onClick={() => void onRemove(b.name)}
+                                disabled={removeBackend.isPending}
+                                className="text-danger hover:text-danger"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="hidden sm:inline">{t('llm.remove')}</span>
+                              </Button>
+                              {pingResults[b.name] && (
+                                <span className="ml-2 text-[11px] text-text-dim">{pingResults[b.name]}</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
           )
         })}

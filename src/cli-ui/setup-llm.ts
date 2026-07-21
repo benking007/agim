@@ -27,6 +27,7 @@ import { saveSecret, removeSecret, listConfiguredBackends, describeSecretSource 
 import {
   DEFAULT_LLM_PRESET,
   LLM_PRESETS,
+  presetBackendStem,
   suggestLlmBackendName as suggestSharedBackendName,
 } from '../core/llm/presets.js'
 import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
@@ -577,14 +578,15 @@ async function reportConfigWrite(): Promise<void> {
 
 function suggestBackendName(
   provider: string,
-  preset: { key?: string; label: string },
+  preset: { key?: string; label: string; modelHint?: string },
 ): string {
   const fromKey = preset.key && preset.key !== 'custom'
     ? `${preset.key}-agim`
     : undefined
-  if (fromKey) return fromKey
-  const head = preset.label.split(/[\s(]/)[0]?.toLowerCase() ?? provider
-  return head.replace(/[^a-z0-9-]/g, '') || 'agim-api'
+  const fallback = fromKey
+    ?? ((preset.label.split(/[\s(]/)[0]?.toLowerCase() ?? provider).replace(/[^a-z0-9-]/g, '') || 'agim-api')
+  // Prefer the model id so CLI / Web show the same string operators know.
+  return presetBackendStem(fallback, preset.modelHint ?? '', 0)
 }
 
 function envSuffix(name: string): string {

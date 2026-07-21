@@ -93,23 +93,25 @@ function mockLlmFetch(opts: {
         apiKey?: string
         preset?: string
       }
-      const name = body.name?.trim() || 'deepseek-agim'
+      const name = body.name?.trim() || 'deepseek-v4-pro'
       const model = body.model?.trim() || 'deepseek-v4-pro'
       const baseUrl = body.baseUrl?.trim() || 'https://api.deepseek.com'
-      const flashName = 'deepseek-agim-flash'
+      const flashName = 'deepseek-v4-flash'
       backends.push({
         name,
         provider: 'openai-compat',
         baseUrl,
         model,
-        secret: { source: 'file', envKey: `AGIM_LLM_SECRET_${name.toUpperCase()}` },
+        label: 'deepseek',
+        secret: { source: 'file', envKey: `AGIM_LLM_SECRET_${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}` },
       })
       backends.push({
         name: flashName,
         provider: 'openai-compat',
         baseUrl,
         model: 'deepseek-v4-flash',
-        secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM_FLASH' },
+        label: 'deepseek',
+        secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_V4_FLASH' },
       })
       Object.assign(roles, {
         'native-chat': name,
@@ -141,9 +143,9 @@ function mockLlmFetch(opts: {
       Object.assign(config, JSON.parse(String(init.body)))
       return jsonResponse({ ok: true })
     }
-    if (u === '/api/llm/backends/deepseek-agim/ping' && method === 'POST') {
+    if (u === '/api/llm/backends/deepseek-v4-pro/ping' && method === 'POST') {
       return jsonResponse(opts.pingResponse ?? {
-        name: 'deepseek-agim',
+        name: 'deepseek-v4-pro',
         ok: true,
         durationMs: 123,
         tokensIn: 3,
@@ -167,7 +169,7 @@ describe('/settings/llm quick setup', () => {
     fireEvent.click(screen.getByRole('button', { name: /save and test/i }))
 
     await waitFor(() => expect(screen.getByText('Agim Agent is ready')).toBeInTheDocument())
-    expect(screen.getByText('Currently using deepseek-agim. Open Web chat to test it.')).toBeInTheDocument()
+    expect(screen.getByText('Currently using deepseek-v4-pro. Open Web chat to test it.')).toBeInTheDocument()
 
     const quickCall = fetchSpy.mock.calls.find(
       (c) => String(c[0]) === '/api/llm/quick-enable' && (c[1] as RequestInit | undefined)?.method === 'POST',
@@ -180,7 +182,7 @@ describe('/settings/llm quick setup', () => {
     })
     expect(
       fetchSpy.mock.calls.some(
-        (c) => String(c[0]) === '/api/llm/backends/deepseek-agim/ping'
+        (c) => String(c[0]) === '/api/llm/backends/deepseek-v4-pro/ping'
           && (c[1] as RequestInit | undefined)?.method === 'POST',
       ),
     ).toBe(true)
@@ -264,23 +266,23 @@ describe('/settings/llm quick setup', () => {
     mockLlmFetch({
       backends: [
         {
-          name: 'deepseek-agim',
+          name: 'deepseek-v4-pro',
           provider: 'openai-compat',
           baseUrl: 'https://api.deepseek.com',
           model: 'deepseek-v4-pro',
           label: 'deepseek',
-          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM' },
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_V4_PRO' },
         },
         {
-          name: 'deepseek-agim-flash',
+          name: 'deepseek-v4-flash',
           provider: 'openai-compat',
           baseUrl: 'https://api.deepseek.com',
           model: 'deepseek-v4-flash',
           label: 'deepseek',
-          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM_FLASH' },
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_V4_FLASH' },
         },
       ],
-      roles: { 'native-chat': 'deepseek-agim' },
+      roles: { 'native-chat': 'deepseek-v4-pro' },
       config: { defaultAgent: 'agim' },
     })
     renderPage()
@@ -290,14 +292,21 @@ describe('/settings/llm quick setup', () => {
     expect(screen.getByText(/Grouped by provider \(1 groups\)/i)).toBeInTheDocument()
     expect(screen.getByText('2 models')).toBeInTheDocument()
     expect(screen.getAllByText('DeepSeek').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('deepseek-v4-pro')).toBeInTheDocument()
-    expect(screen.getByText('deepseek-v4-flash')).toBeInTheDocument()
+    // Groups start collapsed — models stay hidden until expand.
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    const groupToggle = screen.getByRole('button', { expanded: false })
+    fireEvent.click(groupToggle)
+    expect(groupToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    // Name column matches model id (model + name cells; other UI may also cite the id).
+    expect(screen.getAllByText('deepseek-v4-pro').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('deepseek-v4-flash').length).toBeGreaterThanOrEqual(2)
   })
 
   it('opens a details dialog when the quick probe fails', async () => {
     mockLlmFetch({
       pingResponse: {
-        name: 'deepseek-agim',
+        name: 'deepseek-v4-pro',
         ok: false,
         durationMs: 80,
         error: 'HTTP 400 from openai-compat: {"error":{"message":"`temperature` is deprecated for this model."}}',

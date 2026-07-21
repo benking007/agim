@@ -117,16 +117,14 @@ export function presetModels(preset: LlmPresetDef): string[] {
 }
 
 /**
- * Backend name stem for the Nth model of a preset.
- * Primary keeps `baseName`; others append a short slug (e.g. `-flash`).
+ * Backend name stem for a preset model.
+ * Prefer the model id itself so UI / `/model` switch show the same string
+ * operators already know (e.g. `deepseek-v4-pro`).
  */
-export function presetBackendStem(baseName: string, model: string, index: number): string {
-  if (index <= 0) return baseName
-  const m = model.toLowerCase()
-  if (m.includes('flash')) return `${baseName}-flash`
-  if (m.includes('cheap') || m.includes('mini') || m.includes('air')) return `${baseName}-cheap`
-  const slug = m.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return slug ? `${baseName}-${slug}` : `${baseName}-${index + 1}`
+export function presetBackendStem(baseName: string, model: string, _index: number): string {
+  const safe = model.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '')
+  if (safe && /^[a-z0-9]/.test(safe)) return safe
+  return baseName
 }
 
 export function suggestLlmBackendName(base: string, existing: string[]): string {

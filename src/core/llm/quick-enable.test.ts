@@ -21,8 +21,10 @@ describe('quickEnableLlmPreset', () => {
   it('writes DeepSeek backends (pro + flash) + roles + defaultAgent from an API key', async () => {
     const result = await quickEnableLlmPreset({ apiKey: 'sk-test-deepseek' })
     expect(result.preset).toBe('deepseek')
+    expect(result.name).toBe('deepseek-v4-pro')
     expect(result.model).toBe('deepseek-v4-pro')
     expect(result.backends?.map((b) => b.model)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
+    expect(result.backends?.map((b) => b.name)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
     expect(result.roles['native-chat']).toBe(result.name)
     expect(result.defaultAgent).toBe('agim')
 

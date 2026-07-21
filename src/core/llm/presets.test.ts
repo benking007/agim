@@ -14,7 +14,8 @@ describe('llm presets', () => {
     expect(DEFAULT_LLM_PRESET.model).toBe('deepseek-v4-pro')
     expect(DEFAULT_LLM_PRESET.cheapModel).toBe('deepseek-v4-flash')
     expect(presetModels(DEFAULT_LLM_PRESET)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
-    expect(presetBackendStem('deepseek-agim', 'deepseek-v4-flash', 1)).toBe('deepseek-agim-flash')
+    expect(presetBackendStem('deepseek-agim', 'deepseek-v4-pro', 0)).toBe('deepseek-v4-pro')
+    expect(presetBackendStem('deepseek-agim', 'deepseek-v4-flash', 1)).toBe('deepseek-v4-flash')
     expect(DEFAULT_LLM_PRESET.baseUrl).toBe('https://api.deepseek.com')
   })
 

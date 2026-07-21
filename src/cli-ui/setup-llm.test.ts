@@ -28,10 +28,10 @@ beforeEach(() => {
 })
 
 describe('setup-llm — internal helpers', () => {
-  it('suggestBackendName uses DeepSeek preset baseName', () => {
+  it('suggestBackendName uses DeepSeek model id', () => {
     const sample = _internal.PROVIDER_PRESETS[0]
     const name = _internal.suggestBackendName(sample.provider, sample)
-    expect(name).toBe('deepseek-agim')
+    expect(name).toBe('deepseek-v4-pro')
     expect(sample.modelHint).toBe('deepseek-v4-pro')
   })
 

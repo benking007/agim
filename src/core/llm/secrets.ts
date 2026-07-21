@@ -28,7 +28,17 @@
 //      the same secret under `AGIM_LLM_SECRET_*`.
 //   4. undefined (provider will report isConfigured()=false).
 
-import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  chmodSync,
+  mkdirSync,
+  statSync,
+  renameSync,
+  unlinkSync,
+} from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { AGIM_HOME } from '../agim-paths.js'
 import { logger as rootLogger } from '../logger.js'
@@ -248,8 +258,17 @@ function _writeFile(file: SecretsFile): void {
     // Best-effort; if we can't even mkdir, the writeFile below will
     // throw a clearer error.
   }
+  // Atomic replace (tmp + rename) so a crash mid-write cannot leave a
+  // truncated secrets file. Same pattern as config-store (sync variant).
   const payload = `${JSON.stringify(file, null, 2)}\n`
-  writeFileSync(LLM_SECRETS_PATH, payload, { encoding: 'utf-8', mode: 0o600 })
+  const tmpPath = `${LLM_SECRETS_PATH}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(tmpPath, payload, { encoding: 'utf-8', mode: 0o600 })
+    renameSync(tmpPath, LLM_SECRETS_PATH)
+  } catch (err) {
+    try { unlinkSync(tmpPath) } catch { /* ignore */ }
+    throw err
+  }
   // writeFileSync's mode is advisory on some filesystems; chmodSync is
   // the belt-and-suspenders that matches how the bootstrap token writer
   // does it elsewhere in the codebase.

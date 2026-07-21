@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Agim Agent honors `thinkingFormat: off` at runtime (no longer forced high by DeepSeek/Kimi URL heuristics).
+- Built-in preset dedupe uses vendor host families (e.g. `moonshot.ai` ↔ `moonshot.cn`, `api.z.ai` ↔ GLM).
+- `GET /api/llm` redacts sensitive `extraHeaders` values; rejects `Authorization` overrides on create.
+- OpenAICompat path emits configured `maxTokensField` (`max_completion_tokens` for MiMo/custom).
+- Composer context ring prefers backend `contextWindow`; MiMo heuristic window.
+- Auth cookie is `HttpOnly`; `llm-secrets.json` writes are atomic (tmp+rename).
+- LLM backend name conflicts are case-insensitive on add.
+
+### Docs
+
+- Code review 2026-07-21 + `docs/coding-standards.md`; clarify `role=user` may WS-chat (Portal) while REST stays read-only.
+
 ### Added
 
 - Built-in LLM presets for Agim Agent: DeepSeek (default), Kimi (Moonshot), Zhipu GLM, Xiaomi MiMo — one API key registers primary + cheap models; OpenAI/Anthropic removed from curated presets (use Custom).

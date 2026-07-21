@@ -239,6 +239,22 @@ export function isMimoModel(model: string | undefined | null): boolean {
 }
 
 /**
+ * Map a baseUrl onto a built-in preset key using vendor host families
+ * (not exact hostname). Used by quick-enable dedupe so intl hosts
+ * (`api.moonshot.ai`, `api.z.ai`, …) collide with the China defaults.
+ * `custom` is never returned.
+ */
+export function builtinPresetKeyForBaseUrl(
+  baseUrl: string | undefined | null,
+): Exclude<LlmPresetKey, 'custom'> | null {
+  if (isDeepSeekBaseUrl(baseUrl)) return 'deepseek'
+  if (isKimiBaseUrl(baseUrl)) return 'moonshot'
+  if (isZhipuBaseUrl(baseUrl)) return 'zhipu'
+  if (isMimoBaseUrl(baseUrl)) return 'mimo'
+  return null
+}
+
+/**
  * Default /think fallback for a backend URL (and optional model id).
  * DeepSeek / Kimi / GLM / MiMo default to their preset's `defaultThinking`.
  */

@@ -149,6 +149,29 @@ describe('quickEnableLlmPreset', () => {
     })
   })
 
+  it('rejects quick-enable when an intl vendor host family is already present', async () => {
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(join(TMP, 'config.json'), JSON.stringify({
+      messengers: [],
+      agents: ['agim'],
+      llmBackends: [
+        {
+          name: 'kimi-intl',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.moonshot.ai/v1',
+          model: 'kimi-k3',
+        },
+      ],
+    }), 'utf8')
+    await expect(
+      quickEnableLlmPreset({ preset: 'moonshot', apiKey: 'sk-kimi' }),
+    ).rejects.toMatchObject({
+      name: 'QuickEnableError',
+      code: 'conflict',
+      message: expect.stringMatching(/already configured/i),
+    })
+  })
+
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })

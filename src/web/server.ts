@@ -5372,7 +5372,9 @@ function buildAuthCookie(req: IncomingMessage, token: string | null, maxAgeSec: 
     || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https'
   const secure = isHttps ? '; Secure' : ''
   const value = token === null ? '' : encodeURIComponent(token)
-  return `agim_token=${value}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax${secure}`
+  // HttpOnly: SPA auth uses localStorage + Authorization; cookie is for
+  // EventSource / same-origin fetches. Keep raw token out of document.cookie.
+  return `agim_token=${value}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax; HttpOnly${secure}`
 }
 
 async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promise<void> {

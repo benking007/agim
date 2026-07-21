@@ -89,7 +89,10 @@ export function useComposerModelStatus(
     () => messages.reduce((n, m) => n + estimateTokensFromText(m.content || ''), 0),
     [messages],
   )
-  const contextWindow = estimateContextWindow(active?.model)
+  // Prefer the configured backend contextWindow (custom / vendor override).
+  const contextWindow = typeof active?.contextWindow === 'number' && active.contextWindow > 0
+    ? active.contextWindow
+    : estimateContextWindow(active?.model)
 
   const breakdown = useMemo((): ContextBreakdownItem[] => {
     const conversation = contextUsed

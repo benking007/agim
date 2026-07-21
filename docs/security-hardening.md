@@ -142,14 +142,16 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 
 | 角色 | 权限 |
 |---|---|
-| `admin` | 所有 mutation 端点（创建工作区 / 改配置 / 改 env / 管理员名单 / 服务生命周期 / batch jobs / 等 20+ 个） |
-| `user` | 只读端点 + 操作员自己创建的资源（自己的 job / 自己的 memo / 自己的 reminder） |
+| `admin` | 所有 REST mutation 端点（创建工作区 / 改配置 / 改 env / 管理员名单 / 服务生命周期 / batch jobs / 等 20+ 个） |
+| `user` | REST：只读 + 操作员自己创建的资源（job / memo / reminder）。**WebSocket 例外**：可驱动桌面 `/` 与 Portal `/m/chat` 的 Agent 对话（手机 QR 即此角色），但不能改控制面配置 |
 
 - 老 token（缺 `role` 字段）→ 读为 `admin`（向后兼容）
 - Bootstrap 创建的 token 默认 `admin`
-- 通过 `createToken(label, { role: 'user' })` 显式创建 user-role token
+- 通过 `createToken(label, { role: 'user' })` 显式创建 user-role token（含 `POST /api/mobile/qr`）
 - `setTokenRole(id, role)` 升降级
 - API：`isAdminTokenId(tokenId): boolean`
+
+> **设计说明（2026-07-21 CR）**：不要把「user 可 WS 聊天」当成 REST 越权 bug。若需更细粒度，应新增 `chat` capability，而不是直接对 `user` 禁用 `/ws`（会打断 Portal）。
 
 > **v1.2.145（CR H1）**：`DELETE /api/viewer/:id` 之前**漏了** `requireAdmin`，且 `handleViewerDelete` 忽略请求上下文直接删除 —— 任意已认证 token（含 `role=user` 的移动 QR token）可凭 paste id（经 IM `/v/<uuid>` 链接外泄）删除任意 paste。现已补 `requireAdmin`，与全部 mutation 端点一致。
 

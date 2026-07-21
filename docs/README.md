@@ -30,6 +30,7 @@
 - `runbook.md`：高频运维操作
 - `release.md`：npm 发版流程（main push 触发、版本号、Actions、npm 验证）
 - `security-hardening.md`：安全基线与防护项（含非受信 IM 加固清单）
+- `coding-standards.md`：编码 / 测试 / 文档 / 发版约定（贡献者与 agent）
 - `messenger-capability-matrix.md`：各 IM 的 HITL / 附件 / 网关能力差异
 - `tech-debt.md`：历史债 / 死开关 / 孤儿代码 / **文档债**盘点与跟进
 - `session-model.md`：会话模型与恢复（含 Web Chat、Agim Agent quarantine）
@@ -69,6 +70,7 @@
 
 ### Code review / 流水账
 
+- `code-review-2026-07-21-main.md`（本轮；含已修项与 backlog）
 - `code-review-2026-04-30.md`
 - `code-review-2026-04-30-main.md`
 - `code-review-2026-05-06-main.md`

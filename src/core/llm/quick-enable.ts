@@ -12,6 +12,7 @@ import { loadFromConfig as loadLlmFromConfig } from './registry.js'
 import { saveSecret } from './secrets.js'
 import {
   DEFAULT_LLM_PRESET,
+  builtinPresetKeyForBaseUrl,
   getLlmPreset,
   presetBackendStem,
   presetModels,
@@ -105,23 +106,13 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
   const current = (await readConfigObject()) as RawConfig
   const existingBackends = current.llmBackends ?? []
   // Built-in presets are one-shot: match label (quick-enable writes preset key)
-  // or the same API hostname (hand-added custom without label). Operators must
-  // delete the group before re-adding — mirrors Web installedBuiltinPresetKeys.
+  // or the same vendor host family (hand-added custom without label — includes
+  // intl hosts like api.moonshot.ai ↔ moonshot.cn). Operators must delete the
+  // group before re-adding — mirrors Web installedBuiltinPresetKeys.
   if (!isCustom) {
-    let presetHost: string | null = null
-    try {
-      presetHost = new URL(preset.baseUrl).hostname.toLowerCase()
-    } catch {
-      presetHost = null
-    }
     const already = existingBackends.some((b) => {
       if ((b.label ?? '').trim().toLowerCase() === preset.key) return true
-      if (!presetHost || !b.baseUrl) return false
-      try {
-        return new URL(b.baseUrl).hostname.toLowerCase() === presetHost
-      } catch {
-        return false
-      }
+      return builtinPresetKeyForBaseUrl(b.baseUrl) === preset.key
     })
     if (already) {
       throw new QuickEnableError(

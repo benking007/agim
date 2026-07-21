@@ -90,18 +90,43 @@ export function suggestLlmBackendName(base: string, existing: string[]): string 
   return `${base}-${Date.now()}`
 }
 
-function hostnameOf(url: string | undefined | null): string | null {
-  if (!url?.trim()) return null
+/**
+ * Mirror of server `builtinPresetKeyForBaseUrl` (src/core/llm/presets.ts).
+ * Keep host-family rules in sync when adding vendors.
+ */
+function builtinPresetKeyForBaseUrl(baseUrl: string | undefined | null): Exclude<LlmPresetKey, 'custom'> | null {
+  if (!baseUrl?.trim()) return null
+  let host = ''
   try {
-    return new URL(url).hostname.toLowerCase()
+    host = new URL(baseUrl).hostname.toLowerCase()
   } catch {
-    return null
+    host = baseUrl.toLowerCase()
   }
+  if (host.includes('deepseek.com')) return 'deepseek'
+  if (
+    host.includes('moonshot.cn')
+    || host.includes('moonshot.ai')
+    || host.includes('kimi.com')
+    || host.includes('kimi.ai')
+  ) {
+    return 'moonshot'
+  }
+  if (
+    host.includes('bigmodel.cn')
+    || host.includes('bigmodel.com')
+    || host === 'api.z.ai'
+    || host.endsWith('.z.ai')
+  ) {
+    return 'zhipu'
+  }
+  if (host.includes('xiaomimimo.com') || host.includes('mimo.mi.com')) return 'mimo'
+  return null
 }
 
 /**
  * Built-in presets already present among configured backends.
- * Matches `label` first (quick-enable writes preset key), then hostname.
+ * Matches `label` first (quick-enable writes preset key), then vendor
+ * host family (China + intl endpoints).
  * `custom` is never considered "installed" — operators may add many customs.
  */
 export function installedBuiltinPresetKeys(
@@ -115,13 +140,8 @@ export function installedBuiltinPresetKeys(
       installed.add(label)
       continue
     }
-    const host = hostnameOf(b.baseUrl)
-    if (!host) continue
-    const matched = builtin.find((p) => {
-      const presetHost = hostnameOf(p.baseUrl)
-      return !!presetHost && presetHost === host
-    })
-    if (matched) installed.add(matched.key)
+    const family = builtinPresetKeyForBaseUrl(b.baseUrl)
+    if (family) installed.add(family)
   }
   return installed
 }

@@ -46,6 +46,13 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | Full activity-lease before hard-delete | Quarantine uses sessionLocks wait; richer lease is milestone B |
 | Agim Agent metadata index | After retention stable (milestone H) |
 | Unify TUI `/new` id with sessionManager | TUI still mints independent ids |
+| LLM/MCP URL SSRF guard (reuse ACP `url-guard`) | CR 2026-07-21 P1a |
+| Persist WS `threadOwners` across restart | CR 2026-07-21 P1b |
+| MCP GET redact auth headers | CR 2026-07-21 P2a |
+| Atomic / locked `tokens.json` writes | CR 2026-07-21 P2b |
+| Mobile QR: short-TTL exchange code (no raw token in query) | CR 2026-07-21 P2c |
+| SPA consume `GET /api/llm/presets` (drop mirror drift) | CR 2026-07-21 M1 |
+| Atomic LLM group delete API | CR 2026-07-21 M2 |
 
 ## Docs debt (living)
 

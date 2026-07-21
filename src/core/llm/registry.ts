@@ -262,6 +262,7 @@ function buildProvider(cfg: BackendConfig, apiKey: string | undefined): LlmProvi
         extraHeaders: cfg.extraHeaders,
         defaultTemperature: cfg.temperature,
         defaultMaxTokens: cfg.maxTokens,
+        maxTokensField: cfg.maxTokensField,
         retryOnTransient: cfg.retryOnTransient,
       })
     case 'anthropic':

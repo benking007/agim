@@ -127,9 +127,10 @@ OpenAI / Anthropic **不再**作为内置预设；用 `custom` 填入兼容 `bas
 
 ### 5.1 去重与删除
 
-- 每个内置预设只允许添加一次（匹配 `label` **或** 相同 API hostname）。
+- 每个内置预设只允许添加一次：匹配 `label` **或** 同一厂商 host 族（例如 Kimi 的 `api.moonshot.cn` ↔ `api.moonshot.ai`；智谱 `bigmodel.cn` ↔ `api.z.ai`）。
 - Web 下拉对已添加预设显示「（已添加）」并禁用；二次 `quick-enable` / `POST /api/llm/quick-enable` 返回 conflict。
 - 设置页按品牌分组；删除为**组级**（一次移除该 `label` 下全部 backend + 角色绑定），不是单行删除。
+- `GET /api/llm` 会对 `extraHeaders` 中的 `Authorization` / `api-key` / `x-api-key` 等敏感值脱敏为 `***`；写入时禁止带 `Authorization`（密钥走 `apiKey` / `llm-secrets.json`）。
 
 ### 5.2 其他兼容网关示例
 

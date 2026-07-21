@@ -19,6 +19,7 @@ import { homedir } from 'node:os'
 import { join, isAbsolute, resolve, basename } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { agimBgjobsDir } from './bgjob-install.js'
+import { refreshJobStatus } from './bgjob-status.js'
 import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'bgjob-reader' })
@@ -126,6 +127,8 @@ interface MetaJson {
   workdir?: string
   status?: string
   pid?: number | null
+  pid_starttime?: number | null
+  pgid?: number | null
   started_at?: string | null
   ended_at?: string | null
   exit_code?: number | null
@@ -183,7 +186,12 @@ async function readMeta(root: BgjobRoot, id: string): Promise<MetaJson | null> {
   if (id.includes('/') || id.includes('\\') || id === '..' || id === '.') return null
   try {
     const raw = await readFile(join(root.path, id, 'meta.json'), 'utf-8')
-    return safeJsonParse<MetaJson>(raw)
+    const meta = safeJsonParse<MetaJson>(raw)
+    if (!meta) return null
+    if (!meta.id) meta.id = id
+    // Same refresh the Python CLI does on status/list — otherwise Tasks /
+    // Portal keep showing "running" after the worker has already exited.
+    return await refreshJobStatus(root.path, meta)
   } catch {
     return null
   }

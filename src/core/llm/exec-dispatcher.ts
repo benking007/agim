@@ -43,7 +43,8 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
-import { bgjobAllowedPaths } from '../bgjob-install.js'
+import { AGIM_HOME } from '../agim-paths.js'
+import { agimBgjobScript, bgjobAllowedPaths } from '../bgjob-install.js'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
@@ -116,7 +117,10 @@ export function buildExecDispatcher(ctx: ExecContext): ToolDispatcher {
 }
 
 async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: AbortSignal): Promise<DispatcherResult> {
-  const command = typeof args.command === 'string' ? args.command : ''
+  // Expand portable SOP prefixes (`"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"`)
+  // to the resolved absolute wrapper BEFORE danger/meta/carve-out checks —
+  // otherwise `$` trips SHELL_CHAIN_META and bwrap tears down detached workers.
+  const command = rewriteBgjobCommand(typeof args.command === 'string' ? args.command : '')
   if (!command.trim()) return { text: 'command required', isError: true, source: 'exec' }
 
   // v1.2.66 — pre-flight: dangerous shell pattern denylist. These are
@@ -286,6 +290,10 @@ export function buildExecEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const v = process.env[k]
     if (v != null) base[k] = v
   }
+  // Always stamp resolved AGIM_HOME so SOP portable paths expand to the
+  // same tree where `agim start` installed scripts/bgjob — even when the
+  // operator set a custom AGIM_HOME that is not on the safe allow-list.
+  base.AGIM_HOME = process.env.AGIM_HOME?.trim() || AGIM_HOME
   return extraEnv ? { ...base, ...extraEnv } : base
 }
 
@@ -319,8 +327,43 @@ export function buildExecEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  *  when the bgjob wrapper itself sits at the start. */
 const SHELL_CHAIN_META = /[;&|()<>`$]/
 
+/**
+ * Expand role-book portable bgjob prefixes to the absolute installed
+ * wrapper path. Only rewrites when the (trimmed) command *starts* with
+ * a known portable expression — never mid-line — so `$()` payloads in
+ * args still fail the carve-out meta check after rewrite.
+ */
+export function rewriteBgjobCommand(cmd: string): string {
+  const m = cmd.match(/^(\s*)([\s\S]*)$/)
+  if (!m) return cmd
+  const leading = m[1] ?? ''
+  const rest = m[2] ?? ''
+  if (!rest) return cmd
+  const abs = agimBgjobScript(process.env.AGIM_HOME?.trim() || AGIM_HOME)
+  // Keep in sync with AGIM_BGJOB_WRAPPER_EXPR in agent-cwd.ts
+  const prefixes = [
+    '"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"',
+    "'${AGIM_HOME:-$HOME/.agim}/scripts/bgjob'",
+    '${AGIM_HOME:-$HOME/.agim}/scripts/bgjob',
+    '"$AGIM_HOME/scripts/bgjob"',
+    "'$AGIM_HOME/scripts/bgjob'",
+    '$AGIM_HOME/scripts/bgjob',
+    '"$HOME/.agim/scripts/bgjob"',
+    "'$HOME/.agim/scripts/bgjob'",
+    '$HOME/.agim/scripts/bgjob',
+  ]
+  for (const prefix of prefixes) {
+    if (rest === prefix || rest.startsWith(`${prefix} `) || rest.startsWith(`${prefix}\t`)) {
+      return leading + abs + rest.slice(prefix.length)
+    }
+  }
+  return cmd
+}
+
 export function isBgjobInvocation(cmd: string): boolean {
-  const trimmed = cmd.trim()
+  // Expand portable SOP first so `$` in the taught wrapper expr does not
+  // falsely trip SHELL_CHAIN_META.
+  const trimmed = rewriteBgjobCommand(cmd).trim()
   // v1.2.99 — refuse if the command contains anything that could
   // tack on extra payload. Includes subshell `( ... )`, backticks,
   // `$( ... )` substitution, redirection, and obvious chaining.

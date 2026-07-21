@@ -2,12 +2,15 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AGIM_BGJOB_WRAPPER_EXPR } from '../agent-cwd.js'
+import { AGIM_HOME } from '../agim-paths.js'
 import { agimBgjobScript } from '../bgjob-install.js'
 import {
   getExecTools,
   isExecToolName,
   buildExecDispatcher,
   isBgjobInvocation,
+  rewriteBgjobCommand,
   buildExecEnv,
   clampTimeout,
 } from './exec-dispatcher.js'
@@ -84,6 +87,18 @@ describe('exec-dispatcher', () => {
       expect(env.AGIM_RPC_TOKEN).toBe('tok')
       expect(env.AGIM_RPC_SOCKET).toBe('/run/x.sock')
       expect(env.OPENAI_API_KEY).toBeUndefined()
+    })
+
+    it('always stamps resolved AGIM_HOME for portable SOP expansion', () => {
+      touch('AGIM_HOME', undefined)
+      const env = buildExecEnv()
+      expect(env.AGIM_HOME).toBe(AGIM_HOME)
+    })
+
+    it('forwards custom AGIM_HOME even when not on AGIM_EXEC_ENV_PASS', () => {
+      touch('AGIM_HOME', '/custom/agim-home')
+      const env = buildExecEnv()
+      expect(env.AGIM_HOME).toBe('/custom/agim-home')
     })
   })
 
@@ -293,6 +308,25 @@ describe('exec-dispatcher', () => {
   // bgjob wrapper itself is at the start — otherwise a payload like
   // `/root/.claude/scripts/bgjob status x && cat /etc/shadow` would
   // get the cat to run unsandboxed.
+  describe('rewriteBgjobCommand / portable SOP carve-out', () => {
+    const agimPath = agimBgjobScript()
+
+    it('expands the taught AGIM_BGJOB_WRAPPER_EXPR to the absolute script', () => {
+      const raw = `${AGIM_BGJOB_WRAPPER_EXPR} start foo -- /usr/bin/sleep 60`
+      expect(rewriteBgjobCommand(raw)).toBe(`${agimPath} start foo -- /usr/bin/sleep 60`)
+    })
+
+    it('isBgjobInvocation accepts portable SOP after rewrite (no $ meta false-negative)', () => {
+      expect(isBgjobInvocation(`${AGIM_BGJOB_WRAPPER_EXPR} start foo -- /usr/bin/sleep 60`)).toBe(true)
+      expect(isBgjobInvocation(`   ${AGIM_BGJOB_WRAPPER_EXPR} status abc`)).toBe(true)
+    })
+
+    it('still REFUSES portable prefix chained with && / $()', () => {
+      expect(isBgjobInvocation(`${AGIM_BGJOB_WRAPPER_EXPR} status x && cat /etc/shadow`)).toBe(false)
+      expect(isBgjobInvocation(`${AGIM_BGJOB_WRAPPER_EXPR} status $(id)`)).toBe(false)
+    })
+  })
+
   describe('isBgjobInvocation (v1.2.99 hardened)', () => {
     const agimPath = agimBgjobScript()
     const claudePath = join(homedir(), '.claude', 'scripts', 'bgjob')

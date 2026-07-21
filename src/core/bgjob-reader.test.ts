@@ -79,7 +79,8 @@ describe('listJobsForRoot', () => {
       exit_code: 0,
     })
     await writeJob(tmp, 'j2', {
-      id: 'j2', name: 'task-b', status: 'running', pid: 200,
+      // Use this process's live pid so refresh keeps status=running.
+      id: 'j2', name: 'task-b', status: 'running', pid: process.pid,
       started_at: '2026-05-01T11:00:00+08:00',
       ended_at: null, exit_code: null,
     })
@@ -93,6 +94,23 @@ describe('listJobsForRoot', () => {
     expect(jobs[1].status).toBe('completed')
     expect(jobs[1].exit_code).toBe(0)
     expect(jobs.every((j) => j.rootId === 'test')).toBe(true)
+  })
+
+  it('refreshes stale running meta when exit_code file exists and pid is gone', async () => {
+    await writeFile(join(tmp, 'index.json'), JSON.stringify({
+      jobs: [{ id: 'stale', name: 'done-ish', started_at: '2026-05-01T12:00:00+08:00' }],
+    }))
+    await writeJob(tmp, 'stale', {
+      id: 'stale', name: 'done-ish', status: 'running',
+      pid: 1_000_000_012, started_at: '2026-05-01T12:00:00+08:00',
+      ended_at: null, exit_code: null,
+    })
+    await writeFile(join(tmp, 'stale', 'exit_code'), '0')
+
+    const jobs = await listJobsForRoot({ id: 'test', path: tmp, label: 'test' })
+    expect(jobs.length).toBe(1)
+    expect(jobs[0].status).toBe('completed')
+    expect(jobs[0].exit_code).toBe(0)
   })
 
   it('falls back to directory scan when index.json is missing', async () => {

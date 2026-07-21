@@ -5,6 +5,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { agimBgjobsDir } from './bgjob-install.js'
+import { refreshJobStatus, type RefreshableJobMeta } from './bgjob-status.js'
 import { logger as rootLogger } from './logger.js'
 import { handlePushOp } from './push-rpc.js'
 import type { RunContext } from './approval-bus.js'
@@ -21,7 +22,7 @@ interface JobOrigin {
   userId: string
 }
 
-interface JobMeta {
+interface JobMeta extends RefreshableJobMeta {
   id?: string
   name?: string
   status?: string
@@ -180,12 +181,16 @@ export async function tickBgjobWatch(root = agimBgjobsDir()): Promise<number> {
   try {
     const ids = await listJobIds(root)
     for (const id of ids) {
-      const meta = await readMeta(root, id)
+      let meta = await readMeta(root, id)
       if (!meta?.id) continue
+      const jobId = meta.id
+      // Process exit only writes `exit_code`; meta.status often stays
+      // `running` until a CLI refresh. Mirror that here so L1 notify fires.
+      meta = await refreshJobStatus(root, meta)
       const status = (meta.status || '').toLowerCase()
       if (!TERMINAL.has(status)) continue
       if (!meta.origin?.threadId) continue
-      if (meta.notified_at || notifiedIds.has(meta.id)) continue
+      if (meta.notified_at || notifiedIds.has(jobId)) continue
       const before = notifiedIds.size
       await notifyJob(root, meta)
       if (notifiedIds.size > before) notified++

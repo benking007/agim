@@ -64,6 +64,32 @@ describe('bgjob-watch', () => {
     expect(pushCalls.length).toBe(1)
   })
 
+  it('refreshes running+exit_code → terminal then notifies', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bgjob-watch-refresh-'))
+    dirs.push(root)
+    seedJob(root, 'job-r', {
+      id: 'job-r',
+      name: 'train',
+      status: 'running',
+      pid: 1_000_000_011,
+      exit_code: null,
+      log: join(root, 'job-r', 'log.txt'),
+      origin: { platform: 'web', channelId: '', threadId: 't-r', userId: 'u' },
+      notify_on_exit: true,
+    })
+    writeFileSync(join(root, 'job-r', 'exit_code'), '0')
+
+    const n = await tickBgjobWatch(root)
+    expect(n).toBe(1)
+    expect(pushCalls[0]?.text).toContain('已完成')
+    const meta = JSON.parse(readFileSync(join(root, 'job-r', 'meta.json'), 'utf8')) as {
+      status?: string
+      notified_at?: string
+    }
+    expect(meta.status).toBe('completed')
+    expect(meta.notified_at).toBeTruthy()
+  })
+
   it('skips jobs without origin', async () => {
     const root = mkdtempSync(join(tmpdir(), 'bgjob-watch-noorigin-'))
     dirs.push(root)

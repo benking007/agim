@@ -53,6 +53,8 @@ import type {
   DistillStatusResponse,
   DistillTriggerResponse,
   DeleteMemoResponse,
+  GetBgjobQuery,
+  GetBgjobResponse,
   ListBgjobsQuery,
   ListBgjobsResponse,
   ListSkillsResponse,
@@ -180,6 +182,10 @@ export const api = {
   /** GET /api/bgjobs */
   listBgJobs: (query: ListBgjobsQuery) =>
     client.get<ListBgjobsResponse>('/api/bgjobs', { query }),
+
+  /** GET /api/bgjobs/:id */
+  getBgJob: (id: string, query?: GetBgjobQuery) =>
+    client.get<GetBgjobResponse>(`/api/bgjobs/${encodeURIComponent(id)}`, { query }),
 
   /** GET /api/config */
   getConfig: () =>

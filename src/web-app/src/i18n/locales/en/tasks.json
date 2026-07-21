@@ -180,14 +180,19 @@
   },
   "bgjobs": {
     "title": "Background jobs",
-    "subtitle": "Long-running scripts the agent wrappers (Claude Code / opencode / codex) launched via bgjob.",
+    "subtitle": "Long-running work started via ~/.agim/scripts/bgjob. All agents share ~/.agim/bgjobs/. Click a row for command and log tail.",
+    "runningCount": "{{count}} running",
+    "rootPrimaryHint": "shared write root",
+    "rootLegacy": "legacy",
     "empty": {
       "title": "No background jobs",
-      "description": "Background jobs show up here once an agent uses ~/.agim/scripts/bgjob. The shared data root is ~/.agim/bgjobs/ (all agents); legacy Claude / opencode / Codex roots remain readable (override via AGIM_BGJOB_ROOTS)."
+      "description": "Jobs appear after an agent runs ~/.agim/scripts/bgjob start <name> -- <cmd>. Data lands in ~/.agim/bgjobs/; older Claude / opencode / Codex trees stay readable."
     },
     "filter": {
       "root": "Root",
-      "rootAny": "All roots"
+      "rootAny": "All roots",
+      "status": "Status",
+      "statusAny": "All statuses"
     },
     "col": {
       "name": "Name",
@@ -196,7 +201,28 @@
       "pid": "PID",
       "startedAt": "Started",
       "endedAt": "Ended",
+      "duration": "Duration",
       "exit": "Exit"
+    },
+    "status": {
+      "running": "Running",
+      "paused": "Paused",
+      "starting": "Starting",
+      "completed": "Completed",
+      "failed": "Failed",
+      "killed": "Killed",
+      "stale": "Stale"
+    },
+    "detail": {
+      "workdir": "Workdir",
+      "cmd": "Command",
+      "outDir": "Output dir",
+      "logPath": "Log path",
+      "logTail": "Log tail",
+      "logEmpty": "(no log yet)",
+      "resources": "Resources",
+      "restartGen": "Restart gen",
+      "loadError": "Failed to load job detail"
     },
     "exitOk": "ok",
     "stillRunning": "—"

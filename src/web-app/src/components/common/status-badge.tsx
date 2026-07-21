@@ -50,6 +50,8 @@ const STATUS_VARIANT: Record<string, BadgeProps['variant']> = {
   awaiting:   'warning',
   timeout:    'warning',
   expired:    'warning',
+  starting:   'warning',
+  stale:      'warning',
 
   // Failed / errored
   failed:     'danger',
@@ -58,6 +60,7 @@ const STATUS_VARIANT: Record<string, BadgeProps['variant']> = {
   rejected:   'danger',
   cancelled:  'danger',
   canceled:   'danger',
+  killed:     'danger',
 
   // Terminal-neutral
   finished:   'default',

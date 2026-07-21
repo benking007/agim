@@ -139,7 +139,7 @@ export interface ListSubtasksResponse {
  * ============================================================ */
 
 export interface BgjobRoot {
-  /** Stable id — 'claude' / 'opencode' / 'codex' / custom-basename. */
+  /** Stable id — 'agim' (shared write root) / legacy 'claude'|'opencode'|'codex' / custom. */
   id: string
   label: string
   path: string
@@ -148,7 +148,7 @@ export interface BgjobRoot {
 export interface BgjobSummary {
   id: string
   name: string
-  /** Free-form: running / completed / failed / killed / stale / … */
+  /** Free-form: running / completed / failed / killed / stale / paused / … */
   status: string
   pid: number | null
   started_at: string | null
@@ -158,9 +158,28 @@ export interface BgjobSummary {
   rootId: string
 }
 
+export interface BgjobDetail extends BgjobSummary {
+  cmd: string[]
+  workdir: string | null
+  out_dir: string | null
+  log_path: string | null
+  resources: { cpu_time?: number; rss_kb?: number; state?: string } | null
+  log_tail: string | null
+}
+
 export interface ListBgjobsQuery {
   /** Filter to a single root id; omit for all roots. */
   root?: string
+}
+
+export interface GetBgjobQuery {
+  root?: string
+  /** Log tail line count (backend clamps 1..5000). */
+  tail?: number
+}
+
+export interface GetBgjobResponse {
+  job: BgjobDetail
 }
 
 /** Response shape varies based on whether `root` is set:

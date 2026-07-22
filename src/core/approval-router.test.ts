@@ -157,6 +157,22 @@ describe('formatApprovalPrompt', () => {
     expect(text).toContain('bwrap')
   })
 
+  it('pinnable explicit cards offer all / 同类放行', () => {
+    const n: ApprovalNotification = {
+      runId: 'run-exec-pin',
+      reqId: 'execpin12345',
+      toolName: 'agim_exec',
+      input: { command: 'curl -s http://x' },
+      toolUseId: '',
+      ctx: RUN_CTX,
+      requiresExplicitDecision: true,
+      allowSessionPin: true,
+    }
+    const text = formatApprovalPrompt(n)
+    expect(text).toContain('all 同类放行')
+    expect(text).toContain('未回 → 拒绝')
+  })
+
   it('truncates very long input', () => {
     const big = 'x'.repeat(2000)
     const n: ApprovalNotification = {

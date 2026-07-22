@@ -213,6 +213,7 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
   const { messageId, prompt, text, outcome } = approval
   const isAuto = prompt?.mode === 'auto-allow'
   const isExplicit = prompt?.mode === 'explicit'
+  const showAuto = !isAuto && (Boolean(prompt?.canPin) || !isExplicit)
 
   // v1.2.88 — optimistic "submitting" state. Without this, a click
   // produced ZERO visible feedback until the server pushed
@@ -259,7 +260,9 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
         )}
         {isExplicit && !outcome && (
           <Badge variant="outline" className="text-[10px] uppercase">
-            {t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
+            {prompt?.canPin
+              ? t('chat.approvalNeedsConfirmBadge', { defaultValue: 'needs confirmation' })
+              : t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
           </Badge>
         )}
       </div>
@@ -294,8 +297,8 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
       ) : prompt ? (
         <>
           <div className="mt-3 flex flex-wrap gap-2">
-            {/* Auto mode only offers Deny. Explicit mode offers a one-time
-                Allow but deliberately hides "Auto for similar". */}
+            {/* Auto mode only offers Deny. Hard one-shot explicit hides
+                "Auto for similar"; pinnable explicit (canPin) shows it. */}
             {!isAuto && (
               <Button
                 size="sm"
@@ -305,7 +308,7 @@ function ApprovalView({ approval, onApprove }: ApprovalViewProps): JSX.Element {
                 {t('chat.approvalAllow', { defaultValue: 'Allow' })}
               </Button>
             )}
-            {!isAuto && !isExplicit && (
+            {showAuto && (
               <Button
                 size="sm"
                 variant="secondary"

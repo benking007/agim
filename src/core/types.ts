@@ -362,6 +362,9 @@ export interface ApprovalCardPrompt {
    *  human decision only; 'auto-allow' = grace window before automatic allow
    *  (only the deny button is meaningful). */
   mode: 'normal' | 'explicit' | 'auto-allow'
+  /** When true with `mode: 'explicit'`, still show "Auto for similar" so the
+   *  operator can pin a per-thread remembered rule (unconfined agim_exec). */
+  canPin?: boolean
   /** Auto-allow grace window in seconds, present iff mode === 'auto-allow'. */
   graceSeconds?: number
 }

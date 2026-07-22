@@ -51,7 +51,7 @@ function envBool(v: string | undefined, defaultValue = false): boolean {
   return t === '1' || t === 'true' || t === 'yes' || t === 'on'
 }
 
-const DEFAULT_APPROVAL_TIMEOUT_MS = 15 * 60 * 1000
+const DEFAULT_APPROVAL_TIMEOUT_MS = 30 * 60 * 1000
 
 function approvalTimeoutSeconds(v: string | undefined): number {
   const n = Number(v)

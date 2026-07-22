@@ -256,10 +256,13 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
   const mins = Math.max(1, Math.round(approvalBus.approvalTimeoutMs / 60000))
   if (n.requiresExplicitDecision) {
     const header = primary ? `🔐 必须确认 · ${tool} · ${primary}` : `🔐 必须确认 · ${tool}`
+    const actions = n.allowSessionPin
+      ? 'y 批准一次 · all 同类放行 · n 拒绝'
+      : 'y 批准一次 · n 拒绝'
     return [
       header,
       ...body,
-      'y 批准一次 · n 拒绝',
+      actions,
       `${mins}min 未回 → 拒绝 · req ${reqShort}`,
     ].join('\n')
   }
@@ -359,6 +362,11 @@ export function install(opts: InstallOptions): void {
         toolName: n.toolName,
         inputJson: safeStringify(n.input, MAX_INPUT_PREVIEW_CARD),
         mode: n.autoAllow ? 'auto-allow' : n.requiresExplicitDecision ? 'explicit' : 'normal',
+        ...(
+          n.requiresExplicitDecision && n.allowSessionPin && !n.autoAllow
+            ? { canPin: true }
+            : {}
+        ),
         graceSeconds: n.autoAllow ? Math.round(n.autoAllow.graceMs / 1000) : undefined,
       }
       let lastErr: unknown = null

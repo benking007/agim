@@ -33,6 +33,14 @@ describe('ApprovalDock', () => {
     expect(screen.queryByRole('button', { name: /Auto for similar|本类自动放行/ })).not.toBeInTheDocument()
   })
 
+  it('shows Auto for similar when explicit + canPin', () => {
+    render(<ApprovalDock approvals={[approval({ canPin: true })]} onApprove={() => true} />)
+    expect(screen.getByRole('button', { name: /Allow|批准/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Auto for similar|本类自动放行/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Deny|拒绝/ })).toBeInTheDocument()
+    expect(screen.getByText(/needs confirmation|需确认/)).toBeInTheDocument()
+  })
+
   it('pretty-prints JSON input', () => {
     render(<ApprovalDock approvals={[approval()]} onApprove={() => true} />)
     expect(screen.getByText(/"cmd": "ls"/)).toBeInTheDocument()

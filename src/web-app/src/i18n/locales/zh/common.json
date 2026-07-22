@@ -351,6 +351,7 @@
     "approvalPendingCount":  "{{count}} 项待确认",
     "approvalAutoBadge":     "自动放行",
     "approvalExplicitBadge": "仅本次确认",
+    "approvalNeedsConfirmBadge": "需确认",
     "approvalAutoIn":        "{{count}} 秒后自动放行 — 点「拒绝」可中止。",
     "approvalAutoResolving": "正在自动放行…",
     "approvalToolLabel":     "工具",

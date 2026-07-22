@@ -97,7 +97,7 @@ export function ChatTodoList({ activity, dark, className }: ChatTodoListProps): 
     if (!summary) return
     if (running || !summary.allDone) setOpen(true)
     else setOpen(false)
-  }, [running, summary?.allDone, summary?.total, summary?.completed])
+  }, [running, summary])
 
   if (!items || items.length === 0 || !summary) return null
 
@@ -177,7 +177,7 @@ export function ChatTodoList({ activity, dark, className }: ChatTodoListProps): 
             )}
           >
             {items.map((item, index) => (
-              <TodoRow key={`${index}-${item.content}`} item={item} index={index} dark={dark} />
+              <TodoRow key={item.content} item={item} index={index} dark={dark} />
             ))}
           </ul>
         )}

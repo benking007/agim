@@ -4,9 +4,12 @@
 
 相关代码：
 
-- `src/plugins/agents/agim-agent/context-budget.ts` — 阈值、清理、紧急清理、前瞻 pad
+- `src/plugins/agents/agim-agent/context-budget.ts` — 阈值、清理、紧急清理、前瞻 pad、会话压缩率表
 - `src/plugins/agents/agim-agent/transcript-compaction.ts` — 预轮 / 中途 compact 共享 runner
 - `src/plugins/agents/agim-agent/index.ts` — context hook + turn_end + 预轮
+- `src/core/commands/ctx.ts` — `/ctx` 会话压缩率
+- `src/web-app/src/routes/settings/native-agent.tsx` — 设置页「晚压」卡片
+- `src/web-app/src/components/chat/composer-status-bar.tsx` — Usage 拆分 + 压缩率
 
 ## 1. 节奏
 
@@ -144,16 +147,15 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 
 `contextBudget` 字段：`clearCount` / `emergencyClearCount` / `compactSuccess` / `compactFail` / 可选 `tokensBefore`（本轮最后一次成功压缩）。
 
-## 9. 后续优化（约定优先级）
-
-P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下列顺序推进：
+## 9. 主线状态
 
 | 序 | 项 | 状态 | 说明 |
 |----|----|------|------|
-| **1** | Mid-turn transcript compact | **已做** | `turn_end`；紧急清理后仍超线则 summary（每用户消息最多一次） |
-| **2** | 前瞻预算 | **已做** | `lookahead` 软线提前紧急清理；投影 `current+lookahead` 触发中途 compact |
+| P0 | 晚压 + L1/紧急清理 + Usage 窗口对齐 + 文档 | **已做** | 见上文 §1–§6 |
+| **1** | Mid-turn transcript compact | **已做** | `turn_end`；每用户消息最多一次 |
+| **2** | 前瞻预算 | **已做** | 软线紧急清理；投影触发中途 compact |
 | **5** | 指标 | **已做** | Prometheus + `AgentTurnOutcome.contextBudget` |
-| **7** | 设置页关键旋钮 | **已做** | `/settings/llm` → Agim Agent 运行时 →「晚压」卡片（compact / reserve / keepRecent） |
-| **8** | 会话压缩率 | **已做** | Usage 面板「压缩率」：自动 / 满压 / 均衡 / 频繁（会话覆盖；不安全档禁用） |
+| **7** | 设置页关键旋钮 | **已做** | 「晚压」卡片（compact / reserve / keepRecent） |
+| **8** | 会话压缩率 | **已做** | Usage：自动 / 满压 / 均衡 / 频繁 |
 
-其余（单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留别名、Usage 真实 usage）不排进上述主线，有体感再插队。
+可选后续（不挡发版）：单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留 env 别名、Usage 接入真实 measured usage。

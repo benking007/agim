@@ -68,9 +68,16 @@ ${AGIM_MEMORY_LINK_END}`
 /** Managed IM / bgjob SOP — baseline for EVERY IM agent workspace
  *  (Agim / Claude / opencode / Codex / …). Upserted on bootstrap into
  *  each agent's CLAUDE.md / AGENTS.md; operator edits outside the markers
- *  are preserved. Paths are portable shell expressions, never host-absolute. */
+ *  are preserved. Paths are portable shell expressions, never host-absolute.
+ *
+ *  Upgrade policy: never rewrite the whole role file. Seed only creates
+ *  missing files; existing AGENTS.md / CLAUDE.md are patched solely inside
+ *  these markers after a content diff. Put `AGIM_IM_OPS_FREEZE` anywhere in
+ *  the file (or set AGIM_IM_OPS_REFRESH=off) to opt out of managed refresh. */
 export const AGIM_IM_OPS_START = '<!-- agim:im-ops:start -->'
 export const AGIM_IM_OPS_END = '<!-- agim:im-ops:end -->'
+/** Opt-out marker: when present, bootstrap will not refresh im-ops. */
+export const AGIM_IM_OPS_FREEZE = '<!-- agim:im-ops:freeze -->'
 
 function normalizeAgentId(agentName: string): string {
   return (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
@@ -166,10 +173,75 @@ function appendSeparator(raw: string): string {
   return '\n\n'
 }
 
+function normalizeRoleText(s: string): string {
+  return s.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '')
+}
+
+function countChangedLines(before: string, after: string): number {
+  const a = before.split('\n')
+  const b = after.split('\n')
+  const n = Math.max(a.length, b.length)
+  let changed = 0
+  for (let i = 0; i < n; i++) {
+    if ((a[i] ?? '') !== (b[i] ?? '')) changed++
+  }
+  return changed
+}
+
+export type ImOpsUpsertPlan =
+  | { kind: 'skip-refresh-disabled' }
+  | { kind: 'skip-frozen' }
+  | { kind: 'skip-unchanged' }
+  | { kind: 'append'; next: string }
+  | { kind: 'patch'; next: string; changedLines: number; beforeBlock: string; afterBlock: string }
+
+/**
+ * Pure planner for managed im-ops upsert. Never rewrites the whole file —
+ * only appends a missing block, or patches the marked section when the
+ * desired block actually differs (diff-gated).
+ */
+export function planImOpsUpsert(raw: string, block: string): ImOpsUpsertPlan {
+  const refresh = (process.env.AGIM_IM_OPS_REFRESH || '').trim().toLowerCase()
+  if (refresh === 'off' || refresh === '0' || refresh === 'false' || refresh === 'no') {
+    return { kind: 'skip-refresh-disabled' }
+  }
+  if (raw.includes(AGIM_IM_OPS_FREEZE)) return { kind: 'skip-frozen' }
+
+  const start = raw.indexOf(AGIM_IM_OPS_START)
+  const end = raw.indexOf(AGIM_IM_OPS_END)
+  if (start >= 0 && end > start) {
+    const afterEnd = end + AGIM_IM_OPS_END.length
+    const beforeBlock = raw.slice(start, afterEnd)
+    // Diff gate: identical managed content → no write (version bumps must
+    // not touch an already-correct AGENTS.md).
+    if (normalizeRoleText(beforeBlock) === normalizeRoleText(block)) {
+      return { kind: 'skip-unchanged' }
+    }
+    const next = `${raw.slice(0, start)}${block}${raw.slice(afterEnd)}`
+    if (normalizeRoleText(next) === normalizeRoleText(raw)) {
+      return { kind: 'skip-unchanged' }
+    }
+    return {
+      kind: 'patch',
+      next,
+      changedLines: countChangedLines(beforeBlock, block),
+      beforeBlock,
+      afterBlock: block,
+    }
+  }
+
+  return { kind: 'append', next: `${raw}${appendSeparator(raw)}${block}\n` }
+}
+
 /**
  * Upsert the managed IM / bgjob SOP into an agent's role file
  * (AGENTS.md / CLAUDE.md). Applies to **all** IM agent workspaces.
- * Replaces an existing marked block in place; otherwise appends.
+ *
+ * Safety rules (upgrade / version bump):
+ *   - Never overwrite the entire role file.
+ *   - Content outside `<!-- agim:im-ops:* -->` is always preserved.
+ *   - Existing managed block is replaced only when a content diff exists.
+ *   - Freeze marker / AGIM_IM_OPS_REFRESH=off skips refresh entirely.
  */
 export async function ensureAgimImOpsGuide(
   agentName: string,
@@ -189,16 +261,25 @@ export async function ensureAgimImOpsGuide(
     throw err
   }
 
-  const start = raw.indexOf(AGIM_IM_OPS_START)
-  const end = raw.indexOf(AGIM_IM_OPS_END)
-  if (start >= 0 && end > start) {
-    const afterEnd = end + AGIM_IM_OPS_END.length
-    const next = `${raw.slice(0, start)}${block}${raw.slice(afterEnd)}`
-    if (next !== raw) await writeFile(guidePath, next, 'utf8')
+  const plan = planImOpsUpsert(raw, block)
+  if (plan.kind === 'skip-refresh-disabled' || plan.kind === 'skip-frozen' || plan.kind === 'skip-unchanged') {
     return guidePath
   }
 
-  await appendFile(guidePath, `${appendSeparator(raw)}${block}\n`, 'utf8')
+  if (plan.kind === 'patch') {
+    const { logger } = await import('./logger.js')
+    logger.info({
+      component: 'agent-cwd',
+      event: 'agent.guide.im_ops_patched',
+      agent: agentName,
+      file: guidePath,
+      changedLines: plan.changedLines,
+    }, 'im-ops managed block updated after diff (persona outside markers preserved)')
+    await writeFile(guidePath, plan.next, 'utf8')
+    return guidePath
+  }
+
+  await writeFile(guidePath, plan.next, 'utf8')
   return guidePath
 }
 
@@ -252,9 +333,12 @@ export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string 
 
 /**
  * Idempotent: create the workspace dir and seed initial CLAUDE.md / AGENTS.md
- * if they don't exist. Existing files are NEVER overwritten — the user is free
- * to evolve them by hand or have the agent itself rewrite them via
- * auto-memory.
+ * if they don't exist.
+ *
+ * **Existing files are NEVER overwritten** — not on version bump, not when
+ * the packaged seed template changes. Operators may freely edit persona /
+ * rules; only the marked im-ops block is eligible for diff-gated refresh
+ * via `ensureAgimImOpsGuide`.
  *
  * Honors AGIM_<AGENT>_CWD overrides — if set, we bootstrap THAT path
  * instead. Skips bootstrapping when the override is empty / unset and we
@@ -274,7 +358,7 @@ export async function ensureAgentWorkspace(
   try {
     await access(seedPath)
     // already exists — leave the user's customizations alone but read
-    // to scan for injection signals (R13 B2).
+    // to scan for injection signals (R13 B2). Never rewrite with seed.
     try {
       const { readFile } = await import('node:fs/promises')
       existingContent = await readFile(seedPath, 'utf8')
@@ -645,6 +729,10 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
 > 本文件会被 Agim Agent（\`/agim\`）在每次回话前注入 system prompt 顶部。
 > 编辑后下一轮即生效；个人覆盖可追加同目录 \`AGENTS.local.md\`。
 > 文件位置：${defaultAgentCwd('agim')}/AGENTS.md
+>
+> 版本升级 / \`agim start\`：**不会**整文件覆盖本文件。标记外人设永久保留；
+> 仅对 \`<!-- agim:im-ops -->\` 托管段做差异对比后更新。若不想自动刷新托管段，
+> 在文件任意处加入 \`<!-- agim:im-ops:freeze -->\`，或设 \`AGIM_IM_OPS_REFRESH=off\`。
 
 ## 你是谁
 你是 Agim，一个冷静、严谨的助理。

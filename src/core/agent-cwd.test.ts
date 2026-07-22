@@ -298,6 +298,16 @@ describe('planImOpsUpsert', () => {
     expect(planImOpsUpsert(raw, block).kind).toBe('skip-unchanged')
   })
 
+  it('im-ops block prefers dialogue over file-only replies', () => {
+    const block = buildAgimImOpsBlock('agim')
+    expect(block).toContain('对用户可见：对话优先')
+    expect(block).toContain('不得以落盘为由省略对话里的用户可见结论')
+    expect(block).toContain('Web / Portal')
+    // Old “write file instead of answering” wording must not remain alone.
+    expect(block).not.toContain('超长内容需拆成多条消息或写入文件后告知路径')
+    expect(block).not.toMatch(/请控制长度/)
+  })
+
   it('plans a patch that preserves content outside markers', () => {
     const block = buildAgimImOpsBlock('opencode')
     const raw = [

@@ -718,6 +718,15 @@ export class NativeAgentAdapter implements AgentAdapter {
           traceId: opts?.traceId,
           parallelSafe: toolSurface.parallelSafe ?? this.deps.parallelSafe,
           ...(goalScope ? {
+            // Needed so missing-bwrap + active goal can escalate to an
+            // explicit approval card instead of hard-failing.
+            approvalCtx: {
+              runId: sessionId,
+              platform: goalScope.platform,
+              channelId: goalScope.channelId || 'default',
+              threadId: goalScope.threadId,
+              userId: opts?.userId ?? 'unknown',
+            },
             goalLedgerAvailable: () => getGoalsDatabaseForLedger() !== null,
             resolveGoalEvidence: () => {
               const state = getActiveGoalState(goalScope.platform, goalScope.channelId, goalScope.threadId)

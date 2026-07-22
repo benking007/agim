@@ -127,6 +127,7 @@ function primaryInlineParam(toolName: string, input: Record<string, unknown>): s
     case 'WebSearch':
       return inlineableField(input.query, 80)
     case 'Bash':
+    case 'agim_exec':
       return inlineableField(input.command, 80)
   }
   return null
@@ -163,9 +164,12 @@ function formatInputBody(toolName: string, input: Record<string, unknown>, maxLe
   }
 
   switch (toolName) {
-    case 'Bash': {
+    case 'Bash':
+    case 'agim_exec': {
       const cmd = get('command')
       if (cmd && (cmd.length > 80 || cmd.includes('\n'))) big('命令', cmd)
+      const reason = get('reason')
+      if (reason) lines.push(`原因：${reason.length > maxLen ? `${reason.slice(0, maxLen - 1)}…` : reason}`)
       return lines
     }
     case 'Read': case 'NotebookRead': case 'LS': {

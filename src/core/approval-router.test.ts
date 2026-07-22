@@ -137,6 +137,26 @@ describe('formatApprovalPrompt', () => {
     expect(text).not.toContain('自动放行')
   })
 
+  it('renders agim_exec command + unconfined reason on explicit cards', () => {
+    const n: ApprovalNotification = {
+      runId: 'run-exec',
+      reqId: 'exec12345678',
+      toolName: 'agim_exec',
+      input: {
+        command: 'echo hi',
+        reason: '目标进行中且未启用 bwrap 沙箱',
+      },
+      toolUseId: '',
+      ctx: RUN_CTX,
+      requiresExplicitDecision: true,
+    }
+    const text = formatApprovalPrompt(n)
+    expect(text).toContain('必须确认')
+    expect(text).toContain('agim_exec')
+    expect(text).toContain('echo hi')
+    expect(text).toContain('bwrap')
+  })
+
   it('truncates very long input', () => {
     const big = 'x'.repeat(2000)
     const n: ApprovalNotification = {

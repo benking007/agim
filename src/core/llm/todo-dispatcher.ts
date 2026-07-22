@@ -27,15 +27,15 @@ import { createSqliteHelper } from '../sqlite-helper.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { canonicalizeToolName } from './tool-names.js'
+import {
+  renderMarkdownChecklist,
+  type TodoItem,
+  type TodoStatus,
+} from './todo-items.js'
 
 const log = rootLogger.child({ component: 'todo-dispatcher' })
 
-export type TodoStatus = 'pending' | 'in_progress' | 'completed'
-
-export interface TodoItem {
-  content: string
-  status: TodoStatus
-}
+export type { TodoItem, TodoStatus } from './todo-items.js'
 
 /** Three-state read for completion gates and inspectors. */
 export type TodoSnapshot =
@@ -198,9 +198,12 @@ export function getTodoTools(): ToolDef[] {
       name: 'agim_todo_write',
       description:
         'Overwrite this conversation\'s plan checklist with a fresh array of items. ' +
-        'Use this at the start of any multi-step task (≥ 3 steps) to externalise the plan, ' +
-        'then call it again to update statuses as you complete each step. The tool result ' +
-        'returns the rendered markdown checklist — the user sees your current state. ' +
+        'Use this at the start of any multi-step task (≥ 3 steps) to externalise the plan. ' +
+        'The user watches this checklist live in chat (like a progress board) — so you MUST ' +
+        'call it again immediately after finishing each item to mark that item completed and ' +
+        'set the next one to in_progress, BEFORE starting the next tool work. ' +
+        'Do NOT wait until the whole task finishes to batch all status changes. ' +
+        'The tool result returns the rendered markdown checklist. ' +
         '\n\n' +
         'Status legend: pending (not started) · in_progress (working on it now) · completed (done). ' +
         'Keep items short (one sentence). Exactly one item should be in_progress at a time.',
@@ -307,19 +310,6 @@ function handleWrite(args: Record<string, unknown>, threadKey: string): Dispatch
     isError: false,
     source: 'todo',
   }
-}
-
-/** Markdown checklist. Status icons match Claude Code's TodoWrite for
- *  user familiarity: ☐ pending · ▶ in_progress · ☑ completed. */
-function renderMarkdownChecklist(items: TodoItem[]): string {
-  if (items.length === 0) return '(plan cleared — no items)'
-  const lines: string[] = []
-  for (const [i, it] of items.entries()) {
-    const icon = it.status === 'completed' ? '☑'
-      : it.status === 'in_progress' ? '▶' : '☐'
-    lines.push(`${i + 1}. ${icon} ${it.content}`)
-  }
-  return lines.join('\n')
 }
 
 /** Test-only: drop memory + close the handle so a temp DB can be unlinked

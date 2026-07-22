@@ -73,6 +73,8 @@ export interface ChatActivityStep {
   startedAt: number
   finishedAt?: number
   preview?: string
+  /** Structured checklist when this step is agim_todo_write. */
+  todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
 }
 
 /** Cursor-style “Worked ›” block bound to an assistant reply. */
@@ -823,6 +825,7 @@ function reducer(s: ChatState, a: Action): ChatState {
           // Keep earliest start; prefer newer preview/status/finishedAt.
           startedAt: Math.min(prev.startedAt, a.step.startedAt),
           preview: a.step.preview ?? prev.preview,
+          todoItems: a.step.todoItems ?? prev.todoItems,
         }
       } else {
         steps.push(a.step)
@@ -1046,6 +1049,7 @@ export function useChat(): UseChat {
                             ? Date.parse(String(st.finishedAt))
                             : undefined),
                     preview: st.preview,
+                    ...(st.todoItems ? { todoItems: st.todoItems } : {}),
                   })),
                 }
               : undefined
@@ -1097,6 +1101,7 @@ export function useChat(): UseChat {
                   ? Date.parse(String(st.finishedAt))
                   : undefined),
           preview: st.preview,
+          ...(st.todoItems ? { todoItems: st.todoItems } : {}),
         })
         dispatch({
           kind: 'ACTIVE_RUN',
@@ -1185,6 +1190,7 @@ export function useChat(): UseChat {
             startedAt,
             finishedAt,
             preview: msg.step.preview,
+            ...(msg.step.todoItems ? { todoItems: msg.step.todoItems } : {}),
           },
         })
         return

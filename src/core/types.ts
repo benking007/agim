@@ -52,6 +52,8 @@ export interface PersistedChatActivity {
     startedAt: number
     finishedAt?: number
     preview?: string
+    /** Structured checklist when label is agim_todo_write (chat Todo UI). */
+    todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
   }>
 }
 
@@ -558,6 +560,8 @@ export interface ToolActivityStep {
   startedAt: number
   finishedAt?: number
   preview?: string
+  /** Structured checklist for `agim_todo_write` (avoids preview truncation). */
+  todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
 }
 
 /**

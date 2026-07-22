@@ -5,7 +5,7 @@
  * records (from ChatActivityBlock). One surface for live + completed turns.
  */
 
-import { useState, type ComponentType } from 'react'
+import { lazy, Suspense, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
@@ -21,7 +21,13 @@ import {
 } from 'lucide-react'
 
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
+import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
+
+const ChatTodoList = lazy(async () => {
+  const module = await import('@/components/chat/chat-todo-list')
+  return { default: module.ChatTodoList }
+})
 
 export interface PortalRunStatusProps {
   dark: boolean
@@ -95,6 +101,9 @@ function stepLabel(
   if (step.kind === 'status' && step.label === COMPACTING_CONTEXT_LABEL) {
     return t('chat.activityCompacting', { defaultValue: 'Compacting context' })
   }
+  if (isTodoActivityStep(step)) {
+    return t('chat.todoActivityLabel', { defaultValue: 'Plan updated' })
+  }
   return step.label
 }
 
@@ -114,8 +123,11 @@ export function PortalRunStatus({
   // Auto-hint expand when there are steps to inspect; default collapsed.
   const [open, setOpen] = useState(false)
 
+  // Prefer the real work tool under RUNNING… — Plan has its own card.
   const liveStep = activity
-    ? [...activity.steps].reverse().find((s) => s.status === 'running' || s.status === 'pending')
+    ? [...activity.steps].reverse().find((s) => (
+        (s.status === 'running' || s.status === 'pending') && !isTodoActivityStep(s)
+      ))
     : undefined
   const waitingAgent = activity
     ? [...activity.steps].reverse().find((s) => (
@@ -205,6 +217,13 @@ export function PortalRunStatus({
         </p>
       )}
 
+      {/* Plan card sits between run status and the assistant body (observer UX). */}
+      {activity && (
+        <Suspense fallback={null}>
+          <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
+        </Suspense>
+      )}
+
       {/* Completed: compact expandable tool record */}
       {showDoneSummary && (
         <button
@@ -281,7 +300,7 @@ export function PortalRunStatus({
                   </span>
                 )}
               </div>
-              {step.preview && (
+              {step.preview && !isTodoActivityStep(step) && (
                 <pre className={cn(
                   'agim-mono mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-md px-2 py-1 text-[11px] leading-snug',
                   dark ? 'bg-zinc-900 text-zinc-500' : 'bg-zinc-100 text-zinc-500',

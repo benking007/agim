@@ -5778,6 +5778,7 @@ async function handleClientMessage(
               startedAt: step.startedAt,
               finishedAt: step.finishedAt,
               preview: step.preview,
+              ...(step.todoItems ? { todoItems: step.todoItems } : {}),
             })
             // Drop steps after finishActiveRun — late MCP/approval cleanup
             // must not reopen a Running accordion on the SPA (CLI agents).

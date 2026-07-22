@@ -19,6 +19,7 @@ export interface ActiveRunStep {
   startedAt: number
   finishedAt?: number
   preview?: string
+  todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
 }
 
 export interface ActiveRunSnapshot {
@@ -73,8 +74,17 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): void
   const snap = runs.get(threadId)
   if (!snap || snap.status !== 'running') return
   const idx = snap.steps.findIndex((s) => s.id === step.id)
-  if (idx >= 0) snap.steps[idx] = step
-  else snap.steps.push(step)
+  if (idx >= 0) {
+    const prev = snap.steps[idx]
+    snap.steps[idx] = {
+      ...prev,
+      ...step,
+      preview: step.preview ?? prev.preview,
+      todoItems: step.todoItems ?? prev.todoItems,
+    }
+  } else {
+    snap.steps.push(step)
+  }
 }
 
 export function appendActiveRunChunk(threadId: string, chunk: string): void {

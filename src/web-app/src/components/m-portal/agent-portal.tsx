@@ -188,6 +188,57 @@ function petDemoMessages(): ChatMessage[] {
   ]
 }
 
+/** Local visual QA (`/m/chat?demo=todo`) — Cursor-style plan checklist card. */
+function todoDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo-todo-user',
+      role: 'user',
+      content: '帮我评估一下科技板块仓位，给出结论和操作建议。',
+      timestamp: now - 40_000,
+    },
+    {
+      id: 'demo-todo-assistant',
+      role: 'assistant',
+      agent: 'agim',
+      timestamp: now - 5_000,
+      activity: {
+        runId: 'demo-todo-run',
+        status: 'running',
+        startedAt: now - 38_000,
+        steps: [
+          {
+            id: 't-quote',
+            kind: 'tool',
+            label: 'agim_exec',
+            status: 'running',
+            startedAt: now - 20_000,
+            preview: 'curl -s "http://localhost:8000/api/v1/tushare/hk/quote/daily"',
+          },
+          {
+            id: 'agim-plan-checklist',
+            kind: 'tool',
+            label: 'agim_todo_write',
+            status: 'success',
+            startedAt: now - 37_000,
+            finishedAt: now - 36_000,
+            todoItems: [
+              { content: '获取科技板块相关指数近期走势（科创50、恒生科技、纳斯达克、创业板50）', status: 'completed' },
+              { content: '获取科技子板块行情（半导体、软件、通信、动漫游戏）', status: 'completed' },
+              { content: '获取腾讯及港股科技龙头最新行情与估值', status: 'in_progress' },
+              { content: '获取全球科技宏观事件与快讯', status: 'pending' },
+              { content: '逐仓位评估持有逻辑是否成立，给出结论与操作建议', status: 'pending' },
+              { content: '输出完整分析报告并落盘', status: 'pending' },
+            ],
+          },
+        ],
+      },
+      content: '正在拉取腾讯及港股科技龙头行情…',
+    },
+  ]
+}
+
 /** Local visual QA (`/m/chat?demo=media`) — 8 image thumbs (5+3 wrap) + @file. */
 function mediaDemoMessages(imagePaths: string[], filePath: string, fileName: string): ChatMessage[] {
   const now = Date.now()
@@ -327,12 +378,15 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'width'
   const demoPet = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'pet'
+  const demoTodo = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'todo'
   const demoMedia = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'media'
   const demoCollapse = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'collapse'
   const chatMessages = useMemo(
     () => {
+      if (demoTodo) return todoDemoMessages()
       if (demoPet) return petDemoMessages()
       if (demoWidth) return widthDemoMessages()
       if (demoCollapse) return collapseDemoMessages()
@@ -347,7 +401,7 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)

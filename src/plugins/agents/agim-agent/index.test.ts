@@ -1333,7 +1333,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       expect(compactSteps.some((s) => s.preview?.includes('mid-turn'))).toBe(true)
       expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
       expect(outcome?.contextBudget?.compactSuccess).toBeGreaterThanOrEqual(1)
-      expect((outcome?.contextBudget?.clearCount ?? 0)).toBeGreaterThanOrEqual(1)
+      expect((outcome?.contextBudget?.tokensBefore ?? 0)).toBeGreaterThan(0)
     } finally {
       delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
       delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS

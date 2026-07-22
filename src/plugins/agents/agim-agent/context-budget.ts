@@ -330,7 +330,9 @@ export function applyContextBudgetToMessages(
   const window = Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : 1_000_000
   const estimated = estimateMessagesTokens(messages)
   const emergencyLine = window - budget.compaction.reserveTokens
-  const emergency = estimated > emergencyLine && emergencyLine > 0
+  // When reserve ≥ window (tiny / misconfigured), treat any non-empty context
+  // as already past the late-compaction line.
+  const emergency = emergencyLine <= 0 ? estimated > 0 : estimated > emergencyLine
 
   const settings: ToolClearingSettings = emergency
     ? {

@@ -12,7 +12,7 @@
 //   - history     → seeded into a COLD session only
 //   - opts.planMode → tool_call hook blocks mutating tools
 //   - opts.onUsage  → surfaced from the returned AssistantMessage.usage
-//   - compaction    → before each turn, summarize old history when the session
+//   - compaction    → pre-turn + mid-turn (turn_end) summarize when the session
 //                     exceeds the model window (pi never auto-compacts)
 //   - yields        → delivered assistant text (buffered; token streaming is a
 //                     follow-up — pi exposes an event stream we can wire later).
@@ -22,14 +22,8 @@
 
 import {
   AgentHarness,
-  calculateContextTokens,
-  compact,
-  estimateContextTokens,
   FileError,
-  getLastAssistantUsage,
   JsonlSessionRepo,
-  prepareCompaction,
-  shouldCompact,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import type { AgentHarnessStreamOptions, AgentMessage, Result } from '@earendil-works/pi-agent-core'
@@ -60,11 +54,15 @@ import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
 import {
-  applyClearingToPreparation,
   applyContextBudgetToMessages,
-  COMPACTION_ACTIVITY_LABEL,
   resolveContextBudgetSettings,
 } from './context-budget.js'
+import {
+  contextExceedsReserve,
+  measureContextTokens,
+  runTranscriptCompaction,
+  shouldRunMidTurnCompaction,
+} from './transcript-compaction.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
@@ -819,11 +817,14 @@ export class NativeAgentAdapter implements AgentAdapter {
     let offTrackDetail = ''
     let semanticStuckSoftSteerUsed = false
     let compactionCalls = 0
+    /** At most one mid-turn transcript compact per user message. */
+    let midTurnCompactDone = false
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
     /** Substantive assistant text from hops that also emitted tool calls. */
     const midTurnTexts: string[] = []
+
     const mergeProviderUsage = (usage: {
       promptTokens?: number
       completionTokens?: number
@@ -893,6 +894,47 @@ export class NativeAgentAdapter implements AgentAdapter {
           preview: step.preview,
         })
       } catch { /* observer must not break the harness loop */ }
+    }
+
+    const runCompactionCycle = async (reason: 'pre-turn' | 'mid-turn'): Promise<void> => {
+      const compactionController = new AbortController()
+      const externalSignal = opts?.signal
+      const forwardCompactionAbort = () => compactionController.abort(externalSignal?.reason)
+      externalSignal?.addEventListener('abort', forwardCompactionAbort, { once: true })
+      if (externalSignal?.aborted) forwardCompactionAbort()
+      const compactionTimeoutMs = Math.max(1, this.deps.streamOptions?.timeoutMs ?? 120_000)
+      const compactionTimer = setTimeout(() => {
+        compactionController.abort(new Error(`compaction timed out after ${compactionTimeoutMs}ms`))
+      }, compactionTimeoutMs)
+      compactionTimer.unref?.()
+      try {
+        const result = await runTranscriptCompaction({
+          session,
+          model: binding.model,
+          getApiKeyAndHeaders: binding.getApiKeyAndHeaders,
+          budget,
+          costKnown: binding.costKnown === true,
+          thinkingLevel,
+          signal: compactionController.signal,
+          customInstructions: budget.compactInstructions,
+          emitActivity: (step) => { emitToolActivity(step) },
+          reason,
+        })
+        if (!result.compacted) return
+        sawUsage = true
+        usageInput += result.approxIn
+        usageOutput += result.approxOut
+        compactionCalls += 1
+        if (result.estimatedCostUsd != null) usageCost += result.estimatedCostUsd
+      } catch (err) {
+        console.error(
+          `[agim-agent] compaction skipped (${reason}):`,
+          err instanceof Error ? err.message : String(err),
+        )
+      } finally {
+        clearTimeout(compactionTimer)
+        externalSignal?.removeEventListener('abort', forwardCompactionAbort)
+      }
     }
     const toolStartAt = new Map<string, number>()
 
@@ -1076,6 +1118,30 @@ export class NativeAgentAdapter implements AgentAdapter {
             }
           }
         }
+        // Mid-turn L2: after tools land, if emergency clearing still cannot
+        // fit under window-reserve, summarize before the next model hop.
+        if (
+          !stopReason
+          && !midTurnCompactDone
+          && Array.isArray(event.toolResults)
+          && event.toolResults.length > 0
+          && this.deps.compactionEnabled !== false
+          && budget.compaction.enabled
+          && Number.isFinite(binding.model.contextWindow)
+        ) {
+          try {
+            const live = (await session.buildContext()).messages
+            if (shouldRunMidTurnCompaction(live, budget, binding.model.contextWindow)) {
+              midTurnCompactDone = true
+              await runCompactionCycle('mid-turn')
+            }
+          } catch (err) {
+            console.error(
+              '[agim-agent] mid-turn compaction check skipped:',
+              err instanceof Error ? err.message : String(err),
+            )
+          }
+        }
         return
       }
       if (event.type !== 'message_end' || event.message.role !== 'assistant') return
@@ -1149,128 +1215,25 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
 
     // Proactive context management (cookbook: clear → compact):
-    //   1) tool-result clearing happens in the context hook (view-time)
-    //   2) transcript compaction runs here BEFORE the turn when the session
-    //      exceeds contextWindow - reserveTokens.
-    // Best-effort — failure must not block the turn. Off via
-    // AGIM_CTX_COMPACT=off (legacy: AGIM_NATIVE_COMPACTION=off).
+    //   1) tool-result clearing in the context hook (view-time + emergency)
+    //   2) pre-turn L2 compact when the durable session is already over budget
+    //   3) mid-turn L2 compact from turn_end when tools inflate past the line
+    // Best-effort — failure must not block the turn. Off via AGIM_CTX_COMPACT=off.
     if (
       this.deps.compactionEnabled !== false
       && budget.compaction.enabled
       && Number.isFinite(binding.model.contextWindow)
     ) {
-      const compactionController = new AbortController()
-      const externalSignal = opts?.signal
-      const forwardCompactionAbort = () => compactionController.abort(externalSignal?.reason)
-      externalSignal?.addEventListener('abort', forwardCompactionAbort, { once: true })
-      if (externalSignal?.aborted) forwardCompactionAbort()
-      const compactionTimeoutMs = Math.max(1, this.deps.streamOptions?.timeoutMs ?? 120_000)
-      const compactionTimer = setTimeout(() => {
-        compactionController.abort(new Error(`compaction timed out after ${compactionTimeoutMs}ms`))
-      }, compactionTimeoutMs)
-      compactionTimer.unref?.()
       try {
-        const branchEntries = await session.getBranch()
-        const usage = getLastAssistantUsage(branchEntries)
-        const estimated = estimateContextTokens(
-          (await session.buildContext()).messages,
-        ).tokens
-        // Prefer provider usage when present, but never skip compaction solely
-        // because the last assistant row lacked usage (first turns / errors).
-        const contextTokens = usage
-          ? Math.max(calculateContextTokens(usage), estimated)
-          : estimated
-        if (shouldCompact(contextTokens, binding.model.contextWindow, budget.compaction)) {
-          const preparationResult = prepareCompaction(branchEntries, budget.compaction)
-          if (!preparationResult.ok) throw preparationResult.error
-          const preparation = preparationResult.value
-          if (preparation) {
-            const compactionId = `compaction-${Date.now().toString(36)}`
-            const compactionStartedAt = Date.now()
-            emitToolActivity({
-              id: compactionId,
-              kind: 'status',
-              label: COMPACTION_ACTIVITY_LABEL,
-              status: 'running',
-              startedAt: compactionStartedAt,
-            })
-            // Yield so the SPA can paint "Compacting context" before the
-            // summarization round-trip (fast failures otherwise flash past).
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, 40)
-            })
-            try {
-              const clearedPrep = budget.clearing.enabled
-                ? applyClearingToPreparation(preparation, budget.clearing)
-                : preparation
-              const auth = await binding.getApiKeyAndHeaders()
-              const compactResult = await compact(
-                clearedPrep,
-                binding.model,
-                auth.apiKey,
-                auth.headers,
-                budget.compactInstructions,
-                compactionController.signal,
-                thinkingLevel,
-              )
-              if (!compactResult.ok) throw compactResult.error
-              const compacted = compactResult.value
-              await session.appendCompaction(
-                compacted.summary,
-                compacted.firstKeptEntryId,
-                compacted.tokensBefore,
-                compacted.details,
-                true,
-              )
-              // Compaction summarization does not append an assistant usage
-              // row — estimate from tokensBefore + summary length so /stats
-              // still accounts for the auxiliary call.
-              const approxOut = Math.max(1, Math.ceil(compacted.summary.length / 4))
-              const approxIn = Math.max(approxOut, Math.min(compacted.tokensBefore, binding.model.contextWindow))
-              sawUsage = true
-              usageInput += approxIn
-              usageOutput += approxOut
-              compactionCalls += 1
-              if (binding.costKnown) {
-                const estimatedCost = estimateCostUsd(undefined, binding.model.id, {
-                  input: approxIn,
-                  output: approxOut,
-                })
-                if (estimatedCost != null) usageCost += estimatedCost
-              }
-              emitToolActivity({
-                id: compactionId,
-                kind: 'status',
-                label: COMPACTION_ACTIVITY_LABEL,
-                status: 'success',
-                startedAt: compactionStartedAt,
-                finishedAt: Date.now(),
-                preview: `tokensBefore≈${compacted.tokensBefore}`,
-              })
-              console.info(
-                `[agim-agent] compaction: tokensBefore≈${compacted.tokensBefore} `
-                + `→ kept from ${compacted.firstKeptEntryId.slice(0, 8)}… `
-                + `(reserve=${budget.compaction.reserveTokens}, keepRecent=${budget.compaction.keepRecentTokens})`,
-              )
-            } catch (compactErr) {
-              emitToolActivity({
-                id: compactionId,
-                kind: 'status',
-                label: COMPACTION_ACTIVITY_LABEL,
-                status: 'error',
-                startedAt: compactionStartedAt,
-                finishedAt: Date.now(),
-                preview: compactErr instanceof Error ? compactErr.message : String(compactErr),
-              })
-              throw compactErr
-            }
-          }
+        const contextTokens = await measureContextTokens(session)
+        if (contextExceedsReserve(contextTokens, binding.model.contextWindow, budget.compaction)) {
+          await runCompactionCycle('pre-turn')
         }
       } catch (err) {
-        console.error('[agim-agent] compaction skipped:', err instanceof Error ? err.message : String(err))
-      } finally {
-        clearTimeout(compactionTimer)
-        externalSignal?.removeEventListener('abort', forwardCompactionAbort)
+        console.error(
+          '[agim-agent] compaction skipped (pre-turn):',
+          err instanceof Error ? err.message : String(err),
+        )
       }
     }
 

@@ -13,11 +13,10 @@
 |----|------|--------|--------------|-----|
 | **L1 常规清理** | 每轮多次请求模型前的 `context` hook | 把旧 `toolResult` 换成短占位 | 否（仅 view） | 否（仅日志） |
 | **L1 紧急清理** | 同 hook；估算已超过 `window − reserve` | 更狠地清（最多保留 2 条近期 tool 结果） | 否 | 否 |
-| **L2 晚压 compact** | **每轮用户消息进入后、真正调模型前** | 总结旧历史，写入 compaction 条目 | 是（追加 summary） | 有「正在压缩上下文」 |
+| **L2 预轮 compact** | 用户消息进入后、真正调模型前 | 总结旧历史，写入 compaction 条目 | 是（追加 summary） | 有「正在压缩上下文」 |
+| **L2 中途 compact** | 工具轮 `turn_end`；紧急清理后仍超线 | 同上（每用户消息最多一次） | 是 | 有「正在压缩上下文」 |
 
 压缩失败：**不阻断任务**，打 error 步骤后继续本轮。
-
-> P0 不做「中途二次 transcript 总结」。中途爆窗的第一道闸是紧急 tool 清理；完整 mid-turn compact 可作为后续增强。
 
 ## 2. 晚压默认（按窗口缩放）
 
@@ -50,14 +49,15 @@ L2 压缩**不是结束任务**。流程是：
 ```text
 estimatedTokens > contextWindow - reserveTokens
   → emergency tool-result clearing（keep ≤ 2，无 UI）
+  → 若清理后仍超线 → mid-turn transcript compact（turn_end，每轮最多一次）
 ```
 
-这与 L2 触发线相同：已经进入「本该 compact」的危险区，但本轮已在跑、不便再开一轮总结时，先用清理换生存空间，让任务继续。
+预轮 L2 挡「进门已过大」；中途 L2 挡「工具环内暴涨且紧急清理不够」。二者失败都不阻断任务。
 
-后续可增强（未做）：
+仍可增强：
 
-- 工具返回后预估「下一跳输入」再决定是否插一次 mid-turn compact
-- 对超大单次 tool 结果在写入前截断（已有 `AGIM_NATIVE_TOOL_RESULT_MAX_CHARS` 一类上限可配合）
+- **前瞻预算**：工具返回后预估下一跳输入，再决定清 / 压（见 §7 项 2）
+- 与 `AGIM_NATIVE_TOOL_RESULT_MAX_CHARS` 的写入前截断策略显式对齐
 
 ## 4. 环境变量（统一 `AGIM_CTX_*`）
 
@@ -112,12 +112,12 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 
 P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下列顺序推进：
 
-| 序 | 项 | 说明 |
-|----|----|------|
-| **1** | Mid-turn transcript compact | 紧急清 tool 仍不够时，在工具轮之间插一次真正的 summary |
-| **2** | 前瞻预算 | 工具返回后估算下一跳输入，预测会爆再决定清 / 压 |
-| **5** | 指标 | clear / emergency / compact 次数、tokensBefore、失败率 |
-| **7** | 设置页关键旋钮 | 开/关 compact、reserve、keepRecent（带晚压推荐说明） |
-| **8** | 按模型档位预设 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |
+| 序 | 项 | 状态 | 说明 |
+|----|----|------|------|
+| **1** | Mid-turn transcript compact | **已做** | `turn_end`；紧急清理后仍超线则 summary（每用户消息最多一次） |
+| **2** | 前瞻预算 | 待做 | 工具返回后估算下一跳输入，预测会爆再决定清 / 压 |
+| **5** | 指标 | 待做 | clear / emergency / compact 次数、tokensBefore、失败率 |
+| **7** | 设置页关键旋钮 | 待做 | 开/关 compact、reserve、keepRecent（带晚压推荐说明） |
+| **8** | 按模型档位预设 | 待做 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |
 
 其余（单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留别名、Usage 真实 usage）不排进上述主线，有体感再插队。

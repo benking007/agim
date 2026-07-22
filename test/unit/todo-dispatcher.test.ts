@@ -30,6 +30,8 @@ describe('todo-dispatcher (v1.2.124)', () => {
       expect(tools).toHaveLength(1)
       expect(tools[0]!.name).toBe('agim_todo_write')
       expect(tools[0]!.timeoutMs).toBe(5000)
+      expect(tools[0]!.description).toMatch(/immediately after finishing each item/i)
+      expect(tools[0]!.description).toMatch(/Do NOT wait until the whole task finishes/i)
     })
 
     it('isTodoToolName recognises the tool', () => {

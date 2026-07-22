@@ -618,6 +618,56 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     ])
   })
 
+  it('collapses progressive agim_todo_write activity onto one plan step id', async () => {
+    const itemsA = [
+      { content: 'one', status: 'in_progress' as const },
+      { content: 'two', status: 'pending' as const },
+    ]
+    const itemsB = [
+      { content: 'one', status: 'completed' as const },
+      { content: 'two', status: 'in_progress' as const },
+    ]
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall('agim_todo_write', { items: itemsA }, { id: 'todo-a' }),
+        { stopReason: 'toolUse' },
+      ),
+      fauxAssistantMessage(
+        fauxToolCall('agim_todo_write', { items: itemsB }, { id: 'todo-b' }),
+        { stopReason: 'toolUse' },
+      ),
+      fauxAssistantMessage('ok'),
+    ])
+    const tool: ToolDef = {
+      name: 'agim_todo_write',
+      description: 'todo',
+      parameters: {
+        type: 'object',
+        properties: { items: { type: 'array' } },
+        required: ['items'],
+      },
+    }
+    const steps: Array<{ id: string; status: string; todoItems?: unknown }> = []
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-todo-plan-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools: [tool],
+        dispatch: async () => ({ text: '1. ▶ one\n2. ☐ two', isError: false }),
+      }),
+    })
+    await collect(adapter.sendPrompt('todo-plan-step', 'plan', undefined, {
+      onToolActivity: (step) => {
+        steps.push({ id: step.id, status: step.status, todoItems: step.todoItems })
+      },
+    }))
+    expect(steps.every((s) => s.id === 'agim-plan-checklist')).toBe(true)
+    expect(steps.filter((s) => s.status === 'running')).toHaveLength(2)
+    expect(steps.filter((s) => s.status === 'success')).toHaveLength(2)
+    expect(steps.at(-1)?.todoItems).toEqual(itemsB)
+  })
+
   it('emits onToolActivity denied when approval gate blocks', async () => {
     const reg = faux()
     reg.setResponses([

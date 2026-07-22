@@ -230,12 +230,12 @@ export default function ChatRoute(): JSX.Element {
             return (
               <div key={m.id} className="space-y-1">
                 {m.role === 'assistant' && m.activity && (
-                  <div className="space-y-1.5">
-                    <Suspense fallback={null}>
-                      <ChatTodoList activity={m.activity} />
-                    </Suspense>
-                    <ChatActivityBlock activity={m.activity} />
-                  </div>
+                  <ChatActivityBlock activity={m.activity} />
+                )}
+                {m.role === 'assistant' && m.activity && (
+                  <Suspense fallback={null}>
+                    <ChatTodoList activity={m.activity} />
+                  </Suspense>
                 )}
                 <MessageBubble
                   msg={m}

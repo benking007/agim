@@ -288,6 +288,9 @@ function previewToolInput(input: unknown, toolName?: string): string | undefined
   }
 }
 
+/** Stable activity step id so progressive agim_todo_write calls update one Plan card. */
+const PLAN_CHECKLIST_STEP_ID = 'agim-plan-checklist'
+
 function todoItemsForActivity(toolName: string | undefined, input: unknown, resultText?: string): TodoItem[] | undefined {
   if (!isTodoActivityLabel(toolName)) return undefined
   return resolveTodoItems({ input, resultText }) ?? undefined
@@ -941,8 +944,11 @@ export class NativeAgentAdapter implements AgentAdapter {
       // so the accordion shows a single "Waiting for subagent" row.
       if (isCallAgentTool(step.label) && step.status !== 'denied') return
       try {
+        // Collapse every todo_write onto one step id so the Plan card
+        // refreshes in place as items complete mid-turn (observer UX).
+        const stepId = isTodoActivityLabel(step.label) ? PLAN_CHECKLIST_STEP_ID : step.id
         opts.onToolActivity({
-          id: step.id,
+          id: stepId,
           kind: step.kind ?? classifyToolActivityKind(step.label),
           label: step.label,
           status: step.status,

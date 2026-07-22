@@ -123,8 +123,11 @@ export function PortalRunStatus({
   // Auto-hint expand when there are steps to inspect; default collapsed.
   const [open, setOpen] = useState(false)
 
+  // Prefer the real work tool under RUNNING… — Plan has its own card.
   const liveStep = activity
-    ? [...activity.steps].reverse().find((s) => s.status === 'running' || s.status === 'pending')
+    ? [...activity.steps].reverse().find((s) => (
+        (s.status === 'running' || s.status === 'pending') && !isTodoActivityStep(s)
+      ))
     : undefined
   const waitingAgent = activity
     ? [...activity.steps].reverse().find((s) => (
@@ -163,11 +166,6 @@ export function PortalRunStatus({
 
   return (
     <div className={cn('w-full space-y-2', className)}>
-      {activity && (
-        <Suspense fallback={null}>
-          <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
-        </Suspense>
-      )}
       <div className="flex items-center gap-2">
         <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', agentColor)}>
           <AgentIcon className="h-3.5 w-3.5" />
@@ -217,6 +215,13 @@ export function PortalRunStatus({
                 })
               : null}
         </p>
+      )}
+
+      {/* Plan card sits between run status and the assistant body (observer UX). */}
+      {activity && (
+        <Suspense fallback={null}>
+          <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
+        </Suspense>
       )}
 
       {/* Completed: compact expandable tool record */}

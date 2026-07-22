@@ -689,6 +689,51 @@ describe('chatReducer', () => {
     })
   })
 
+  it('ACTIVITY_STEP refreshes todoItems on the stable plan step mid-turn', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'agim-plan-checklist',
+          kind: 'tool',
+          label: 'agim_todo_write',
+          status: 'success',
+          startedAt: 1_100,
+          finishedAt: 1_200,
+          todoItems: [
+            { content: 'one', status: 'in_progress' },
+            { content: 'two', status: 'pending' },
+          ],
+        },
+      },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'agim-plan-checklist',
+          kind: 'tool',
+          label: 'agim_todo_write',
+          status: 'success',
+          startedAt: 1_500,
+          finishedAt: 1_600,
+          todoItems: [
+            { content: 'one', status: 'completed' },
+            { content: 'two', status: 'in_progress' },
+          ],
+        },
+      },
+    )
+    expect(after.messages[1]?.activity?.steps).toHaveLength(1)
+    expect(after.messages[1]?.activity?.steps[0]?.todoItems).toEqual([
+      { content: 'one', status: 'completed' },
+      { content: 'two', status: 'in_progress' },
+    ])
+  })
+
   it('ACTIVITY_STEP accepts agent (A2A) steps', () => {
     const after = reduce(
       initialChatState,

@@ -109,15 +109,16 @@ function pickPhrase(list: unknown, fallback: string): string {
 }
 
 function palette(dark: boolean): Record<string, string> {
+  // Match /m/login splash — rose / crimson pet (not teal).
   return {
-    o: dark ? '#2dd4bf' : '#14b8a6',
-    Y: dark ? '#5eead4' : '#5eead4',
-    E: dark ? '#0f172a' : '#134e4a',
-    X: dark ? '#0f172a' : '#134e4a',
-    U: dark ? '#0f172a' : '#134e4a',
-    M: dark ? '#f472b6' : '#fb7185',
-    W: dark ? '#f9a8d4' : '#fda4af',
-    O: dark ? '#0d9488' : '#0f766e',
+    o: dark ? '#fb7185' : '#e11d48',
+    Y: dark ? '#fecdd3' : '#fb7185',
+    E: dark ? '#1c1917' : '#450a0a',
+    X: dark ? '#1c1917' : '#450a0a',
+    U: dark ? '#1c1917' : '#450a0a',
+    M: dark ? '#fff1f2' : '#fda4af',
+    W: dark ? '#fecdd3' : '#fecdd3',
+    O: dark ? '#e11d48' : '#be123c',
   }
 }
 

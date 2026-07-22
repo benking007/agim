@@ -2,120 +2,340 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<meta name="theme-color" content="#0b0c0e" />
-<title>agim · 手机登录</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Agim</title>
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #fafafa; --fg: #111; --dim: #6b7280; --card: #fff; --border: #e5e7eb;
-    --accent: #2563eb; --danger: #b91c1c; --ok: #047857;
+    --ink: #7f1d1d;
+    --muted: #9f6767;
+    --ok: #be123c;
+    --danger: #b91c1c;
+    --pet-body: #e11d48;
+    --pet-hi: #fb7185;
+    --pet-eye: #450a0a;
+    --pet-mouth: #fda4af;
+    --pet-chin: #be123c;
+    --accent: #e11d48;
+    --accent-deep: #9f1239;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0b0c0e; --fg: #e5e7eb; --dim: #9ca3af; --card: #1a1b1e; --border: #2a2c30; }
+    :root {
+      --ink: #ffe4e6;
+      --muted: #fda4af;
+      --ok: #fb7185;
+      --danger: #fecdd3;
+      --pet-body: #fb7185;
+      --pet-hi: #fecdd3;
+      --pet-eye: #1c1917;
+      --pet-mouth: #fff1f2;
+      --pet-chin: #e11d48;
+      --accent: #fb7185;
+      --accent-deep: #be123c;
+    }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
-    background: var(--bg); color: var(--fg);
-    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-    min-height: 100dvh; display: flex; flex-direction: column;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    min-height: 100dvh;
+    font-family: "Agim CJK", -apple-system, BlinkMacSystemFont, "PingFang SC",
+      "Hiragino Sans GB", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif,
+      "Apple Color Emoji", "Segoe UI Emoji";
+    color: var(--ink);
+    background: #fafafa;
   }
-  main {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 24px;
+  @media (prefers-color-scheme: dark) {
+    body {
+      background: #141414;
+    }
   }
-  .card {
-    width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 14px; padding: 24px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+
+  .splash {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding:
+      max(2.5rem, env(safe-area-inset-top))
+      1.5rem
+      max(2rem, env(safe-area-inset-bottom));
+    text-align: center;
   }
-  h1 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
-  .sub { margin: 0 0 18px; color: var(--dim); font-size: 13px; }
-  .spinner {
-    width: 22px; height: 22px; border: 2px solid var(--border); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.9s linear infinite; display: inline-block; vertical-align: middle;
+
+  .stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    animation: splash-in 0.55s ease-out both;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .msg { margin-top: 10px; font-size: 13px; }
-  .msg.err { color: var(--danger); }
-  .msg.ok { color: var(--ok); }
+
+  .pet-wrap {
+    position: relative;
+    width: 7.5rem;
+    height: 7.5rem;
+    display: grid;
+    place-items: center;
+    animation: pet-bob 2.6s ease-in-out infinite;
+  }
+  .pet-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 8% 10%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(225, 29, 72, 0.28), transparent 70%);
+    filter: blur(6px);
+    z-index: 0;
+  }
+  .pet {
+    position: relative;
+    z-index: 1;
+    width: 5.5rem;
+    height: 5.5rem;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    filter: drop-shadow(0 10px 18px rgba(190, 18, 60, 0.28));
+  }
+
+  .brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .brand-word {
+    margin: 0;
+    font-size: clamp(1.85rem, 7vw, 2.35rem);
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-indent: 0.14em;
+    line-height: 1;
+  }
+  .brand-tag {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: 0.9;
+  }
+
+  .status {
+    min-height: 2.75rem;
+    margin-top: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.55rem;
+  }
+  .dots {
+    display: inline-flex;
+    gap: 0.35rem;
+    height: 0.5rem;
+    align-items: center;
+  }
+  .dots i {
+    width: 0.38rem;
+    height: 0.38rem;
+    border-radius: 50%;
+    background: var(--pet-body);
+    opacity: 0.35;
+    animation: dot-pulse 1.1s ease-in-out infinite;
+  }
+  .dots i:nth-child(2) { animation-delay: 0.15s; }
+  .dots i:nth-child(3) { animation-delay: 0.3s; }
+  .status[data-phase="ok"] .dots,
+  .status[data-phase="err"] .dots { display: none; }
+
+  .msg {
+    margin: 0;
+    max-width: 16rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .status[data-phase="ok"] .msg { color: var(--ok); font-weight: 600; }
+  .status[data-phase="err"] .msg { color: var(--danger); }
+
   .retry {
-    margin-top: 14px; display: inline-block; padding: 8px 14px; border-radius: 8px;
-    background: var(--accent); color: white; text-decoration: none; font-size: 14px;
+    display: none;
+    margin-top: 0.15rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    background: var(--accent-deep);
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 6px 16px rgba(190, 18, 60, 0.28);
   }
-  .hint { margin-top: 10px; font-size: 12px; color: var(--dim); }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-    background: var(--bg); padding: 1px 6px; border-radius: 4px; }
+  .status[data-phase="err"] .retry { display: inline-flex; }
+
+  .foot {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: max(1.1rem, env(safe-area-inset-bottom));
+    padding: 0 1.5rem;
+    font-size: 0.68rem;
+    line-height: 1.45;
+    color: var(--muted);
+    opacity: 0.75;
+    text-align: center;
+  }
+  .status[data-phase="ok"] ~ .foot { opacity: 0; }
+
+  @keyframes splash-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes pet-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 0.28; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-2px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pet-wrap, .dots i, .stage { animation: none !important; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <div class="card">
-    <h1 id="title">登录手机版 agim chat…</h1>
-    <p class="sub" id="sub">正在验证扫码 token，请稍候</p>
-    <div id="state"><span class="spinner"></span></div>
-    <div id="msg" class="msg"></div>
-    <div class="hint" id="hint">扫码生成的链接只能用一次性进入；如需重新进入，请回到桌面 admin 重新生成二维码。</div>
-  </div>
-</main>
+  <main class="splash" role="main" aria-busy="true" aria-live="polite">
+    <div class="stage">
+      <div class="pet-wrap" aria-hidden="true">
+        <!-- Same idle pixel pet as Portal (16×16). -->
+        <svg class="pet" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="15" width="8" height="1" fill="#000" opacity="0.18"/>
+          <!-- body o -->
+          <rect x="6" y="1" width="4" height="1" fill="var(--pet-body)"/>
+          <rect x="5" y="2" width="6" height="1" fill="var(--pet-body)"/>
+          <rect x="4" y="3" width="8" height="1" fill="var(--pet-body)"/>
+          <rect x="3" y="4" width="2" height="1" fill="var(--pet-body)"/><rect x="5" y="4" width="1" height="1" fill="var(--pet-hi)"/><rect x="6" y="4" width="4" height="1" fill="var(--pet-body)"/><rect x="10" y="4" width="1" height="1" fill="var(--pet-hi)"/><rect x="11" y="4" width="2" height="1" fill="var(--pet-body)"/>
+          <rect x="3" y="5" width="10" height="1" fill="var(--pet-body)"/>
+          <rect x="2" y="6" width="12" height="1" fill="var(--pet-body)"/>
+          <rect x="2" y="7" width="2" height="1" fill="var(--pet-body)"/><rect x="4" y="7" width="2" height="1" fill="var(--pet-eye)"/><rect x="6" y="7" width="4" height="1" fill="var(--pet-body)"/><rect x="10" y="7" width="2" height="1" fill="var(--pet-eye)"/><rect x="12" y="7" width="2" height="1" fill="var(--pet-body)"/>
+          <rect x="2" y="8" width="2" height="1" fill="var(--pet-body)"/><rect x="4" y="8" width="2" height="1" fill="var(--pet-eye)"/><rect x="6" y="8" width="4" height="1" fill="var(--pet-body)"/><rect x="10" y="8" width="2" height="1" fill="var(--pet-eye)"/><rect x="12" y="8" width="2" height="1" fill="var(--pet-body)"/>
+          <rect x="2" y="9" width="12" height="1" fill="var(--pet-body)"/>
+          <rect x="3" y="10" width="10" height="1" fill="var(--pet-body)"/>
+          <rect x="3" y="11" width="4" height="1" fill="var(--pet-body)"/><rect x="7" y="11" width="2" height="1" fill="var(--pet-mouth)"/><rect x="9" y="11" width="4" height="1" fill="var(--pet-body)"/>
+          <rect x="3" y="12" width="10" height="1" fill="var(--pet-body)"/>
+          <rect x="4" y="13" width="5" height="1" fill="var(--pet-body)"/><rect x="9" y="13" width="1" height="1" fill="var(--pet-chin)"/><rect x="10" y="13" width="2" height="1" fill="var(--pet-body)"/>
+          <rect x="5" y="14" width="6" height="1" fill="var(--pet-body)"/>
+          <rect x="6" y="15" width="1" height="1" fill="var(--pet-body)"/><rect x="9" y="15" width="1" height="1" fill="var(--pet-body)"/>
+        </svg>
+      </div>
+
+      <div class="brand">
+        <h1 class="brand-word">AGIM</h1>
+        <p class="brand-tag" id="tag">mobile</p>
+      </div>
+
+      <div class="status" id="status" data-phase="loading">
+        <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <p class="msg" id="msg"></p>
+        <a class="retry" id="retry" href="/login"></a>
+      </div>
+    </div>
+    <p class="foot" id="hint"></p>
+  </main>
 <script>
-(function(){
-  var L = (navigator.language || 'zh').toLowerCase().slice(0,2) === 'en' ? 'en' : 'zh';
+(function () {
+  var L = (navigator.language || 'zh').toLowerCase().slice(0, 2) === 'en' ? 'en' : 'zh';
   var T = {
-    zh: { title: '登录手机版 agim chat…', sub: '正在验证扫码 token，请稍候',
-          bad: 'Token 已失效或被撤销。请回到桌面 admin 重新扫码。',
-          missing: '链接里没有 token。请通过 admin 后台「Mobile / 手机端」生成二维码后扫码。',
-          neterr: '网络错误：', ok: '验证通过，正在跳转聊天界面…',
-          retry: '回到登录页' },
-    en: { title: 'Signing in to mobile agim chat…', sub: 'Verifying the QR token, please wait',
-          bad: 'Token expired or revoked. Re-generate the QR from the desktop admin.',
-          missing: 'No token in the URL. Generate a QR from admin → Mobile.',
-          neterr: 'Network error: ', ok: 'Verified, opening chat…',
-          retry: 'Back to login' },
+    zh: {
+      tag: '手机版',
+      loading: '正在进入…',
+      bad: '登录链接已失效，请回到电脑端重新扫码',
+      missing: '缺少登录凭证，请通过电脑端生成二维码后扫码进入',
+      neterr: '网络错误：',
+      ok: '已就绪',
+      retry: '重新登录',
+      hint: '扫码链接仅可使用一次',
+    },
+    en: {
+      tag: 'mobile',
+      loading: 'Signing in…',
+      bad: 'This link expired. Generate a new QR from desktop admin.',
+      missing: 'Missing token. Scan a QR from admin → Mobile.',
+      neterr: 'Network error: ',
+      ok: 'Ready',
+      retry: 'Sign in again',
+      hint: 'QR links are single-use',
+    },
   };
   var t = T[L];
-  document.getElementById('title').textContent = t.title;
-  document.getElementById('sub').textContent = t.sub;
+  document.documentElement.lang = L === 'en' ? 'en' : 'zh-CN';
+  document.getElementById('tag').textContent = t.tag;
+  document.getElementById('hint').textContent = t.hint;
+  document.getElementById('retry').textContent = t.retry;
+
+  var statusEl = document.getElementById('status');
   var msg = document.getElementById('msg');
-  var state = document.getElementById('state');
-  function fail(text){
-    state.innerHTML = '';
-    msg.className = 'msg err';
-    msg.textContent = text;
-    var a = document.createElement('a');
-    a.className = 'retry'; a.href = '/login'; a.textContent = t.retry;
-    msg.appendChild(document.createElement('br'));
-    msg.appendChild(a);
+  var main = document.querySelector('main');
+
+  function setPhase(phase, text) {
+    statusEl.setAttribute('data-phase', phase);
+    msg.textContent = text || '';
+    if (main) main.setAttribute('aria-busy', phase === 'loading' ? 'true' : 'false');
   }
-  function next(){
+
+  function fail(text) {
+    setPhase('err', text);
+  }
+
+  function next() {
     var p = new URLSearchParams(location.search);
     var n = p.get('next') || '/m/chat';
     try {
       var u = new URL(n, location.origin);
       if (u.origin !== location.origin) return '/m/chat';
       return u.pathname + u.search;
-    } catch (e) { return '/m/chat'; }
+    } catch (e) {
+      return '/m/chat';
+    }
   }
+
+  setPhase('loading', t.loading);
+
   var raw = new URLSearchParams(location.search).get('t');
-  if (!raw) { fail(t.missing); return; }
+  if (!raw) {
+    fail(t.missing);
+    return;
+  }
+
   fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: raw }),
-  }).then(function(r){
-    if (r.status === 401) { fail(t.bad); return; }
-    if (!r.ok) {
-      return r.text().then(function(b){ fail(t.neterr + r.status + ' ' + b.slice(0,200)); });
+  }).then(function (r) {
+    if (r.status === 401) {
+      fail(t.bad);
+      return;
     }
-    // localStorage mirror so the legacy fallback code paths keep working
-    // in case some component reads it instead of the cookie.
+    if (!r.ok) {
+      return r.text().then(function (b) {
+        fail(t.neterr + r.status + ' ' + b.slice(0, 160));
+      });
+    }
     try { localStorage.setItem('agim_token', raw); } catch (e) {}
-    state.innerHTML = '';
-    msg.className = 'msg ok';
-    msg.textContent = t.ok;
-    setTimeout(function(){ location.replace(next()); }, 300);
-  }).catch(function(err){
+    setPhase('ok', t.ok);
+    setTimeout(function () { location.replace(next()); }, 420);
+  }).catch(function (err) {
     fail(t.neterr + (err && err.message || String(err)));
   });
 })();

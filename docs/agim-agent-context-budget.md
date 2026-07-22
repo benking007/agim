@@ -87,7 +87,7 @@ projected > 硬线
 - `AGIM_NATIVE_COMPACTION=off` ≡ `AGIM_CTX_COMPACT=off`
 - `AGIM_CTX_CLEARING=off` ≡ `AGIM_CTX_CLEAR=off`
 
-以上键已在 Web `/api/env` allowlist 中。
+以上键已在 Web `/api/env` allowlist 中。设置页入口：`/settings/llm` → 高级 → Agim Agent 运行时 →「晚压（上下文压缩）」卡片（`AGIM_CTX_COMPACT` / reserve / keepRecent）。
 
 ## 5. 与 Usage 弹窗 / catalog 的关系
 
@@ -138,7 +138,7 @@ P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下
 | **1** | Mid-turn transcript compact | **已做** | `turn_end`；紧急清理后仍超线则 summary（每用户消息最多一次） |
 | **2** | 前瞻预算 | **已做** | `lookahead` 软线提前紧急清理；投影 `current+lookahead` 触发中途 compact |
 | **5** | 指标 | **已做** | Prometheus + `AgentTurnOutcome.contextBudget` |
-| **7** | 设置页关键旋钮 | 待做 | 开/关 compact、reserve、keepRecent（带晚压推荐说明） |
+| **7** | 设置页关键旋钮 | **已做** | `/settings/llm` → Agim Agent 运行时 →「晚压」卡片（compact / reserve / keepRecent） |
 | **8** | 按模型档位预设 | 待做 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |
 
 其余（单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留别名、Usage 真实 usage）不排进上述主线，有体感再插队。

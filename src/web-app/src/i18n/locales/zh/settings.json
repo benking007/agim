@@ -984,7 +984,15 @@
     "iterationCard": "迭代上限",
     "iterationDesc": "单轮工具调用的最坏上限。",
     "maxIter": "迭代上限",
-    "maxIterHint": "AGIM_NATIVE_AGENT_MAX_ITER。范围 [1,100]，默认 50。"
+    "maxIterHint": "AGIM_NATIVE_AGENT_MAX_ITER。范围 [1,100]，默认 50。",
+    "compactCard": "晚压（上下文压缩）",
+    "compactDesc": "接近窗口上限才压缩 transcript，优先保留原始上下文、少付 summary 成本。留空数字用窗口自适应默认（1M 约 reserve 48k / keepRecent 32k）。",
+    "compactEnabled": "启用晚压",
+    "compactEnabledHint": "AGIM_CTX_COMPACT。默认开；关闭写入 off。失败时不会中断本轮对话。",
+    "compactReserveTokens": "预留 tokens",
+    "compactReserveTokensHint": "AGIM_CTX_COMPACT_RESERVE_TOKENS。留给本轮回复与工具的余量；越小越晚压。1M 推荐约 48000。",
+    "compactKeepRecentTokens": "保留近期 tokens",
+    "compactKeepRecentTokensHint": "AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS。压缩后保留的原始尾部。1M 推荐约 32000。"
   },
   "search": {
     "title": "Web 搜索 Provider",

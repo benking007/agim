@@ -210,7 +210,7 @@ export function clearToolResultsInMessages(
   for (const idx of toolIndexes) {
     if (keepSet.has(idx)) continue
     const msg = messages[idx]
-    if (!msg || msg.role !== 'toolResult') continue
+    if (msg?.role !== 'toolResult') continue
     if (isExcludedToolName(msg.toolName, settings.excludeTools)) continue
     if (alreadyCleared(msg)) continue
 

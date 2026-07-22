@@ -13,6 +13,10 @@ All notable changes to this project will be documented in this file.
 - **IM/bgjob SOP baseline for all agents**: managed `<!-- agim:im-ops -->` upserts into every IM workspace role file (not only Agim). Paths use portable `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"` — no host-absolute `/home/<user>/...` baked into AGENTS.md.
 - Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` ships IM reply norms + **bgjob SOP** (>10 min → absolute `~/.agim/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block upserts on bootstrap. Framework system prompt carries a condensed safety-net copy. See `docs/im-workspaces-guide.md`.
 
+### Changed
+
+- Agim / IM `AGENTS.md` seed + managed `<!-- agim:im-ops -->`: **对话优先于落盘** — 结论与可执行要点必须出现在回复里；`PROJECTS/` 仅为归档；收尾不得用一两句代替正文；IM 4–8 KB 限长不套用到 Web/Portal。
+
 ### Fixed
 
 - Chat composer Enter semantics: **desktop browser / Agim macOS shell** — Enter sends, Ctrl/⌘+Enter newlines; **Agim iOS shell / mobile browser** — Enter newlines, Send button submits. Shells inject `window.__AGIM_SHELL__` (`ios`|`macos`) for precise detection (no viewport heuristics).

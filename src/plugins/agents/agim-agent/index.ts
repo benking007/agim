@@ -1189,6 +1189,11 @@ export class NativeAgentAdapter implements AgentAdapter {
               status: 'running',
               startedAt: compactionStartedAt,
             })
+            // Yield so the SPA can paint "Compacting context" before the
+            // summarization round-trip (fast failures otherwise flash past).
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 40)
+            })
             try {
               const clearedPrep = budget.clearing.enabled
                 ? applyClearingToPreparation(preparation, budget.clearing)

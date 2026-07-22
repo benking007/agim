@@ -30,6 +30,13 @@ struct WebViewRepresentable: NSViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
+        // Identify this WKWebView as the Agim macOS shell so the SPA can
+        // branch UX (Enter→send, share sheet, …) without UA guessing.
+        let shellMarker = "window.__AGIM_SHELL__='macos';"
+        config.userContentController.addUserScript(
+            WKUserScript(source: shellMarker, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+
         // Same CJK webfont inject as iOS — avoids tofu when system fonts
         // lack Han glyphs; /fonts/ must stay a public path on the host.
         let cjkCss = """

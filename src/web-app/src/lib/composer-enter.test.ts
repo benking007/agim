@@ -1,40 +1,24 @@
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   prefersComposerEnterNewline,
   shouldSubmitOnEnterKey,
 } from './composer-enter'
 
-function stubMatchMedia(map: Record<string, boolean>): void {
-  vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: map[query] ?? false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }))
-}
-
 describe('prefersComposerEnterNewline', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
+  it('is true for Agim iOS shell', () => {
+    expect(prefersComposerEnterNewline({ platform: 'ios' })).toBe(true)
   })
 
-  it('is true on narrow viewports', () => {
-    stubMatchMedia({ '(max-width: 1023px)': true, '(pointer: coarse)': false })
-    expect(prefersComposerEnterNewline(window)).toBe(true)
+  it('is false for Agim macOS shell (Enter sends)', () => {
+    expect(prefersComposerEnterNewline({ platform: 'macos' })).toBe(false)
   })
 
-  it('is true on coarse pointers even when wide', () => {
-    stubMatchMedia({ '(max-width: 1023px)': false, '(pointer: coarse)': true })
-    expect(prefersComposerEnterNewline(window)).toBe(true)
+  it('is false for desktop browser', () => {
+    expect(prefersComposerEnterNewline({ platform: 'browser', mobileBrowser: false })).toBe(false)
   })
 
-  it('is false on wide fine-pointer desktops', () => {
-    stubMatchMedia({ '(max-width: 1023px)': false, '(pointer: coarse)': false })
-    expect(prefersComposerEnterNewline(window)).toBe(false)
+  it('is true for mobile browser (not Agim shell)', () => {
+    expect(prefersComposerEnterNewline({ platform: 'browser', mobileBrowser: true })).toBe(true)
   })
 })
 

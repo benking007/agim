@@ -68,7 +68,9 @@ macOS `WKWebView` **默认禁用** `<input type="file">`。壳必须实现
 | 浏览器 | **另存为 Markdown** | Chromium `showSaveFilePicker`，其他 `<a download>` |
 | macOS / iOS 壳 | **分享** | `webkit.messageHandlers.agimShare` → 系统分享面板 |
 
-检测：`src/web-app/src/lib/agim-shell.ts`（是否注册了 `agimShare` / `agimSaveFile`）。
+检测：`src/web-app/src/lib/agim-shell.ts`
+- 精确：`window.__AGIM_SHELL__ = 'ios' | 'macos'`（壳在 document-start 注入）
+- 兼容：是否注册了 `agimShare` / `agimSaveFile`（旧壳无 marker 时再辅以 UA）
 
 ### 另存为（仅浏览器）
 

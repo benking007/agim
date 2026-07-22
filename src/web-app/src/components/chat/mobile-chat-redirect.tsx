@@ -8,7 +8,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 
-import { COMPOSER_PHONE_MQ } from '@/lib/composer-enter'
+/** Align with Tailwind `lg` (1024px): below this, prefer /m/chat. */
+const MOBILE_CHAT_MQ = '(max-width: 1023px)'
 
 function readIsMobileChat(): boolean {
   if (typeof window === 'undefined') return false
@@ -16,7 +17,7 @@ function readIsMobileChat(): boolean {
   // where device-toolbar emulation and matchMedia briefly disagree.
   if (window.matchMedia) {
     try {
-      if (window.matchMedia(COMPOSER_PHONE_MQ).matches) return true
+      if (window.matchMedia(MOBILE_CHAT_MQ).matches) return true
     } catch { /* ignore */ }
   }
   return window.innerWidth > 0 && window.innerWidth <= 1023
@@ -36,7 +37,7 @@ export function MobileChatRedirect({ children }: { children: ReactNode }): JSX.E
     const update = (): void => setIsMobile(readIsMobileChat())
     update()
     const mq = typeof window !== 'undefined' && window.matchMedia
-      ? window.matchMedia(COMPOSER_PHONE_MQ)
+      ? window.matchMedia(MOBILE_CHAT_MQ)
       : null
     mq?.addEventListener('change', update)
     window.addEventListener('resize', update)

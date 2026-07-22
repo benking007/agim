@@ -1,33 +1,44 @@
 /**
- * Composer Enter-key semantics.
+ * Composer Enter-key semantics — keyed off shell / browser identity, not viewport.
  *
- * Desktop (fine pointer / wide viewport): Enter sends; Ctrl/⌘+Enter inserts a newline.
- * Phone / coarse pointer / narrow viewport: Enter inserts a newline; only the Send button submits.
- *
- * Aligns with `MobileChatRedirect` (`max-width: 1023px` → `/m/chat`).
+ * - Agim iOS shell → Enter inserts newline; Send button submits
+ * - Agim macOS shell → Enter sends; Ctrl/⌘+Enter newlines
+ * - Desktop browser → Enter sends; Ctrl/⌘+Enter newlines
+ * - Mobile browser (Safari/Chrome on phone, not Agim shell) → Enter newlines
  */
 
-/** Same breakpoint as mobile chat redirect (Tailwind `lg`). */
-export const COMPOSER_PHONE_MQ = '(max-width: 1023px)'
+import {
+  getAgimShellPlatform,
+  isMobileBrowserUa,
+  type AgimShellPlatform,
+} from '@/lib/agim-shell'
 
-export const COMPOSER_COARSE_POINTER_MQ = '(pointer: coarse)'
+export interface ComposerEnterClient {
+  platform: AgimShellPlatform
+  /** Only consulted when platform === 'browser'. */
+  mobileBrowser?: boolean
+}
 
-export function prefersComposerEnterNewline(
-  win: Pick<Window, 'matchMedia' | 'innerWidth'> | undefined = typeof window !== 'undefined' ? window : undefined,
-): boolean {
-  if (!win) return false
-  try {
-    if (win.matchMedia?.(COMPOSER_PHONE_MQ)?.matches) return true
-  } catch { /* ignore */ }
-  try {
-    // Landscape tablets can be wider than lg but still use a soft keyboard.
-    if (win.matchMedia?.(COMPOSER_COARSE_POINTER_MQ)?.matches) return true
-  } catch { /* ignore */ }
-  // Fallback when matchMedia is stubbed/unavailable (matches mobile-chat-redirect).
-  if (typeof win.innerWidth === 'number' && win.innerWidth > 0 && win.innerWidth <= 1023) {
-    return true
+export function resolveComposerEnterClient(
+  win: Window | undefined = typeof window !== 'undefined' ? window : undefined,
+): ComposerEnterClient {
+  if (!win) return { platform: 'browser', mobileBrowser: false }
+  const platform = getAgimShellPlatform()
+  if (platform !== 'browser') return { platform }
+  return {
+    platform: 'browser',
+    mobileBrowser: isMobileBrowserUa(win.navigator?.userAgent ?? ''),
   }
-  return false
+}
+
+/** True when Enter should insert a newline (phone soft-keyboard semantics). */
+export function prefersComposerEnterNewline(
+  client: ComposerEnterClient = resolveComposerEnterClient(),
+): boolean {
+  if (client.platform === 'ios') return true
+  if (client.platform === 'macos') return false
+  // browser
+  return Boolean(client.mobileBrowser)
 }
 
 export interface ComposerEnterKeyLike {

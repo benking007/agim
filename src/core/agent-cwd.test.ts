@@ -167,7 +167,9 @@ describe('bootstrapAgentWorkspaces', () => {
     const agimGuide = await readFile(join(tmpRoot, 'agim', 'AGENTS.md'), 'utf8')
     expect(agimGuide).toContain('Agim Agent — 行为准则与操作约束')
     expect(agimGuide).toContain('## 说话规则')
-    expect(agimGuide).toContain('## 执行规则（快、准、稳）')
+    expect(agimGuide).toContain('## 任务执行规则（快、准、稳）')
+    expect(agimGuide).toContain('## 对话逻辑')
+    expect(agimGuide).toContain('禁止截断')
     expect(agimGuide).toContain('直接执行，不要预告')
     expect(agimGuide).toContain('未收到结果不声称完成')
     expect(agimGuide).toContain(AGIM_IM_OPS_START)
@@ -189,7 +191,7 @@ describe('bootstrapAgentWorkspaces', () => {
       expect(body).toContain(AGIM_IM_OPS_START)
       expect(body).toContain(AGIM_BGJOB_WRAPPER_EXPR)
       expect(body).toContain('强制使用 bgjob')
-      expect(body).toContain('## IM 通道已知限制')
+      expect(body).toContain('## 对话逻辑')
       expect(body).not.toMatch(/\/home\/[^/\s]+\/\.agim/)
     }
   })
@@ -296,6 +298,23 @@ describe('planImOpsUpsert', () => {
     const block = buildAgimImOpsBlock('agim')
     const raw = `# persona\n\n${block}\n`
     expect(planImOpsUpsert(raw, block).kind).toBe('skip-unchanged')
+  })
+
+  it('im-ops baseline includes dialogue / Viewer rules for non-Agim agents', () => {
+    const block = buildAgimImOpsBlock('opencode')
+    expect(block).toContain('## 对话逻辑')
+    expect(block).toContain('超过 8k')
+    expect(block).toContain('Viewer')
+    expect(block).toContain('禁止截断')
+    expect(block).toContain('强制使用 bgjob')
+    expect(block).not.toContain('超长内容需拆成多条消息或写入文件后告知路径')
+    expect(block).not.toContain('请控制长度')
+  })
+
+  it('Agim im-ops omits dialogue (lives outside markers in seed order)', () => {
+    const block = buildAgimImOpsBlock('agim')
+    expect(block).not.toContain('## 对话逻辑')
+    expect(block).toContain('强制使用 bgjob')
   })
 
   it('plans a patch that preserves content outside markers', () => {

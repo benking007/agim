@@ -8,10 +8,13 @@ import {
   agimWorkspacesRoot,
   ensureAgentWorkspace,
   ensureAgimImOpsGuide,
+  planImOpsUpsert,
   bootstrapAgentWorkspaces,
+  buildAgimImOpsBlock,
   AGIM_MEMORY_LINK_START,
   AGIM_IM_OPS_START,
   AGIM_IM_OPS_END,
+  AGIM_IM_OPS_FREEZE,
   AGIM_BGJOB_WRAPPER_EXPR,
 } from './agent-cwd.js'
 
@@ -240,5 +243,83 @@ describe('bootstrapAgentWorkspaces', () => {
     expect(content).toContain('~/.agim-workspaces/claude-code/')
     expect(content).not.toContain('old bgjob advice')
     expect(content.match(/agim:im-ops:start/g)?.length).toBe(1)
+  })
+
+  it('does NOT wipe a customized Agim AGENTS.md when the packaged seed changes', async () => {
+    await bootstrapAgentWorkspaces()
+    const path = join(tmpRoot, 'agim', 'AGENTS.md')
+    const customized = [
+      '# my persona — keep forever',
+      '',
+      '你是月魁。',
+      '',
+      buildAgimImOpsBlock('agim'),
+      '',
+      '## custom footer',
+    ].join('\n')
+    await writeFile(path, customized, 'utf8')
+    // Second bootstrap simulates a version upgrade that ships a new seed template.
+    await bootstrapAgentWorkspaces()
+    const content = await readFile(path, 'utf8')
+    expect(content).toContain('# my persona — keep forever')
+    expect(content).toContain('你是月魁')
+    expect(content).toContain('## custom footer')
+    expect(content).not.toContain('Agim Agent — 行为准则与操作约束')
+  })
+
+  it('skips im-ops refresh when freeze marker is present', async () => {
+    await bootstrapAgentWorkspaces()
+    const path = join(tmpRoot, 'agim', 'AGENTS.md')
+    const frozen = [
+      '# keep',
+      AGIM_IM_OPS_FREEZE,
+      AGIM_IM_OPS_START,
+      '## operator-owned im-ops',
+      'do not touch',
+      AGIM_IM_OPS_END,
+    ].join('\n')
+    await writeFile(path, frozen, 'utf8')
+    await ensureAgimImOpsGuide('agim')
+    const content = await readFile(path, 'utf8')
+    expect(content).toContain('## operator-owned im-ops')
+    expect(content).toContain('do not touch')
+    expect(content).not.toContain('强制使用 bgjob')
+  })
+})
+
+describe('planImOpsUpsert', () => {
+  afterEach(() => {
+    delete process.env.AGIM_IM_OPS_REFRESH
+  })
+
+  it('skips write when managed block already matches (version-bump no-op)', () => {
+    const block = buildAgimImOpsBlock('agim')
+    const raw = `# persona\n\n${block}\n`
+    expect(planImOpsUpsert(raw, block).kind).toBe('skip-unchanged')
+  })
+
+  it('plans a patch that preserves content outside markers', () => {
+    const block = buildAgimImOpsBlock('opencode')
+    const raw = [
+      '# keep head',
+      AGIM_IM_OPS_START,
+      '## stale',
+      AGIM_IM_OPS_END,
+      '# keep tail',
+    ].join('\n')
+    const plan = planImOpsUpsert(raw, block)
+    expect(plan.kind).toBe('patch')
+    if (plan.kind !== 'patch') return
+    expect(plan.next.startsWith('# keep head')).toBe(true)
+    expect(plan.next.endsWith('# keep tail')).toBe(true)
+    expect(plan.next).toContain('强制使用 bgjob')
+    expect(plan.changedLines).toBeGreaterThan(0)
+  })
+
+  it('honours AGIM_IM_OPS_REFRESH=off', () => {
+    process.env.AGIM_IM_OPS_REFRESH = 'off'
+    const block = buildAgimImOpsBlock('agim')
+    const raw = `# x\n${AGIM_IM_OPS_START}\nstale\n${AGIM_IM_OPS_END}\n`
+    expect(planImOpsUpsert(raw, block).kind).toBe('skip-refresh-disabled')
   })
 })

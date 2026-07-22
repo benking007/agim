@@ -152,7 +152,9 @@ Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
 
 其中「长时间任务 / 记忆 / IM 限制 / 路径速查」包在 `<!-- agim:im-ops:start -->` … `end` 标记里：这是
 **所有 IM agent**（Agim / Claude / opencode / Codex / …）的共用基线。每次
-`agim start` bootstrap 会就地刷新各工作区角色书里的这段，不抹掉标记外人设。
+`agim start` bootstrap **不会整文件覆盖**已编辑的角色书：标记外人设永久保留，
+托管段仅在内容有差异时局部更新。若不想自动刷新托管段，在文件中加入
+`<!-- agim:im-ops:freeze -->`，或设环境变量 `AGIM_IM_OPS_REFRESH=off`。
 已有安装若仍是旧版人设段落，可手工改 `AGENTS.md` 标记外正文，或备份后删掉让种子重建。
 框架 system prompt 另有精简兜底。
 

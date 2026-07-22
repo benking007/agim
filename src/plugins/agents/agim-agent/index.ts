@@ -61,7 +61,7 @@ import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
 import {
   applyClearingToPreparation,
-  clearToolResultsInMessages,
+  applyContextBudgetToMessages,
   COMPACTION_ACTIVITY_LABEL,
   resolveContextBudgetSettings,
 } from './context-budget.js'
@@ -123,7 +123,7 @@ export interface NativeAgentDeps {
    *  when a durable session grows past the model window (minus reserve) the
    *  adapter summarizes old history — without this, long-lived IM sessions grow
    *  the JSONL unbounded until the context overflows. Defaults to enabled; set
-   *  false (factory reads AGIM_NATIVE_COMPACTION=off) to disable. */
+   *  false (factory reads AGIM_CTX_COMPACT=off) to disable. */
   compactionEnabled?: boolean
   /** Provider request resilience + caching, snapshotted per turn by pi:
    *  maxRetries / maxRetryDelayMs / timeoutMs (ride out transient 429/5xx from
@@ -771,14 +771,19 @@ export class NativeAgentAdapter implements AgentAdapter {
       const combined = [ephemeralContext, ephemeralSteer].filter((part) => part.trim()).join('\n\n')
       if (combined) messages = injectEphemeralContext(messages, combined)
       if (budget.clearing.enabled) {
-        const cleared = clearToolResultsInMessages(messages, budget.clearing)
+        const { messages: next, emergency, cleared } = applyContextBudgetToMessages(
+          messages,
+          budget,
+          binding.model.contextWindow,
+        )
         if (cleared.applied) {
-          messages = cleared.messages
+          messages = next
           contextClearEvents++
-          if (contextClearEvents === 1) {
+          if (contextClearEvents === 1 || emergency) {
             console.info(
-              `[agim-agent] tool-result clearing: freed ~${cleared.charsFreed} chars `
-              + `(${cleared.clearedCount} results; keep=${budget.clearing.keepToolUses})`,
+              `[agim-agent] tool-result clearing${emergency ? ' (emergency)' : ''}: `
+              + `freed ~${cleared.charsFreed} chars `
+              + `(${cleared.clearedCount} results; keep=${emergency ? Math.min(2, budget.clearing.keepToolUses) : budget.clearing.keepToolUses})`,
             )
           }
         }
@@ -1148,7 +1153,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     //   2) transcript compaction runs here BEFORE the turn when the session
     //      exceeds contextWindow - reserveTokens.
     // Best-effort — failure must not block the turn. Off via
-    // AGIM_NATIVE_COMPACTION=off (also mirrored in budget.compaction.enabled).
+    // AGIM_CTX_COMPACT=off (legacy: AGIM_NATIVE_COMPACTION=off).
     if (
       this.deps.compactionEnabled !== false
       && budget.compaction.enabled

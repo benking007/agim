@@ -3,8 +3,10 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import {
   CLEARED_TOOL_RESULT_PREFIX,
   applyClearingToPreparation,
+  applyContextBudgetToMessages,
   clearToolResultsInMessages,
   estimateMessagesTokens,
+  isContextCompactionEnabled,
   isExcludedToolName,
   resolveContextBudgetSettings,
   type ToolClearingSettings,
@@ -169,6 +171,7 @@ describe('clearToolResultsInMessages', () => {
 describe('resolveContextBudgetSettings', () => {
   afterEach(() => {
     delete process.env.AGIM_CTX_CLEAR
+    delete process.env.AGIM_CTX_COMPACT
     delete process.env.AGIM_NATIVE_COMPACTION
     delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS
     delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
@@ -206,7 +209,50 @@ describe('resolveContextBudgetSettings', () => {
     const s = resolveContextBudgetSettings(128_000)
     expect(s.clearing.enabled).toBe(false)
   })
+
+  it('disables compaction via AGIM_CTX_COMPACT=off (and legacy alias)', () => {
+    expect(isContextCompactionEnabled()).toBe(true)
+    process.env.AGIM_CTX_COMPACT = 'off'
+    expect(isContextCompactionEnabled()).toBe(false)
+    expect(resolveContextBudgetSettings(1_000_000).compaction.enabled).toBe(false)
+    delete process.env.AGIM_CTX_COMPACT
+    process.env.AGIM_NATIVE_COMPACTION = 'off'
+    expect(isContextCompactionEnabled()).toBe(false)
+  })
 })
+
+describe('applyContextBudgetToMessages', () => {
+  it('escalates to emergency clearing past window - reserve', () => {
+    const budget = resolveContextBudgetSettings(40_000)
+    budget.compaction.reserveTokens = 8_000
+    budget.clearing.triggerTokens = 10_000_000 // normal path would never clear
+    budget.clearing.keepToolUses = 8
+    budget.clearing.clearAtLeastChars = 8_000
+
+    const messages: AgentMessage[] = []
+    for (let i = 0; i < 12; i++) {
+      messages.push(toolResult(`read_${i}`, big(20_000), `id-${i}`))
+    }
+    // Plenty of chars → estimateTokens >> 40k - 8k emergency line.
+    expect(estimateMessagesTokens(messages)).toBeGreaterThan(40_000 - 8_000)
+    const r = applyContextBudgetToMessages(messages, budget, 40_000)
+    expect(r.emergency).toBe(true)
+    expect(r.cleared.applied).toBe(true)
+    // Emergency keeps at most 2 recent tool results.
+    const intact = r.messages.filter((m) => (
+      m.role === 'toolResult' && !toolResultTextForTest(m).startsWith(CLEARED_TOOL_RESULT_PREFIX)
+    ))
+    expect(intact.length).toBeLessThanOrEqual(2)
+  })
+})
+
+function toolResultTextForTest(msg: AgentMessage): string {
+  if (msg.role !== 'toolResult') return ''
+  return msg.content
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+}
 
 describe('estimateMessagesTokens', () => {
   it('grows with payload size', () => {

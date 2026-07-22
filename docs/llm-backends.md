@@ -211,6 +211,7 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 
 ## 11. 相关文档
 
+- 上下文预算（晚压 / 清 tool）：`agim-agent-context-budget.md`
 - 架构立场：`architecture-bridge-and-native.md`
 - 部署：`deployment.md`
 - 安全：`security-hardening.md`

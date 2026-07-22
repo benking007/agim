@@ -14,6 +14,7 @@
 - `naming.md`：命名术语表（Agim Agent / agim / ACP≠A2A / tenants）
 - `migration-naming-v2.md`：Naming v2 新老迁移指引（registry / tools / sessions / tenants）
 - `llm-backends.md`：Agim Agent 大模型 API 配置与排障
+- `agim-agent-context-budget.md`：Agim Agent 上下文预算（L1 清 tool / L2 晚压 / 紧急清理）
 
 ## AI 能力专题
 

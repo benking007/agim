@@ -76,6 +76,14 @@ function envFlagOff(name: string): boolean {
   return raw === 'off' || raw === '0' || raw === 'false' || raw === 'no'
 }
 
+/**
+ * Compaction master switch. Prefer `AGIM_CTX_COMPACT`; legacy
+ * `AGIM_NATIVE_COMPACTION=off` still disables.
+ */
+export function isContextCompactionEnabled(): boolean {
+  return !envFlagOff('AGIM_CTX_COMPACT') && !envFlagOff('AGIM_NATIVE_COMPACTION')
+}
+
 function envInt(name: string, fallback: number, min: number, max: number): number {
   const raw = (process.env[name] || '').trim()
   if (!raw) return fallback
@@ -112,8 +120,9 @@ export function resolveContextBudgetSettings(contextWindow?: number): ContextBud
     Math.max(DEFAULT_CLEAR_TRIGGER_FLOOR, Math.floor(window * 0.15)),
   )
 
+  // AGIM_CTX_CLEARING is a legacy alias of AGIM_CTX_CLEAR.
   const clearingEnabled = !envFlagOff('AGIM_CTX_CLEAR') && !envFlagOff('AGIM_CTX_CLEARING')
-  const compactionEnabled = !envFlagOff('AGIM_NATIVE_COMPACTION')
+  const compactionEnabled = isContextCompactionEnabled()
 
   // L2 late compaction: 48k reserve / 32k keep on 1M-class windows.
   // Clamp so tiny windows never set reserve ≥ contextWindow (always-compact).
@@ -292,4 +301,46 @@ export function applyClearingToPreparation(
     messagesToSummarize: a.messages,
     turnPrefixMessages: b.messages,
   }
+}
+
+/**
+ * Mid-turn budget guard (late-compaction companion).
+ *
+ * Pre-turn L2 compact only runs once per user message. If tools inflate the
+ * window during the turn past `contextWindow - reserveTokens`, we cannot
+ * always afford a second summarization round-trip — but we *can* urgently
+ * strip re-fetchable tool payloads so the next model call still fits.
+ *
+ * Returns `{ messages, emergency }` where `emergency` is true when the
+ * aggressive path ran. No UI — logs only (operator preference).
+ */
+export function applyContextBudgetToMessages(
+  messages: AgentMessage[],
+  budget: ContextBudgetSettings,
+  contextWindow: number,
+): { messages: AgentMessage[]; emergency: boolean; cleared: ClearToolResultsResult } {
+  if (!budget.clearing.enabled || messages.length === 0) {
+    return {
+      messages,
+      emergency: false,
+      cleared: { messages, clearedCount: 0, charsFreed: 0, applied: false },
+    }
+  }
+
+  const window = Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : 1_000_000
+  const estimated = estimateMessagesTokens(messages)
+  const emergencyLine = window - budget.compaction.reserveTokens
+  const emergency = estimated > emergencyLine && emergencyLine > 0
+
+  const settings: ToolClearingSettings = emergency
+    ? {
+        ...budget.clearing,
+        triggerTokens: 0,
+        keepToolUses: Math.min(2, budget.clearing.keepToolUses),
+        clearAtLeastChars: 0,
+      }
+    : budget.clearing
+
+  const cleared = clearToolResultsInMessages(messages, settings)
+  return { messages: cleared.messages, emergency, cleared }
 }

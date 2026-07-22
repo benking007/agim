@@ -56,4 +56,19 @@ describe('shouldRunMidTurnCompaction', () => {
     const messages = [toolResult('r', big(50_000), '1')]
     expect(shouldRunMidTurnCompaction(messages, budget, 40_000)).toBe(false)
   })
+
+  it('fires earlier with lookahead when current is under hard line but projected is over', () => {
+    const budget = resolveContextBudgetSettings(40_000)
+    budget.compaction.reserveTokens = 8_000
+    budget.lookaheadTokens = 16_000
+    budget.clearing.enabled = false
+    // hard line = 32k; with lookahead, project = current+16k > 32k when current > 16k.
+    // ~20k-char tool ≈ ~5k tokens — too small. Use ~100k chars ≈ 25k tokens.
+    const messages = [toolResult('r', big(100_000), '1')]
+    // Without lookahead would be: 25k > 32k? false. With pad: 25k+16k > 32k → true.
+    budget.lookaheadTokens = 0
+    expect(shouldRunMidTurnCompaction(messages, budget, 40_000)).toBe(false)
+    budget.lookaheadTokens = 16_000
+    expect(shouldRunMidTurnCompaction(messages, budget, 40_000)).toBe(true)
+  })
 })

@@ -177,6 +177,7 @@ describe('resolveContextBudgetSettings', () => {
     delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
     delete process.env.AGIM_CTX_CLEAR_TRIGGER_TOKENS
     delete process.env.AGIM_CTX_CLEAR_KEEP_TOOL_USES
+    delete process.env.AGIM_CTX_LOOKAHEAD_TOKENS
   })
 
   it('honours env overrides for compact reserve / keep', () => {
@@ -194,6 +195,14 @@ describe('resolveContextBudgetSettings', () => {
     expect(s.compaction.keepRecentTokens).toBe(32_000)
     expect(s.clearing.triggerTokens).toBe(150_000)
     expect(s.clearing.keepToolUses).toBe(8)
+    // Lookahead defaults to half reserve (capped at 24k) → 24k on 1M.
+    expect(s.lookaheadTokens).toBe(24_000)
+  })
+
+  it('honours AGIM_CTX_LOOKAHEAD_TOKENS=0 to disable foresight', () => {
+    process.env.AGIM_CTX_LOOKAHEAD_TOKENS = '0'
+    const s = resolveContextBudgetSettings(1_000_000)
+    expect(s.lookaheadTokens).toBe(0)
   })
 
   it('clamps reserve/keep on small windows so compact is not always-on', () => {

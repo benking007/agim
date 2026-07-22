@@ -23,6 +23,12 @@ export const DEFAULT_CLEAR_KEEP_TOOL_USES = 8
 /** Soft ceiling for the auto clear-trigger (15% of window, bounded below). */
 export const DEFAULT_CLEAR_TRIGGER_CAP = 150_000
 export const DEFAULT_CLEAR_TRIGGER_FLOOR = 50_000
+/**
+ * Lookahead pad: assume one more hop may grow context by this many tokens
+ * (assistant prose + follow-up tools). Mid-turn clear/compact fire earlier by
+ * this amount. 0 disables foresight (hard line only).
+ */
+export const DEFAULT_LOOKAHEAD_TOKENS = 24_000
 
 /** Placeholder prefix so we never double-clear the same result. */
 export const CLEARED_TOOL_RESULT_PREFIX = '[cleared tool_result:'
@@ -60,6 +66,12 @@ export interface ToolClearingSettings {
 export interface ContextBudgetSettings {
   clearing: ToolClearingSettings
   compaction: CompactionSettings
+  /**
+   * Extra tokens assumed for the *next* model hop when deciding mid-turn
+   * emergency clear / compact. Softens the late-compaction line without
+   * changing pre-turn shouldCompact.
+   */
+  lookaheadTokens: number
   /** Replaces pi's default summarization framing when non-empty. */
   compactInstructions: string | undefined
 }
@@ -141,6 +153,12 @@ export function resolveContextBudgetSettings(contextWindow?: number): ContextBud
     4_096,
     200_000,
   )
+  // Default lookahead ≈ half reserve (capped); AGIM_CTX_LOOKAHEAD_TOKENS=0 disables.
+  const defaultLookahead = Math.min(
+    DEFAULT_LOOKAHEAD_TOKENS,
+    Math.max(0, Math.floor(reserveTokens * 0.5)),
+  )
+  const lookaheadTokens = envInt('AGIM_CTX_LOOKAHEAD_TOKENS', defaultLookahead, 0, 256_000)
 
   const instructionsRaw = (process.env.AGIM_CTX_COMPACT_INSTRUCTIONS || '').trim()
   const compactInstructions = instructionsRaw || DEFAULT_AGIM_COMPACT_INSTRUCTIONS
@@ -158,8 +176,31 @@ export function resolveContextBudgetSettings(contextWindow?: number): ContextBud
       reserveTokens,
       keepRecentTokens,
     },
+    lookaheadTokens,
     compactInstructions,
   }
+}
+
+/** Hard late-compaction line: window − reserve. */
+export function hardBudgetLine(contextWindow: number, reserveTokens: number): number {
+  return contextWindow - reserveTokens
+}
+
+/**
+ * Soft line used for mid-turn foresight: hard line minus lookahead pad.
+ * When lookahead is 0, soft === hard.
+ */
+export function softBudgetLine(
+  contextWindow: number,
+  reserveTokens: number,
+  lookaheadTokens: number,
+): number {
+  return hardBudgetLine(contextWindow, reserveTokens) - Math.max(0, lookaheadTokens)
+}
+
+/** Projected tokens for the next hop = current estimate + lookahead pad. */
+export function projectNextHopTokens(currentTokens: number, lookaheadTokens: number): number {
+  return currentTokens + Math.max(0, lookaheadTokens)
 }
 
 /** Agim-tuned compaction brief (cookbook: custom instructions fully replace the default). */
@@ -329,9 +370,15 @@ export function applyContextBudgetToMessages(
 
   const window = Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : 1_000_000
   const estimated = estimateMessagesTokens(messages)
-  const emergencyLine = window - budget.compaction.reserveTokens
-  // When reserve ≥ window (tiny / misconfigured), treat any non-empty context
-  // as already past the late-compaction line.
+  // Soft line (lookahead): clear urgently before the hard late-compaction line
+  // so the *next* hop still has room. Hard line remains window − reserve.
+  const emergencyLine = softBudgetLine(
+    window,
+    budget.compaction.reserveTokens,
+    budget.lookaheadTokens,
+  )
+  // When the soft/hard line is non-positive (tiny / misconfigured window),
+  // treat any non-empty context as already past budget.
   const emergency = emergencyLine <= 0 ? estimated > 0 : estimated > emergencyLine
 
   const settings: ToolClearingSettings = emergency

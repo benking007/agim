@@ -4,17 +4,18 @@
 
 相关代码：
 
-- `src/plugins/agents/agim-agent/context-budget.ts` — 阈值、清理、紧急清理
-- `src/plugins/agents/agim-agent/index.ts` — 预轮 compact + context hook
+- `src/plugins/agents/agim-agent/context-budget.ts` — 阈值、清理、紧急清理、前瞻 pad
+- `src/plugins/agents/agim-agent/transcript-compaction.ts` — 预轮 / 中途 compact 共享 runner
+- `src/plugins/agents/agim-agent/index.ts` — context hook + turn_end + 预轮
 
-## 1. 三层节奏
+## 1. 节奏
 
 | 层 | 时机 | 做什么 | 是否改 JSONL | UI |
 |----|------|--------|--------------|-----|
 | **L1 常规清理** | 每轮多次请求模型前的 `context` hook | 把旧 `toolResult` 换成短占位 | 否（仅 view） | 否（仅日志） |
-| **L1 紧急清理** | 同 hook；估算已超过 `window − reserve` | 更狠地清（最多保留 2 条近期 tool 结果） | 否 | 否 |
+| **L1 紧急清理** | 同 hook；估算已超过 **软线**（见前瞻） | 更狠地清（最多保留 2 条近期 tool 结果） | 否 | 否 |
 | **L2 预轮 compact** | 用户消息进入后、真正调模型前 | 总结旧历史，写入 compaction 条目 | 是（追加 summary） | 有「正在压缩上下文」 |
-| **L2 中途 compact** | 工具轮 `turn_end`；紧急清理后仍超线 | 同上（每用户消息最多一次） | 是 | 有「正在压缩上下文」 |
+| **L2 中途 compact** | 工具轮 `turn_end`；清理后 **投影**仍超硬线 | 同上（每用户消息最多一次） | 是 | 有「正在压缩上下文」 |
 
 压缩失败：**不阻断任务**，打 error 步骤后继续本轮。
 
@@ -40,24 +41,31 @@ L2 压缩**不是结束任务**。流程是：
 
 `keepRecentTokens` 只决定压完后还留多长的**原始尾部**；summary 负责接上更早的目标与约束。任务不会因为压缩而主动中断。
 
-## 3. 紧急清理（中途预算思路）
+## 3. 紧急清理 + 前瞻预算
 
 预轮 compact 只能挡「进门时已经很大」的会话。工具环里一次大 `read` / 搜索结果仍可能把剩余余量打穿。
 
-当前预算策略：
+两条线：
+
+| 线 | 公式 | 用途 |
+|----|------|------|
+| **硬线** | `window − reserve` | 预轮 `shouldCompact`；中途「投影」对比目标 |
+| **软线** | `硬线 − lookahead` | 紧急清理更早触发 |
 
 ```text
-estimatedTokens > contextWindow - reserveTokens
+lookahead ≈ min(24k, reserve/2)   # AGIM_CTX_LOOKAHEAD_TOKENS，0=关闭前瞻
+
+estimated > 软线
   → emergency tool-result clearing（keep ≤ 2，无 UI）
-  → 若清理后仍超线 → mid-turn transcript compact（turn_end，每轮最多一次）
+
+projected = estimated_after_clear + lookahead
+projected > 硬线
+  → mid-turn transcript compact（turn_end，每轮最多一次）
 ```
 
-预轮 L2 挡「进门已过大」；中途 L2 挡「工具环内暴涨且紧急清理不够」。二者失败都不阻断任务。
+含义：还没贴硬线时，就按「再跑一跳可能长出 lookahead tokens」提前清 / 压，降低贴边爆窗概率；仍保持晚压（默认要到接近满窗才动 L2）。
 
-仍可增强：
-
-- **前瞻预算**：工具返回后预估下一跳输入，再决定清 / 压（见 §7 项 2）
-- 与 `AGIM_NATIVE_TOOL_RESULT_MAX_CHARS` 的写入前截断策略显式对齐
+失败都不阻断任务。与 `AGIM_NATIVE_TOOL_RESULT_MAX_CHARS` 的写入前截断可继续配合。
 
 ## 4. 环境变量（统一 `AGIM_CTX_*`）
 
@@ -67,6 +75,7 @@ estimatedTokens > contextWindow - reserveTokens
 | `AGIM_CTX_COMPACT_RESERVE_TOKENS` | 默认随窗口（1M→48k）；env 上限 256k |
 | `AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS` | 默认随窗口（1M→32k） |
 | `AGIM_CTX_COMPACT_INSTRUCTIONS` | 非空则替换默认 summary 说明 |
+| `AGIM_CTX_LOOKAHEAD_TOKENS` | 默认 `min(24k, reserve/2)`；`0` 关闭前瞻 |
 | `AGIM_CTX_CLEAR` | 开；`off` 关闭 L1（含紧急清理） |
 | `AGIM_CTX_CLEAR_TRIGGER_TOKENS` | 覆盖 L1 常规触发线 |
 | `AGIM_CTX_CLEAR_KEEP_TOOL_USES` | 默认 8 |
@@ -115,7 +124,7 @@ P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下
 | 序 | 项 | 状态 | 说明 |
 |----|----|------|------|
 | **1** | Mid-turn transcript compact | **已做** | `turn_end`；紧急清理后仍超线则 summary（每用户消息最多一次） |
-| **2** | 前瞻预算 | 待做 | 工具返回后估算下一跳输入，预测会爆再决定清 / 压 |
+| **2** | 前瞻预算 | **已做** | `lookahead` 软线提前紧急清理；投影 `current+lookahead` 触发中途 compact |
 | **5** | 指标 | 待做 | clear / emergency / compact 次数、tokensBefore、失败率 |
 | **7** | 设置页关键旋钮 | 待做 | 开/关 compact、reserve、keepRecent（带晚压推荐说明） |
 | **8** | 按模型档位预设 | 待做 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |

@@ -21,6 +21,8 @@ import {
   applyContextBudgetToMessages,
   COMPACTION_ACTIVITY_LABEL,
   estimateMessagesTokens,
+  hardBudgetLine,
+  projectNextHopTokens,
   type ContextBudgetSettings,
   type ToolClearingSettings,
 } from './context-budget.js'
@@ -80,8 +82,10 @@ export function contextExceedsReserve(
 }
 
 /**
- * Mid-turn gate: after tools land, if emergency clearing still cannot bring
- * the view under `window - reserve`, run a real transcript compact.
+ * Mid-turn gate (with foresight): after tools land, project the next hop
+ * (`current + lookahead`). If emergency clearing still cannot bring the
+ * *projected* total under the hard line (`window − reserve`), run transcript
+ * compact before the next model call.
  */
 export function shouldRunMidTurnCompaction(
   messages: import('@earendil-works/pi-agent-core').AgentMessage[],
@@ -91,21 +95,23 @@ export function shouldRunMidTurnCompaction(
   if (!budget.compaction.enabled || !Number.isFinite(contextWindow) || contextWindow <= 0) {
     return false
   }
-  const line = contextWindow - budget.compaction.reserveTokens
+  const hardLine = hardBudgetLine(contextWindow, budget.compaction.reserveTokens)
+  const overHard = (tokens: number): boolean => (
+    hardLine <= 0 ? tokens > 0 : projectNextHopTokens(tokens, budget.lookaheadTokens) > hardLine
+  )
+
   if (!budget.clearing.enabled) {
-    return line <= 0
-      ? estimateMessagesTokens(messages) > 0
-      : estimateMessagesTokens(messages) > line
+    return overHard(estimateMessagesTokens(messages))
   }
   const { messages: afterClear, emergency } = applyContextBudgetToMessages(
     messages,
     budget,
     contextWindow,
   )
+  // Only compact when foresight already raised the emergency soft line
+  // (or we're past the hard line). Avoid summarizing on every quiet turn.
   if (!emergency) return false
-  return line <= 0
-    ? estimateMessagesTokens(afterClear) > 0
-    : estimateMessagesTokens(afterClear) > line
+  return overHard(estimateMessagesTokens(afterClear))
 }
 
 export async function measureContextTokens(

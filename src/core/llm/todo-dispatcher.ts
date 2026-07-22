@@ -30,7 +30,6 @@ import { canonicalizeToolName } from './tool-names.js'
 import {
   renderMarkdownChecklist,
   type TodoItem,
-  type TodoStatus,
 } from './todo-items.js'
 
 const log = rootLogger.child({ component: 'todo-dispatcher' })

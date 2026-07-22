@@ -351,6 +351,7 @@
     "approvalPendingCount": "{{count}} pending decisions",
     "approvalAutoBadge":  "auto-allow",
     "approvalExplicitBadge": "one-time decision",
+    "approvalNeedsConfirmBadge": "needs confirmation",
     "approvalToolLabel":  "Tool",
     "approvalInputLabel": "Input",
     "approvalAllow":      "Allow",

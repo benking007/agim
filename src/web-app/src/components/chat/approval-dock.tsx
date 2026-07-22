@@ -102,6 +102,8 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
   const { messageId, prompt, outcome } = entry
   const isAuto = prompt.mode === 'auto-allow'
   const isExplicit = prompt.mode === 'explicit'
+  const canPin = Boolean(prompt.canPin) || !isExplicit
+  const showAuto = !isAuto && canPin
   const formatted = useMemo(() => prettyJson(prompt.inputJson), [prompt.inputJson])
 
   const [pendingChoice, setPendingChoice] = useState<ApprovalChoice | null>(null)
@@ -134,7 +136,9 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
           )}
           {isExplicit && !outcome && (
             <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-              {t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
+              {prompt.canPin
+                ? t('chat.approvalNeedsConfirmBadge', { defaultValue: 'needs confirmation' })
+                : t('chat.approvalExplicitBadge', { defaultValue: 'one-time decision' })}
             </Badge>
           )}
           {isAuto && !outcome && prompt.graceSeconds != null && (
@@ -157,9 +161,9 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
                 'grid gap-2',
                 isAuto
                   ? 'grid-cols-1'
-                  : isExplicit
-                    ? 'grid-cols-2'
-                    : 'grid-cols-1 sm:grid-cols-[1.4fr_1fr_1fr]',
+                  : showAuto
+                    ? 'grid-cols-1 sm:grid-cols-[1.4fr_1fr_1fr]'
+                    : 'grid-cols-2',
               )}
             >
               {!isAuto && (
@@ -171,7 +175,7 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
                   {t('chat.approvalAllow')}
                 </Button>
               )}
-              {!isAuto && !isExplicit && (
+              {showAuto && (
                 <Button
                   variant="secondary"
                   className="min-h-12 w-full"

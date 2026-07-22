@@ -1039,7 +1039,9 @@ function renderApprovalCardHtml(p: ApprovalCardPrompt): string {
       '🔐 <b>必须由你确认</b>',
       `工具：<b>${tool}</b>`,
       `入参：<pre>${input}</pre>`,
-      '<i>不会自动批准或记住本次选择</i>',
+      p.canPin
+        ? '<i>可点「本会话自动放行同类」记住本次选择</i>'
+        : '<i>不会自动批准或记住本次选择</i>',
       `<i>req: ${reqShort}</i>`,
     ].join('\n')
   }
@@ -1063,6 +1065,19 @@ function renderApprovalKeyboard(p: ApprovalCardPrompt): {
     }
   }
   if (p.mode === 'explicit') {
+    if (p.canPin) {
+      return {
+        inline_keyboard: [
+          [
+            { text: '✅ 批准一次', callback_data: `apv:${r}:y` },
+            { text: '❌ 拒绝', callback_data: `apv:${r}:n` },
+          ],
+          [
+            { text: '🛡 本会话自动放行同类', callback_data: `apv:${r}:a` },
+          ],
+        ],
+      }
+    }
     return {
       inline_keyboard: [[
         { text: '✅ 批准一次', callback_data: `apv:${r}:y` },

@@ -53,8 +53,9 @@ function envInt(name: string, def: number): number {
  * because pi 0.79.x does not expose an external compaction signal. */
 function resolveRunTimeoutMs(opts: AgentSendOpts | undefined): number {
   // Match the longest built-in interactive approval window so a legitimate
-  // Plan Mode confirmation is not killed before the user can answer.
-  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 15 * 60 * 1000)
+  // Plan Mode / unconfined-exec confirmation is not killed before the user
+  // can answer. Keep in sync with approval-bus DEFAULT_APPROVAL_TIMEOUT_MS.
+  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 30 * 60 * 1000)
   if (base === 0) return 0
   return applyGoalTimeoutBoost(base, {
     platform: opts?.platform,

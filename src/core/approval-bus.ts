@@ -23,13 +23,14 @@ import { eventBus } from './event-bus.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
-// Default 15 min — long enough for slower IM channels to round-trip
-// a y/n reply. When AGIM_AUTO_APPROVE is on, this timeout is irrelevant
-// (tools are approved immediately without waiting). This value only
-// matters when auto-approve is off and a human is expected to respond.
+// Default 30 min — human review of tool args (esp. unconfined exec /
+// plan-exit) often needs more than a short glance, and the card must
+// outlive slow IM round-trips. When AGIM_AUTO_APPROVE is on, this
+// timeout is irrelevant (tools are approved immediately without
+// waiting). This value only matters when a human is expected to respond.
 const DEFAULT_APPROVAL_TIMEOUT_MS = parseEnvMs(
   process.env.AGIM_APPROVAL_TIMEOUT_MS,
-  15 * 60 * 1000,
+  30 * 60 * 1000,
 )
 const DEFAULT_AUTO_ALLOW_GRACE_MS = 5 * 1000
 
@@ -265,8 +266,14 @@ export interface ApprovalNotification {
   autoAllow?: { graceMs: number }
   /** Security-sensitive state transitions (for example exiting Plan Mode)
    * require a one-time human decision. Auto-approve, remembered allow rules,
-   * allow-on-timeout, and "allow all" must not bypass this prompt. */
+   * allow-on-timeout, and "allow all" must not bypass this prompt — unless
+   * `allowSessionPin` is also set (see below). */
   requiresExplicitDecision?: boolean
+  /** When paired with `requiresExplicitDecision`, still bypass global
+   *  auto-approve / allow-on-timeout, but let the operator click
+   *  "Auto for similar" to seed a per-thread remembered rule (and honor
+   *  that rule on later matching requests via the grace path). */
+  allowSessionPin?: boolean
 }
 
 /** Notifier 只负责"通知 IM 推卡片/消息"。不要在这里返回决策；决策走 resolvePending。 */
@@ -368,6 +375,8 @@ interface PendingApproval {
   /** True for approval-only state transitions that must be decided by a
    *  human for this exact request. */
   requiresExplicitDecision: boolean
+  /** See {@link ApprovalNotification.allowSessionPin}. */
+  allowSessionPin: boolean
 }
 
 export interface ApprovalBusOptions {
@@ -608,7 +617,12 @@ export class ApprovalBus {
       })
       return null
     }
-    if (target.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
+    if (
+      target.requiresExplicitDecision
+      && !target.allowSessionPin
+      && decision.behavior === 'allow'
+      && decision.autoAllowFurther
+    ) {
       // Mutate the caller-visible decision too: approval-router uses the same
       // object for receipts/card outcomes after resolvePending returns.
       delete decision.autoAllowFurther
@@ -1543,6 +1557,8 @@ export class ApprovalBus {
     toolUseId?: string
     /** Require a one-time human decision; bypasses every automatic allow path. */
     requiresExplicitDecision?: boolean
+    /** Allow "Auto for similar" even when `requiresExplicitDecision` is set. */
+    allowSessionPin?: boolean
     /** Override the pending timer (e.g. goal confirmation uses its own budget). */
     timeoutMs?: number
     ctx: RunContext
@@ -1571,6 +1587,7 @@ export class ApprovalBus {
       input: input.input,
       ctx: input.ctx,
       requiresExplicitDecision: input.requiresExplicitDecision,
+      allowSessionPin: input.allowSessionPin,
       timeoutMs: input.timeoutMs,
       transport: { dispatch: input.dispatch },
     })
@@ -1589,12 +1606,14 @@ export class ApprovalBus {
     input: Record<string, unknown>
     ctx: RunContext
     requiresExplicitDecision?: boolean
+    allowSessionPin?: boolean
     /** Optional override for the pending resolution timer. */
     timeoutMs?: number
     transport: { socket: Socket } | { dispatch: (decision: Decision) => void }
   }): Promise<void> {
     const fingerprint = inputFingerprint(args.toolName, args.input)
     const cKey = threadKey(args.ctx.platform, args.ctx.channelId, args.ctx.threadId)
+    const allowSessionPin = args.requiresExplicitDecision === true && args.allowSessionPin === true
 
     // R13 B1 — hard-denylist for sensitive paths / commands. Must come
     // BEFORE the readonly auto-allow so even Read("~/.agim/env") is
@@ -1714,8 +1733,13 @@ export class ApprovalBus {
     }
 
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
-    const isAutoAllow = !args.requiresExplicitDecision
-      && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
+    // Remembered rules may apply even for explicit-decision tools when the
+    // caller opted into session pinning (e.g. unconfined agim_exec). Global
+    // AGIM_AUTO_APPROVE still cannot skip the first card.
+    const isAutoAllow = (
+      !args.requiresExplicitDecision
+      || allowSessionPin
+    ) && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
     const timeoutMs = typeof args.timeoutMs === 'number' && args.timeoutMs > 0
       ? args.timeoutMs
       : (isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs)
@@ -1737,11 +1761,14 @@ export class ApprovalBus {
       resolved: false,
       autoAllow: isAutoAllow,
       requiresExplicitDecision: args.requiresExplicitDecision === true,
+      allowSessionPin,
       timer: setTimeout(() => {
-        if (args.requiresExplicitDecision) {
-          this.cancelPending(pending, { behavior: 'deny', message: 'explicit approval timeout' }, 'timeout')
-        } else if (isAutoAllow) {
+        // Grace-mode expiry always allows — even for pinnable explicit tools
+        // that previously seeded a remembered rule.
+        if (isAutoAllow) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
+        } else if (args.requiresExplicitDecision) {
+          this.cancelPending(pending, { behavior: 'deny', message: 'explicit approval timeout' }, 'timeout')
         } else if (isTimeoutDefaultAllow()) {
           this.cancelPending(pending, { behavior: 'allow' }, 'timeout')
         } else {
@@ -1786,6 +1813,7 @@ export class ApprovalBus {
         input: args.input, toolUseId: args.toolUseId, ctx: args.ctx,
         ...(isAutoAllow ? { autoAllow: { graceMs: this.autoAllowGraceMs } } : {}),
         ...(args.requiresExplicitDecision ? { requiresExplicitDecision: true } : {}),
+        ...(allowSessionPin ? { allowSessionPin: true } : {}),
       })
     } catch (err) {
       log.error({ event: 'approval.bus.notifier_error', reqId: args.reqId, err: String(err) })
@@ -1820,10 +1848,15 @@ export class ApprovalBus {
     p.resolved = true
     clearTimeout(p.timer)
 
-    // "Allow all" is never meaningful for approval-only state transitions.
-    // Treat it as a one-time allow so this request cannot seed a remembered
-    // rule that silently approves a later plan exit.
-    if (p.requiresExplicitDecision && decision.behavior === 'allow' && decision.autoAllowFurther) {
+    // "Allow all" is never meaningful for hard one-shot transitions (plan
+    // exit / complete_goal). Pinnable explicit tools (unconfined exec) may
+    // seed a remembered rule via autoAllowFurther.
+    if (
+      p.requiresExplicitDecision
+      && !p.allowSessionPin
+      && decision.behavior === 'allow'
+      && decision.autoAllowFurther
+    ) {
       decision = {
         behavior: 'allow',
         ...(decision.updatedInput ? { updatedInput: decision.updatedInput } : {}),
@@ -2030,13 +2063,15 @@ export function inputFingerprint(toolName: string, input: Record<string, unknown
   }
 
   switch (toolName) {
-    case 'Bash': {
+    case 'Bash':
+    case 'agim_exec': {
       const cmd = getStr('command')
       if (!cmd) break
       // First 1–2 whitespace-separated tokens. Quoted strings aren't
       // unwrapped — we want `bash -c "..."` to fingerprint as `bash+-c`,
       // not whatever's inside the quotes (the user is approving "running
-      // bash -c", a meta-pattern).
+      // bash -c", a meta-pattern). Same scheme for agim_exec so
+      // "Auto for similar" groups by command family (e.g. `cmd:curl+-s`).
       const tokens = cmd.trim().split(/\s+/).slice(0, 2)
       return `cmd:${tokens.join('+')}`
     }

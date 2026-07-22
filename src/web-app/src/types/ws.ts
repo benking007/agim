@@ -144,6 +144,8 @@ export interface ApprovalCardPrompt {
   /** `normal` = ask user with remember option; `explicit` = one-time human
    *  decision; `auto-allow` = grace window before automatic allow. */
   mode: 'normal' | 'explicit' | 'auto-allow'
+  /** With `mode: 'explicit'`, show "Auto for similar" (session pin). */
+  canPin?: boolean
   /** Auto-allow grace window in seconds, present iff mode = `auto-allow`. */
   graceSeconds?: number
 }

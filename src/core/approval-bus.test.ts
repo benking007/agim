@@ -731,6 +731,9 @@ describe('inputFingerprint — semantic per-tool keys', () => {
     it('keys by first two whitespace-separated tokens', () => {
       expect(inputFingerprint('Bash', { command: 'git status' })).toBe('cmd:git+status')
       expect(inputFingerprint('Bash', { command: 'git push origin main' })).toBe('cmd:git+push')
+      expect(inputFingerprint('agim_exec', { command: 'curl -s http://x' })).toBe('cmd:curl+-s')
+      expect(inputFingerprint('agim_exec', { command: 'curl -s http://y' }))
+        .toBe(inputFingerprint('agim_exec', { command: 'curl -s http://z' }))
     })
     it('subcommand variants share a rule (status / status -s)', () => {
       expect(inputFingerprint('Bash', { command: 'git status' }))

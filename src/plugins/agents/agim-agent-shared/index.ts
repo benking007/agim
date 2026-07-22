@@ -10,6 +10,7 @@ import { existsSync as fsExistsSync, readFileSync as fsReadFileSync, statSync as
 import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path'
 import { approvalBus } from '../../../core/approval-bus.js'
 import { AGIM_BGJOB_WRAPPER_EXPR } from '../../../core/agent-cwd.js'
+import { resolveGoalConfirmationTimeoutMs } from '../../../core/goal-rpc.js'
 import { type LlmProvider, getAnyProvider, getProvider } from '../../../core/llm/index.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import {
@@ -283,7 +284,8 @@ export async function confirmUnconfinedGoalExec(opts: {
   const input: Record<string, unknown> = {
     command: opts.command,
     reason:
-      '目标进行中且未启用 bwrap 沙箱：批准后将在无进程隔离下执行此命令（一次性确认，不会自动放行同类）',
+      '目标进行中且未启用 bwrap 沙箱：批准后将在无进程隔离下执行此命令'
+      + '（不会继承全局自动批准；可选「本类自动放行」记住本会话同类命令）',
   }
   if (opts.timeoutMs != null) input.timeout_ms = opts.timeoutMs
   if (opts.cwd) input.cwd = opts.cwd
@@ -307,7 +309,12 @@ export async function confirmUnconfinedGoalExec(opts: {
       reqId,
       toolName: 'agim_exec',
       input,
+      // Still bypass AGIM_AUTO_APPROVE / allow-on-timeout, but let the
+      // operator pin "Auto for similar" for this thread's command family.
       requiresExplicitDecision: true,
+      allowSessionPin: true,
+      // Human round-trip budget — same as complete_goal confirmation.
+      timeoutMs: resolveGoalConfirmationTimeoutMs(),
       ctx: {
         platform: opts.platform,
         channelId: opts.channelId,

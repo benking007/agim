@@ -112,6 +112,46 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(decisions).toEqual([{ behavior: 'deny', message: 'explicit approval timeout' }])
   })
 
+  it('pinnable explicit: Auto-for-similar seeds a rule; next match enters grace', async () => {
+    process.env.AGIM_AUTO_APPROVE = '1' // must still show the first card
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'exec-1',
+      reqId: 'unconfined-1',
+      toolName: 'agim_exec',
+      input: { command: 'curl -s http://example.com/a' },
+      requiresExplicitDecision: true,
+      allowSessionPin: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+    expect(notifications[0]?.requiresExplicitDecision).toBe(true)
+    expect(notifications[0]?.allowSessionPin).toBe(true)
+    expect(notifications[0]?.autoAllow).toBeUndefined()
+
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true }, RUN_CTX.userId)
+    expect(decisions).toEqual([{ behavior: 'allow', autoAllowFurther: true }])
+    expect(bus.getAutoAllowKeys(KEY).length).toBe(1)
+
+    const decisions2: Decision[] = []
+    await bus.registerSyntheticPending({
+      runId: 'exec-2',
+      reqId: 'unconfined-2',
+      toolName: 'agim_exec',
+      input: { command: 'curl -s http://example.com/b' },
+      requiresExplicitDecision: true,
+      allowSessionPin: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions2.push(d),
+    })
+    expect(notifications[1]?.autoAllow).toEqual({ graceMs: 80 })
+    await sleep(150)
+    expect(decisions2).toEqual([{ behavior: 'allow' }])
+  })
+
   it('lifecycle cancellation preserves a non-user resolution cause', async () => {
     bus.setNotifier(async () => {})
     const causes: string[] = []

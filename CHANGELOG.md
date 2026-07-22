@@ -16,11 +16,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Approval wait defaults **15 → 30 minutes** (`AGIM_APPROVAL_TIMEOUT_MS` + matching `AGIM_NATIVE_TURN_TIMEOUT_MS`) so human review of tool cards is less likely to race the turn watchdog.
 - Agim `AGENTS.md` seed + managed `<!-- agim:im-ops -->` baseline: 对话逻辑（>8k 落盘仍须完整回复；Viewer + IM 要点；Web/Portal/macOS 禁止截断）、说话/任务执行规则收紧为「对话给全」，去掉旧「一两句收尾 / 写文件代替回复」口径。
 
 ### Fixed
 
-- Active goal + missing bwrap: `agim_exec` no longer hard-fails. Escalates to a **one-time explicit approval** card (same posture as plan-exit / complete_goal); approve → run unconfined, deny → stop. Detached/`nohup`/`&` still hard-blocked.
+- Active goal + missing bwrap: `agim_exec` escalates to an explicit approval card that still bypasses global auto-approve, but now offers **本类自动放行** (session pin by command family) alongside Allow / Deny. Detached/`nohup`/`&` still hard-blocked.
 - Chat composer Enter semantics: **desktop browser / Agim macOS shell** — Enter sends, Ctrl/⌘+Enter newlines; **Agim iOS shell / mobile browser** — Enter newlines, Send button submits. Shells inject `window.__AGIM_SHELL__` (`ios`|`macos`) for precise detection (no viewport heuristics).
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.
 - Agim Agent honors `thinkingFormat: off` at runtime (no longer forced high by DeepSeek/Kimi URL heuristics).

@@ -19,7 +19,9 @@ import {
 import { toast } from 'sonner'
 
 import { useChat, type ChatMessage } from '@/hooks/use-chat'
+import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
 import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
+import { shouldSubmitOnEnterKey } from '@/lib/composer-enter'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
@@ -298,6 +300,7 @@ export function AgentPortal(): JSX.Element {
   const [uploading, setUploading] = useState(false)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
+  const enterNewline = useComposerEnterNewline()
   const [slashOpen, setSlashOpen] = useState(false)
   const [atOpen, setAtOpen] = useState(false)
   const [slashQuery, setSlashQuery] = useState('')
@@ -731,31 +734,34 @@ export function AgentPortal(): JSX.Element {
 
   function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
     const ne = e.nativeEvent as { isComposing?: boolean }
+    // keyCode 229 = IME commit on some browsers before isComposing clears.
     if (ne.isComposing || e.keyCode === 229) return
 
-    // Ctrl+Enter (Win/Linux) / ⌘+Enter (macOS) sends — Enter alone stays newline.
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    if (slashOpen || atOpen) {
+      // Capture-phase popup listeners move highlight / commit selection;
+      // block caret motion and accidental newlines / sends here.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashOpen(false)
+        setAtOpen(false)
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+      }
+      return
+    }
+
+    // Desktop/browser: Enter sends; Ctrl/⌘(+Shift)+Enter inserts a newline.
+    // Phone: Enter never sends — only the send button submits.
+    if (shouldSubmitOnEnterKey(e, { enterNewline })) {
       e.preventDefault()
       e.stopPropagation()
       void onSend()
-      return
-    }
-
-    if (!slashOpen && !atOpen) return
-    // Capture-phase popup listeners move highlight / commit selection;
-    // block caret motion and accidental newlines here.
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault()
-      return
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      setSlashOpen(false)
-      setAtOpen(false)
-      return
-    }
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault()
     }
   }
 
@@ -1305,6 +1311,7 @@ export function AgentPortal(): JSX.Element {
                   syncTriggers(caret, text)
                 }}
                 disabled={uploading}
+                enterNewline={enterNewline}
                 placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}
                 inputRef={composerInputRef}
                 onKeyDown={onComposerKeyDown}

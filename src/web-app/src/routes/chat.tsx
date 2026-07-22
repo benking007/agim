@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
+import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
 import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
 import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
@@ -90,6 +91,7 @@ export default function ChatRoute(): JSX.Element {
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const keyboardInset = useKeyboardInset()
+  const enterNewline = useComposerEnterNewline()
   const statusLabel = t(`chat.status.${state.status}`, { defaultValue: state.status })
   const messageCount = state.messages.length
   const latestMessageContent = state.messages.at(-1)?.content ?? ''
@@ -255,13 +257,26 @@ export default function ChatRoute(): JSX.Element {
         onSubmit={onSubmit}
         disabled={state.status !== 'open'}
         busy={!!state.currentReplyId}
+        enterNewline={enterNewline}
         keyboardInset={keyboardInset}
         inputRef={inputRef}
-        placeholder={t('chat.inputPlaceholder', {
-          defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
-        })}
+        placeholder={t(
+          enterNewline ? 'chat.inputPlaceholderMobile' : 'chat.inputPlaceholder',
+          {
+            defaultValue: enterNewline
+              ? 'Message…'
+              : 'Message… (Enter sends, Ctrl/⌘+Enter newlines)',
+          },
+        )}
         footer={(
           <div className="space-y-1.5">
+            {enterNewline ? (
+              <p className="text-xs text-text-muted">
+                {t('chat.mobileHint', {
+                  defaultValue: 'Enter creates new lines; tap Send to submit.',
+                })}
+              </p>
+            ) : null}
             {state.currentReplyId ? (
               <Badge variant="info">
                 {t('chat.streaming', { defaultValue: '… streaming' })}

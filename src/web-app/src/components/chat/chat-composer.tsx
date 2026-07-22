@@ -3,7 +3,7 @@
  *
  * - Pill textarea with auto-grow (capped)
  * - 44×44 send button (Apple HIG minimum)
- * - IME-safe Enter handling (desktop: Enter sends; mobile: newline)
+ * - IME-safe Enter handling (desktop: Enter sends, Ctrl/⌘+Enter newline; phone: newline only)
  * - Optional leading action (e.g. new conversation)
  * - Optional footer slot (streaming badge, activity link, …)
  */
@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2, Send } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { shouldSubmitOnEnterKey } from '@/lib/composer-enter'
 import { cn } from '@/lib/utils'
 
 export interface ChatComposerProps {
@@ -83,12 +84,13 @@ export function ChatComposer({
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
     const ne = e.nativeEvent as { isComposing?: boolean }
+    // keyCode 229 = IME commit on some browsers before isComposing clears.
     if (ne.isComposing || e.keyCode === 229) return
-    if (enterNewline) return
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (shouldSubmitOnEnterKey(e, { enterNewline })) {
       e.preventDefault()
       handleSubmit()
     }
+    // Ctrl/⌘/Shift+Enter fall through → textarea inserts a newline.
   }
 
   const canSend = !!value.trim() && !disabled && !busy
@@ -117,9 +119,14 @@ export function ChatComposer({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={placeholder ?? t('chat.inputPlaceholder', {
-            defaultValue: 'Message… (Enter sends, Shift+Enter newlines)',
-          })}
+          placeholder={placeholder ?? t(
+            enterNewline ? 'chat.inputPlaceholderMobile' : 'chat.inputPlaceholder',
+            {
+              defaultValue: enterNewline
+                ? 'Message…'
+                : 'Message… (Enter sends, Ctrl/⌘+Enter newlines)',
+            },
+          )}
           rows={1}
           enterKeyHint={enterNewline ? 'enter' : 'send'}
           className={cn(

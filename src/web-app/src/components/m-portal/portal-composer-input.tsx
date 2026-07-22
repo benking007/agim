@@ -109,6 +109,8 @@ interface PortalComposerInputProps {
   value: string
   onChange: (next: string) => void
   disabled?: boolean
+  /** Phone soft-keyboard: Enter inserts newline (enterKeyHint=enter). */
+  enterNewline?: boolean
   placeholder?: string
   inputRef?: RefObject<HTMLTextAreaElement | null>
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
@@ -121,6 +123,7 @@ export function PortalComposerInput({
   value,
   onChange,
   disabled,
+  enterNewline = true,
   placeholder,
   inputRef: externalRef,
   onKeyDown,
@@ -214,6 +217,7 @@ export function PortalComposerInput({
         value={text}
         disabled={disabled}
         placeholder={chips.length === 0 ? placeholder : undefined}
+        enterKeyHint={enterNewline ? 'enter' : 'send'}
         onChange={(e) => onTextChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onSelect={reportCaret}
@@ -226,10 +230,12 @@ export function PortalComposerInput({
           }
           reportCaret()
         }}
-        // Bare Enter = newline (stop legacy keypress submit). Ctrl/⌘+Enter
-        // is handled in onKeyDown → send.
+        // Phone: bare Enter = newline. Desktop: onKeyDown submits on Enter;
+        // Ctrl/⌘+Enter falls through for a newline.
         onKeyPress={(e) => {
-          if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) e.stopPropagation()
+          if (enterNewline && e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+            e.stopPropagation()
+          }
         }}
         className={cn(
           'min-h-7 min-w-[6rem] flex-1 resize-none bg-transparent py-0 text-md leading-7 focus:outline-none disabled:opacity-60',

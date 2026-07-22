@@ -262,9 +262,9 @@
       "agentSettings": "Agent 设置",
       "messengerSettings": "连接 IM"
     },
-    "inputPlaceholder": "输入消息……（Enter 发送，Shift+Enter 换行）",
+    "inputPlaceholder": "输入消息……（Enter 发送，Ctrl/⌘+Enter 换行）",
     "inputPlaceholderMobile": "输入消息…",
-    "mobileHint": "Enter 换行，点击发送提交。",
+    "mobileHint": "回车换行，点发送按钮提交。",
     "activity": "运行动态",
     "activityTitle": "运行动态",
     "activityEmpty": "暂无运行记录。",

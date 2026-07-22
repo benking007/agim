@@ -30,6 +30,13 @@ struct WebViewRepresentable: UIViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
+        // Identify this WKWebView as the Agim iOS shell so the SPA can
+        // branch UX (Enter→newline, share sheet, …) without UA guessing.
+        let shellMarker = "window.__AGIM_SHELL__='ios';"
+        config.userContentController.addUserScript(
+            WKUserScript(source: shellMarker, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+
         // Force CJK webfont before first paint. Some iOS locales resolve
         // -apple-system without a Han glyph fallback (tofu / [?]). Also
         // declare @font-face here so the face exists even if CSS arrives

@@ -117,6 +117,7 @@ describeSqlite('goal evidence ledger', () => {
     })
     if (!goal) throw new Error('goal unavailable')
     let dispatches = 0
+    let asked = 0
     const tool = agimToolToPi(
       {
         name: 'agim_exec',
@@ -137,14 +138,125 @@ describeSqlite('goal evidence ledger', () => {
           goalVersion: goal.version,
           traceId: 'trace-detached',
         },
+        // Even if containment is missing, detached must never escalate to a card.
+        confirmUnconfinedExec: async () => {
+          asked += 1
+          return 'allow'
+        },
       },
     )
     await expect(tool.execute(
       'detached-call',
       { command: 'nohup worker &' },
       new AbortController().signal,
-    )).rejects.toThrow(/bwrap|detached/)
+    )).rejects.toThrow(/detached/)
     expect(dispatches).toBe(0)
+    expect(asked).toBe(0)
+  })
+
+  it('tool bridge asks explicit approval for unconfined exec when goal is active', async () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'unconfined',
+      userId: 'u',
+      title: 'approve unconfined',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    let dispatches = 0
+    const seen: Array<Record<string, unknown>> = []
+    const tool = agimToolToPi(
+      {
+        name: 'agim_exec',
+        description: 'exec',
+        parameters: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+      },
+      async () => {
+        dispatches += 1
+        return { text: 'ok', isError: false }
+      },
+      {
+        goalEvidence: {
+          goalId: goal.id,
+          goalVersion: goal.version,
+          traceId: 'trace-unconfined',
+        },
+        confirmUnconfinedExec: async (args) => {
+          seen.push(args)
+          return 'allow'
+        },
+      },
+    )
+    // Force the missing-bwrap branch regardless of host tooling.
+    const prev = process.env.AGIM_EXEC_SANDBOX
+    process.env.AGIM_EXEC_SANDBOX = 'off'
+    try {
+      const out = await tool.execute(
+        'unconfined-call',
+        { command: 'echo hi' },
+        new AbortController().signal,
+      )
+      expect(dispatches).toBe(1)
+      expect(seen).toEqual([{ command: 'echo hi' }])
+      expect(JSON.stringify(out.content)).toContain('ok')
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_EXEC_SANDBOX
+      else process.env.AGIM_EXEC_SANDBOX = prev
+    }
+  })
+
+  it('tool bridge denies unconfined exec when operator rejects approval', async () => {
+    _truncateForTests()
+    const goal = setActiveGoal({
+      platform: 'test',
+      channelId: 'c',
+      threadId: 'deny-unconfined',
+      userId: 'u',
+      title: 'deny unconfined',
+    })
+    if (!goal) throw new Error('goal unavailable')
+    let dispatches = 0
+    const tool = agimToolToPi(
+      {
+        name: 'agim_exec',
+        description: 'exec',
+        parameters: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+      },
+      async () => {
+        dispatches += 1
+        return { text: 'ok', isError: false }
+      },
+      {
+        goalEvidence: {
+          goalId: goal.id,
+          goalVersion: goal.version,
+          traceId: 'trace-deny',
+        },
+        confirmUnconfinedExec: async () => 'deny',
+      },
+    )
+    const prev = process.env.AGIM_EXEC_SANDBOX
+    process.env.AGIM_EXEC_SANDBOX = 'off'
+    try {
+      await expect(tool.execute(
+        'deny-call',
+        { command: 'echo hi' },
+        new AbortController().signal,
+      )).rejects.toThrow(/denied|unconfined/)
+      expect(dispatches).toBe(0)
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_EXEC_SANDBOX
+      else process.env.AGIM_EXEC_SANDBOX = prev
+    }
   })
 
   it('invalidates old evidence after mutation and accepts current verification', () => {

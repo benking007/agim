@@ -30,6 +30,7 @@ import {
 } from '../../../core/goal-evidence.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
+import { confirmUnconfinedGoalExec } from '../agim-agent-shared/index.js'
 
 /** A never-aborted signal for when pi invokes execute without one. The agim
  *  ToolDispatcher contract requires a non-optional AbortSignal. */
@@ -139,6 +140,14 @@ async function dispatchWithTimeout(
   }
 }
 
+export interface ToolBridgeApprovalCtx {
+  runId: string
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+}
+
 export interface ToolBridgeOptions {
   /** Forwarded into ToolDispatcherContext so dispatchers can correlate audit
    *  rows back to the originating turn. */
@@ -153,6 +162,16 @@ export interface ToolBridgeOptions {
   resolveGoalEvidence?: () => GoalEvidenceContext | null
   /** Fail closed for mutations when goal state cannot be read. */
   goalLedgerAvailable?: () => boolean
+  /**
+   * IM/web identity for escalating unconfined `agim_exec` (no bwrap) to an
+   * explicit approval card while a versioned goal is active.
+   */
+  approvalCtx?: ToolBridgeApprovalCtx
+  /** Test seam — overrides the default confirmUnconfinedGoalExec helper. */
+  confirmUnconfinedExec?: (
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<'allow' | 'deny'>
 }
 
 /** Wrap one agim ToolDef + the shared dispatcher into a pi AgentTool. */
@@ -172,11 +191,37 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
       const evidenceKind = classifyGoalEvidence(def.name, parsedArgs, parallelSafe)
       const goalEvidence = opts.resolveGoalEvidence?.() ?? opts.goalEvidence ?? null
       if (goalEvidence && toolNameMatches(def.name, 'agim_exec')) {
-        if (!isGoalExecContainmentAvailable()) {
-          throw new Error('agim_exec requires bwrap process containment while a versioned goal is active')
-        }
+        // Detached/background stays hard-blocked — never offer a card for it.
         if (isDetachedGoalCommand(parsedArgs)) {
           throw new Error('detached/background exec is not allowed while a versioned goal is active')
+        }
+        // No bwrap → ask the operator once (explicit), then run unconfined.
+        if (!isGoalExecContainmentAvailable()) {
+          const command = typeof parsedArgs.command === 'string' ? parsedArgs.command : ''
+          let decision: 'allow' | 'deny' = 'deny'
+          if (opts.confirmUnconfinedExec) {
+            decision = await opts.confirmUnconfinedExec(parsedArgs, signal ?? undefined)
+          } else if (opts.approvalCtx) {
+            const timeoutRaw = parsedArgs.timeout_ms
+            const timeoutMs = typeof timeoutRaw === 'number' ? timeoutRaw
+              : typeof timeoutRaw === 'string' ? Number.parseInt(timeoutRaw, 10) : undefined
+            decision = await confirmUnconfinedGoalExec({
+              ...opts.approvalCtx,
+              command,
+              timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+              cwd: typeof parsedArgs.cwd === 'string' ? parsedArgs.cwd : undefined,
+              signal: signal ?? undefined,
+            })
+          } else {
+            throw new Error(
+              'agim_exec requires bwrap process containment while a versioned goal is active',
+            )
+          }
+          if (decision !== 'allow') {
+            throw new Error(
+              'agim_exec denied: unconfined execution while a versioned goal is active (no bwrap)',
+            )
+          }
         }
       }
       let operation: ReturnType<typeof beginGoalToolOperation> = null

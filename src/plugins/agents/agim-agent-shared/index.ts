@@ -255,6 +255,80 @@ export function isPlanModeOn(threadKey?: string): boolean {
   return effectivePlanModeOn(threadKey)
 }
 
+/**
+ * Explicit one-shot approval when `agim_exec` would run unconfined
+ * (no bwrap) while a versioned goal is active. Must not inherit
+ * AGIM_AUTO_APPROVE / remembered allow rules — same posture as plan-exit
+ * and complete_goal.
+ */
+export async function confirmUnconfinedGoalExec(opts: {
+  runId: string
+  platform: string
+  channelId: string
+  threadId: string
+  userId: string
+  command: string
+  timeoutMs?: number
+  cwd?: string
+  signal?: AbortSignal
+}): Promise<'allow' | 'deny'> {
+  if (opts.signal?.aborted) return 'deny'
+  if (!approvalBus.hasNotifier()) {
+    throw new Error(
+      'agim_exec requires bwrap process containment while a versioned goal is active '
+      + '(no approval UI available to confirm unconfined execution)',
+    )
+  }
+  const reqId = randomUUID()
+  const input: Record<string, unknown> = {
+    command: opts.command,
+    reason:
+      '目标进行中且未启用 bwrap 沙箱：批准后将在无进程隔离下执行此命令（一次性确认，不会自动放行同类）',
+  }
+  if (opts.timeoutMs != null) input.timeout_ms = opts.timeoutMs
+  if (opts.cwd) input.cwd = opts.cwd
+
+  return await new Promise<'allow' | 'deny'>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => opts.signal?.removeEventListener('abort', onAbort)
+    const finish = (decision: 'allow' | 'deny') => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(decision)
+    }
+    const onAbort = () => {
+      approvalBus.cancelPendingByReqId(reqId, 'approval cancelled: agent turn aborted')
+      finish('deny')
+    }
+    opts.signal?.addEventListener('abort', onAbort, { once: true })
+    void approvalBus.registerSyntheticPending({
+      runId: opts.runId,
+      reqId,
+      toolName: 'agim_exec',
+      input,
+      requiresExplicitDecision: true,
+      ctx: {
+        platform: opts.platform,
+        channelId: opts.channelId,
+        threadId: opts.threadId,
+        userId: opts.userId,
+        callerAgent: 'agim',
+      },
+      dispatch: (decision) => finish(decision.behavior),
+    }).then(() => {
+      if (opts.signal?.aborted) {
+        approvalBus.cancelPendingByReqId(reqId, 'approval cancelled: agent turn aborted')
+      }
+    }).catch((err) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    })
+  })
+}
+
 export function buildNativeAskUser(opts: {
   runId: string
   platform: string

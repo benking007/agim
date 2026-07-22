@@ -159,58 +159,72 @@ export function MessageActions({
   )
 
   return (
-    <div className={cn('flex items-center justify-start gap-0 pt-1.5', className)}>
-      <button
-        type="button"
-        className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
-        aria-label={t('chat.portal.feedbackGood')}
-        title={t('chat.portal.feedbackGood')}
-        disabled={pending}
-        onClick={() => void onVote('up')}
-      >
-        <ThumbsUp className="h-3 w-3" />
-      </button>
-      <button
-        type="button"
-        className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
-        aria-label={t('chat.portal.feedbackBad')}
-        title={t('chat.portal.feedbackBad')}
-        disabled={pending}
-        onClick={() => void onVote('down')}
-      >
-        <ThumbsDown className="h-3 w-3" />
-      </button>
-      <button
-        type="button"
-        className={btn}
-        aria-label={t('chat.copy')}
-        title={t('chat.copy')}
-        onClick={() => void onCopy()}
-      >
-        {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-      </button>
-      {!nativeShell && (
+    <div className={cn('flex flex-col items-start gap-0.5 pt-1.5', className)}>
+      <div className="flex items-center justify-start gap-0">
         <button
           type="button"
-          className={btn}
-          aria-label={t('chat.saveMarkdown')}
-          title={t('chat.saveMarkdown')}
-          disabled={saving}
-          onClick={() => void onSaveMarkdown()}
+          className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
+          aria-label={t('chat.portal.feedbackGood')}
+          title={t('chat.portal.feedbackGood')}
+          disabled={pending}
+          onClick={() => void onVote('up')}
         >
-          <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
+          <ThumbsUp className="h-3 w-3" />
         </button>
-      )}
-      {nativeShell && (
+        <button
+          type="button"
+          className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
+          aria-label={t('chat.portal.feedbackBad')}
+          title={t('chat.portal.feedbackBad')}
+          disabled={pending}
+          onClick={() => void onVote('down')}
+        >
+          <ThumbsDown className="h-3 w-3" />
+        </button>
         <button
           type="button"
           className={btn}
-          aria-label={t('chat.share')}
-          title={t('chat.share')}
-          disabled={sharing}
-          onClick={() => void onShare()}
+          aria-label={t('chat.copy')}
+          title={t('chat.copy')}
+          onClick={() => void onCopy()}
         >
-          <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
+          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+        </button>
+        {!nativeShell && (
+          <button
+            type="button"
+            className={btn}
+            aria-label={t('chat.saveMarkdown')}
+            title={t('chat.saveMarkdown')}
+            disabled={saving}
+            onClick={() => void onSaveMarkdown()}
+          >
+            <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
+          </button>
+        )}
+        {nativeShell && (
+          <button
+            type="button"
+            className={btn}
+            aria-label={t('chat.share')}
+            title={t('chat.share')}
+            disabled={sharing}
+            onClick={() => void onShare()}
+          >
+            <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
+          </button>
+        )}
+      </div>
+      {vote === 'down' && onDownvotePrefill && (
+        <button
+          type="button"
+          className={cn(
+            'text-[11px] underline-offset-2 hover:underline',
+            dark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700',
+          )}
+          onClick={() => onDownvotePrefill()}
+        >
+          {t('chat.portal.feedbackTellWhy')}
         </button>
       )}
     </div>

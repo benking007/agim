@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
+import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
 
 export interface ChatActivityBlockProps {
@@ -62,6 +63,9 @@ function localizeStepLabel(
   }
   if (step.kind === 'status' && step.label === COMPACTING_CONTEXT_LABEL) {
     return t('chat.activityCompacting', { defaultValue: 'Compacting context' })
+  }
+  if (isTodoActivityStep(step)) {
+    return t('chat.todoActivityLabel', { defaultValue: 'Plan updated' })
   }
   return step.label
 }
@@ -296,7 +300,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                 )}
                 <AgentStatusBadge step={step} />
               </div>
-              {step.preview && (
+              {step.preview && !isTodoActivityStep(step) && (
                 <pre className="mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface-2/80 px-2 py-1 font-mono text-[11px] leading-snug text-text-muted">
                   {step.preview.length > 280 ? `${step.preview.slice(0, 280)}…` : step.preview}
                 </pre>

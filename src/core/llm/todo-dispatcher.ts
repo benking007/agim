@@ -27,15 +27,15 @@ import { createSqliteHelper } from '../sqlite-helper.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { canonicalizeToolName } from './tool-names.js'
+import {
+  renderMarkdownChecklist,
+  type TodoItem,
+  type TodoStatus,
+} from './todo-items.js'
 
 const log = rootLogger.child({ component: 'todo-dispatcher' })
 
-export type TodoStatus = 'pending' | 'in_progress' | 'completed'
-
-export interface TodoItem {
-  content: string
-  status: TodoStatus
-}
+export type { TodoItem, TodoStatus } from './todo-items.js'
 
 /** Three-state read for completion gates and inspectors. */
 export type TodoSnapshot =
@@ -307,19 +307,6 @@ function handleWrite(args: Record<string, unknown>, threadKey: string): Dispatch
     isError: false,
     source: 'todo',
   }
-}
-
-/** Markdown checklist. Status icons match Claude Code's TodoWrite for
- *  user familiarity: ☐ pending · ▶ in_progress · ☑ completed. */
-function renderMarkdownChecklist(items: TodoItem[]): string {
-  if (items.length === 0) return '(plan cleared — no items)'
-  const lines: string[] = []
-  for (const [i, it] of items.entries()) {
-    const icon = it.status === 'completed' ? '☑'
-      : it.status === 'in_progress' ? '▶' : '☐'
-    lines.push(`${i + 1}. ${icon} ${it.content}`)
-  }
-  return lines.join('\n')
 }
 
 /** Test-only: drop memory + close the handle so a temp DB can be unlinked

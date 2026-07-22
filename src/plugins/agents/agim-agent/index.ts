@@ -36,6 +36,12 @@ import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import { PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
+import {
+  isTodoActivityLabel,
+  renderMarkdownChecklist,
+  resolveTodoItems,
+  type TodoItem,
+} from '../../../core/llm/todo-items.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
@@ -256,17 +262,35 @@ function fullToolResultText(ev: NativeToolResultEvent): string | undefined {
 }
 
 function previewToolResult(ev: NativeToolResultEvent): string | undefined {
+  // Todo checklists are shown in a dedicated chat card — keep the full
+  // markdown so history fallback parsers (and IM transcripts) stay complete.
+  if (isTodoActivityLabel(ev.toolName)) {
+    const items = resolveTodoItems({
+      input: ev.input,
+      resultText: fullToolResultText(ev),
+    })
+    if (items) return renderMarkdownChecklist(items)
+  }
   return fullToolResultText(ev)?.slice(0, 180)
 }
 
-function previewToolInput(input: unknown): string | undefined {
+function previewToolInput(input: unknown, toolName?: string): string | undefined {
   if (input == null) return undefined
+  if (toolName && isTodoActivityLabel(toolName)) {
+    const items = resolveTodoItems({ input })
+    if (items) return renderMarkdownChecklist(items)
+  }
   try {
     const raw = typeof input === 'string' ? input : JSON.stringify(input)
     return raw.length > 220 ? `${raw.slice(0, 220)}…` : raw
   } catch {
     return undefined
   }
+}
+
+function todoItemsForActivity(toolName: string | undefined, input: unknown, resultText?: string): TodoItem[] | undefined {
+  if (!isTodoActivityLabel(toolName)) return undefined
+  return resolveTodoItems({ input, resultText }) ?? undefined
 }
 
 /** Heuristic: skill-ish tools get kind=skill; call_agent is owned by A2A. */
@@ -909,6 +933,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         startedAt: number
         finishedAt?: number
         preview?: string
+        todoItems?: TodoItem[]
       },
     ): void => {
       if (!opts?.onToolActivity) return
@@ -924,6 +949,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           startedAt: step.startedAt,
           finishedAt: step.finishedAt,
           preview: step.preview,
+          ...(step.todoItems ? { todoItems: step.todoItems } : {}),
         })
       } catch { /* observer must not break the harness loop */ }
     }
@@ -1036,12 +1062,14 @@ export class NativeAgentAdapter implements AgentAdapter {
         dispatchedToolCalls += 1
         const startedAt = Date.now()
         toolStartAt.set(ev.toolCallId, startedAt)
+        const todoItems = todoItemsForActivity(ev.toolName, ev.input)
         emitToolActivity({
           id: ev.toolCallId,
           label: ev.toolName,
           status: 'running',
           startedAt,
-          preview: previewToolInput(ev.input),
+          preview: previewToolInput(ev.input, ev.toolName),
+          ...(todoItems ? { todoItems } : {}),
         })
         return undefined
       },
@@ -1218,6 +1246,11 @@ export class NativeAgentAdapter implements AgentAdapter {
         turnPlanMode = false
       }
       const preview = previewToolResult(ev)
+      const todoItems = todoItemsForActivity(
+        ev.toolName,
+        ev.input,
+        fullToolResultText(ev),
+      )
       toolRuns.push({
         name: ev.toolName ?? 'unknown_tool',
         isError: ev.isError === true,
@@ -1235,6 +1268,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           startedAt,
           finishedAt: Date.now(),
           preview,
+          ...(todoItems ? { todoItems } : {}),
         })
       }
       // Stuck-loop: same tool + key-order-stable args + normalized error class

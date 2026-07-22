@@ -20,7 +20,9 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
+import { ChatTodoList } from '@/components/chat/chat-todo-list'
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
+import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
 
 export interface PortalRunStatusProps {
@@ -95,6 +97,9 @@ function stepLabel(
   if (step.kind === 'status' && step.label === COMPACTING_CONTEXT_LABEL) {
     return t('chat.activityCompacting', { defaultValue: 'Compacting context' })
   }
+  if (isTodoActivityStep(step)) {
+    return t('chat.todoActivityLabel', { defaultValue: 'Plan updated' })
+  }
   return step.label
 }
 
@@ -154,6 +159,7 @@ export function PortalRunStatus({
 
   return (
     <div className={cn('w-full space-y-2', className)}>
+      {activity && <ChatTodoList activity={activity} dark={dark} className="max-w-full" />}
       <div className="flex items-center gap-2">
         <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', agentColor)}>
           <AgentIcon className="h-3.5 w-3.5" />
@@ -281,7 +287,7 @@ export function PortalRunStatus({
                   </span>
                 )}
               </div>
-              {step.preview && (
+              {step.preview && !isTodoActivityStep(step) && (
                 <pre className={cn(
                   'agim-mono mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-md px-2 py-1 text-[11px] leading-snug',
                   dark ? 'bg-zinc-900 text-zinc-500' : 'bg-zinc-100 text-zinc-500',

@@ -17,6 +17,7 @@ export interface ChatActivityStep {
   startedAt: number
   finishedAt?: number
   preview?: string
+  todoItems?: ToolActivityStep['todoItems']
 }
 
 export interface ChatActivity {
@@ -53,6 +54,7 @@ export function mergeActivityStep(
       ...step,
       startedAt: Math.min(prev.startedAt, step.startedAt),
       preview: step.preview ?? prev.preview,
+      todoItems: step.todoItems ?? prev.todoItems,
     }
   } else {
     steps.push(step)
@@ -77,6 +79,7 @@ export function mergeToolActivityStep(
     startedAt: step.startedAt,
     finishedAt: step.finishedAt,
     preview: step.preview,
+    todoItems: step.todoItems,
   })
 }
 

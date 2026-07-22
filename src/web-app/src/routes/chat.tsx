@@ -39,6 +39,7 @@ import { ChatComposer } from '@/components/chat/chat-composer'
 import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
+import { ChatTodoList } from '@/components/chat/chat-todo-list'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
@@ -224,7 +225,10 @@ export default function ChatRoute(): JSX.Element {
             return (
               <div key={m.id} className="space-y-1">
                 {m.role === 'assistant' && m.activity && (
-                  <ChatActivityBlock activity={m.activity} />
+                  <div className="space-y-1.5">
+                    <ChatTodoList activity={m.activity} />
+                    <ChatActivityBlock activity={m.activity} />
+                  </div>
                 )}
                 <MessageBubble
                   msg={m}

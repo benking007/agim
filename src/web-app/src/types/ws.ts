@@ -110,6 +110,8 @@ export interface ActivityStepEvent {
     startedAt: number | string
     finishedAt?: number | string
     preview?: string
+    /** Structured checklist for agim_todo_write (chat Todo UI). */
+    todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
   }
 }
 

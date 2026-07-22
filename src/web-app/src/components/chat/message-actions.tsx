@@ -16,7 +16,8 @@ import { cn } from '@/lib/utils'
 import { isAgimNativeShell } from '@/lib/agim-shell'
 import { markdownFilenameFromContent, saveTextAsFile } from '@/lib/save-text-file'
 import { shareContent } from '@/lib/share-content'
-import { api } from '@/lib/api/endpoints'
+import { client } from '@/lib/api/client'
+import type { SubmitChatFeedbackBody, SubmitChatFeedbackResponse } from '@/types/api'
 
 export interface MessageActionsProps {
   content: string
@@ -113,7 +114,9 @@ export function MessageActions({
     setPending(true)
     try {
       if (threadId) {
-        await api.submitChatFeedback({
+        // Keep this off the shared `api` facade so the chat-only route
+        // string does not inflate the SPA entry chunk (bundle budget).
+        const body: SubmitChatFeedbackBody = {
           threadId,
           ...(messageId && !messageId.startsWith('hist-') && !messageId.startsWith('a-')
             ? { messageId }
@@ -122,7 +125,8 @@ export function MessageActions({
             ? { messageIndex }
             : {}),
           vote: target,
-        })
+        }
+        await client.put<SubmitChatFeedbackResponse>('/api/chat/feedback', { body })
       }
       if (target === 'up') {
         toast.success(t('chat.portal.feedbackGood'))

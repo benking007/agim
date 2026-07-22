@@ -23,8 +23,6 @@ import type {
   AuditResponse,
   BatchJobBody,
   EnvResponse,
-  SubmitChatFeedbackBody,
-  SubmitChatFeedbackResponse,
   RemoveAdminBody,
   WechatQrStartResponse,
   WechatQrStatusResponse,
@@ -441,9 +439,5 @@ export const api = {
   /** PUT /api/workspace-files */
   writeWorkspaceFile: (query: { agent: string; path: string }, body: WriteWorkspaceFileBody) =>
     client.put<WriteWorkspaceFileResponse>('/api/workspace-files', { query, body }),
-
-  /** PUT /api/chat/feedback — thumbs up/down on an assistant reply. */
-  submitChatFeedback: (body: SubmitChatFeedbackBody) =>
-    client.put<SubmitChatFeedbackResponse>('/api/chat/feedback', { body }),
 
 } as const

@@ -24,7 +24,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { MessageActions } from '@/components/chat/message-actions'
 import { PortalUserContent } from '@/components/m-portal/portal-user-content'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
@@ -35,6 +34,12 @@ import type { ApprovalCardOutcome } from '@/types/ws'
 const MarkdownView = lazy(async () => {
   const module = await import('@/components/chat/markdown-view')
   return { default: module.MarkdownView }
+})
+
+/** Lazy: ChatRoute is eager on `/`; keep thumbs/export out of the entry budget. */
+const MessageActions = lazy(async () => {
+  const module = await import('@/components/chat/message-actions')
+  return { default: module.MessageActions }
 })
 
 export interface MessageBubbleProps {
@@ -149,16 +154,18 @@ export function MessageBubble({
           </div>
         )}
         {showFeedbackActions && (
-          <MessageActions
-            key={`${msg.id}:${msg.feedback ?? ''}`}
-            content={msg.content}
-            dark={dark}
-            threadId={threadId}
-            messageId={msg.id}
-            messageIndex={msg.serverIndex}
-            initialVote={msg.feedback ?? null}
-            onDownvotePrefill={onDownvotePrefill}
-          />
+          <Suspense fallback={null}>
+            <MessageActions
+              key={`${msg.id}:${msg.feedback ?? ''}`}
+              content={msg.content}
+              dark={dark}
+              threadId={threadId}
+              messageId={msg.id}
+              messageIndex={msg.serverIndex}
+              initialVote={msg.feedback ?? null}
+              onDownvotePrefill={onDownvotePrefill}
+            />
+          </Suspense>
         )}
       </div>
     </div>

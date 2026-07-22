@@ -89,15 +89,18 @@ export function ChatTodoList({ activity, dark, className }: ChatTodoListProps): 
   const items = extractLatestTodoItems(activity)
   const running = activity.status === 'running'
   const summary = items ? summarizeTodoItems(items) : null
+  const allDone = summary?.allDone === true
+  const hasItems = (summary?.total ?? 0) > 0
 
   // Expand while the turn is live or work remains; collapse when all done
-  // (user can still reopen). Re-open if a later todo_write reintroduces work.
+  // (user can still reopen). Depend on primitives so a new summary object
+  // each render does not fight a manual expand after completion.
   const [open, setOpen] = useState(true)
   useEffect(() => {
-    if (!summary) return
-    if (running || !summary.allDone) setOpen(true)
+    if (!hasItems) return
+    if (running || !allDone) setOpen(true)
     else setOpen(false)
-  }, [running, summary])
+  }, [running, hasItems, allDone])
 
   if (!items || items.length === 0 || !summary) return null
 

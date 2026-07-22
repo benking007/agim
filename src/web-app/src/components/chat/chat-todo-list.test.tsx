@@ -65,16 +65,16 @@ describe('ChatTodoList', () => {
         status: 'success',
         startedAt: 1,
         todoItems: [
-          { content: 'A', status: 'completed' },
-          { content: 'B', status: 'completed' },
+          { content: '完成项甲', status: 'completed' },
+          { content: '完成项乙', status: 'completed' },
         ],
       }],
     })}
     />)
     // all done → starts collapsed
-    expect(screen.queryByText('A')).not.toBeInTheDocument()
+    expect(screen.queryByText('完成项甲')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Plan|计划/ }))
-    expect(screen.getByText('A')).toBeInTheDocument()
-    expect(screen.getByText('B')).toBeInTheDocument()
+    expect(screen.getByText('完成项甲')).toBeInTheDocument()
+    expect(screen.getByText('完成项乙')).toBeInTheDocument()
   })
 })

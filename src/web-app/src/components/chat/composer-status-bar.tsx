@@ -352,10 +352,20 @@ export function estimateTokensFromText(text: string): number {
 
 export function estimateContextWindow(model: string | undefined): number {
   const m = (model || '').toLowerCase()
-  if (m.includes('kimi-k3') || m.includes('glm-5') || m.includes('mimo-v2.5')) return 1_000_000
+  // Keep in sync with pi catalog / provider-resolver vendor fallbacks.
+  // Prefer GET /api/llm `contextWindow` (catalog-enriched) when available.
+  if (
+    m.includes('kimi-k3')
+    || m.includes('glm-5')
+    || m.includes('mimo-v2.5')
+    || m.includes('deepseek-v4')
+    || m.includes('deepseek-v3')
+  ) {
+    return 1_000_000
+  }
   if (m.includes('kimi-k2')) return 256_000
   if (m.includes('glm-4.7')) return 200_000
-  if (m.includes('deepseek-v4')) return 128_000
-  if (m.includes('claude') || m.includes('gpt-4') || m.includes('gpt-5')) return 128_000
+  if (m.includes('claude') || m.includes('gpt-4') || m.includes('gpt-5')) return 200_000
+  if (m.includes('deepseek')) return 1_000_000
   return 32_000
 }

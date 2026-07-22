@@ -111,6 +111,7 @@ const MIMO_THINKING_LEVEL_MAP = {
 } as const
 
 function resolveVendorContextWindow(modelId: string): number | undefined {
+  if (/^deepseek/i.test(modelId)) return 1_000_000
   if (isKimiK3Model(modelId)) return 1_000_000
   if (/^kimi-k2\./i.test(modelId)) return 256_000
   if (isKimiModel(modelId)) return 256_000
@@ -122,6 +123,8 @@ function resolveVendorContextWindow(modelId: string): number | undefined {
 }
 
 function resolveVendorMaxTokens(modelId: string): number | undefined {
+  // DeepSeek V4 API: up to 384K output; older ids inherit the same ceiling.
+  if (/^deepseek/i.test(modelId)) return 384_000
   if (isKimiK3Model(modelId)) return 131_072
   if (isKimiK2Model(modelId)) return 32_768
   if (isGlm52Model(modelId)) return 128_000

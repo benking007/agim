@@ -43,6 +43,9 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.reasoning).toBe(true)
     expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
+    // Vendor fallback (no catalog row): 1M / 384K matches V4 API defaults.
+    expect(binding.model.contextWindow).toBe(1_000_000)
+    expect(binding.model.maxTokens).toBe(384_000)
   })
 
   it('enables Kimi K3 thinking via reasoning_effort (openai format)', () => {

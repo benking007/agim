@@ -65,8 +65,8 @@ export function parseTodoItemsFromPreview(preview: string | undefined): ChatTodo
     const m = line.trim().match(/^\d+\.\s*([☑▶☐])\s+(.+)$/)
     if (!m) continue
     const icon = m[1]
-    const content = m[2].trim()
-    if (!content) continue
+    const content = m[2]?.trim()
+    if (!icon || !content) continue
     items.push({
       content,
       status: icon === '☑' ? 'completed' : icon === '▶' ? 'in_progress' : 'pending',
@@ -80,7 +80,7 @@ export function extractLatestTodoItems(activity: ChatActivity | undefined | null
   if (!activity?.steps?.length) return null
   for (let i = activity.steps.length - 1; i >= 0; i -= 1) {
     const step = activity.steps[i]
-    if (!isTodoActivityStep(step)) continue
+    if (!step || !isTodoActivityStep(step)) continue
     if (step.todoItems) {
       const normalized = normalizeChatTodoItems(step.todoItems)
       if (normalized) return normalized

@@ -3,6 +3,9 @@
  *
  * Browser: Save as Markdown (Web Share is weak / clipboard-only → hide Share).
  * iOS / macOS shells: Share via OS sheet (Save opens/preview awkwardly → hide Save).
+ *
+ * Thumbs votes persist via PUT /api/chat/feedback. Downvote arms a next-turn
+ * ephemeral steer and offers a composer prefill to explain what was wrong.
  */
 
 import { useState } from 'react'
@@ -13,19 +16,41 @@ import { cn } from '@/lib/utils'
 import { isAgimNativeShell } from '@/lib/agim-shell'
 import { markdownFilenameFromContent, saveTextAsFile } from '@/lib/save-text-file'
 import { shareContent } from '@/lib/share-content'
+import { client } from '@/lib/api/client'
+import type { SubmitChatFeedbackBody, SubmitChatFeedbackResponse } from '@/types/api'
 
 export interface MessageActionsProps {
   content: string
   dark?: boolean
   className?: string
+  /** Web thread id (`web-…`) used for durable feedback. */
+  threadId?: string
+  /** Durable server message id when known. */
+  messageId?: string
+  /** Index into durable session.messages when known. */
+  messageIndex?: number
+  /** Restored vote from history / prior submit. */
+  initialVote?: 'up' | 'down' | null
+  /** After downvote: focus composer with a short correction template. */
+  onDownvotePrefill?: () => void
 }
 
-export function MessageActions({ content, dark, className }: MessageActionsProps): JSX.Element | null {
+export function MessageActions({
+  content,
+  dark,
+  className,
+  threadId,
+  messageId,
+  messageIndex,
+  initialVote = null,
+  onDownvotePrefill,
+}: MessageActionsProps): JSX.Element | null {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sharing, setSharing] = useState(false)
-  const [vote, setVote] = useState<'up' | 'down' | null>(null)
+  const [vote, setVote] = useState<'up' | 'down' | null>(initialVote ?? null)
+  const [pending, setPending] = useState(false)
   const nativeShell = isAgimNativeShell()
 
   if (!content.trim()) return null
@@ -73,7 +98,6 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
       if (result === 'copied') {
         toast.success(t('chat.shareCopied'))
       }
-      // native: the OS sheet is enough feedback.
     } catch {
       toast.error(t('chat.shareFailed'))
     } finally {
@@ -81,24 +105,68 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
     }
   }
 
-  function onVote(next: 'up' | 'down'): void {
-    setVote(next)
-    toast.success(next === 'up' ? t('chat.portal.feedbackGood') : t('chat.portal.feedbackBad'))
+  async function onVote(next: 'up' | 'down'): Promise<void> {
+    if (pending) return
+    const cleared = vote === next
+    const target: 'up' | 'down' | null = cleared ? null : next
+    const prev = vote
+    setVote(target)
+    setPending(true)
+    try {
+      if (threadId) {
+        // Keep this off the shared `api` facade so the chat-only route
+        // string does not inflate the SPA entry chunk (bundle budget).
+        const body: SubmitChatFeedbackBody = {
+          threadId,
+          ...(messageId && !messageId.startsWith('hist-') && !messageId.startsWith('a-')
+            ? { messageId }
+            : {}),
+          ...(typeof messageIndex === 'number' && messageIndex >= 0
+            ? { messageIndex }
+            : {}),
+          vote: target,
+        }
+        await client.put<SubmitChatFeedbackResponse>('/api/chat/feedback', { body })
+      }
+      if (target === 'up') {
+        toast.success(t('chat.portal.feedbackGood'))
+      } else if (target === 'down') {
+        // Prefill is opt-in via toast action — downvote alone still arms
+        // the next-turn ephemeral steer on the server.
+        toast.success(t('chat.portal.feedbackBad'), {
+          action: onDownvotePrefill
+            ? {
+                label: t('chat.portal.feedbackTellWhy'),
+                onClick: () => onDownvotePrefill(),
+              }
+            : undefined,
+        })
+      } else {
+        toast.success(t('chat.portal.feedbackCleared'))
+      }
+    } catch {
+      setVote(prev)
+      toast.error(t('chat.portal.feedbackFailed'))
+    } finally {
+      setPending(false)
+    }
   }
 
   const btn = cn(
     'inline-flex h-5 w-5 items-center justify-center rounded-md transition',
     dark ? 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700',
+    pending && 'opacity-50 pointer-events-none',
   )
 
   return (
-    <div className={cn('flex items-center justify-start gap-0 pt-1.5', className)}>
+    <div className={cn('flex flex-wrap items-center justify-start gap-x-1 gap-y-1 pt-1.5', className)}>
       <button
         type="button"
         className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
         aria-label={t('chat.portal.feedbackGood')}
         title={t('chat.portal.feedbackGood')}
-        onClick={() => onVote('up')}
+        disabled={pending}
+        onClick={() => void onVote('up')}
       >
         <ThumbsUp className="h-3 w-3" />
       </button>
@@ -107,7 +175,8 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
         className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
         aria-label={t('chat.portal.feedbackBad')}
         title={t('chat.portal.feedbackBad')}
-        onClick={() => onVote('down')}
+        disabled={pending}
+        onClick={() => void onVote('down')}
       >
         <ThumbsDown className="h-3 w-3" />
       </button>
@@ -142,6 +211,20 @@ export function MessageActions({ content, dark, className }: MessageActionsProps
           onClick={() => void onShare()}
         >
           <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
+        </button>
+      )}
+      {vote === 'down' && onDownvotePrefill && (
+        <button
+          type="button"
+          data-testid="feedback-tell-why"
+          className={cn(
+            // Match portal pet / brand teal (portal-pet.tsx body: #14b8a6 / #2dd4bf).
+            'ml-1 inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium underline underline-offset-2',
+            dark ? 'text-teal-400 hover:bg-zinc-800 hover:text-teal-300' : 'text-teal-600 hover:bg-teal-50 hover:text-teal-700',
+          )}
+          onClick={() => onDownvotePrefill()}
+        >
+          {t('chat.portal.feedbackTellWhy')}
         </button>
       )}
     </div>

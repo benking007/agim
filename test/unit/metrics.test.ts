@@ -5,6 +5,7 @@ import {
   recordInvocation,
   recordContextClear,
   recordContextCompact,
+  recordMessageFeedback,
   snapshot,
   toPrometheus,
   reset,
@@ -100,6 +101,15 @@ describe('metrics', () => {
     expect(text).toContain('im_hub_ctx_compact_total{result="success"} 1')
     expect(text).toContain('im_hub_ctx_compact_total{result="fail"} 1')
     expect(text).toContain('im_hub_ctx_compact_tokens_before_sum 12000')
+  })
+
+  it('records message feedback counters in Prometheus', () => {
+    recordMessageFeedback('up')
+    recordMessageFeedback('down')
+    recordMessageFeedback('down')
+    const text = toPrometheus()
+    expect(text).toContain('im_hub_feedback_total{vote="up"} 1')
+    expect(text).toContain('im_hub_feedback_total{vote="down"} 2')
   })
 
   it('quantile via quickselect matches sort-based reference', () => {

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Chat thumbs up/down (real feedback)**: votes persist in a session sidecar (`~/.agim/sessions/*.feedback.json`), restore on refresh, and expose `im_hub_feedback_total`. Downvote arms a consume-once ephemeral next-turn steer (not durable JSONL) and offers a composer “tell it what was wrong” prefill; upvote is persist-only. Does not affect context-compaction weights.
 - **Agim Agent context budget (晚压)**: L1 tool-result clearing + emergency clear, L2 late transcript compaction (pre-turn + mid-turn), lookahead soft-line, Prometheus `im_hub_ctx_*` + `AgentTurnOutcome.contextBudget`, Settings「晚压」knobs (`AGIM_CTX_*`), session **压缩率** in Usage (`/ctx` · auto/full/balanced/frequent), and Cursor-like Usage breakdown. See `docs/agim-agent-context-budget.md`.
 - Shipped full `bin/bgjob` (server-grade: index lock, restart/prune/progress/env, pid+starttime guards) — installed on `agim start` to `~/.agim/scripts/bgjob`. **All agents share** job data under `~/.agim/bgjobs/` (`BGJOB_ROOT` / `AGIM_BGJOBS` override). Agim Agent IM / long-task SOP points at that absolute path (not `~/.claude/`). bwrap carve-out + Tasks → Background prefer the Agim root; legacy Claude/opencode/Codex roots remain readable.
 - **Tasks → Background UI**: row-click detail dialog (cmd / workdir / log tail), status filter, running count chip, Agim vs legacy root labels, duration column, localized statuses.

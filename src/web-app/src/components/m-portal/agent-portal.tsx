@@ -1063,7 +1063,16 @@ export function AgentPortal(): JSX.Element {
                           className="break-words text-base leading-relaxed"
                         />
                         {!(isTyping && msg.id === state.currentReplyId) && (
-                          <MessageActions content={msg.content} dark={dark} />
+                          <MessageActions
+                            key={`${msg.id}:${msg.feedback ?? ''}`}
+                            content={msg.content}
+                            dark={dark}
+                            threadId={portalThreadId || undefined}
+                            messageId={msg.id}
+                            messageIndex={msg.serverIndex}
+                            initialVote={msg.feedback ?? null}
+                            onDownvotePrefill={() => fillComposer(t('chat.portal.feedbackPrefill'))}
+                          />
                         )}
                       </div>
                     ) : null}

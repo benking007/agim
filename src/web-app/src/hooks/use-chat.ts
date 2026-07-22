@@ -44,6 +44,13 @@ export interface ChatMessage {
   timestamp: number
   /** In-thread run accordion (tool/approval steps) for this assistant turn. */
   activity?: ChatActivity
+  /** Thumbs vote restored from server sidecar / local submit. */
+  feedback?: 'up' | 'down'
+  /**
+   * Index into durable `session.messages` when known (from HISTORY).
+   * Used as feedback API fallback for legacy rows without server ids.
+   */
+  serverIndex?: number
   /** Approval cards land here as a system message with embedded data.
    *  `prompt` is the full structured payload from the server (toolName,
    *  inputJson, mode, graceSeconds, reqId). `text` is a plain string
@@ -210,7 +217,7 @@ type Action =
   | { kind: 'AGENT_SWITCHED'; agent: string }
   | { kind: 'SEND_USER'; message: ChatMessage; placeholder: ChatMessage }
   | { kind: 'CHUNK'; replyId: string; text: string }
-  | { kind: 'DONE'; replyId: string; finalText: string; runId?: string }
+  | { kind: 'DONE'; replyId: string; finalText: string; runId?: string; messageId?: string }
   | { kind: 'ERROR'; message: string }
   | { kind: 'APPROVAL_CARD'; messageId: string; prompt: ApprovalCardPrompt }
   | { kind: 'APPROVAL_TEXT'; messageId: string; text: string }
@@ -480,7 +487,12 @@ function reducer(s: ChatState, a: Action): ChatState {
             error: interrupted ? '用户打断了执行' : undefined,
           })
         }
-        next[idx] = { ...target, content: a.finalText || target.content, activity }
+        next[idx] = {
+          ...target,
+          content: a.finalText || target.content,
+          activity,
+          ...(a.messageId ? { id: a.messageId } : {}),
+        }
       }
       return { ...s, messages: next, currentReplyId: null, activeRunId: null }
     }
@@ -1038,12 +1050,14 @@ export function useChat(): UseChat {
                 }
               : undefined
             return {
-              id: `hist-${i}`,
+              id: h.id || `hist-${i}`,
               role: h.role,
               content: h.content,
               agent: h.agent,
               timestamp: h.timestamp ? Date.parse(h.timestamp) : Date.now() - i * 1000,
               activity,
+              serverIndex: i,
+              ...(h.feedback === 'up' || h.feedback === 'down' ? { feedback: h.feedback } : {}),
             }
           }),
         })
@@ -1186,6 +1200,7 @@ export function useChat(): UseChat {
           replyId: currentReplyIdRef.current ?? '',
           finalText: msg.text,
           runId: msg.runId,
+          messageId: msg.messageId,
         })
         return
       case 'error':

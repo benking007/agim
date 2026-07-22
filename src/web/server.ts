@@ -872,6 +872,11 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/chat/media/file' && req.method === 'GET') {
       return handleChatMediaFile(req, res, url)
     }
+    // Thumbs up/down on assistant replies (durable sidecar + optional
+    // next-turn ephemeral downvote hint). Same auth as chat media.
+    if (url.pathname === '/api/chat/feedback' && req.method === 'PUT') {
+      return handleChatFeedback(req, res)
+    }
     // v1.2.133 — plan-history admin list. Shows every
     // native_exit_plan_mode handshake (v1.2.131) with outcome +
     // pending_ms + the plan markdown the model proposed. Admin-only:
@@ -5021,6 +5026,122 @@ function readBinaryBody(req: IncomingMessage, res: ServerResponse, maxBytes: num
   })
 }
 
+async function handleChatFeedback(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const {
+    upsertMessageFeedback,
+  } = await import('../core/message-feedback.js')
+  const {
+    clearPendingDownvoteHint,
+    feedbackThreadKey,
+    setPendingDownvoteHint,
+  } = await import('../core/message-feedback-hints.js')
+  const { recordMessageFeedback } = await import('../core/metrics.js')
+
+  let body: string
+  try {
+    body = await readBody(req, res)
+  } catch (err) {
+    if ((err as { handled?: boolean }).handled) return
+    sendError(res, 400, 'BAD_BODY', { message: 'failed to read body' })
+    return
+  }
+  let parsed: {
+    threadId?: string
+    messageId?: string
+    messageIndex?: number
+    vote?: string | null
+  }
+  try {
+    parsed = JSON.parse(body || '{}') as typeof parsed
+  } catch {
+    sendError(res, 400, 'BAD_JSON', { message: 'invalid JSON' })
+    return
+  }
+
+  const threadId = typeof parsed.threadId === 'string' ? parsed.threadId.trim().slice(0, 120) : ''
+  if (!threadId || !/^web-[A-Za-z0-9_-]{4,64}$/.test(threadId)) {
+    sendError(res, 400, 'THREAD_ID_INVALID', { message: 'threadId required (web-* form)' })
+    return
+  }
+
+  let vote: 'up' | 'down' | null
+  if (parsed.vote === null || parsed.vote === undefined || parsed.vote === '') {
+    vote = null
+  } else if (parsed.vote === 'up' || parsed.vote === 'down') {
+    vote = parsed.vote
+  } else {
+    sendError(res, 400, 'VOTE_INVALID', { message: 'vote must be up, down, or null' })
+    return
+  }
+
+  const history = await sessionManager.getSessionWithHistory('web', 'web', threadId)
+  if (!history || history.messages.length === 0) {
+    sendError(res, 404, 'SESSION_NOT_FOUND', { message: 'no chat history for thread' })
+    return
+  }
+
+  const messageId = typeof parsed.messageId === 'string' && parsed.messageId.trim()
+    ? parsed.messageId.trim().slice(0, 80)
+    : undefined
+  let messageIndex = typeof parsed.messageIndex === 'number' && Number.isInteger(parsed.messageIndex)
+    ? parsed.messageIndex
+    : -1
+
+  if (messageId) {
+    const byId = history.messages.findIndex((m) => m.id === messageId)
+    if (byId >= 0) messageIndex = byId
+  }
+  if (messageIndex < 0 || messageIndex >= history.messages.length) {
+    // Live bubble before HISTORY remap: allow targeting the latest assistant.
+    if (messageId || parsed.messageIndex === undefined) {
+      for (let i = history.messages.length - 1; i >= 0; i--) {
+        if (history.messages[i]?.role === 'assistant') {
+          messageIndex = i
+          break
+        }
+      }
+    }
+  }
+  if (messageIndex < 0 || messageIndex >= history.messages.length) {
+    sendError(res, 404, 'MESSAGE_NOT_FOUND', { message: 'assistant message not found' })
+    return
+  }
+
+  const target = history.messages[messageIndex]
+  if (!target || target.role !== 'assistant') {
+    sendError(res, 400, 'NOT_ASSISTANT', { message: 'feedback only applies to assistant messages' })
+    return
+  }
+
+  const resolvedId = messageId || target.id
+  const result = await upsertMessageFeedback({
+    platform: 'web',
+    channelId: 'web',
+    threadId,
+    messageIndex,
+    messageId: resolvedId,
+    vote,
+  })
+
+  const hintKey = feedbackThreadKey('web', 'web', threadId)
+  if (result.vote === 'down') setPendingDownvoteHint(hintKey)
+  else clearPendingDownvoteHint(hintKey)
+
+  if (result.vote === 'up' || result.vote === 'down') {
+    recordMessageFeedback(result.vote)
+  }
+
+  sendJson(res, 200, {
+    ok: true,
+    vote: result.vote,
+    messageIndex,
+    messageId: resolvedId || null,
+  })
+}
+
 async function handleChatMediaUpload(
   req: IncomingMessage,
   res: ServerResponse,
@@ -5685,7 +5806,12 @@ async function handleClientMessage(
             })
           } catch { /* best-effort */ }
           await persistFinishedActivity(USER_INTERRUPTED_TEXT)
-          emit({ type: 'done', text: USER_INTERRUPTED_TEXT, runId })
+          emit({
+            type: 'done',
+            text: USER_INTERRUPTED_TEXT,
+            runId,
+            messageId: await latestWebAssistantMessageId(sessionThreadId),
+          })
           emit({
             type: 'run-finish',
             runId,
@@ -5706,7 +5832,12 @@ async function handleClientMessage(
             status: 'success', finishedAt, durationMs, finalText: result,
           })
           await persistFinishedActivity(result)
-          emit({ type: 'done', text: result, runId })
+          emit({
+            type: 'done',
+            text: result,
+            runId,
+            messageId: await latestWebAssistantMessageId(sessionThreadId),
+          })
           if (parsed.type === 'plan') {
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'plan-mode', enabled: !!sess?.planMode })
@@ -5772,7 +5903,12 @@ async function handleClientMessage(
             status: 'error', finishedAt, durationMs, error: USER_INTERRUPTED_TEXT, finalText: text,
           })
           await persistFinishedActivity(text)
-          emit({ type: 'done', text, runId })
+          emit({
+            type: 'done',
+            text,
+            runId,
+            messageId: await latestWebAssistantMessageId(sessionThreadId),
+          })
           emit({
             type: 'run-finish',
             runId,
@@ -5791,7 +5927,12 @@ async function handleClientMessage(
           status: 'success', finishedAt, durationMs, finalText: fullText,
         })
         await persistFinishedActivity(fullText)
-        emit({ type: 'done', text: fullText, runId })
+        emit({
+          type: 'done',
+          text: fullText,
+          runId,
+          messageId: await latestWebAssistantMessageId(sessionThreadId),
+        })
         emit({
           type: 'usage',
           runId,
@@ -5832,7 +5973,12 @@ async function handleClientMessage(
             })
           } catch { /* best-effort */ }
           await persistFinishedActivity(USER_INTERRUPTED_TEXT)
-          emit({ type: 'done', text: USER_INTERRUPTED_TEXT, runId })
+          emit({
+            type: 'done',
+            text: USER_INTERRUPTED_TEXT,
+            runId,
+            messageId: await latestWebAssistantMessageId(sessionThreadId),
+          })
         } else {
           await persistFinishedActivity()
         }
@@ -5958,6 +6104,19 @@ async function handleClientMessage(
  * After history, replay any in-flight (or recently finished) ActiveRun so
  * tab-switch / refresh can restore the activity accordion and "接收中".
  */
+/** Latest durable assistant message id for a web thread (for done → SPA). */
+async function latestWebAssistantMessageId(threadId: string): Promise<string | undefined> {
+  try {
+    const history = await sessionManager.getSessionWithHistory('web', 'web', threadId)
+    if (!history) return undefined
+    for (let i = history.messages.length - 1; i >= 0; i--) {
+      const m = history.messages[i]
+      if (m?.role === 'assistant' && m.id) return m.id
+    }
+  } catch { /* ignore */ }
+  return undefined
+}
+
 async function sendSessionHistory(
   ws: WebSocket,
   client: ClientConnection,
@@ -5968,15 +6127,35 @@ async function sendSessionHistory(
     if (history.session.agent) {
       client.agent = history.session.agent
     }
-    sendToClient(ws, {
-      type: 'history',
-      messages: history.messages,
-      agent: history.session.agent,
-      planMode: !!history.session.planMode,
-      thinkVariant: history.session.variant || 'auto',
-      sessionModel: history.session.model || '',
-      compactRate: history.session.compactRate || 'auto',
-    })
+    try {
+      const { listMessageFeedback, resolveFeedbackVote } = await import('../core/message-feedback.js')
+      const feedbackEntries = await listMessageFeedback('web', 'web', client.id)
+      sendToClient(ws, {
+        type: 'history',
+        messages: history.messages.map((m, i) => ({
+          ...m,
+          feedback: resolveFeedbackVote(feedbackEntries, {
+            messageId: m.id,
+            messageIndex: i,
+          }),
+        })),
+        agent: history.session.agent,
+        planMode: !!history.session.planMode,
+        thinkVariant: history.session.variant || 'auto',
+        sessionModel: history.session.model || '',
+        compactRate: history.session.compactRate || 'auto',
+      })
+    } catch {
+      sendToClient(ws, {
+        type: 'history',
+        messages: history.messages,
+        agent: history.session.agent,
+        planMode: !!history.session.planMode,
+        thinkVariant: history.session.variant || 'auto',
+        sessionModel: history.session.model || '',
+        compactRate: history.session.compactRate || 'auto',
+      })
+    }
   }
   const { getActiveRun } = await import('./active-runs.js')
   const active = getActiveRun(client.id)

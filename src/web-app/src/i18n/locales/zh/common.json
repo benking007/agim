@@ -490,6 +490,10 @@
       },
       "feedbackGood": "已标记为有帮助",
       "feedbackBad": "已标记为需改进",
+      "feedbackCleared": "已取消标记",
+      "feedbackFailed": "反馈保存失败",
+      "feedbackTellWhy": "告诉它哪里不对",
+      "feedbackPrefill": "刚才那条回答不够好，问题是：",
       "language": "语言"
     }
   }

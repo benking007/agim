@@ -490,6 +490,10 @@
       },
       "feedbackGood": "Marked as helpful",
       "feedbackBad": "Marked as needs improvement",
+      "feedbackCleared": "Feedback cleared",
+      "feedbackFailed": "Could not save feedback",
+      "feedbackTellWhy": "Tell it what was wrong",
+      "feedbackPrefill": "That last reply wasn't helpful. The issue was: ",
       "language": "Language"
     }
   }

@@ -19,6 +19,9 @@ import {
 /** Placeholder prefix so we never double-clear the same result. */
 export const CLEARED_TOOL_RESULT_PREFIX = '[cleared tool_result:'
 
+/** Stable activity label for web chat "compacting" status steps (i18n maps this). */
+export const COMPACTION_ACTIVITY_LABEL = 'Compacting context'
+
 /** Default tools whose results must survive clearing (state / memory / UX). */
 export const DEFAULT_CLEAR_EXCLUDE_TOOLS = [
   'memory',

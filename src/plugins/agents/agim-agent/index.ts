@@ -62,6 +62,7 @@ import { failureSignature, stableStringify } from './loop-fingerprint.js'
 import {
   applyClearingToPreparation,
   clearToolResultsInMessages,
+  COMPACTION_ACTIVITY_LABEL,
   resolveContextBudgetSettings,
 } from './context-budget.js'
 
@@ -1179,49 +1180,80 @@ export class NativeAgentAdapter implements AgentAdapter {
           if (!preparationResult.ok) throw preparationResult.error
           const preparation = preparationResult.value
           if (preparation) {
-            const clearedPrep = budget.clearing.enabled
-              ? applyClearingToPreparation(preparation, budget.clearing)
-              : preparation
-            const auth = await binding.getApiKeyAndHeaders()
-            const compactResult = await compact(
-              clearedPrep,
-              binding.model,
-              auth.apiKey,
-              auth.headers,
-              budget.compactInstructions,
-              compactionController.signal,
-              thinkingLevel,
-            )
-            if (!compactResult.ok) throw compactResult.error
-            const compacted = compactResult.value
-            await session.appendCompaction(
-              compacted.summary,
-              compacted.firstKeptEntryId,
-              compacted.tokensBefore,
-              compacted.details,
-              true,
-            )
-            // Compaction summarization does not append an assistant usage
-            // row — estimate from tokensBefore + summary length so /stats
-            // still accounts for the auxiliary call.
-            const approxOut = Math.max(1, Math.ceil(compacted.summary.length / 4))
-            const approxIn = Math.max(approxOut, Math.min(compacted.tokensBefore, binding.model.contextWindow))
-            sawUsage = true
-            usageInput += approxIn
-            usageOutput += approxOut
-            compactionCalls += 1
-            if (binding.costKnown) {
-              const estimatedCost = estimateCostUsd(undefined, binding.model.id, {
-                input: approxIn,
-                output: approxOut,
+            const compactionId = `compaction-${Date.now().toString(36)}`
+            const compactionStartedAt = Date.now()
+            emitToolActivity({
+              id: compactionId,
+              kind: 'status',
+              label: COMPACTION_ACTIVITY_LABEL,
+              status: 'running',
+              startedAt: compactionStartedAt,
+            })
+            try {
+              const clearedPrep = budget.clearing.enabled
+                ? applyClearingToPreparation(preparation, budget.clearing)
+                : preparation
+              const auth = await binding.getApiKeyAndHeaders()
+              const compactResult = await compact(
+                clearedPrep,
+                binding.model,
+                auth.apiKey,
+                auth.headers,
+                budget.compactInstructions,
+                compactionController.signal,
+                thinkingLevel,
+              )
+              if (!compactResult.ok) throw compactResult.error
+              const compacted = compactResult.value
+              await session.appendCompaction(
+                compacted.summary,
+                compacted.firstKeptEntryId,
+                compacted.tokensBefore,
+                compacted.details,
+                true,
+              )
+              // Compaction summarization does not append an assistant usage
+              // row — estimate from tokensBefore + summary length so /stats
+              // still accounts for the auxiliary call.
+              const approxOut = Math.max(1, Math.ceil(compacted.summary.length / 4))
+              const approxIn = Math.max(approxOut, Math.min(compacted.tokensBefore, binding.model.contextWindow))
+              sawUsage = true
+              usageInput += approxIn
+              usageOutput += approxOut
+              compactionCalls += 1
+              if (binding.costKnown) {
+                const estimatedCost = estimateCostUsd(undefined, binding.model.id, {
+                  input: approxIn,
+                  output: approxOut,
+                })
+                if (estimatedCost != null) usageCost += estimatedCost
+              }
+              emitToolActivity({
+                id: compactionId,
+                kind: 'status',
+                label: COMPACTION_ACTIVITY_LABEL,
+                status: 'success',
+                startedAt: compactionStartedAt,
+                finishedAt: Date.now(),
+                preview: `tokensBefore≈${compacted.tokensBefore}`,
               })
-              if (estimatedCost != null) usageCost += estimatedCost
+              console.info(
+                `[agim-agent] compaction: tokensBefore≈${compacted.tokensBefore} `
+                + `→ kept from ${compacted.firstKeptEntryId.slice(0, 8)}… `
+                + `(reserve=${budget.compaction.reserveTokens}, keepRecent=${budget.compaction.keepRecentTokens})`,
+              )
+            } catch (compactErr) {
+              emitToolActivity({
+                id: compactionId,
+                kind: 'status',
+                label: COMPACTION_ACTIVITY_LABEL,
+                status: 'error',
+                startedAt: compactionStartedAt,
+                finishedAt: Date.now(),
+                preview: compactErr instanceof Error ? compactErr.message : String(compactErr),
+              })
+              throw compactErr
             }
-            console.info(
-              `[agim-agent] compaction: tokensBefore≈${compacted.tokensBefore} `
-              + `→ kept from ${compacted.firstKeptEntryId.slice(0, 8)}… `
-              + `(reserve=${budget.compaction.reserveTokens}, keepRecent=${budget.compaction.keepRecentTokens})`,
-            )
           }
         }
       } catch (err) {

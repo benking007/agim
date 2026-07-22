@@ -178,4 +178,40 @@ describe('ChatActivityBlock', () => {
     const badges = screen.getAllByText(/^completed$|^已完成$/)
     expect(badges.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('localizes compacting-context status in the Running title', () => {
+    render(<ChatActivityBlock activity={activity({
+      status: 'running',
+      finishedAt: undefined,
+      durationMs: undefined,
+      steps: [{
+        id: 'cmp-1',
+        kind: 'status',
+        label: 'Compacting context',
+        status: 'running',
+        startedAt: 1,
+      }],
+    })}
+    />)
+    expect(screen.getByRole('button', {
+      name: /Running · Compacting context|执行中 · 正在压缩上下文/,
+    })).toBeInTheDocument()
+  })
+
+  it('does not count status steps as tools in the Worked summary', () => {
+    render(<ChatActivityBlock activity={activity({
+      steps: [{
+        id: 'cmp-2',
+        kind: 'status',
+        label: 'Compacting context',
+        status: 'success',
+        startedAt: 1,
+        finishedAt: 2,
+      }],
+    })}
+    />)
+    const btn = screen.getByRole('button', { name: /Worked|已完成/ })
+    expect(btn.textContent).not.toMatch(/tool|工具/)
+    expect(btn.textContent).toMatch(/1 step|1 步/)
+  })
 })

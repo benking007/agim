@@ -1244,9 +1244,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     reg.appendResponses([fauxAssistantMessage('history summary'), fauxAssistantMessage('t2')])
     let reported: { tokensInput?: number; tokensOutput?: number } | undefined
     let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
+    const activity: import('../../../core/types.js').ToolActivityStep[] = []
     expect(await collect(adapter.sendPrompt('cmp', 'q2', undefined, {
       onUsage: (usage) => { reported = usage },
       onOutcome: (value) => { outcome = value },
+      onToolActivity: (step) => { activity.push(step) },
     }))).toBe('t2')
     // The durable session now carries a compaction entry.
     const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
@@ -1258,6 +1260,9 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     // Compaction has no assistant usage row — estimated tokens still reach onUsage.
     expect((reported?.tokensInput ?? 0) + (reported?.tokensOutput ?? 0)).toBeGreaterThan(0)
     expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
+    // Chat accordion sees running → success for the compaction status step.
+    const compactSteps = activity.filter((s) => s.kind === 'status' && s.label === 'Compacting context')
+    expect(compactSteps.map((s) => s.status)).toEqual(['running', 'success'])
   })
 
   it('skips compaction when disabled (no extra summary call)', async () => {

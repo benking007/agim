@@ -47,6 +47,25 @@ interface KindCounts {
   total: number
 }
 
+/** Stable wire label from Agim Agent compaction activity (see COMPACTION_ACTIVITY_LABEL). */
+const COMPACTING_CONTEXT_LABEL = 'Compacting context'
+
+function localizeStepLabel(
+  step: ChatActivityStep,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (step.kind === 'agent') {
+    return t('chat.activityAgentLabel', {
+      agent: step.label,
+      defaultValue: '→ {{agent}}',
+    })
+  }
+  if (step.kind === 'status' && step.label === COMPACTING_CONTEXT_LABEL) {
+    return t('chat.activityCompacting', { defaultValue: 'Compacting context' })
+  }
+  return step.label
+}
+
 function countStepKinds(activity: ChatActivity): KindCounts {
   let tools = 0
   let skills = 0
@@ -66,6 +85,9 @@ function countStepKinds(activity: ChatActivity): KindCounts {
         break
       case 'ask':
         asks += 1
+        break
+      case 'status':
+        // Status rows (e.g. compaction) are not tool calls.
         break
       default:
         tools += 1
@@ -186,12 +208,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
     const titleStep = waitingAgent ?? liveStep
     title = titleStep
       ? t('chat.activityRunningStep', {
-          step: titleStep.kind === 'agent'
-            ? t('chat.activityAgentLabel', {
-                agent: titleStep.label,
-                defaultValue: '→ {{agent}}',
-              })
-            : titleStep.label,
+          step: localizeStepLabel(titleStep, t),
           defaultValue: 'Running · {{step}}',
         })
       : t('chat.activityRunning', { defaultValue: 'Running' })
@@ -257,15 +274,10 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                 <StepIcon step={step} />
                 <span className={cn(
                   'truncate text-[12px] text-text',
-                  step.kind === 'agent' ? 'font-medium' : 'font-mono',
+                  step.kind === 'agent' || step.kind === 'status' ? 'font-medium' : 'font-mono',
                 )}
                 >
-                  {step.kind === 'agent'
-                    ? t('chat.activityAgentLabel', {
-                        agent: step.label,
-                        defaultValue: '→ {{agent}}',
-                      })
-                    : step.label}
+                  {localizeStepLabel(step, t)}
                 </span>
                 {step.kind === 'approval' && (
                   <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">

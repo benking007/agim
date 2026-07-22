@@ -3,17 +3,25 @@
  */
 
 import { useMemo } from 'react'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import {
   estimateContextWindow,
-  estimateTokensFromText,
   type ContextBreakdownItem,
   type ModelOption,
 } from '@/components/chat/composer-status-bar'
-import { useLlmList, type LlmBackendRow } from '@/hooks/use-llm-admin'
-import type { ChatMessage } from '@/hooks/use-chat'
 import { displayAgentName } from '@/components/m-portal/agent-visuals'
+import type { ChatMessage } from '@/hooks/use-chat'
+import { useLlmList, type LlmBackendRow, type McpListResponse } from '@/hooks/use-llm-admin'
+import type { AgimSkillsInjectionResponse } from '@/hooks/use-agim-skills'
+import { client } from '@/lib/api/client'
+import { api } from '@/lib/api/endpoints'
+import {
+  buildContextBreakdown,
+  sumBreakdownTokens,
+} from '@/lib/context-breakdown'
+import type { WorkspaceFilesResponse } from '@/types/api'
 
 function pickActiveBackend(
   backends: LlmBackendRow[],
@@ -46,12 +54,20 @@ function siblingBackends(active: LlmBackendRow | undefined, usable: LlmBackendRo
   return usable.length > 0 ? usable : (active ? [active] : [])
 }
 
+function fileChars(data: WorkspaceFilesResponse | undefined): number {
+  if (data?.type !== 'file') return 0
+  if (typeof data.size === 'number' && data.size > 0) return data.size
+  return data.content?.length ?? 0
+}
+
+const RULE_PATHS = ['AGENTS.md', 'AGENTS.local.md', 'MEMORY.md'] as const
+
 export function useComposerModelStatus(
   agent: string,
   messages: ChatMessage[],
   sessionModel = '',
 ) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const llm = useLlmList()
 
   const isAgim = agent === 'agim' || agent === 'native'
@@ -85,33 +101,115 @@ export function useComposerModelStatus(
   const modelMissing = isAgim && (!active || active.secret.source === 'none')
   const activeBackendName = active?.name
 
-  const contextUsed = useMemo(
-    () => messages.reduce((n, m) => n + estimateTokensFromText(m.content || ''), 0),
-    [messages],
-  )
   // Prefer the configured backend contextWindow (custom / vendor override).
   const contextWindow = typeof active?.contextWindow === 'number' && active.contextWindow > 0
     ? active.contextWindow
     : estimateContextWindow(active?.model)
 
+  // Best-effort extras for Cursor-like buckets (admin APIs may 403 — ignore).
+  const ruleQueries = useQueries({
+    queries: RULE_PATHS.map((path) => ({
+      queryKey: ['usage', 'rules', path] as const,
+      queryFn: async (): Promise<number> => {
+        try {
+          const data = await api.getWorkspaceFiles({ agent: 'agim', path })
+          return fileChars(data)
+        } catch {
+          return 0
+        }
+      },
+      enabled: isAgim,
+      retry: false,
+      staleTime: 60_000,
+    })),
+  })
+
+  const skillsQuery = useQuery({
+    queryKey: ['usage', 'skills-injection'] as const,
+    queryFn: async (): Promise<number> => {
+      try {
+        const data = await client.get<AgimSkillsInjectionResponse>('/api/agim-skills/injection')
+        if (data.overrideActive && data.overrideChars > 0) return data.overrideChars
+        return data.autoChars || 0
+      } catch {
+        return 0
+      }
+    },
+    enabled: isAgim,
+    retry: false,
+    staleTime: 60_000,
+  })
+
+  const mcpQuery = useQuery({
+    queryKey: ['usage', 'mcp-tools'] as const,
+    queryFn: async (): Promise<number> => {
+      try {
+        const data = await client.get<McpListResponse>('/api/mcp')
+        return data.runtime?.totalTools ?? 0
+      } catch {
+        return 0
+      }
+    },
+    enabled: isAgim,
+    retry: false,
+    staleTime: 60_000,
+  })
+
+  const rulesChars = ruleQueries.reduce((n, q) => n + (q.data ?? 0), 0)
+  const skillsChars = skillsQuery.data ?? 0
+  const mcpToolCount = mcpQuery.data ?? 0
+
+  const zh = (i18n.language || '').startsWith('zh')
+
+  const buckets = useMemo(
+    () => buildContextBreakdown({
+      isAgim,
+      messages,
+      rulesChars,
+      skillsChars,
+      mcpToolCount,
+    }),
+    [isAgim, messages, rulesChars, skillsChars, mcpToolCount],
+  )
+
   const breakdown = useMemo((): ContextBreakdownItem[] => {
-    const conversation = contextUsed
-    const system = isAgim ? 1_200 : 400
-    return [
-      {
-        key: 'system',
-        label: t('chat.statusBar.systemPrompt', { defaultValue: 'System prompt' }),
-        tokens: system,
-        color: '#a1a1aa',
-      },
-      {
-        key: 'conversation',
-        label: t('chat.statusBar.conversation', { defaultValue: 'Conversation' }),
-        tokens: conversation,
-        color: '#ef4444',
-      },
-    ]
-  }, [contextUsed, isAgim, t])
+    const labelFor = (key: string): string => {
+      switch (key) {
+        case 'system':
+          return t('chat.statusBar.systemPrompt', { defaultValue: zh ? '系统提示' : 'System prompt' })
+        case 'tools':
+          return t('chat.statusBar.toolDefs', { defaultValue: zh ? '工具定义' : 'Tool definitions' })
+        case 'rules':
+          return t('chat.statusBar.rules', { defaultValue: zh ? '规则' : 'Rules' })
+        case 'skills':
+          return t('chat.statusBar.skills', { defaultValue: zh ? '技能' : 'Skills' })
+        case 'mcp':
+          return t('chat.statusBar.mcpTools', {
+            defaultValue: zh ? 'MCP 与动态工具' : 'MCP & dynamic tools',
+          })
+        case 'subagents':
+          return t('chat.statusBar.subagents', {
+            defaultValue: zh ? '子代理定义' : 'Subagent definitions',
+          })
+        case 'summarized':
+          return t('chat.statusBar.summarized', {
+            defaultValue: zh ? '已压缩对话' : 'Summarized conversation',
+          })
+        case 'conversation':
+          return t('chat.statusBar.conversation', { defaultValue: zh ? '对话' : 'Conversation' })
+        default:
+          return key
+      }
+    }
+    return buckets.map((b) => ({
+      key: b.key,
+      label: labelFor(b.labelKey),
+      tokens: b.tokens,
+      color: b.color,
+    }))
+  }, [buckets, t, zh])
+
+  const contextUsed = useMemo(() => sumBreakdownTokens(buckets), [buckets])
 
   return {
     isAgim,
@@ -120,7 +218,7 @@ export function useComposerModelStatus(
     modelOptions,
     activeBackendName,
     showThinking: isAgim,
-    contextUsed: contextUsed + (isAgim ? 1_200 : 400),
+    contextUsed,
     contextWindow,
     breakdown,
     refreshLlm: () => { void llm.refetch() },

@@ -430,7 +430,9 @@ export function ComposerStatusBar({
 
           <p className={cn('mt-2 text-[10px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
             {t('chat.statusBar.contextApprox', {
-              defaultValue: 'Approximate from conversation length until live token usage is available.',
+              defaultValue: zh
+                ? '近似拆分（字符/4 + 规则/技能/工具估算）；实时 tool 结果与压缩后会话可能未完全计入。'
+                : 'Approximate breakdown (chars/4 + rules/skills/tools estimates). Live tool results and post-compact session size may not be fully reflected.',
             })}
           </p>
         </div>

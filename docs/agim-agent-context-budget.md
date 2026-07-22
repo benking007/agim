@@ -94,6 +94,7 @@ projected > 硬线
 - Agim Agent 实际 `contextWindow` / `maxTokens` 来自 pi catalog（如 DeepSeek V4 → **1M / 384K**），可被 backend 显式 `contextWindow` 覆盖。
 - `GET /api/llm` 会在未手动配置时回填 catalog，供 Usage 状态条显示。
 - SPA 本地启发式仅作 fallback；以 API 回填为准。
+- Usage 拆分（近似，对齐 Cursor 颗粒度）：系统提示 / 工具定义 / 规则 / 技能 / MCP / 子代理 / 已压缩对话 / 对话。规则与技能尽量读 workspace / injection API；其余为常量或字符估算。实时 tool 结果与压缩后 pi 会话尚未精确计量。
 
 ## 6. 运维速查
 

@@ -21,6 +21,11 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  /**
+   * Durable message id (minted on append). Used by thumbs up/down sidecar
+   * and SPA restore; optional on legacy JSONL rows written before ids existed.
+   */
+  id?: string
   /** Sticky agent label for web history replay (optional). */
   agent?: string
   /**

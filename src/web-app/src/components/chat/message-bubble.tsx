@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { MessageActions } from '@/components/chat/message-actions'
 import { PortalUserContent } from '@/components/m-portal/portal-user-content'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,10 @@ export interface MessageBubbleProps {
   isFirstInGroup?: boolean
   /** Last bubble in a consecutive same-role run (full corner radius). */
   isLastInGroup?: boolean
+  /** Web thread id for durable thumbs feedback. */
+  threadId?: string
+  /** Prefill composer after downvote ("tell it what was wrong"). */
+  onDownvotePrefill?: () => void
 }
 
 export function MessageBubble({
@@ -53,6 +58,8 @@ export function MessageBubble({
   onApprove,
   isFirstInGroup = true,
   isLastInGroup = true,
+  threadId,
+  onDownvotePrefill,
 }: MessageBubbleProps): JSX.Element {
   const themeMode = usePrefs((s) => s.theme)
   const dark = themeMode === 'dark'
@@ -68,6 +75,7 @@ export function MessageBubble({
   const isUser = msg.role === 'user'
   // Assistant replies can be copied as raw markdown (tables/code survive).
   const canCopy = !isUser && !!msg.content
+  const showFeedbackActions = canCopy && !!threadId
   const displayAgent = msg.agent ? agentDisplayName(msg.agent) : ''
   // iMessage-like asymmetric corners: tight on the trailing edge within a
   // group, fuller on the outer / last bubble.
@@ -101,13 +109,13 @@ export function MessageBubble({
             : 'bg-surface text-text border border-border/80',
         )}
       >
-        {!isUser && isFirstInGroup && (msg.agent || canCopy) && (
+        {!isUser && isFirstInGroup && (msg.agent || (canCopy && !showFeedbackActions)) && (
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-text-muted">{displayAgent}</span>
-            {canCopy && <CopyButton text={msg.content} />}
+            {canCopy && !showFeedbackActions && <CopyButton text={msg.content} />}
           </div>
         )}
-        {!isUser && !isFirstInGroup && canCopy && (
+        {!isUser && !isFirstInGroup && canCopy && !showFeedbackActions && (
           <div className="mb-1 flex justify-end">
             <CopyButton text={msg.content} />
           </div>
@@ -139,6 +147,18 @@ export function MessageBubble({
               <span className="inline-block animate-pulse text-text-dim">…</span>
             ))}
           </div>
+        )}
+        {showFeedbackActions && (
+          <MessageActions
+            key={`${msg.id}:${msg.feedback ?? ''}`}
+            content={msg.content}
+            dark={dark}
+            threadId={threadId}
+            messageId={msg.id}
+            messageIndex={msg.serverIndex}
+            initialVote={msg.feedback ?? null}
+            onDownvotePrefill={onDownvotePrefill}
+          />
         )}
       </div>
     </div>

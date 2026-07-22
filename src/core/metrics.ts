@@ -129,6 +129,8 @@ const internalCounters = {
   contextCompactSuccess: 0,
   contextCompactFail: 0,
   contextCompactTokensBeforeSum: 0,
+  feedbackUp: 0,
+  feedbackDown: 0,
 }
 
 /** Increment when audit-log retention sweep fails. Exposed as a Prometheus
@@ -167,6 +169,12 @@ export function recordContextCompact(opts: {
   } else {
     internalCounters.contextCompactFail++
   }
+}
+
+/** Web/portal thumbs up/down (durable sidecar writes). */
+export function recordMessageFeedback(vote: 'up' | 'down'): void {
+  if (vote === 'up') internalCounters.feedbackUp++
+  else internalCounters.feedbackDown++
 }
 
 /** Type for the optional approval-bus metrics snapshot pulled in at scrape
@@ -367,6 +375,11 @@ export function toPrometheus(): string {
   lines.push('# TYPE im_hub_ctx_compact_tokens_before_sum counter')
   lines.push(`im_hub_ctx_compact_tokens_before_sum ${internalCounters.contextCompactTokensBeforeSum}`)
 
+  lines.push('# HELP im_hub_feedback_total Message thumbs up/down submissions')
+  lines.push('# TYPE im_hub_feedback_total counter')
+  lines.push(`im_hub_feedback_total{vote="up"} ${internalCounters.feedbackUp}`)
+  lines.push(`im_hub_feedback_total{vote="down"} ${internalCounters.feedbackDown}`)
+
   // Approval-bus snapshot (M14). Pulled lazily so metrics scrapes pick up
   // the latest live counts. When no provider is wired (early startup,
   // tests) we omit the family entirely instead of emitting zeros.
@@ -400,6 +413,8 @@ export function reset(): void {
   internalCounters.contextCompactSuccess = 0
   internalCounters.contextCompactFail = 0
   internalCounters.contextCompactTokensBeforeSum = 0
+  internalCounters.feedbackUp = 0
+  internalCounters.feedbackDown = 0
 }
 
 function esc(s: string): string {

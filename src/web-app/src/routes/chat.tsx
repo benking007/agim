@@ -229,6 +229,11 @@ export default function ChatRoute(): JSX.Element {
                   isFirstInGroup={flags.isFirstInGroup}
                   isLastInGroup={flags.isLastInGroup}
                   onApprove={(mid, reqId, choice) => approvalClick(mid, reqId, choice)}
+                  threadId={state.clientId || undefined}
+                  onDownvotePrefill={() => {
+                    setInput(t('chat.portal.feedbackPrefill'))
+                    requestAnimationFrame(() => inputRef.current?.focus())
+                  }}
                 />
               </div>
             )

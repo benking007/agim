@@ -729,7 +729,23 @@ export async function callAgentWithHistory(
   // agent reply sees what skills are configured. Empty when no skills
   // installed; filter(Boolean) below drops it cleanly.
   const skillsSnippet = agent.handlesAgimSkillsPrompt ? '' : buildSkillsSummary()
-  const headerBlocks = [personaSnippet, goalSnippet, skillsSnippet, viewerHint, reminderContext].filter(Boolean)
+  // Thumbs-down soft steer (consume-once). Same ephemeral path as persona /
+  // goal — never persisted into session JSONL.
+  let downvoteHint = ''
+  try {
+    const { consumePendingDownvoteHint, feedbackThreadKey } = await import('./message-feedback-hints.js')
+    downvoteHint = consumePendingDownvoteHint(
+      feedbackThreadKey(ctx.platform, ctx.channelId, storageThreadId),
+    ) || ''
+  } catch { /* optional */ }
+  const headerBlocks = [
+    downvoteHint,
+    personaSnippet,
+    goalSnippet,
+    skillsSnippet,
+    viewerHint,
+    reminderContext,
+  ].filter(Boolean)
   const ephemeralContext = headerBlocks.join('\n\n')
   const wirePrompt = agent.handlesEphemeralContext || !ephemeralContext
     ? prompt

@@ -1249,3 +1249,24 @@ export interface WorkspaceConfig {
    *  undefined = open workspace (any user can use it). */
   members?: string[]
 }
+
+/* ============================================================
+ * Chat message feedback (thumbs up/down)
+ * ============================================================ */
+
+export interface SubmitChatFeedbackBody {
+  threadId: string
+  /** Durable server message id when known. */
+  messageId?: string
+  /** Index into durable session.messages (legacy / fallback). */
+  messageIndex?: number
+  /** `null` clears the vote. */
+  vote: 'up' | 'down' | null
+}
+
+export interface SubmitChatFeedbackResponse {
+  ok: true
+  vote: 'up' | 'down' | null
+  messageIndex: number
+  messageId: string | null
+}

@@ -1,7 +1,7 @@
 {
   "generatedFrom": "src/web/server.ts",
   "scope": "REST routes dispatched directly by startWebServer",
-  "count": 94,
+  "count": 95,
   "endpoints": [
     {
       "method": "DELETE",
@@ -540,6 +540,12 @@
     {
       "method": "POST",
       "path": "/api/workspaces",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/chat/feedback",
       "source": "exact",
       "authRequired": true
     },

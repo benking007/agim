@@ -368,6 +368,59 @@ describe('routeMessage', () => {
     registry.registerAgent(mockAgent)
   })
 
+  it('injects a consume-once downvote hint via ephemeralContext', async () => {
+    const name = `feedback-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    let seenEphemeralContext: string | undefined
+    const feedbackAgent: AgentAdapter = {
+      name,
+      aliases: [],
+      handlesAgimSkillsPrompt: true,
+      handlesEphemeralContext: true,
+      isAvailable: async () => true,
+      sendPrompt: (_sessionId, _prompt, _history, opts) => {
+        seenEphemeralContext = opts?.ephemeralContext
+        return mockGenerator()
+      },
+    }
+    registry.registerAgent(feedbackAgent)
+    const threadId = `feedback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const feedbackCtx = makeCtx({ threadId, userId: `user-${threadId}` })
+    const {
+      setPendingDownvoteHint,
+      feedbackThreadKey,
+      DOWNVOTE_HINT_TEMPLATE,
+      resetPendingDownvoteHints,
+    } = await import('../../src/core/message-feedback-hints.js')
+    resetPendingDownvoteHints()
+    setPendingDownvoteHint(feedbackThreadKey(feedbackCtx.platform, feedbackCtx.channelId, threadId))
+    try {
+      const result = await routeMessage(
+        { type: 'agent', agent: name, prompt: 'follow up' },
+        feedbackCtx,
+      )
+      for await (const _ of result as AsyncGenerator<string>) { /* drain */ }
+      expect(seenEphemeralContext).toContain(DOWNVOTE_HINT_TEMPLATE)
+
+      // Second turn must not see the hint again.
+      seenEphemeralContext = undefined
+      const result2 = await routeMessage(
+        { type: 'agent', agent: name, prompt: 'again' },
+        feedbackCtx,
+      )
+      for await (const _ of result2 as AsyncGenerator<string>) { /* drain */ }
+      expect(seenEphemeralContext ?? '').not.toContain('rated unhelpful')
+
+      const stored = await sessionManager.getExistingSession(
+        feedbackCtx.platform,
+        feedbackCtx.channelId,
+        feedbackCtx.threadId,
+      )
+      expect(stored?.messages.some((m) => m.content.includes('rated unhelpful'))).toBe(false)
+    } finally {
+      resetPendingDownvoteHints()
+    }
+  })
+
   it('passes only pre-turn history to a fresh agent call', async () => {
     const name = `history-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     let seenHistory: string[] | undefined

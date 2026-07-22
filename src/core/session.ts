@@ -14,6 +14,8 @@ import { mkdir, readFile, writeFile, rename, unlink, appendFile, readdir, chmod 
 import type { Session, ChatMessage, SubtaskMeta } from './types.js'
 import { approvalBus } from './approval-bus.js'
 import { clearPlanModeForThread } from './plan-mode-state.js'
+import { clearThreadFeedback, mintChatMessageId } from './message-feedback.js'
+import { clearPendingDownvoteHint, feedbackThreadKey } from './message-feedback-hints.js'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
 import { scheduleRetireAgimAgentSession } from './agim-agent-session-lifecycle.js'
@@ -430,7 +432,12 @@ class SessionManager {
       const session = this.sessions.get(key) || await this.loadSession(key)
       if (!session) return
 
-      session.messages.push(message)
+      // Mint durable ids for feedback / SPA restore. Legacy rows without
+      // ids stay addressable by messageIndex in the feedback sidecar.
+      const stored: ChatMessage = message.id
+        ? message
+        : { ...message, id: mintChatMessageId() }
+      session.messages.push(stored)
       session.lastActivity = new Date()
       this.sessions.set(key, session)
       // Append-only log avoids rewriting the entire history per turn.
@@ -440,7 +447,7 @@ class SessionManager {
       // the file is created — subsequent appends preserve the existing
       // perms, so the first message of every new thread locks it down.
       try {
-        await appendFile(sessionLogPath(key), `${JSON.stringify(message)}\n`, { mode: 0o600 })
+        await appendFile(sessionLogPath(key), `${JSON.stringify(stored)}\n`, { mode: 0o600 })
       } catch (appendErr) {
         log.warn({ event: 'session.append_failed', key, err: String(appendErr) },
           'JSONL append failed, falling back to full save')
@@ -872,6 +879,11 @@ class SessionManager {
         // Drop any per-thread auto-allow approval rules so the new conversation
         // starts back at "ask every time".
         try { approvalBus.clearAutoAllowForThread(key) } catch { /* ignore */ }
+        // Thumbs votes + pending downvote steer are conversation-scoped.
+        try {
+          await clearThreadFeedback(platform, channelId, threadId)
+          clearPendingDownvoteHint(feedbackThreadKey(platform, channelId, threadId))
+        } catch { /* ignore */ }
         this.sessions.set(key, session)
         await this.saveSession(key, session)
         // Quarantine the previous Agim Agent JSONL (does not block /new).

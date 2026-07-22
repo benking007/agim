@@ -55,7 +55,7 @@ export type ChatIncoming =
   | { type: 'agents'; agents: string[] }
   | { type: 'agent-switched'; agent: string }
   | { type: 'chunk'; text: string; runId?: string }
-  | { type: 'done'; text: string; runId?: string }
+  | { type: 'done'; text: string; runId?: string; messageId?: string }
   | RunStartEvent
   | RunUsageEvent
   | RunFinishEvent
@@ -205,7 +205,11 @@ export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp?: string
+  /** Durable server message id when present. */
+  id?: string
   agent?: string
+  /** Restored thumbs vote from feedback sidecar. */
+  feedback?: 'up' | 'down'
   /** Persisted tool/run accordion; restored on refresh / reconnect. */
   activity?: {
     runId: string

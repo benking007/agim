@@ -1,7 +1,14 @@
 // Unit tests for in-process metrics (P2-A)
 
 import { describe, it, expect, beforeEach } from 'bun:test'
-import { recordInvocation, snapshot, toPrometheus, reset } from '../../src/core/metrics'
+import {
+  recordInvocation,
+  recordContextClear,
+  recordContextCompact,
+  snapshot,
+  toPrometheus,
+  reset,
+} from '../../src/core/metrics'
 
 describe('metrics', () => {
   beforeEach(() => { reset() })
@@ -80,6 +87,19 @@ describe('metrics', () => {
     const a = snapshot().agents.find((x) => x.agent === 'a')!
     expect(a.sampleCount).toBe(0)
     expect(a.total).toBe(1)  // counter still increments
+  })
+
+  it('records context-budget clear/compact counters in Prometheus', () => {
+    recordContextClear({ emergency: false })
+    recordContextClear({ emergency: true })
+    recordContextCompact({ result: 'success', tokensBefore: 12_000 })
+    recordContextCompact({ result: 'fail' })
+    const text = toPrometheus()
+    expect(text).toContain('im_hub_ctx_clear_total{mode="normal"} 1')
+    expect(text).toContain('im_hub_ctx_clear_total{mode="emergency"} 1')
+    expect(text).toContain('im_hub_ctx_compact_total{result="success"} 1')
+    expect(text).toContain('im_hub_ctx_compact_total{result="fail"} 1')
+    expect(text).toContain('im_hub_ctx_compact_tokens_before_sum 12000')
   })
 
   it('quantile via quickselect matches sort-based reference', () => {

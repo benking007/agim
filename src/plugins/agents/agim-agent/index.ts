@@ -31,6 +31,7 @@ import type { Model } from '@earendil-works/pi-ai'
 import { chmod, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, AgentTurnOutcome, ChatMessage } from '../../../core/types.js'
+import { recordContextClear, recordContextCompact } from '../../../core/metrics.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
@@ -764,6 +765,11 @@ export class NativeAgentAdapter implements AgentAdapter {
     // Snapshot budget knobs once per turn (env can change via /api/env).
     const budget = resolveContextBudgetSettings(binding.model.contextWindow)
     let contextClearEvents = 0
+    let ctxClearCount = 0
+    let ctxEmergencyClearCount = 0
+    let ctxCompactSuccess = 0
+    let ctxCompactFail = 0
+    let ctxTokensBefore: number | undefined
     harness.on('context', (event) => {
       let messages = event.messages
       const combined = [ephemeralContext, ephemeralSteer].filter((part) => part.trim()).join('\n\n')
@@ -777,6 +783,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         if (cleared.applied) {
           messages = next
           contextClearEvents++
+          ctxClearCount++
+          if (emergency) ctxEmergencyClearCount++
+          recordContextClear({ emergency })
           if (contextClearEvents === 1 || emergency) {
             console.info(
               `[agim-agent] tool-result clearing${emergency ? ' (emergency)' : ''}: `
@@ -858,6 +867,15 @@ export class NativeAgentAdapter implements AgentAdapter {
       const resolvedStop = outcome.stopReason
         ?? stopReason
         ?? undefined
+      const contextBudget = (ctxClearCount > 0 || ctxCompactSuccess > 0 || ctxCompactFail > 0)
+        ? {
+            clearCount: ctxClearCount,
+            emergencyClearCount: ctxEmergencyClearCount,
+            compactSuccess: ctxCompactSuccess,
+            compactFail: ctxCompactFail,
+            ...(ctxTokensBefore != null ? { tokensBefore: ctxTokensBefore } : {}),
+          }
+        : undefined
       opts?.onOutcome?.({
         ...outcome,
         ...(resolvedStop ? { stopReason: resolvedStop } : {}),
@@ -865,6 +883,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         toolCalls: dispatchedToolCalls,
         auxModelCalls: compactionCalls + criticCallsFired,
         ...(usage ? { usage } : {}),
+        ...(contextBudget ? { contextBudget } : {}),
       })
     }
 
@@ -925,8 +944,18 @@ export class NativeAgentAdapter implements AgentAdapter {
         usageInput += result.approxIn
         usageOutput += result.approxOut
         compactionCalls += 1
+        ctxCompactSuccess += 1
+        if (typeof result.tokensBefore === 'number' && Number.isFinite(result.tokensBefore)) {
+          ctxTokensBefore = result.tokensBefore
+        }
+        recordContextCompact({
+          result: 'success',
+          ...(typeof result.tokensBefore === 'number' ? { tokensBefore: result.tokensBefore } : {}),
+        })
         if (result.estimatedCostUsd != null) usageCost += result.estimatedCostUsd
       } catch (err) {
+        ctxCompactFail += 1
+        recordContextCompact({ result: 'fail' })
         console.error(
           `[agim-agent] compaction skipped (${reason}):`,
           err instanceof Error ? err.message : String(err),

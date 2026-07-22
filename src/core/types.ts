@@ -428,6 +428,19 @@ export interface AgentTurnOutcome {
     tokensOutput?: number
     costUsd?: number
   }
+  /** Agim Agent context-budget activity for this turn (omitted when idle). */
+  contextBudget?: {
+    /** L1 tool-result clearing applications (includes emergency). */
+    clearCount: number
+    /** Subset of clears that used the emergency keep≤2 path. */
+    emergencyClearCount: number
+    /** Successful L2 transcript compactions (pre-turn + mid-turn). */
+    compactSuccess: number
+    /** Compaction attempts that threw / timed out (turn still continues). */
+    compactFail: number
+    /** tokensBefore from the last successful compaction this turn. */
+    tokensBefore?: number
+  }
 }
 
 /**

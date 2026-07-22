@@ -117,7 +117,19 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 - `[agim-agent] compaction: tokensBefore≈…`
 - `[agim-agent] compaction skipped:`（失败后继续本轮）
 
-## 7. 后续优化（约定优先级）
+## 7. 指标
+
+进程内计数，经 `GET /api/metrics`（Prometheus）导出；单轮汇总挂在 `AgentTurnOutcome.contextBudget`（无活动时省略）。
+
+| Prometheus | 含义 |
+|------------|------|
+| `im_hub_ctx_clear_total{mode="normal\|emergency"}` | L1 清理次数 |
+| `im_hub_ctx_compact_total{result="success\|fail"}` | L2 压缩尝试 |
+| `im_hub_ctx_compact_tokens_before_sum` | 成功压缩时 `tokensBefore` 累计 |
+
+`contextBudget` 字段：`clearCount` / `emergencyClearCount` / `compactSuccess` / `compactFail` / 可选 `tokensBefore`（本轮最后一次成功压缩）。
+
+## 8. 后续优化（约定优先级）
 
 P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下列顺序推进：
 
@@ -125,7 +137,7 @@ P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下
 |----|----|------|------|
 | **1** | Mid-turn transcript compact | **已做** | `turn_end`；紧急清理后仍超线则 summary（每用户消息最多一次） |
 | **2** | 前瞻预算 | **已做** | `lookahead` 软线提前紧急清理；投影 `current+lookahead` 触发中途 compact |
-| **5** | 指标 | 待做 | clear / emergency / compact 次数、tokensBefore、失败率 |
+| **5** | 指标 | **已做** | Prometheus + `AgentTurnOutcome.contextBudget` |
 | **7** | 设置页关键旋钮 | 待做 | 开/关 compact、reserve、keepRecent（带晚压推荐说明） |
 | **8** | 按模型档位预设 | 待做 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |
 

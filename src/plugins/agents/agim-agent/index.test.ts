@@ -1260,6 +1260,8 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     // Compaction has no assistant usage row — estimated tokens still reach onUsage.
     expect((reported?.tokensInput ?? 0) + (reported?.tokensOutput ?? 0)).toBeGreaterThan(0)
     expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
+    expect(outcome?.contextBudget?.compactSuccess).toBeGreaterThanOrEqual(1)
+    expect((outcome?.contextBudget?.tokensBefore ?? 0)).toBeGreaterThan(0)
     // Chat accordion sees running → success for the compaction status step.
     const compactSteps = activity.filter((s) => s.kind === 'status' && s.label === 'Compacting context')
     expect(compactSteps.map((s) => s.status)).toEqual(['running', 'success'])
@@ -1330,6 +1332,8 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       expect(compactSteps.some((s) => s.status === 'success')).toBe(true)
       expect(compactSteps.some((s) => s.preview?.includes('mid-turn'))).toBe(true)
       expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
+      expect(outcome?.contextBudget?.compactSuccess).toBeGreaterThanOrEqual(1)
+      expect((outcome?.contextBudget?.clearCount ?? 0)).toBeGreaterThanOrEqual(1)
     } finally {
       delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
       delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS
@@ -1363,13 +1367,16 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
         resolveTools: () => ({ tools: [tool], dispatch }),
       })
       const activity: import('../../../core/types.js').ToolActivityStep[] = []
+      let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
       const out = await collect(adapter.sendPrompt('mid-fail', 'dump', undefined, {
         onToolActivity: (step) => { activity.push(step) },
+        onOutcome: (value) => { outcome = value },
       }))
       expect(typeof out).toBe('string')
       const compactSteps = activity.filter((s) => s.kind === 'status' && s.label === 'Compacting context')
       expect(compactSteps.some((s) => s.status === 'running')).toBe(true)
       expect(compactSteps.some((s) => s.status === 'error' || s.status === 'success')).toBe(true)
+      expect((outcome?.contextBudget?.compactFail ?? 0)).toBeGreaterThanOrEqual(1)
     } finally {
       delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
       delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS

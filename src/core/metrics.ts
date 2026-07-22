@@ -118,10 +118,17 @@ const startedAt = Date.now()
  *   - agentCleanupFailures: every time AgentBase's per-spawn cleanup hook
  *     throws (mcp-config tmpdir unlink, etc.). Surfaces tmpdir leakage
  *     that would otherwise only appear in scattered warn lines.
+ *   - contextClear / contextCompact*: Agim Agent L1/L2 budget activity
+ *     (see docs/agim-agent-context-budget.md).
  */
 const internalCounters = {
   auditPruneFailures: 0,
   agentCleanupFailures: 0,
+  contextClearNormal: 0,
+  contextClearEmergency: 0,
+  contextCompactSuccess: 0,
+  contextCompactFail: 0,
+  contextCompactTokensBeforeSum: 0,
 }
 
 /** Increment when audit-log retention sweep fails. Exposed as a Prometheus
@@ -135,6 +142,31 @@ export function recordAuditPruneFailure(): void {
  *  on /api/metrics rather than only in warn-level pino output. */
 export function recordAgentCleanupFailure(): void {
   internalCounters.agentCleanupFailures++
+}
+
+/** L1 tool-result clearing applied once (normal or emergency keep≤2). */
+export function recordContextClear(opts: { emergency: boolean }): void {
+  if (opts.emergency) internalCounters.contextClearEmergency++
+  else internalCounters.contextClearNormal++
+}
+
+/** L2 transcript compaction attempt finished (success or fail). */
+export function recordContextCompact(opts: {
+  result: 'success' | 'fail'
+  tokensBefore?: number
+}): void {
+  if (opts.result === 'success') {
+    internalCounters.contextCompactSuccess++
+    if (
+      typeof opts.tokensBefore === 'number'
+      && Number.isFinite(opts.tokensBefore)
+      && opts.tokensBefore > 0
+    ) {
+      internalCounters.contextCompactTokensBeforeSum += Math.floor(opts.tokensBefore)
+    }
+  } else {
+    internalCounters.contextCompactFail++
+  }
 }
 
 /** Type for the optional approval-bus metrics snapshot pulled in at scrape
@@ -321,6 +353,20 @@ export function toPrometheus(): string {
   lines.push('# TYPE im_hub_agent_cleanup_failed_total counter')
   lines.push(`im_hub_agent_cleanup_failed_total ${internalCounters.agentCleanupFailures}`)
 
+  lines.push('# HELP im_hub_ctx_clear_total Agim Agent L1 tool-result clearing applications')
+  lines.push('# TYPE im_hub_ctx_clear_total counter')
+  lines.push(`im_hub_ctx_clear_total{mode="normal"} ${internalCounters.contextClearNormal}`)
+  lines.push(`im_hub_ctx_clear_total{mode="emergency"} ${internalCounters.contextClearEmergency}`)
+
+  lines.push('# HELP im_hub_ctx_compact_total Agim Agent L2 transcript compaction attempts')
+  lines.push('# TYPE im_hub_ctx_compact_total counter')
+  lines.push(`im_hub_ctx_compact_total{result="success"} ${internalCounters.contextCompactSuccess}`)
+  lines.push(`im_hub_ctx_compact_total{result="fail"} ${internalCounters.contextCompactFail}`)
+
+  lines.push('# HELP im_hub_ctx_compact_tokens_before_sum Sum of tokensBefore on successful compactions')
+  lines.push('# TYPE im_hub_ctx_compact_tokens_before_sum counter')
+  lines.push(`im_hub_ctx_compact_tokens_before_sum ${internalCounters.contextCompactTokensBeforeSum}`)
+
   // Approval-bus snapshot (M14). Pulled lazily so metrics scrapes pick up
   // the latest live counts. When no provider is wired (early startup,
   // tests) we omit the family entirely instead of emitting zeros.
@@ -349,6 +395,11 @@ export function reset(): void {
   platformCounter.clear()
   internalCounters.auditPruneFailures = 0
   internalCounters.agentCleanupFailures = 0
+  internalCounters.contextClearNormal = 0
+  internalCounters.contextClearEmergency = 0
+  internalCounters.contextCompactSuccess = 0
+  internalCounters.contextCompactFail = 0
+  internalCounters.contextCompactTokensBeforeSum = 0
 }
 
 function esc(s: string): string {

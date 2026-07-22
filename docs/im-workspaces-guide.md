@@ -142,21 +142,17 @@ Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
 
 默认种子标题为 **「Agim Agent — 行为准则与操作约束」**，已带上：
 
-- **说话规则**：中文短句、禁 emoji、不编造、先结论后步骤
-- **执行规则**：直接 tool call 不预告；未收到结果不声称完成；副作用参数一次性给全；不确定用 `ask_user` / `todo`；破坏性操作先确认
-- **长时间任务与 bgjob**：估时 >10 分钟强制
-  `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob" start <slug> -- <cmd...>`
-  （可移植表达式，勿写死 `/home/某用户/...`；禁止 `nohup … &` / bare `bgjob`）。
-  数据统一在 `${AGIM_HOME:-$HOME/.agim}/bgjobs/`。
-- **长期记忆约定**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
+- **说话规则**：冷静严谨、禁 emoji、不编造；先结论，决策所需内容在对话里给全
+- **任务执行规则**：直接 tool call 不预告；未收到结果不声称完成；副作用参数一次性给全；不确定用 `ask_user` / `todo`；破坏性操作先确认或走审批；收尾要把用户可见结果写进对话
+- **im-ops 托管段**（所有 IM agent 共用）：
+  - **对话逻辑**：超过 8k 落盘但仍须完整回复；Viewer 开启时 IM 可发 4–8 KB 要点 + Viewer 链接；macOS / Web / Portal **禁止截断**
+  - **bgjob**：估时 >10 分钟强制 `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob" start <slug> -- <cmd...>`
+  - **记忆 / 路径**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
 
-其中「长时间任务 / 记忆 / IM 限制 / 路径速查」包在 `<!-- agim:im-ops:start -->` … `end` 标记里：这是
-**所有 IM agent**（Agim / Claude / opencode / Codex / …）的共用基线。每次
-`agim start` bootstrap **不会整文件覆盖**已编辑的角色书：标记外人设永久保留，
-托管段仅在内容有差异时局部更新。若不想自动刷新托管段，在文件中加入
-`<!-- agim:im-ops:freeze -->`，或设环境变量 `AGIM_IM_OPS_REFRESH=off`。
-已有安装若仍是旧版人设段落，可手工改 `AGENTS.md` 标记外正文，或备份后删掉让种子重建。
-框架 system prompt 另有精简兜底。
+`<!-- agim:im-ops:start -->` … `end` 内是托管基线。每次 `agim start` bootstrap
+**不会整文件覆盖**已编辑的角色书：标记外人设永久保留，托管段仅在内容有差异时局部更新。
+若不想自动刷新托管段，加入 `<!-- agim:im-ops:freeze -->`，或设 `AGIM_IM_OPS_REFRESH=off`。
+已有安装可改标记外正文，或备份后删掉让种子重建。框架 system prompt 另有精简兜底。
 
 ---
 

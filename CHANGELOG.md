@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 - **IM/bgjob SOP baseline for all agents**: managed `<!-- agim:im-ops -->` upserts into every IM workspace role file (not only Agim). Paths use portable `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"` — no host-absolute `/home/<user>/...` baked into AGENTS.md.
 - Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` ships IM reply norms + **bgjob SOP** (>10 min → absolute `~/.agim/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block upserts on bootstrap. Framework system prompt carries a condensed safety-net copy. See `docs/im-workspaces-guide.md`.
 
+### Changed
+
+- Agim `AGENTS.md` seed + managed `<!-- agim:im-ops -->` baseline: 对话逻辑（>8k 落盘仍须完整回复；Viewer + IM 要点；Web/Portal/macOS 禁止截断）、说话/任务执行规则收紧为「对话给全」，去掉旧「一两句收尾 / 写文件代替回复」口径。
+
 ### Fixed
 
 - Active goal + missing bwrap: `agim_exec` no longer hard-fails. Escalates to a **one-time explicit approval** card (same posture as plan-exit / complete_goal); approve → run unconfined, deny → stop. Detached/`nohup`/`&` still hard-blocked.

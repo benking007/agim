@@ -159,68 +159,67 @@ export function MessageActions({
   )
 
   return (
-    <div className={cn('flex flex-col items-start gap-0.5 pt-1.5', className)}>
-      <div className="flex items-center justify-start gap-0">
-        <button
-          type="button"
-          className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
-          aria-label={t('chat.portal.feedbackGood')}
-          title={t('chat.portal.feedbackGood')}
-          disabled={pending}
-          onClick={() => void onVote('up')}
-        >
-          <ThumbsUp className="h-3 w-3" />
-        </button>
-        <button
-          type="button"
-          className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
-          aria-label={t('chat.portal.feedbackBad')}
-          title={t('chat.portal.feedbackBad')}
-          disabled={pending}
-          onClick={() => void onVote('down')}
-        >
-          <ThumbsDown className="h-3 w-3" />
-        </button>
+    <div className={cn('flex flex-wrap items-center justify-start gap-x-1 gap-y-1 pt-1.5', className)}>
+      <button
+        type="button"
+        className={cn(btn, vote === 'up' && (dark ? 'text-emerald-400' : 'text-emerald-600'))}
+        aria-label={t('chat.portal.feedbackGood')}
+        title={t('chat.portal.feedbackGood')}
+        disabled={pending}
+        onClick={() => void onVote('up')}
+      >
+        <ThumbsUp className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        className={cn(btn, vote === 'down' && (dark ? 'text-red-400' : 'text-red-500'))}
+        aria-label={t('chat.portal.feedbackBad')}
+        title={t('chat.portal.feedbackBad')}
+        disabled={pending}
+        onClick={() => void onVote('down')}
+      >
+        <ThumbsDown className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        className={btn}
+        aria-label={t('chat.copy')}
+        title={t('chat.copy')}
+        onClick={() => void onCopy()}
+      >
+        {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+      </button>
+      {!nativeShell && (
         <button
           type="button"
           className={btn}
-          aria-label={t('chat.copy')}
-          title={t('chat.copy')}
-          onClick={() => void onCopy()}
+          aria-label={t('chat.saveMarkdown')}
+          title={t('chat.saveMarkdown')}
+          disabled={saving}
+          onClick={() => void onSaveMarkdown()}
         >
-          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+          <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
         </button>
-        {!nativeShell && (
-          <button
-            type="button"
-            className={btn}
-            aria-label={t('chat.saveMarkdown')}
-            title={t('chat.saveMarkdown')}
-            disabled={saving}
-            onClick={() => void onSaveMarkdown()}
-          >
-            <FileDown className={cn('h-3 w-3', saving && 'opacity-50')} />
-          </button>
-        )}
-        {nativeShell && (
-          <button
-            type="button"
-            className={btn}
-            aria-label={t('chat.share')}
-            title={t('chat.share')}
-            disabled={sharing}
-            onClick={() => void onShare()}
-          >
-            <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
-          </button>
-        )}
-      </div>
+      )}
+      {nativeShell && (
+        <button
+          type="button"
+          className={btn}
+          aria-label={t('chat.share')}
+          title={t('chat.share')}
+          disabled={sharing}
+          onClick={() => void onShare()}
+        >
+          <Share2 className={cn('h-3 w-3', sharing && 'opacity-50')} />
+        </button>
+      )}
       {vote === 'down' && onDownvotePrefill && (
         <button
           type="button"
+          data-testid="feedback-tell-why"
           className={cn(
-            'text-[11px] underline-offset-2 hover:underline',
-            dark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700',
+            'ml-1 inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium underline underline-offset-2',
+            dark ? 'text-amber-300 hover:bg-zinc-800' : 'text-amber-700 hover:bg-amber-50',
           )}
           onClick={() => onDownvotePrefill()}
         >

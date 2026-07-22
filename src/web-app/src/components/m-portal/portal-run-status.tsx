@@ -5,7 +5,7 @@
  * records (from ChatActivityBlock). One surface for live + completed turns.
  */
 
-import { useState, type ComponentType } from 'react'
+import { lazy, Suspense, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
@@ -20,10 +20,14 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { ChatTodoList } from '@/components/chat/chat-todo-list'
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
 import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
+
+const ChatTodoList = lazy(async () => {
+  const module = await import('@/components/chat/chat-todo-list')
+  return { default: module.ChatTodoList }
+})
 
 export interface PortalRunStatusProps {
   dark: boolean
@@ -159,7 +163,11 @@ export function PortalRunStatus({
 
   return (
     <div className={cn('w-full space-y-2', className)}>
-      {activity && <ChatTodoList activity={activity} dark={dark} className="max-w-full" />}
+      {activity && (
+        <Suspense fallback={null}>
+          <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
+        </Suspense>
+      )}
       <div className="flex items-center gap-2">
         <div className={cn('rounded-md bg-gradient-to-tr p-1 text-white', agentColor)}>
           <AgentIcon className="h-3.5 w-3.5" />

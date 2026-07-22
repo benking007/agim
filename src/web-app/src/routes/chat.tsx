@@ -11,7 +11,7 @@
  * usePrefs store; lib/api/errors.ts handles the toast.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -39,8 +39,13 @@ import { ChatComposer } from '@/components/chat/chat-composer'
 import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
-import { ChatTodoList } from '@/components/chat/chat-todo-list'
 import { ApprovalDock } from '@/components/chat/approval-dock'
+
+/** Keep the Todo card out of the SPA entry budget (same pattern as MessageActions). */
+const ChatTodoList = lazy(async () => {
+  const module = await import('@/components/chat/chat-todo-list')
+  return { default: module.ChatTodoList }
+})
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
@@ -226,7 +231,9 @@ export default function ChatRoute(): JSX.Element {
               <div key={m.id} className="space-y-1">
                 {m.role === 'assistant' && m.activity && (
                   <div className="space-y-1.5">
-                    <ChatTodoList activity={m.activity} />
+                    <Suspense fallback={null}>
+                      <ChatTodoList activity={m.activity} />
+                    </Suspense>
                     <ChatActivityBlock activity={m.activity} />
                   </div>
                 )}

@@ -4,17 +4,25 @@
 //   - Tool-result clearing: surgically shrink old `toolResult` payloads in the
 //     *messages view* sent to the model (and in compaction preparation).
 //     Durable JSONL is left intact — re-open / UI history stay complete.
-//   - Compaction knobs: env-tunable reserve / keepRecent (pi defaults were fixed).
+//   - Compaction knobs: env-tunable reserve / keepRecent.
 //
-// Parameter presets can be revisited later; defaults follow the design doc.
+// Default preset = late compaction (prefer raw context; pay for summary late):
+//   L1 clear ~100–150k, L2 compact near full window (1M → ~952k with 48k reserve).
 
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import {
-  DEFAULT_COMPACTION_SETTINGS,
   estimateTokens,
   type CompactionPreparation,
   type CompactionSettings,
 } from '@earendil-works/pi-agent-core'
+
+/** Late-compaction defaults for ~1M-class windows (clamped on smaller windows). */
+export const DEFAULT_COMPACT_RESERVE_TOKENS = 48_000
+export const DEFAULT_COMPACT_KEEP_RECENT_TOKENS = 32_000
+export const DEFAULT_CLEAR_KEEP_TOOL_USES = 8
+/** Soft ceiling for the auto clear-trigger (15% of window, bounded below). */
+export const DEFAULT_CLEAR_TRIGGER_CAP = 150_000
+export const DEFAULT_CLEAR_TRIGGER_FLOOR = 50_000
 
 /** Placeholder prefix so we never double-clear the same result. */
 export const CLEARED_TOOL_RESULT_PREFIX = '[cleared tool_result:'
@@ -81,25 +89,46 @@ function parseExcludeList(raw: string | undefined): string[] {
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
+/** Clamp a target so small windows cannot reserve/keep more than a safe share. */
+export function clampToWindowShare(
+  target: number,
+  window: number,
+  maxShare: number,
+  floor: number,
+): number {
+  const shareCap = Math.max(floor, Math.floor(window * maxShare))
+  return Math.min(target, shareCap)
+}
+
 /** Resolve budget knobs from env. Safe to call every turn (no process cache). */
 export function resolveContextBudgetSettings(contextWindow?: number): ContextBudgetSettings {
   const window = Number.isFinite(contextWindow) && (contextWindow as number) > 0
     ? (contextWindow as number)
-    : 128_000
-  const defaultClearTrigger = Math.min(100_000, Math.max(50_000, Math.floor(window * 0.45)))
+    : 1_000_000
+  // L1: early cheap relief. ~15% of window, floored at 50k, capped at 150k
+  // (1M → 150k; 128k → 50k).
+  const defaultClearTrigger = Math.min(
+    DEFAULT_CLEAR_TRIGGER_CAP,
+    Math.max(DEFAULT_CLEAR_TRIGGER_FLOOR, Math.floor(window * 0.15)),
+  )
 
   const clearingEnabled = !envFlagOff('AGIM_CTX_CLEAR') && !envFlagOff('AGIM_CTX_CLEARING')
   const compactionEnabled = !envFlagOff('AGIM_NATIVE_COMPACTION')
 
+  // L2 late compaction: 48k reserve / 32k keep on 1M-class windows.
+  // Clamp so tiny windows never set reserve ≥ contextWindow (always-compact).
+  const defaultReserve = clampToWindowShare(DEFAULT_COMPACT_RESERVE_TOKENS, window, 0.25, 8_192)
+  const defaultKeep = clampToWindowShare(DEFAULT_COMPACT_KEEP_RECENT_TOKENS, window, 0.20, 8_192)
+
   const reserveTokens = envInt(
     'AGIM_CTX_COMPACT_RESERVE_TOKENS',
-    DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+    defaultReserve,
     4_096,
-    64_000,
+    256_000,
   )
   const keepRecentTokens = envInt(
     'AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS',
-    DEFAULT_COMPACTION_SETTINGS.keepRecentTokens,
+    defaultKeep,
     4_096,
     200_000,
   )
@@ -111,7 +140,7 @@ export function resolveContextBudgetSettings(contextWindow?: number): ContextBud
     clearing: {
       enabled: clearingEnabled,
       triggerTokens: envInt('AGIM_CTX_CLEAR_TRIGGER_TOKENS', defaultClearTrigger, 10_000, 2_000_000),
-      keepToolUses: envInt('AGIM_CTX_CLEAR_KEEP_TOOL_USES', 6, 0, 100),
+      keepToolUses: envInt('AGIM_CTX_CLEAR_KEEP_TOOL_USES', DEFAULT_CLEAR_KEEP_TOOL_USES, 0, 100),
       clearAtLeastChars: envInt('AGIM_CTX_CLEAR_AT_LEAST_CHARS', 8_000, 0, 10_000_000),
       excludeTools: parseExcludeList(process.env.AGIM_CTX_CLEAR_EXCLUDE),
     },

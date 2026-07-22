@@ -173,6 +173,7 @@ describe('resolveContextBudgetSettings', () => {
     delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS
     delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
     delete process.env.AGIM_CTX_CLEAR_TRIGGER_TOKENS
+    delete process.env.AGIM_CTX_CLEAR_KEEP_TOOL_USES
   })
 
   it('honours env overrides for compact reserve / keep', () => {
@@ -182,6 +183,22 @@ describe('resolveContextBudgetSettings', () => {
     expect(s.compaction.reserveTokens).toBe(12_000)
     expect(s.compaction.keepRecentTokens).toBe(30_000)
     expect(s.compactInstructions).toContain('bgjob')
+  })
+
+  it('applies late-compaction defaults on a 1M window', () => {
+    const s = resolveContextBudgetSettings(1_000_000)
+    expect(s.compaction.reserveTokens).toBe(48_000)
+    expect(s.compaction.keepRecentTokens).toBe(32_000)
+    expect(s.clearing.triggerTokens).toBe(150_000)
+    expect(s.clearing.keepToolUses).toBe(8)
+  })
+
+  it('clamps reserve/keep on small windows so compact is not always-on', () => {
+    const s = resolveContextBudgetSettings(32_000)
+    expect(s.compaction.reserveTokens).toBe(8_192)
+    expect(s.compaction.keepRecentTokens).toBe(8_192)
+    // Threshold stays positive: window - reserve > 0
+    expect(32_000 - s.compaction.reserveTokens).toBeGreaterThan(0)
   })
 
   it('disables clearing when AGIM_CTX_CLEAR=off', () => {

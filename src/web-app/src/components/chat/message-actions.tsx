@@ -218,8 +218,9 @@ export function MessageActions({
           type="button"
           data-testid="feedback-tell-why"
           className={cn(
+            // Match portal pet / brand teal (portal-pet.tsx body: #14b8a6 / #2dd4bf).
             'ml-1 inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium underline underline-offset-2',
-            dark ? 'text-amber-300 hover:bg-zinc-800' : 'text-amber-700 hover:bg-amber-50',
+            dark ? 'text-teal-400 hover:bg-zinc-800 hover:text-teal-300' : 'text-teal-600 hover:bg-teal-50 hover:text-teal-700',
           )}
           onClick={() => onDownvotePrefill()}
         >

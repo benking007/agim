@@ -15,6 +15,8 @@ import { handleOutboxCommand } from './commands/outbox.js'
 import { handleA2ACommand } from './commands/a2a.js'
 import { handleModelCommand } from './commands/model.js'
 import { handleThinkCommand } from './commands/think.js'
+import { handleCtxCommand } from './commands/ctx.js'
+import { normalizeCompactRate } from '../plugins/agents/agim-agent/context-budget.js'
 import { handleStatsCommand } from './commands/stats.js'
 import { handleSessionsCommand } from './commands/sessions.js'
 import { handleWorkspacesCommand } from './commands/workspaces.js'
@@ -227,6 +229,9 @@ export function parseMessage(text: string): ParsedMessage {
     if (cmd === 'models') return { type: 'model', args: rest ? `list ${rest}` : 'list' }
     if (cmd === 'model' || cmd === 'mode') return { type: 'model', args: rest }
   if (cmd === 'think') return { type: 'think', args: rest }
+  if (cmd === 'ctx' || cmd === 'compact-rate' || cmd === '压缩率') {
+    return { type: 'ctx', args: rest }
+  }
   if (cmd === 'stats' || cmd === 'usage' || cmd === 'cost') return { type: 'stats', args: rest }
   if (cmd === 'sessions') return { type: 'sessions', args: rest }
   if (cmd === 'approval' || cmd === 'auto') return { type: 'approval', args: rest }
@@ -345,6 +350,10 @@ export async function routeMessage(
 
     case 'think': {
       return handleThinkCommand(parsed.args, ctx)
+    }
+
+    case 'ctx': {
+      return handleCtxCommand(parsed.args, ctx)
     }
 
     case 'stats': {
@@ -745,6 +754,15 @@ export async function callAgentWithHistory(
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }
 
+  // Session-scoped compression rate (Usage「压缩率」/ /ctx). Best-effort lookup.
+  let compactRate: ReturnType<typeof normalizeCompactRate> | undefined
+  try {
+    const sess = await sessionManager.getExistingSession(
+      ctx.platform, ctx.channelId, storageThreadId,
+    )
+    if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
+  } catch { /* ignore — defaults to auto */ }
+
   const generator = agent.sendPrompt(sessionId, wirePrompt, effectiveHistory, {
     model,
     variant,
@@ -752,6 +770,7 @@ export async function callAgentWithHistory(
     platform: ctx.platform,
     userId: ctx.userId,
     channelId: ctx.channelId,
+    ...(compactRate && compactRate !== 'auto' ? { compactRate } : {}),
     ...(agent.handlesEphemeralContext && ephemeralContext ? { ephemeralContext } : {}),
     agentSessionId,
     agentSessionResume,

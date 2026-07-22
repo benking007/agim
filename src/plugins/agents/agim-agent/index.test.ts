@@ -1244,9 +1244,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     reg.appendResponses([fauxAssistantMessage('history summary'), fauxAssistantMessage('t2')])
     let reported: { tokensInput?: number; tokensOutput?: number } | undefined
     let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
+    const activity: import('../../../core/types.js').ToolActivityStep[] = []
     expect(await collect(adapter.sendPrompt('cmp', 'q2', undefined, {
       onUsage: (usage) => { reported = usage },
       onOutcome: (value) => { outcome = value },
+      onToolActivity: (step) => { activity.push(step) },
     }))).toBe('t2')
     // The durable session now carries a compaction entry.
     const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
@@ -1258,6 +1260,11 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     // Compaction has no assistant usage row — estimated tokens still reach onUsage.
     expect((reported?.tokensInput ?? 0) + (reported?.tokensOutput ?? 0)).toBeGreaterThan(0)
     expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
+    expect(outcome?.contextBudget?.compactSuccess).toBeGreaterThanOrEqual(1)
+    expect((outcome?.contextBudget?.tokensBefore ?? 0)).toBeGreaterThan(0)
+    // Chat accordion sees running → success for the compaction status step.
+    const compactSteps = activity.filter((s) => s.kind === 'status' && s.label === 'Compacting context')
+    expect(compactSteps.map((s) => s.status)).toEqual(['running', 'success'])
   })
 
   it('skips compaction when disabled (no extra summary call)', async () => {
@@ -1278,5 +1285,102 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     if (!meta) throw new Error('missing nc session metadata')
     const entries = await (await repo.open(meta)).getEntries()
     expect(entries.some((e) => e.type === 'compaction')).toBe(false)
+  })
+
+  it('compacts mid-turn when tools inflate past the reserve line', async () => {
+    // keepRecent small enough to cut; raise tool-result cap so the dump survives.
+    process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS = '500'
+    process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS = '8000'
+    process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = '500000'
+    try {
+      const reg = registerFauxProvider({ models: [{ id: 'mid', contextWindow: 32_000 }] })
+      regs.push(reg)
+      reg.setResponses([
+        fauxAssistantMessage(fauxToolCall('dump', {}, { id: 'd1' }), { stopReason: 'toolUse' }),
+        fauxAssistantMessage('mid-turn history summary'),
+        fauxAssistantMessage('done after compact'),
+      ])
+      const tool: ToolDef = {
+        name: 'dump',
+        description: 'dump',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }
+      const dispatch: ToolDispatcher = async () => ({
+        // Larger than window-reserve even after emergency keep≤2.
+        text: 'PAYLOAD:'.padEnd(200_000, 'x'),
+        isError: false,
+      })
+      const sessionsRoot = mkdtempSync(join(tmpdir(), 'pi-ad-'))
+      const adapter = new NativeAgentAdapter({
+        sessionsRoot,
+        resolveModel: async () => bindingFromFaux(reg),
+        resolveTools: () => ({ tools: [tool], dispatch }),
+      })
+      const activity: import('../../../core/types.js').ToolActivityStep[] = []
+      let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
+      expect(await collect(adapter.sendPrompt('mid-cmp', 'dump lots', undefined, {
+        onToolActivity: (step) => { activity.push(step) },
+        onOutcome: (value) => { outcome = value },
+      }))).toBe('done after compact')
+      const repo = new JsonlSessionRepo({ fs: new NodeExecutionEnv({ cwd: sessionsRoot }), sessionsRoot })
+      const meta = (await repo.list()).find((m) => m.id === 'mid-cmp')
+      if (!meta) throw new Error('missing mid-cmp session')
+      const entries = await (await repo.open(meta)).getEntries()
+      expect(entries.some((e) => e.type === 'compaction')).toBe(true)
+      const compactSteps = activity.filter((s) => s.kind === 'status' && s.label === 'Compacting context')
+      expect(compactSteps.some((s) => s.status === 'running')).toBe(true)
+      expect(compactSteps.some((s) => s.status === 'success')).toBe(true)
+      expect(compactSteps.some((s) => s.preview?.includes('mid-turn'))).toBe(true)
+      expect((outcome?.auxModelCalls ?? 0)).toBeGreaterThanOrEqual(1)
+      expect(outcome?.contextBudget?.compactSuccess).toBeGreaterThanOrEqual(1)
+      expect((outcome?.contextBudget?.tokensBefore ?? 0)).toBeGreaterThan(0)
+    } finally {
+      delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
+      delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS
+      delete process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS
+    }
+  })
+
+  it('continues the turn when mid-turn compaction summarization fails', async () => {
+    process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS = '500'
+    process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS = '8000'
+    process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS = '500000'
+    try {
+      const reg = registerFauxProvider({ models: [{ id: 'mid', contextWindow: 32_000 }] })
+      regs.push(reg)
+      reg.setResponses([
+        fauxAssistantMessage(fauxToolCall('dump', {}, { id: 'd2' }), { stopReason: 'toolUse' }),
+        // compact() starves here → error activity; turn must still settle.
+      ])
+      const tool: ToolDef = {
+        name: 'dump',
+        description: 'dump',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }
+      const dispatch: ToolDispatcher = async () => ({
+        text: 'PAYLOAD:'.padEnd(200_000, 'x'),
+        isError: false,
+      })
+      const adapter = new NativeAgentAdapter({
+        sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-ad-')),
+        resolveModel: async () => bindingFromFaux(reg),
+        resolveTools: () => ({ tools: [tool], dispatch }),
+      })
+      const activity: import('../../../core/types.js').ToolActivityStep[] = []
+      let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
+      const out = await collect(adapter.sendPrompt('mid-fail', 'dump', undefined, {
+        onToolActivity: (step) => { activity.push(step) },
+        onOutcome: (value) => { outcome = value },
+      }))
+      expect(typeof out).toBe('string')
+      const compactSteps = activity.filter((s) => s.kind === 'status' && s.label === 'Compacting context')
+      expect(compactSteps.some((s) => s.status === 'running')).toBe(true)
+      expect(compactSteps.some((s) => s.status === 'error' || s.status === 'success')).toBe(true)
+      expect((outcome?.contextBudget?.compactFail ?? 0)).toBeGreaterThanOrEqual(1)
+    } finally {
+      delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
+      delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS
+      delete process.env.AGIM_NATIVE_TOOL_RESULT_MAX_CHARS
+    }
   })
 })

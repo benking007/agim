@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Bell, Cpu, Gauge, HeartPulse, Loader2, Network,
+  Bell, Cpu, Gauge, HeartPulse, Layers, Loader2, Network,
   RefreshCcw, Save, ShieldAlert, X,
 } from 'lucide-react'
 
@@ -58,6 +58,10 @@ interface Draft {
   planIntentPhrases: string
   // Per-turn iteration cap (AGIM_NATIVE_AGENT_MAX_ITER)
   maxIter: string
+  // Late compaction (default ON — prefer AGIM_CTX_*; legacy NATIVE_COMPACTION also disables)
+  compactEnabled: boolean
+  compactReserveTokens: string
+  compactKeepRecentTokens: string
 }
 
 function draftFromEnv(env: Record<string, string>): Draft {
@@ -85,6 +89,10 @@ function draftFromEnv(env: Record<string, string>): Draft {
     planIntentAuto:     isTruthy(env.AGIM_PLAN_INTENT_AUTO),
     planIntentPhrases:  env.AGIM_PLAN_INTENT_PHRASES ?? '',
     maxIter:            env.AGIM_NATIVE_AGENT_MAX_ITER ?? '',
+    // Default ON: only explicit off/0/false/no disables (canonical or legacy).
+    compactEnabled: !isFlagOff(env.AGIM_CTX_COMPACT) && !isFlagOff(env.AGIM_NATIVE_COMPACTION),
+    compactReserveTokens: env.AGIM_CTX_COMPACT_RESERVE_TOKENS ?? '',
+    compactKeepRecentTokens: env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS ?? '',
   }
 }
 
@@ -93,6 +101,13 @@ function isTruthy(v: string | undefined): boolean {
   if (!v) return false
   const s = v.toLowerCase()
   return s === '1' || s === 'true' || s === 'yes' || s === 'on'
+}
+
+/** True when env is an explicit off/0/false/no (matches runtime envFlagOff). */
+function isFlagOff(v: string | undefined): boolean {
+  if (!v) return false
+  const s = v.trim().toLowerCase()
+  return s === 'off' || s === '0' || s === 'false' || s === 'no'
 }
 
 function SubtitleWithLlmLink(): JSX.Element {
@@ -209,6 +224,17 @@ export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettin
     if (draft.maxIter !== current.maxIter) {
       updates.AGIM_NATIVE_AGENT_MAX_ITER = draft.maxIter.trim() || null
     }
+    // Late compaction (default ON → write 'off' to disable; clear both keys to restore default)
+    if (draft.compactEnabled !== current.compactEnabled) {
+      updates.AGIM_CTX_COMPACT = draft.compactEnabled ? null : 'off'
+      updates.AGIM_NATIVE_COMPACTION = null
+    }
+    if (draft.compactReserveTokens !== current.compactReserveTokens) {
+      updates.AGIM_CTX_COMPACT_RESERVE_TOKENS = draft.compactReserveTokens.trim() || null
+    }
+    if (draft.compactKeepRecentTokens !== current.compactKeepRecentTokens) {
+      updates.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS = draft.compactKeepRecentTokens.trim() || null
+    }
     if (Object.keys(updates).length === 0) return
     try {
       await updateEnv.mutateAsync({ updates })
@@ -250,6 +276,7 @@ export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettin
         <>
           <NativeAgentCard draft={draft} setField={setField} />
           <RuntimeCapsCard draft={draft} setField={setField} />
+          <LateCompactCard draft={draft} setField={setField} />
           <A2ACard draft={draft} setField={setField} />
           <PlanModeCard draft={draft} setField={setField} />
           <IterationCard draft={draft} setField={setField} />
@@ -484,6 +511,65 @@ function RuntimeCapsCard({ draft, setField }: CardProps): JSX.Element {
             onChange={(e) => setField('toolTimeoutMs', e.target.value)}
             placeholder="60000"
             className="font-mono text-xs"
+          />
+        </Field>
+      </div>
+    </section>
+  )
+}
+
+function LateCompactCard({ draft, setField }: CardProps): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Layers className="h-4 w-4 text-text-dim" />
+        <h2 className="text-sm font-semibold">{t('nativeAgent.compactCard')}</h2>
+        {draft.compactEnabled
+          ? <Badge variant="success">{t('nativeAgent.on')}</Badge>
+          : <Badge variant="outline">{t('nativeAgent.off')}</Badge>}
+      </header>
+      <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.compactDesc')}</p>
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.compactEnabled')}
+          hint={t('nativeAgent.compactEnabledHint')}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.compactEnabled}
+              onChange={(e) => setField('compactEnabled', e.target.checked)}
+              className="h-4 w-4 accent-accent cursor-pointer"
+            />
+            <span>{draft.compactEnabled ? t('nativeAgent.on') : t('nativeAgent.off')}</span>
+          </label>
+        </Field>
+        <div className="hidden sm:block" aria-hidden />
+        <Field
+          label={t('nativeAgent.compactReserveTokens')}
+          hint={t('nativeAgent.compactReserveTokensHint')}
+        >
+          <Input
+            type="number"
+            value={draft.compactReserveTokens}
+            onChange={(e) => setField('compactReserveTokens', e.target.value)}
+            placeholder="48000"
+            className="font-mono text-xs"
+            disabled={!draft.compactEnabled}
+          />
+        </Field>
+        <Field
+          label={t('nativeAgent.compactKeepRecentTokens')}
+          hint={t('nativeAgent.compactKeepRecentTokensHint')}
+        >
+          <Input
+            type="number"
+            value={draft.compactKeepRecentTokens}
+            onChange={(e) => setField('compactKeepRecentTokens', e.target.value)}
+            placeholder="32000"
+            className="font-mono text-xs"
+            disabled={!draft.compactEnabled}
           />
         </Field>
       </div>

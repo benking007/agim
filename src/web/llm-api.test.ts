@@ -112,6 +112,32 @@ describe('handleLlmApi — add backend', () => {
     expect(body.backends[0].secret.source).toBe('file')
   })
 
+  it('enriches list contextWindow/maxTokens from pi catalog when unset', async () => {
+    const add = {
+      name: 'deepseek-v4-pro',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      apiKey: 'sk-ds',
+    }
+    const res1 = makeRes()
+    await handleLlmApi(makeReq('POST', add), res1 as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    expect(res1.statusCode).toBe(201)
+
+    const disk = JSON.parse(readFileSync(join(TMP, 'config.json'), 'utf8')) as {
+      llmBackends: Array<Record<string, unknown>>
+    }
+    // Disk must stay unset (catalog fill is list-time only).
+    expect(disk.llmBackends[0].contextWindow).toBeUndefined()
+    expect(disk.llmBackends[0].maxTokens).toBeUndefined()
+
+    const res2 = makeRes()
+    await handleLlmApi(makeReq('GET'), res2 as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    const body = JSON.parse(res2.body) as { backends: Array<Record<string, unknown>> }
+    expect(body.backends[0].contextWindow).toBe(1_000_000)
+    expect(body.backends[0].maxTokens).toBe(384_000)
+  })
+
   it('persists custom advanced fields (thinking / context / headers)', async () => {
     const add = {
       name: 'proxy-1',

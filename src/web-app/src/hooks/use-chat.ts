@@ -153,6 +153,8 @@ export interface ChatState {
   thinkVariant: string
   /** Live session `/model` backend name (empty = native-chat role default). */
   sessionModel: string
+  /** Live session `/ctx` compression rate (`auto` | `full` | `balanced` | `frequent`). */
+  compactRate: string
   /** WebSocket thread id (web-…). Used for media upload subdir. */
   clientId: string | null
 }
@@ -171,6 +173,7 @@ const initialState: ChatState = {
   planMode: false,
   thinkVariant: 'auto',
   sessionModel: '',
+  compactRate: 'auto',
   clientId: null,
 }
 
@@ -185,10 +188,12 @@ type Action =
       planMode?: boolean
       thinkVariant?: string
       sessionModel?: string
+      compactRate?: string
     }
   | { kind: 'PLAN_MODE'; enabled: boolean }
   | { kind: 'THINK_MODE'; variant: string }
   | { kind: 'SESSION_MODEL'; model: string }
+  | { kind: 'COMPACT_RATE'; rate: string }
   | {
       kind: 'ACTIVE_RUN'
       runId: string
@@ -334,6 +339,7 @@ function reducer(s: ChatState, a: Action): ChatState {
           planMode: a.planMode ?? s.planMode,
           thinkVariant: a.thinkVariant ?? s.thinkVariant,
           sessionModel: a.sessionModel ?? s.sessionModel,
+          compactRate: a.compactRate ?? s.compactRate,
         }
       }
       return {
@@ -345,6 +351,7 @@ function reducer(s: ChatState, a: Action): ChatState {
         planMode: a.planMode ?? s.planMode,
         thinkVariant: a.thinkVariant ?? s.thinkVariant,
         sessionModel: a.sessionModel ?? s.sessionModel,
+        compactRate: a.compactRate ?? s.compactRate,
       }
     case 'PLAN_MODE':
       return { ...s, planMode: a.enabled }
@@ -352,6 +359,8 @@ function reducer(s: ChatState, a: Action): ChatState {
       return { ...s, thinkVariant: a.variant || 'auto' }
     case 'SESSION_MODEL':
       return { ...s, sessionModel: a.model || '' }
+    case 'COMPACT_RATE':
+      return { ...s, compactRate: a.rate || 'auto' }
     case 'ACTIVE_RUN': {
       // Replayed after HISTORY on reconnect/refresh. Bind the snapshot
       // onto the last assistant bubble (or create a streaming placeholder).
@@ -830,6 +839,7 @@ function reducer(s: ChatState, a: Action): ChatState {
         planMode: false,
         thinkVariant: 'auto',
         sessionModel: '',
+        compactRate: 'auto',
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }
@@ -992,6 +1002,7 @@ export function useChat(): UseChat {
           planMode: msg.planMode,
           thinkVariant: msg.thinkVariant,
           sessionModel: msg.sessionModel,
+          compactRate: msg.compactRate,
           messages: msg.messages.map((h, i): ChatMessage => {
             const activity = h.activity
               ? {
@@ -1045,6 +1056,9 @@ export function useChat(): UseChat {
         return
       case 'session-model':
         dispatch({ kind: 'SESSION_MODEL', model: msg.model || '' })
+        return
+      case 'compact-rate':
+        dispatch({ kind: 'COMPACT_RATE', rate: msg.rate || 'auto' })
         return
       case 'active-run': {
         const normStep = (st: (typeof msg.steps)[number]): ChatActivityStep => ({

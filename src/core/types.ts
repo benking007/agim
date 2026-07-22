@@ -73,6 +73,7 @@ export type ParsedMessage =
   | { type: 'a2a'; args: string }
   | { type: 'model'; args: string }
   | { type: 'think'; args: string }
+  | { type: 'ctx'; args: string }
   | { type: 'stats'; args: string }
   | { type: 'sessions'; args: string }
   | { type: 'approval'; args: string }
@@ -130,6 +131,11 @@ export interface Session {
   model?: string
   /** Thinking depth variant */
   variant?: string
+  /**
+   * Session-scoped compression rate (压缩率): auto | full | balanced | frequent.
+   * Omitted / auto = window-scaled global defaults. Cleared by /new.
+   */
+  compactRate?: 'auto' | 'full' | 'balanced' | 'frequent'
   /** Per-session usage roll-up. Updated by callAgentWithHistory after every
    *  successful agent invocation. Persisted with the session metadata so
    *  /stats survives restart. */
@@ -428,6 +434,19 @@ export interface AgentTurnOutcome {
     tokensOutput?: number
     costUsd?: number
   }
+  /** Agim Agent context-budget activity for this turn (omitted when idle). */
+  contextBudget?: {
+    /** L1 tool-result clearing applications (includes emergency). */
+    clearCount: number
+    /** Subset of clears that used the emergency keep≤2 path. */
+    emergencyClearCount: number
+    /** Successful L2 transcript compactions (pre-turn + mid-turn). */
+    compactSuccess: number
+    /** Compaction attempts that threw / timed out (turn still continues). */
+    compactFail: number
+    /** tokensBefore from the last successful compaction this turn. */
+    tokensBefore?: number
+  }
 }
 
 /**
@@ -446,6 +465,11 @@ export interface AgentSendOpts {
   platform?: string
   userId?: string
   channelId?: string
+  /**
+   * Session-scoped compression rate overlay for Agim Agent context budget.
+   * `auto` / omitted → env + window defaults; otherwise replaces reserve/keep.
+   */
+  compactRate?: 'auto' | 'full' | 'balanced' | 'frequent'
   /** Request-only context (goal/persona/reminders/viewer hints). Adapters that
    *  support it inject this at provider context time without persisting it as
    *  part of the user's durable message. */

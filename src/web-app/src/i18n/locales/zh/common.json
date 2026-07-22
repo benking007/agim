@@ -271,6 +271,7 @@
     "appearance": "外观",
     "activityRunning": "执行中",
     "activityRunningStep": "执行中 · {{step}}",
+    "activityCompacting": "正在压缩上下文",
     "activityWorked": "已完成",
     "activityFailed": "失败",
     "activityStepCount": "{{count}} 步",

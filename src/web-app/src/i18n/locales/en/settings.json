@@ -984,7 +984,15 @@
     "iterationCard": "Iteration cap",
     "iterationDesc": "Worst-case tool-call ceiling per turn.",
     "maxIter": "Max iterations",
-    "maxIterHint": "AGIM_NATIVE_AGENT_MAX_ITER. Clamped to [1,100]. Default 50."
+    "maxIterHint": "AGIM_NATIVE_AGENT_MAX_ITER. Clamped to [1,100]. Default 50.",
+    "compactCard": "Late compaction",
+    "compactDesc": "Summarize the transcript only near the context-window ceiling — prefer raw context and pay for summary late. Leave numbers blank for window-scaled defaults (~48k reserve / ~32k keepRecent on 1M).",
+    "compactEnabled": "Enable late compaction",
+    "compactEnabledHint": "AGIM_CTX_COMPACT. On by default; set to off to disable. Compaction failures never abort the turn.",
+    "compactReserveTokens": "Reserve tokens",
+    "compactReserveTokensHint": "AGIM_CTX_COMPACT_RESERVE_TOKENS. Headroom for the reply and tools; smaller means later compaction. ~48000 recommended on 1M.",
+    "compactKeepRecentTokens": "Keep recent tokens",
+    "compactKeepRecentTokensHint": "AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS. Raw tail kept after compaction. ~32000 recommended on 1M."
   },
   "search": {
     "title": "Web search providers",

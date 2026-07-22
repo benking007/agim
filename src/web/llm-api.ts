@@ -29,6 +29,7 @@ import {
 } from '../core/llm/secrets.js'
 import { clearAgentCache } from '../core/onboarding.js'
 import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
+import { lookupModelMeta } from '../core/llm/model-catalog.js'
 import { DEFAULT_LLM_PRESET, LLM_PRESETS } from '../core/llm/presets.js'
 import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
 
@@ -196,6 +197,15 @@ async function handleList(res: ServerResponse): Promise<void> {
     // vendor-env fallback (source='vendor') and surface candidate envs
     // when nothing is configured ('vendorCandidates').
     const src = describeSecretSource(b.name, { provider: b.provider, baseUrl: b.baseUrl })
+    // Prefer operator override; else fill from pi catalog so Usage / status
+    // bar match the Agim Agent binding (e.g. deepseek-v4-pro → 1M / 384K).
+    const catalog = lookupModelMeta(b.provider, b.model)
+    const contextWindow = typeof b.contextWindow === 'number'
+      ? b.contextWindow
+      : catalog?.contextWindow
+    const maxTokens = typeof b.maxTokens === 'number'
+      ? b.maxTokens
+      : catalog?.maxTokens
     return {
       name: b.name,
       provider: b.provider,
@@ -203,8 +213,8 @@ async function handleList(res: ServerResponse): Promise<void> {
       model: b.model,
       ...(b.label ? { label: b.label } : {}),
       ...(typeof b.temperature === 'number' ? { temperature: b.temperature } : {}),
-      ...(typeof b.maxTokens === 'number' ? { maxTokens: b.maxTokens } : {}),
-      ...(typeof b.contextWindow === 'number' ? { contextWindow: b.contextWindow } : {}),
+      ...(typeof maxTokens === 'number' ? { maxTokens } : {}),
+      ...(typeof contextWindow === 'number' ? { contextWindow } : {}),
       // Include 'off' (falsy string) so the SPA can round-trip an explicit disable.
       ...(b.thinkingFormat !== undefined ? { thinkingFormat: b.thinkingFormat } : {}),
       ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),

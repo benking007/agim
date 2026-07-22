@@ -18,6 +18,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  COMPACT_RATE_OPTIONS,
+  hardLineForCompactRate,
+  isCompactRateSafe,
+  normalizeCompactRate,
+  type CompactRate,
+} from '@/lib/compact-rate'
 import { cn } from '@/lib/utils'
 
 export type ThinkEffort = 'low' | 'high' | 'max'
@@ -47,6 +54,8 @@ export interface ComposerStatusBarProps {
   contextUsed: number
   contextWindow: number
   breakdown?: ContextBreakdownItem[]
+  /** Session-scoped compression rate (`auto` | `full` | `balanced` | `frequent`). */
+  compactRate?: string
   disabled?: boolean
   onSelectModel?: (backendName: string) => void
   onConfigureModel: () => void
@@ -132,19 +141,42 @@ export function ComposerStatusBar({
   contextUsed,
   contextWindow,
   breakdown = [],
+  compactRate = 'auto',
   disabled = false,
   onSelectModel,
   onConfigureModel,
   onSendCommand,
   className,
 }: ComposerStatusBarProps): JSX.Element {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [contextOpen, setContextOpen] = useState(false)
   const { on: thinkingOn, effort } = normalizeVariant(thinkVariant)
   const windowSize = Math.max(1, contextWindow || 32_000)
   const used = Math.max(0, contextUsed)
   const ratio = used / windowSize
   const pctLabel = Math.min(100, Math.round(ratio * 100))
+  const rate = normalizeCompactRate(compactRate)
+  const zh = (i18n.language || '').startsWith('zh')
+  const hardLine = hardLineForCompactRate(windowSize, rate)
+
+  function compactRateLabel(id: CompactRate): string {
+    if (zh) {
+      if (id === 'auto') return '自动'
+      if (id === 'full') return '满压'
+      if (id === 'balanced') return '均衡'
+      return '频繁'
+    }
+    if (id === 'auto') return 'Auto'
+    if (id === 'full') return 'Full'
+    if (id === 'balanced') return 'Balanced'
+    return 'Frequent'
+  }
+
+  function setCompactRate(next: CompactRate): void {
+    if (disabled) return
+    if (!isCompactRateSafe(windowSize, used, next)) return
+    onSendCommand(`/ctx ${next}`)
+  }
 
   const segments = useMemo(() => {
     const items = breakdown.length > 0
@@ -333,9 +365,74 @@ export function ComposerStatusBar({
               </li>
             ))}
           </ul>
+
+          <div className={cn('mt-3 border-t pt-3', dark ? 'border-zinc-800' : 'border-zinc-100')}>
+            <div className="mb-1.5 flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium">
+                {t('chat.statusBar.compactRate', {
+                  defaultValue: zh ? '压缩率' : 'Compression rate',
+                })}
+              </span>
+              <span className={cn('text-[10px] tabular-nums', dark ? 'text-zinc-500' : 'text-zinc-400')}>
+                {t('chat.statusBar.hardLine', {
+                  defaultValue: zh ? '硬线' : 'Hard line',
+                })}
+                {' ~'}
+                {formatTokens(hardLine)}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {COMPACT_RATE_OPTIONS.map((opt) => {
+                const safe = isCompactRateSafe(windowSize, used, opt.id)
+                const active = rate === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={disabled || !safe}
+                    title={!safe
+                      ? (zh
+                        ? '当前已用上下文过高，该档会使硬线低于已用量'
+                        : 'Current usage is too high for this rate')
+                      : undefined}
+                    onClick={() => setCompactRate(opt.id)}
+                    className={cn(
+                      'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                      active
+                        ? (dark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-50 text-teal-800')
+                        : (dark ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-100'),
+                      (!safe || disabled) && 'cursor-not-allowed opacity-35 hover:bg-transparent',
+                    )}
+                  >
+                    {compactRateLabel(opt.id)}
+                  </button>
+                )
+              })}
+            </div>
+            <p className={cn('mt-1.5 text-[10px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
+              {zh
+                ? (rate === 'full'
+                  ? '满压：接近上限才压缩，优先保留原始上下文（仅本会话）'
+                  : rate === 'balanced'
+                    ? '均衡：中等预留，折中触发（仅本会话）'
+                    : rate === 'frequent'
+                      ? '频繁：更早、更常压缩（仅本会话）'
+                      : '自动：按当前模型窗口缩放（全局默认）')
+                : (rate === 'full'
+                  ? 'Full: compact near the window ceiling (this session)'
+                  : rate === 'balanced'
+                    ? 'Balanced: mid reserve (this session)'
+                    : rate === 'frequent'
+                      ? 'Frequent: compact earlier (this session)'
+                      : 'Auto: follow the model window (global default)')}
+            </p>
+          </div>
+
           <p className={cn('mt-2 text-[10px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
             {t('chat.statusBar.contextApprox', {
-              defaultValue: 'Approximate from conversation length until live token usage is available.',
+              defaultValue: zh
+                ? '近似拆分（字符/4 + 规则/技能/工具估算）；实时 tool 结果与压缩后会话可能未完全计入。'
+                : 'Approximate breakdown (chars/4 + rules/skills/tools estimates). Live tool results and post-compact session size may not be fully reflected.',
             })}
           </p>
         </div>
@@ -352,10 +449,20 @@ export function estimateTokensFromText(text: string): number {
 
 export function estimateContextWindow(model: string | undefined): number {
   const m = (model || '').toLowerCase()
-  if (m.includes('kimi-k3') || m.includes('glm-5') || m.includes('mimo-v2.5')) return 1_000_000
+  // Keep in sync with pi catalog / provider-resolver vendor fallbacks.
+  // Prefer GET /api/llm `contextWindow` (catalog-enriched) when available.
+  if (
+    m.includes('kimi-k3')
+    || m.includes('glm-5')
+    || m.includes('mimo-v2.5')
+    || m.includes('deepseek-v4')
+    || m.includes('deepseek-v3')
+  ) {
+    return 1_000_000
+  }
   if (m.includes('kimi-k2')) return 256_000
   if (m.includes('glm-4.7')) return 200_000
-  if (m.includes('deepseek-v4')) return 128_000
-  if (m.includes('claude') || m.includes('gpt-4') || m.includes('gpt-5')) return 128_000
+  if (m.includes('claude') || m.includes('gpt-4') || m.includes('gpt-5')) return 200_000
+  if (m.includes('deepseek')) return 1_000_000
   return 32_000
 }

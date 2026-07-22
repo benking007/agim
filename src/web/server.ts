@@ -3065,8 +3065,20 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_NATIVE_CRITIC',
   'AGIM_NATIVE_CRITIC_ROLE',
   'AGIM_NATIVE_SEMANTIC_STUCK_LOOP',
-  // Proactive pi harness compaction (factory reads AGIM_NATIVE_COMPACTION).
+  // Context budget (tool-result clearing + late compaction). Prefer AGIM_CTX_*.
+  'AGIM_CTX_COMPACT',
+  'AGIM_CTX_COMPACT_RESERVE_TOKENS',
+  'AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS',
+  'AGIM_CTX_COMPACT_INSTRUCTIONS',
+  'AGIM_CTX_LOOKAHEAD_TOKENS',
+  'AGIM_CTX_CLEAR',
+  'AGIM_CTX_CLEAR_TRIGGER_TOKENS',
+  'AGIM_CTX_CLEAR_KEEP_TOOL_USES',
+  'AGIM_CTX_CLEAR_AT_LEAST_CHARS',
+  'AGIM_CTX_CLEAR_EXCLUDE',
+  // Legacy aliases (still honored by the runtime).
   'AGIM_NATIVE_COMPACTION',
+  'AGIM_CTX_CLEARING',
 ] as const
 const SECRET_KEYS = new Set<string>([
   'AGIM_SMTP_PASS',
@@ -5703,6 +5715,10 @@ async function handleClientMessage(
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'think-mode', variant: sess?.variant || 'auto' })
           }
+          if (parsed.type === 'ctx') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({ type: 'compact-rate', rate: sess?.compactRate || 'auto' })
+          }
           if (parsed.type === 'model') {
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'session-model', model: sess?.model || '' })
@@ -5959,6 +5975,7 @@ async function sendSessionHistory(
       planMode: !!history.session.planMode,
       thinkVariant: history.session.variant || 'auto',
       sessionModel: history.session.model || '',
+      compactRate: history.session.compactRate || 'auto',
     })
   }
   const { getActiveRun } = await import('./active-runs.js')

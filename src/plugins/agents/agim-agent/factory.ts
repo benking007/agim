@@ -17,6 +17,7 @@ import type { AgentSendOpts } from '../../../core/types.js'
 import { getAnyProvider, getProvider, getProviderByName, listProviders } from '../../../core/llm/registry.js'
 import { buildSystemPrompt } from '../agim-agent-shared/index.js'
 import { buildPiApprovalGate } from './approval.js'
+import { isContextCompactionEnabled } from './context-budget.js'
 import { NativeAgentAdapter } from './index.js'
 import { resolveAnyPiModel, resolvePiModelByBackendName, resolvePiModelForRole } from './provider-resolver.js'
 import { assembleToolsForPi } from './tools.js'
@@ -110,8 +111,8 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
     maxIterations: resolveMaxIterations(),
     maxToolCalls: resolveMaxToolCalls(),
     // Proactive per-turn compaction (pi never auto-compacts). On by default;
-    // AGIM_NATIVE_COMPACTION=off disables it.
-    compactionEnabled: process.env.AGIM_NATIVE_COMPACTION !== 'off',
+    // AGIM_CTX_COMPACT=off disables it (legacy alias: AGIM_NATIVE_COMPACTION).
+    compactionEnabled: isContextCompactionEnabled(),
     // Provider retry/backoff/timeout + prompt cache (rides out transient LLM
     // 429/5xx and cuts repeat token cost). All AGIM_NATIVE_* env-overridable.
     streamOptions: resolveStreamOptions(),

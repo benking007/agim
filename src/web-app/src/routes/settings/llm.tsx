@@ -1000,7 +1000,8 @@ function AddBackendCard(): JSX.Element {
     if (next === 'deepseek') {
       setThinkingFormat('deepseek')
       setMaxTokensField('auto')
-      setContextWindow('128000')
+      // DeepSeek V4 official default context is 1M (not the old 128K heuristic).
+      setContextWindow('1000000')
       return
     }
     if (next === 'openai-effort') {

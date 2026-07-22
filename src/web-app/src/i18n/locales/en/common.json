@@ -271,6 +271,7 @@
     "appearance": "Appearance",
     "activityRunning": "Running",
     "activityRunningStep": "Running · {{step}}",
+    "activityCompacting": "Compacting context",
     "activityWorked": "Worked",
     "activityFailed": "Failed",
     "activityStepCount": "{{count}} steps",

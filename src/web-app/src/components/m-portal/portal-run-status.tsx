@@ -45,6 +45,8 @@ function formatDuration(ms: number | undefined): string | null {
   return `${m}m ${s}s`
 }
 
+const COMPACTING_CONTEXT_LABEL = 'Compacting context'
+
 function countKinds(activity: ChatActivity): {
   tools: number
   skills: number
@@ -57,7 +59,9 @@ function countKinds(activity: ChatActivity): {
   for (const step of activity.steps) {
     if (step.kind === 'skill') skills += 1
     else if (step.kind === 'ask') asks += 1
-    else if (step.kind === 'tool' || step.kind === 'status') tools += 1
+    else if (step.kind === 'status') {
+      // Status rows (e.g. compaction) are not tool calls.
+    } else if (step.kind === 'tool') tools += 1
     else if (step.kind !== 'agent' && step.kind !== 'approval') tools += 1
   }
   return { tools, skills, asks, total: activity.steps.length }
@@ -78,8 +82,19 @@ function StepIcon({ step, dark }: { step: ChatActivityStep; dark: boolean }): JS
   return <Wrench className={cn(cls, dark ? 'text-zinc-500' : 'text-zinc-400')} />
 }
 
-function stepLabel(step: ChatActivityStep): string {
-  if (step.kind === 'agent') return `→ ${step.label}`
+function stepLabel(
+  step: ChatActivityStep,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (step.kind === 'agent') {
+    return t('chat.activityAgentLabel', {
+      agent: step.label,
+      defaultValue: '→ {{agent}}',
+    })
+  }
+  if (step.kind === 'status' && step.label === COMPACTING_CONTEXT_LABEL) {
+    return t('chat.activityCompacting', { defaultValue: 'Compacting context' })
+  }
   return step.label
 }
 
@@ -183,7 +198,7 @@ export function PortalRunStatus({
               })
             : liveStep
               ? t('chat.activityRunningStep', {
-                  step: stepLabel(liveStep),
+                  step: stepLabel(liveStep, t),
                   defaultValue: 'Running · {{step}}',
                 })
               : null}
@@ -244,9 +259,11 @@ export function PortalRunStatus({
                 <StepIcon step={step} dark={dark} />
                 <span className={cn(
                   'truncate',
-                  step.kind === 'agent' ? 'font-medium' : 'agim-mono text-[11px]',
+                  step.kind === 'agent' || step.kind === 'status'
+                    ? 'font-medium'
+                    : 'agim-mono text-[11px]',
                 )}>
-                  {stepLabel(step)}
+                  {stepLabel(step, t)}
                 </span>
                 {step.kind === 'approval' && (
                   <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">

@@ -12,7 +12,7 @@
 //   - history     → seeded into a COLD session only
 //   - opts.planMode → tool_call hook blocks mutating tools
 //   - opts.onUsage  → surfaced from the returned AssistantMessage.usage
-//   - compaction    → before each turn, summarize old history when the session
+//   - compaction    → pre-turn + mid-turn (turn_end) summarize when the session
 //                     exceeds the model window (pi never auto-compacts)
 //   - yields        → delivered assistant text (buffered; token streaming is a
 //                     follow-up — pi exposes an event stream we can wire later).
@@ -22,13 +22,8 @@
 
 import {
   AgentHarness,
-  calculateContextTokens,
-  compact,
-  DEFAULT_COMPACTION_SETTINGS,
   FileError,
-  getLastAssistantUsage,
   JsonlSessionRepo,
-  shouldCompact,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import type { AgentHarnessStreamOptions, AgentMessage, Result } from '@earendil-works/pi-agent-core'
@@ -36,6 +31,7 @@ import type { Model } from '@earendil-works/pi-ai'
 import { chmod, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { AgentAdapter, AgentAdapterKind, AgentSendOpts, AgentTurnOutcome, ChatMessage } from '../../../core/types.js'
+import { recordContextClear, recordContextCompact } from '../../../core/metrics.js'
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
@@ -58,6 +54,16 @@ import { AGIM_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry
 import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
+import {
+  applyContextBudgetToMessages,
+  resolveContextBudgetSettings,
+} from './context-budget.js'
+import {
+  contextExceedsReserve,
+  measureContextTokens,
+  runTranscriptCompaction,
+  shouldRunMidTurnCompaction,
+} from './transcript-compaction.js'
 
 /** Resolved LLM binding for one turn: a pi-ai Model + how to authenticate it. */
 export interface NativeModelBinding {
@@ -116,7 +122,7 @@ export interface NativeAgentDeps {
    *  when a durable session grows past the model window (minus reserve) the
    *  adapter summarizes old history — without this, long-lived IM sessions grow
    *  the JSONL unbounded until the context overflows. Defaults to enabled; set
-   *  false (factory reads AGIM_NATIVE_COMPACTION=off) to disable. */
+   *  false (factory reads AGIM_CTX_COMPACT=off) to disable. */
   compactionEnabled?: boolean
   /** Provider request resilience + caching, snapshotted per turn by pi:
    *  maxRetries / maxRetryDelayMs / timeoutMs (ride out transient 429/5xx from
@@ -756,10 +762,45 @@ export class NativeAgentAdapter implements AgentAdapter {
     /** Mid-turn soft steers (goal critic) — injected only via the context hook,
      *  never appended as durable user messages. */
     let ephemeralSteer = ''
+    // Snapshot budget knobs once per turn (env can change via /api/env;
+    // session compactRate overlays reserve/keep when not auto).
+    const budget = resolveContextBudgetSettings(
+      binding.model.contextWindow,
+      opts?.compactRate,
+    )
+    let contextClearEvents = 0
+    let ctxClearCount = 0
+    let ctxEmergencyClearCount = 0
+    let ctxCompactSuccess = 0
+    let ctxCompactFail = 0
+    let ctxTokensBefore: number | undefined
     harness.on('context', (event) => {
+      let messages = event.messages
       const combined = [ephemeralContext, ephemeralSteer].filter((part) => part.trim()).join('\n\n')
-      if (!combined) return undefined
-      return { messages: injectEphemeralContext(event.messages, combined) }
+      if (combined) messages = injectEphemeralContext(messages, combined)
+      if (budget.clearing.enabled) {
+        const { messages: next, emergency, cleared } = applyContextBudgetToMessages(
+          messages,
+          budget,
+          binding.model.contextWindow,
+        )
+        if (cleared.applied) {
+          messages = next
+          contextClearEvents++
+          ctxClearCount++
+          if (emergency) ctxEmergencyClearCount++
+          recordContextClear({ emergency })
+          if (contextClearEvents === 1 || emergency) {
+            console.info(
+              `[agim-agent] tool-result clearing${emergency ? ' (emergency)' : ''}: `
+              + `freed ~${cleared.charsFreed} chars `
+              + `(${cleared.clearedCount} results; keep=${emergency ? Math.min(2, budget.clearing.keepToolUses) : budget.clearing.keepToolUses})`,
+            )
+          }
+        }
+      }
+      if (messages === event.messages) return undefined
+      return { messages }
     })
 
     // Keep the turn-local flag mutable: agim_exit_plan_mode can explicitly
@@ -789,11 +830,14 @@ export class NativeAgentAdapter implements AgentAdapter {
     let offTrackDetail = ''
     let semanticStuckSoftSteerUsed = false
     let compactionCalls = 0
+    /** At most one mid-turn transcript compact per user message. */
+    let midTurnCompactDone = false
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
     /** Substantive assistant text from hops that also emitted tool calls. */
     const midTurnTexts: string[] = []
+
     const mergeProviderUsage = (usage: {
       promptTokens?: number
       completionTokens?: number
@@ -827,6 +871,15 @@ export class NativeAgentAdapter implements AgentAdapter {
       const resolvedStop = outcome.stopReason
         ?? stopReason
         ?? undefined
+      const contextBudget = (ctxClearCount > 0 || ctxCompactSuccess > 0 || ctxCompactFail > 0)
+        ? {
+            clearCount: ctxClearCount,
+            emergencyClearCount: ctxEmergencyClearCount,
+            compactSuccess: ctxCompactSuccess,
+            compactFail: ctxCompactFail,
+            ...(ctxTokensBefore != null ? { tokensBefore: ctxTokensBefore } : {}),
+          }
+        : undefined
       opts?.onOutcome?.({
         ...outcome,
         ...(resolvedStop ? { stopReason: resolvedStop } : {}),
@@ -834,6 +887,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         toolCalls: dispatchedToolCalls,
         auxModelCalls: compactionCalls + criticCallsFired,
         ...(usage ? { usage } : {}),
+        ...(contextBudget ? { contextBudget } : {}),
       })
     }
 
@@ -863,6 +917,57 @@ export class NativeAgentAdapter implements AgentAdapter {
           preview: step.preview,
         })
       } catch { /* observer must not break the harness loop */ }
+    }
+
+    const runCompactionCycle = async (reason: 'pre-turn' | 'mid-turn'): Promise<void> => {
+      const compactionController = new AbortController()
+      const externalSignal = opts?.signal
+      const forwardCompactionAbort = () => compactionController.abort(externalSignal?.reason)
+      externalSignal?.addEventListener('abort', forwardCompactionAbort, { once: true })
+      if (externalSignal?.aborted) forwardCompactionAbort()
+      const compactionTimeoutMs = Math.max(1, this.deps.streamOptions?.timeoutMs ?? 120_000)
+      const compactionTimer = setTimeout(() => {
+        compactionController.abort(new Error(`compaction timed out after ${compactionTimeoutMs}ms`))
+      }, compactionTimeoutMs)
+      compactionTimer.unref?.()
+      try {
+        const result = await runTranscriptCompaction({
+          session,
+          model: binding.model,
+          getApiKeyAndHeaders: binding.getApiKeyAndHeaders,
+          budget,
+          costKnown: binding.costKnown === true,
+          thinkingLevel,
+          signal: compactionController.signal,
+          customInstructions: budget.compactInstructions,
+          emitActivity: (step) => { emitToolActivity(step) },
+          reason,
+        })
+        if (!result.compacted) return
+        sawUsage = true
+        usageInput += result.approxIn
+        usageOutput += result.approxOut
+        compactionCalls += 1
+        ctxCompactSuccess += 1
+        if (typeof result.tokensBefore === 'number' && Number.isFinite(result.tokensBefore)) {
+          ctxTokensBefore = result.tokensBefore
+        }
+        recordContextCompact({
+          result: 'success',
+          ...(typeof result.tokensBefore === 'number' ? { tokensBefore: result.tokensBefore } : {}),
+        })
+        if (result.estimatedCostUsd != null) usageCost += result.estimatedCostUsd
+      } catch (err) {
+        ctxCompactFail += 1
+        recordContextCompact({ result: 'fail' })
+        console.error(
+          `[agim-agent] compaction skipped (${reason}):`,
+          err instanceof Error ? err.message : String(err),
+        )
+      } finally {
+        clearTimeout(compactionTimer)
+        externalSignal?.removeEventListener('abort', forwardCompactionAbort)
+      }
     }
     const toolStartAt = new Map<string, number>()
 
@@ -1046,6 +1151,30 @@ export class NativeAgentAdapter implements AgentAdapter {
             }
           }
         }
+        // Mid-turn L2: after tools land, if emergency clearing still cannot
+        // fit under window-reserve, summarize before the next model hop.
+        if (
+          !stopReason
+          && !midTurnCompactDone
+          && Array.isArray(event.toolResults)
+          && event.toolResults.length > 0
+          && this.deps.compactionEnabled !== false
+          && budget.compaction.enabled
+          && Number.isFinite(binding.model.contextWindow)
+        ) {
+          try {
+            const live = (await session.buildContext()).messages
+            if (shouldRunMidTurnCompaction(live, budget, binding.model.contextWindow)) {
+              midTurnCompactDone = true
+              await runCompactionCycle('mid-turn')
+            }
+          } catch (err) {
+            console.error(
+              '[agim-agent] mid-turn compaction check skipped:',
+              err instanceof Error ? err.message : String(err),
+            )
+          }
+        }
         return
       }
       if (event.type !== 'message_end' || event.message.role !== 'assistant') return
@@ -1118,65 +1247,26 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
     }
 
-    // Proactive compaction (pi never auto-compacts): if the durable session has
-    // grown past the model window minus reserve, summarize old history BEFORE
-    // this turn so it neither overflows the context nor re-pays for the full
-    // backlog every turn. Best-effort — a failed compaction must not block the
-    // turn (it just runs with the larger context). Off via AGIM_NATIVE_COMPACTION=off.
-    if (this.deps.compactionEnabled !== false && Number.isFinite(binding.model.contextWindow)) {
-      const compactionController = new AbortController()
-      const externalSignal = opts?.signal
-      const forwardCompactionAbort = () => compactionController.abort(externalSignal?.reason)
-      externalSignal?.addEventListener('abort', forwardCompactionAbort, { once: true })
-      if (externalSignal?.aborted) forwardCompactionAbort()
-      const compactionTimeoutMs = Math.max(1, this.deps.streamOptions?.timeoutMs ?? 120_000)
-      const compactionTimer = setTimeout(() => {
-        compactionController.abort(new Error(`compaction timed out after ${compactionTimeoutMs}ms`))
-      }, compactionTimeoutMs)
-      compactionTimer.unref?.()
-      // AgentHarness 0.79.x otherwise passes `undefined` to compact(). Supply a
-      // completed result from the hook so compaction honors caller/timeout abort.
-      const unsubscribeCompaction = harness.on('session_before_compact', async (event) => {
-        const auth = await binding.getApiKeyAndHeaders()
-        const result = await compact(
-          event.preparation,
-          binding.model,
-          auth.apiKey,
-          auth.headers,
-          event.customInstructions,
-          compactionController.signal,
-          undefined,
-        )
-        if (!result.ok) throw result.error
-        return { compaction: result.value }
-      })
+    // Proactive context management (cookbook: clear → compact):
+    //   1) tool-result clearing in the context hook (view-time + emergency)
+    //   2) pre-turn L2 compact when the durable session is already over budget
+    //   3) mid-turn L2 compact from turn_end when tools inflate past the line
+    // Best-effort — failure must not block the turn. Off via AGIM_CTX_COMPACT=off.
+    if (
+      this.deps.compactionEnabled !== false
+      && budget.compaction.enabled
+      && Number.isFinite(binding.model.contextWindow)
+    ) {
       try {
-        const usage = getLastAssistantUsage(await session.getEntries())
-        if (usage && shouldCompact(calculateContextTokens(usage), binding.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
-          const compacted = await harness.compact()
-          // Compaction summarization does not append an assistant usage
-          // row — estimate from tokensBefore + summary length so /stats
-          // still accounts for the auxiliary call.
-          const approxOut = Math.max(1, Math.ceil(compacted.summary.length / 4))
-          const approxIn = Math.max(approxOut, Math.min(compacted.tokensBefore, binding.model.contextWindow))
-          sawUsage = true
-          usageInput += approxIn
-          usageOutput += approxOut
-          compactionCalls += 1
-          if (binding.costKnown) {
-            const estimated = estimateCostUsd(undefined, binding.model.id, {
-              input: approxIn,
-              output: approxOut,
-            })
-            if (estimated != null) usageCost += estimated
-          }
+        const contextTokens = await measureContextTokens(session)
+        if (contextExceedsReserve(contextTokens, binding.model.contextWindow, budget.compaction)) {
+          await runCompactionCycle('pre-turn')
         }
       } catch (err) {
-        console.error('[agim-agent] compaction skipped:', err instanceof Error ? err.message : err)
-      } finally {
-        clearTimeout(compactionTimer)
-        externalSignal?.removeEventListener('abort', forwardCompactionAbort)
-        unsubscribeCompaction()
+        console.error(
+          '[agim-agent] compaction skipped (pre-turn):',
+          err instanceof Error ? err.message : String(err),
+        )
       }
     }
 

@@ -107,3 +107,17 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 - `[agim-agent] tool-result clearing` / `...(emergency)`
 - `[agim-agent] compaction: tokensBefore≈…`
 - `[agim-agent] compaction skipped:`（失败后继续本轮）
+
+## 7. 后续优化（约定优先级）
+
+P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下列顺序推进：
+
+| 序 | 项 | 说明 |
+|----|----|------|
+| **1** | Mid-turn transcript compact | 紧急清 tool 仍不够时，在工具轮之间插一次真正的 summary |
+| **2** | 前瞻预算 | 工具返回后估算下一跳输入，预测会爆再决定清 / 压 |
+| **5** | 指标 | clear / emergency / compact 次数、tokensBefore、失败率 |
+| **7** | 设置页关键旋钮 | 开/关 compact、reserve、keepRecent（带晚压推荐说明） |
+| **8** | 按模型档位预设 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |
+
+其余（单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留别名、Usage 真实 usage）不排进上述主线，有体感再插队。

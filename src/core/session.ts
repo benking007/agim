@@ -107,6 +107,15 @@ function parsePersistedDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+function normalizePersistedCompactRate(
+  raw: unknown,
+): Session['compactRate'] | undefined {
+  if (typeof raw !== 'string') return undefined
+  const s = raw.trim().toLowerCase()
+  if (s === 'full' || s === 'balanced' || s === 'frequent') return s
+  return undefined
+}
+
 function deserializeSession(value: unknown): Session | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const parsed = value as PersistedSession
@@ -134,6 +143,7 @@ function deserializeSession(value: unknown): Session | null {
     agent,
     model: parsed.model,
     variant: parsed.variant,
+    compactRate: normalizePersistedCompactRate(parsed.compactRate),
     usage: parsed.usage,
     createdAt,
     lastActivity,
@@ -382,6 +392,7 @@ class SessionManager {
         copilotSessionId: existing?.copilotSessionId,
         cursorSessionId: existing?.cursorSessionId,
         planMode: existing?.planMode,
+        compactRate: existing?.compactRate,
       }
 
       this.sessions.set(key, session)
@@ -509,7 +520,7 @@ class SessionManager {
    */
   async patchSession(
     platform: string, channelId: string, threadId: string,
-    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode'>>,
+    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'compactRate'>>,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -524,6 +535,14 @@ class SessionManager {
         // a missing field unambiguously mean "off".
         if (patch.planMode) session.planMode = true
         else delete session.planMode
+      }
+      if (patch.compactRate !== undefined) {
+        // auto / empty → drop field (global default); otherwise persist.
+        if (patch.compactRate && patch.compactRate !== 'auto') {
+          session.compactRate = patch.compactRate
+        } else {
+          delete session.compactRate
+        }
       }
       session.lastActivity = new Date()
       this.sessions.set(key, session)
@@ -847,6 +866,8 @@ class SessionManager {
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
         delete session.planMode
+        // Compression rate is also per-conversation; /new returns to auto.
+        delete session.compactRate
         clearPlanModeForThread(key)
         // Drop any per-thread auto-allow approval rules so the new conversation
         // starts back at "ask every time".
@@ -1075,6 +1096,7 @@ class SessionManager {
         agent: session.agent,
         model: session.model,
         variant: session.variant,
+        compactRate: session.compactRate,
         usage: session.usage,
         createdAt: session.createdAt,
         lastActivity: session.lastActivity,

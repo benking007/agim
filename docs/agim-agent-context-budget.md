@@ -117,7 +117,21 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 - `[agim-agent] compaction: tokensBefore≈…`
 - `[agim-agent] compaction skipped:`（失败后继续本轮）
 
-## 7. 指标
+## 7. 会话压缩率（Usage）
+
+全局默认始终是 **自动**（按模型窗口缩放）。用户可在聊天 Usage 面板按**当前会话**覆盖：
+
+| 选项 | id | 含义 |
+|------|-----|------|
+| 自动 | `auto` | 跟随窗口默认 |
+| 满压 | `full` | 接近上限才压 |
+| 均衡 | `balanced` | 中等预留 |
+| 频繁 | `frequent` | 更早、更常压 |
+
+护栏：若某档硬线 `window − reserve` 会低于当前已用（含约 10% 边距），该档在 UI 中禁用。  
+命令：`/ctx auto|full|balanced|frequent`（别名 `/压缩率`）。`/new` 清回自动。
+
+## 8. 指标
 
 进程内计数，经 `GET /api/metrics`（Prometheus）导出；单轮汇总挂在 `AgentTurnOutcome.contextBudget`（无活动时省略）。
 
@@ -129,7 +143,7 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 
 `contextBudget` 字段：`clearCount` / `emergencyClearCount` / `compactSuccess` / `compactFail` / 可选 `tokensBefore`（本轮最后一次成功压缩）。
 
-## 8. 后续优化（约定优先级）
+## 9. 后续优化（约定优先级）
 
 P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下列顺序推进：
 
@@ -139,6 +153,6 @@ P0（晚压 + L1/紧急清理 + Usage 对齐 + 文档）已收口。后续按下
 | **2** | 前瞻预算 | **已做** | `lookahead` 软线提前紧急清理；投影 `current+lookahead` 触发中途 compact |
 | **5** | 指标 | **已做** | Prometheus + `AgentTurnOutcome.contextBudget` |
 | **7** | 设置页关键旋钮 | **已做** | `/settings/llm` → Agim Agent 运行时 →「晚压」卡片（compact / reserve / keepRecent） |
-| **8** | 按模型档位预设 | 待做 | 128K / 200K / 1M 显式 preset（替代仅靠 clamp） |
+| **8** | 会话压缩率 | **已做** | Usage 面板「压缩率」：自动 / 满压 / 均衡 / 频繁（会话覆盖；不安全档禁用） |
 
 其余（单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留别名、Usage 真实 usage）不排进上述主线，有体感再插队。

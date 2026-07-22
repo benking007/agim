@@ -70,6 +70,9 @@ export default function ChatRoute(): JSX.Element {
   const thinkVariant = optimisticThink ?? state.thinkVariant
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
   const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
+  const [optimisticCompactRate, setOptimisticCompactRate] = useState<string | null>(null)
+  const [compactRateBaseline, setCompactRateBaseline] = useState(state.compactRate)
+  const compactRate = optimisticCompactRate ?? state.compactRate
   const [searchParams] = useSearchParams()
   // Clear optimistic overrides when the server session catches up (render-time sync).
   if (state.thinkVariant !== thinkBaseline) {
@@ -79,6 +82,10 @@ export default function ChatRoute(): JSX.Element {
   if (state.sessionModel !== modelBaseline) {
     setModelBaseline(state.sessionModel)
     setOptimisticModel(null)
+  }
+  if (state.compactRate !== compactRateBaseline) {
+    setCompactRateBaseline(state.compactRate)
+    setOptimisticCompactRate(null)
   }
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -275,6 +282,7 @@ export default function ChatRoute(): JSX.Element {
               contextUsed={modelStatus.contextUsed}
               contextWindow={modelStatus.contextWindow}
               breakdown={modelStatus.breakdown}
+              compactRate={compactRate}
               disabled={state.status !== 'open'}
               onConfigureModel={() => setLlmSettingsOpen(true)}
               onSelectModel={(backendName) => {
@@ -293,6 +301,10 @@ export default function ChatRoute(): JSX.Element {
                 if (cmd.startsWith('/think')) {
                   const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
                   setOptimisticThink(level)
+                }
+                if (cmd.startsWith('/ctx')) {
+                  const rate = cmd.replace(/^\/ctx\s*/, '').trim() || 'auto'
+                  setOptimisticCompactRate(rate)
                 }
                 send(cmd)
               }}

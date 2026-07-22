@@ -6,6 +6,7 @@ import {
   applyContextBudgetToMessages,
   clearToolResultsInMessages,
   estimateMessagesTokens,
+  isCompactRateSafe,
   isContextCompactionEnabled,
   isExcludedToolName,
   resolveContextBudgetSettings,
@@ -217,6 +218,23 @@ describe('resolveContextBudgetSettings', () => {
     process.env.AGIM_CTX_CLEAR = 'off'
     const s = resolveContextBudgetSettings(128_000)
     expect(s.clearing.enabled).toBe(false)
+  })
+
+  it('applies session compact-rate overlay (frequent reserves more than full)', () => {
+    const full = resolveContextBudgetSettings(1_000_000, 'full')
+    const frequent = resolveContextBudgetSettings(1_000_000, 'frequent')
+    expect(full.compaction.reserveTokens).toBeLessThan(frequent.compaction.reserveTokens)
+    // 满压 ≈ late default band on 1M
+    expect(full.compaction.reserveTokens).toBeGreaterThanOrEqual(40_000)
+    expect(full.compaction.reserveTokens).toBeLessThanOrEqual(55_000)
+  })
+
+  it('marks frequent unsafe when used tokens already near the window', () => {
+    const auto = resolveContextBudgetSettings(1_000_000)
+    expect(isCompactRateSafe(1_000_000, 50_000, 'frequent', auto.compaction.reserveTokens)).toBe(true)
+    // frequent hard≈780k; 750k×1.1 > 780k → unsafe. full hard≈952k still ok.
+    expect(isCompactRateSafe(1_000_000, 750_000, 'frequent', auto.compaction.reserveTokens)).toBe(false)
+    expect(isCompactRateSafe(1_000_000, 750_000, 'full', auto.compaction.reserveTokens)).toBe(true)
   })
 
   it('disables compaction via AGIM_CTX_COMPACT=off (and legacy alias)', () => {

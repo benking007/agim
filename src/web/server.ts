@@ -5715,6 +5715,10 @@ async function handleClientMessage(
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'think-mode', variant: sess?.variant || 'auto' })
           }
+          if (parsed.type === 'ctx') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({ type: 'compact-rate', rate: sess?.compactRate || 'auto' })
+          }
           if (parsed.type === 'model') {
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'session-model', model: sess?.model || '' })
@@ -5971,6 +5975,7 @@ async function sendSessionHistory(
       planMode: !!history.session.planMode,
       thinkVariant: history.session.variant || 'auto',
       sessionModel: history.session.model || '',
+      compactRate: history.session.compactRate || 'auto',
     })
   }
   const { getActiveRun } = await import('./active-runs.js')

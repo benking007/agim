@@ -42,12 +42,16 @@ export type ChatIncoming =
       planMode?: boolean
       thinkVariant?: string
       sessionModel?: string
+      /** Session compression rate (`auto` | `full` | `balanced` | `frequent`). */
+      compactRate?: string
     }
   | { type: 'plan-mode'; enabled: boolean }
   /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
   | { type: 'think-mode'; variant: string }
   /** Session `/model` backend override (empty = role default). */
   | { type: 'session-model'; model: string }
+  /** Session `/ctx` compression rate. */
+  | { type: 'compact-rate'; rate: string }
   | { type: 'agents'; agents: string[] }
   | { type: 'agent-switched'; agent: string }
   | { type: 'chunk'; text: string; runId?: string }

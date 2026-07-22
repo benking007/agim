@@ -251,6 +251,9 @@ export function AgentPortal(): JSX.Element {
   const thinkVariant = optimisticThink ?? state.thinkVariant
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
   const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
+  const [optimisticCompactRate, setOptimisticCompactRate] = useState<string | null>(null)
+  const [compactRateBaseline, setCompactRateBaseline] = useState(state.compactRate)
+  const compactRate = optimisticCompactRate ?? state.compactRate
   // Clear optimistic overrides when the server session catches up (render-time sync).
   if (state.thinkVariant !== thinkBaseline) {
     setThinkBaseline(state.thinkVariant)
@@ -259,6 +262,10 @@ export function AgentPortal(): JSX.Element {
   if (state.sessionModel !== modelBaseline) {
     setModelBaseline(state.sessionModel)
     setOptimisticModel(null)
+  }
+  if (state.compactRate !== compactRateBaseline) {
+    setCompactRateBaseline(state.compactRate)
+    setOptimisticCompactRate(null)
   }
   // Persist the left rail on large screens (Cursor-like); drawer only below lg.
   useEffect(() => {
@@ -1384,6 +1391,7 @@ export function AgentPortal(): JSX.Element {
               contextUsed={modelStatus.contextUsed}
               contextWindow={modelStatus.contextWindow}
               breakdown={modelStatus.breakdown}
+              compactRate={compactRate}
               disabled={state.status !== 'open'}
               onConfigureModel={() => setLlmSettingsOpen(true)}
               onSelectModel={(backendName) => {
@@ -1402,6 +1410,10 @@ export function AgentPortal(): JSX.Element {
                 if (cmd.startsWith('/think')) {
                   const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
                   setOptimisticThink(level)
+                }
+                if (cmd.startsWith('/ctx')) {
+                  const next = cmd.replace(/^\/ctx\s*/, '').trim() || 'auto'
+                  setOptimisticCompactRate(next)
                 }
                 send(cmd)
               }}

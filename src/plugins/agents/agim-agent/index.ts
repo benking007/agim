@@ -762,8 +762,12 @@ export class NativeAgentAdapter implements AgentAdapter {
     /** Mid-turn soft steers (goal critic) — injected only via the context hook,
      *  never appended as durable user messages. */
     let ephemeralSteer = ''
-    // Snapshot budget knobs once per turn (env can change via /api/env).
-    const budget = resolveContextBudgetSettings(binding.model.contextWindow)
+    // Snapshot budget knobs once per turn (env can change via /api/env;
+    // session compactRate overlays reserve/keep when not auto).
+    const budget = resolveContextBudgetSettings(
+      binding.model.contextWindow,
+      opts?.compactRate,
+    )
     let contextClearEvents = 0
     let ctxClearCount = 0
     let ctxEmergencyClearCount = 0

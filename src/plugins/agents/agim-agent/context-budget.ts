@@ -120,8 +120,98 @@ export function clampToWindowShare(
   return Math.min(target, shareCap)
 }
 
-/** Resolve budget knobs from env. Safe to call every turn (no process cache). */
-export function resolveContextBudgetSettings(contextWindow?: number): ContextBudgetSettings {
+/**
+ * Session-scoped compression-rate preset (压缩率).
+ * Global default is always `auto` (window-scaled env defaults).
+ *   - full (满压): wait until near full window before L2 compact
+ *   - balanced (均衡): mid reserve
+ *   - frequent (频繁): compact earlier / more often
+ */
+export type CompactRate = 'auto' | 'full' | 'balanced' | 'frequent'
+
+export const COMPACT_RATE_IDS: readonly CompactRate[] = [
+  'auto', 'full', 'balanced', 'frequent',
+] as const
+
+/** Reserve as a share of the model window (before clamp). Keep SPA mirror in sync. */
+export const COMPACT_RATE_RESERVE_SHARE: Record<Exclude<CompactRate, 'auto'>, number> = {
+  full: 0.048,
+  balanced: 0.12,
+  frequent: 0.22,
+}
+
+export const COMPACT_RATE_KEEP_SHARE: Record<Exclude<CompactRate, 'auto'>, number> = {
+  full: 0.032,
+  balanced: 0.06,
+  frequent: 0.05,
+}
+
+/** Extra headroom when judging whether a rate is safe vs current used tokens. */
+export const COMPACT_RATE_USED_SAFETY = 1.1
+
+export function normalizeCompactRate(raw: string | undefined | null): CompactRate {
+  const s = (raw || '').trim().toLowerCase()
+  if (!s || s === 'auto' || s === '自动') return 'auto'
+  if (s === 'full' || s === 'late' || s === '满压') return 'full'
+  if (s === 'balanced' || s === 'balance' || s === '均衡') return 'balanced'
+  if (s === 'frequent' || s === '频繁') return 'frequent'
+  return 'auto'
+}
+
+export function reserveTokensForCompactRate(
+  contextWindow: number,
+  rate: CompactRate,
+  autoReserve: number,
+): number {
+  if (rate === 'auto') return autoReserve
+  const window = Math.max(1, contextWindow)
+  const target = Math.floor(window * COMPACT_RATE_RESERVE_SHARE[rate])
+  return clampToWindowShare(Math.max(4_096, target), window, 0.25, 4_096)
+}
+
+export function keepRecentTokensForCompactRate(
+  contextWindow: number,
+  rate: CompactRate,
+  autoKeep: number,
+): number {
+  if (rate === 'auto') return autoKeep
+  const window = Math.max(1, contextWindow)
+  const target = Math.floor(window * COMPACT_RATE_KEEP_SHARE[rate])
+  return clampToWindowShare(Math.max(4_096, target), window, 0.20, 4_096)
+}
+
+/** Hard line for a compact-rate choice (uses auto reserve when rate=auto). */
+export function hardLineForCompactRate(
+  contextWindow: number,
+  rate: CompactRate,
+  autoReserve: number,
+): number {
+  return hardBudgetLine(
+    contextWindow,
+    reserveTokensForCompactRate(contextWindow, rate, autoReserve),
+  )
+}
+
+/**
+ * True when choosing `rate` would keep the hard line at/above current used
+ * (with safety margin). Approximate SPA estimates should pass used*margin.
+ */
+export function isCompactRateSafe(
+  contextWindow: number,
+  usedTokens: number,
+  rate: CompactRate,
+  autoReserve: number,
+  safety = COMPACT_RATE_USED_SAFETY,
+): boolean {
+  const used = Math.max(0, usedTokens) * Math.max(1, safety)
+  return hardLineForCompactRate(contextWindow, rate, autoReserve) >= used
+}
+
+/** Resolve budget knobs from env (+ optional session compact-rate overlay). */
+export function resolveContextBudgetSettings(
+  contextWindow?: number,
+  compactRate?: CompactRate | string | null,
+): ContextBudgetSettings {
   const window = Number.isFinite(contextWindow) && (contextWindow as number) > 0
     ? (contextWindow as number)
     : 1_000_000
@@ -141,18 +231,26 @@ export function resolveContextBudgetSettings(contextWindow?: number): ContextBud
   const defaultReserve = clampToWindowShare(DEFAULT_COMPACT_RESERVE_TOKENS, window, 0.25, 8_192)
   const defaultKeep = clampToWindowShare(DEFAULT_COMPACT_KEEP_RECENT_TOKENS, window, 0.20, 8_192)
 
-  const reserveTokens = envInt(
+  let reserveTokens = envInt(
     'AGIM_CTX_COMPACT_RESERVE_TOKENS',
     defaultReserve,
     4_096,
     256_000,
   )
-  const keepRecentTokens = envInt(
+  let keepRecentTokens = envInt(
     'AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS',
     defaultKeep,
     4_096,
     200_000,
   )
+
+  // Session overlay: non-auto rates replace reserve/keep (env still wins for auto).
+  const rate = normalizeCompactRate(compactRate)
+  if (rate !== 'auto') {
+    reserveTokens = reserveTokensForCompactRate(window, rate, reserveTokens)
+    keepRecentTokens = keepRecentTokensForCompactRate(window, rate, keepRecentTokens)
+  }
+
   // Default lookahead ≈ half reserve (capped); AGIM_CTX_LOOKAHEAD_TOKENS=0 disables.
   const defaultLookahead = Math.min(
     DEFAULT_LOOKAHEAD_TOKENS,

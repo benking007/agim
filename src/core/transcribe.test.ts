@@ -3,11 +3,24 @@
 // a real binary; we lean on the type-system + manual verification for it.
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const TEST_ROOT = join(tmpdir(), `agim-transcribe-test-${process.pid}`)
+
+/** Create real on-disk whisper.cpp bin+model stubs for readiness checks. */
+async function touchWhisperCppPair(): Promise<{ bin: string; model: string }> {
+  await mkdir(TEST_ROOT, { recursive: true })
+  const bin = join(TEST_ROOT, 'whisper-cli')
+  const model = join(TEST_ROOT, 'ggml-base.bin')
+  await writeFile(bin, '#!/bin/sh\n')
+  await chmod(bin, 0o755)
+  await writeFile(model, 'fake-model')
+  process.env.AGIM_STT_WHISPERCPP_BIN = bin
+  process.env.AGIM_STT_WHISPERCPP_MODEL = model
+  return { bin, model }
+}
 
 /** Minimal 16 kHz mono PCM WAV (~0.05s silence) — no ffmpeg required. */
 async function writeMinimalWav(path: string): Promise<void> {
@@ -118,23 +131,23 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('none')
   })
 
-  it('honors explicit AGIM_STT_PROVIDER when that vendor is configured', () => {
+  it('honors explicit AGIM_STT_PROVIDER when that vendor is configured', async () => {
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     process.env.AGIM_STT_PROVIDER = 'openai'
     expect(detectProvider()).toBe('openai')
-    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    await touchWhisperCppPair()
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
     process.env.AGIM_STT_PROVIDER = 'none'
     expect(detectProvider()).toBe('none')
   })
 
-  it('ignores unconfigured AGIM_STT_PROVIDER=whispercpp pin (no host BIN)', () => {
+  it('honors AGIM_STT_PROVIDER=whispercpp pin as built-in local engine', () => {
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
-    expect(detectProvider()).toBe('none')
+    expect(detectProvider()).toBe('whispercpp')
+    // Cloud keys must not steal an explicit whisper.cpp pin.
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
-    expect(detectProvider()).toBe('openai')
+    expect(detectProvider()).toBe('whispercpp')
   })
 
   it('falls back to openai when AGIM_STT_OPENAI_API_KEY is set', () => {
@@ -142,9 +155,8 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('openai')
   })
 
-  it('falls back to whispercpp when bin + model are set', () => {
-    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+  it('falls back to whispercpp when bin + model are set', async () => {
+    await touchWhisperCppPair()
     expect(detectProvider()).toBe('whispercpp')
   })
 
@@ -178,11 +190,10 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('stepfun')
   })
 
-  it('auto-picks any cloud provider before whispercpp fallback', () => {
+  it('auto-picks any cloud provider before whispercpp fallback', async () => {
     process.env.AGIM_STT_BAIDU_API_KEY = 'ak'
     process.env.AGIM_STT_BAIDU_SECRET_KEY = 'sk'
-    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    await touchWhisperCppPair()
     expect(detectProvider()).toBe('baidu')
   })
 
@@ -229,18 +240,17 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('stepfun')
   })
 
-  it('explicit configured override wins over auto-detection', () => {
+  it('explicit configured override wins over auto-detection', async () => {
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
-    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    await touchWhisperCppPair()
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
   })
 
-  it('unconfigured explicit pin falls through to auto cloud', () => {
+  it('explicit whispercpp pin wins over configured cloud keys', () => {
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
-    expect(detectProvider()).toBe('openai')
+    expect(detectProvider()).toBe('whispercpp')
   })
 
   it('ignores pre-release short STT names (no legacy fallback)', () => {
@@ -284,15 +294,14 @@ describe('transcribe — settings UI provider order', () => {
     ])
   })
 
-  it('puts active + other configured ahead of missing, preserving priority', () => {
+  it('puts active + other configured ahead of missing, preserving priority', async () => {
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-key'
     process.env.AGIM_STT_MIMO_API_KEY = 'mimo-key'
     process.env.AGIM_STT_STEPFUN_API_KEY = 'step-key'
     process.env.AGIM_STT_BAIDU_API_KEY = 'ak'
     process.env.AGIM_STT_BAIDU_SECRET_KEY = 'sk'
-    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    await touchWhisperCppPair()
     // auto → baidu (ahead of stepfun / mimo / glm / openai / whispercpp)
     const { providers, active } = listTranscribeProviders()
     expect(active).toBe('baidu')
@@ -388,21 +397,13 @@ describe('transcribe — Auto failover across configured providers', () => {
     expect(hits.some((u) => u.includes('/audio/transcriptions'))).toBe(true)
   })
 
-  it('unconfigured whispercpp pin falls through to Auto cloud', async () => {
+  it('whispercpp pin does not silently fall through to Auto cloud', async () => {
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     const audioPath = join(TEST_ROOT, 'unpin.wav')
     await writeMinimalWav(audioPath)
 
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ text: 'unpinned ok' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })) as unknown as typeof fetch
-
-    const result = await transcribe(audioPath)
-    expect(result.provider).toBe('openai')
-    expect(result.text).toBe('unpinned ok')
+    await expect(transcribe(audioPath)).rejects.toThrow(/whisper|Local whisper|whisper-cli|\.agim\/whisper/i)
   })
 
   it('does not failover when AGIM_STT_PROVIDER pins a configured vendor', async () => {

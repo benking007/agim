@@ -164,11 +164,15 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('mimo')
   })
 
-  it('treats STEPFUN_API_KEY / STEP_API_KEY as configured for stepfun', () => {
-    process.env.STEPFUN_API_KEY = 'legacy-step'
-    expect(detectProvider()).toBe('stepfun')
+  it('does not treat LLM STEPFUN_API_KEY / STEP_API_KEY as STT-configured', () => {
+    // Those vendor envs are for chat backends (llm/secrets). STT must use
+    // the dedicated AGIM_STEPFUN_API_KEY so /settings/stt does not lie.
+    process.env.STEPFUN_API_KEY = 'llm-only-step'
+    expect(detectProvider()).toBe('none')
     delete process.env.STEPFUN_API_KEY
-    process.env.STEP_API_KEY = 'alt-step'
+    process.env.STEP_API_KEY = 'alt-llm-step'
+    expect(detectProvider()).toBe('none')
+    process.env.AGIM_STEPFUN_API_KEY = 'stt-step'
     expect(detectProvider()).toBe('stepfun')
   })
 

@@ -8,7 +8,9 @@
  *   model=stepaudio-2.5-asr, response_format=json, file=<audio>
  *
  * Env:
- *   AGIM_STEPFUN_API_KEY           — preferred; falls back to STEPFUN_API_KEY / STEP_API_KEY
+ *   AGIM_STEPFUN_API_KEY           — STT-only. Do NOT reuse STEPFUN_API_KEY from LLM
+ *                                    (that vendor env is for chat backends and would
+ *                                    falsely mark ASR as "configured").
  *   AGIM_STEPFUN_BASE_URL          — optional, default https://api.stepfun.com/v1
  *   AGIM_STEPFUN_TRANSCRIBE_MODEL  — optional, default stepaudio-2.5-asr
  *
@@ -27,12 +29,10 @@ const DEFAULT_MODEL = 'stepaudio-2.5-asr'
 const TIMEOUT_MS = 60_000
 
 function resolveApiKey(): string | undefined {
-  return (
-    process.env.AGIM_STEPFUN_API_KEY?.trim()
-    || process.env.STEPFUN_API_KEY?.trim()
-    || process.env.STEP_API_KEY?.trim()
-    || undefined
-  )
+  // Intentionally STT-scoped. LLM secrets may export STEPFUN_API_KEY for
+  // chat backends; sharing that here made /settings/stt show StepFun ASR as
+  // "configured / in use" even when the operator never set up speech.
+  return process.env.AGIM_STEPFUN_API_KEY?.trim() || undefined
 }
 
 export function isStepfunSpeechConfigured(): boolean {
@@ -42,7 +42,7 @@ export function isStepfunSpeechConfigured(): boolean {
 export async function transcribeWithStepfun(filePath: string, _opts?: { language?: string }): Promise<string> {
   const key = resolveApiKey()
   if (!key) {
-    throw new TranscribeError('AGIM_STEPFUN_API_KEY (or STEPFUN_API_KEY) not set', 'stepfun')
+    throw new TranscribeError('AGIM_STEPFUN_API_KEY not set', 'stepfun')
   }
 
   const baseURL = (process.env.AGIM_STEPFUN_BASE_URL?.trim() || DEFAULT_BASE).replace(/\/$/, '')

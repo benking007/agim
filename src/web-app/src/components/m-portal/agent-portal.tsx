@@ -74,6 +74,7 @@ import {
 import { PortalUserContent } from './portal-user-content'
 import { VoiceInputOverlay, type VoiceInputPhase } from './voice-input-overlay'
 import {
+  getVoiceRecordingBlockReason,
   isVoiceRecordingSupported,
   transcribeVoiceBlob,
   VoiceRecorder,
@@ -753,9 +754,25 @@ export function AgentPortal(): JSX.Element {
 
   const onVoicePointerDown = useCallback(async (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (canStop || uploading || voicePhase === 'transcribing') return
+    const voiceBlock = getVoiceRecordingBlockReason()
+    if (voiceBlock) {
+      const msg = voiceBlock === 'insecure'
+        ? t('chat.portal.voiceInsecure', {
+          defaultValue: '当前不是安全上下文，浏览器禁止录音。请用 https:// 打开（不要用 http://），或用 localhost',
+        })
+        : voiceBlock === 'no-mediarecorder'
+          ? t('chat.portal.voiceNoMediaRecorder', {
+            defaultValue: '当前浏览器/壳不支持 MediaRecorder（常见于旧版 iOS Safari）。请升级系统，或改用桌面 Chrome/Edge',
+          })
+          : t('chat.portal.voiceNoMediaDevices', {
+            defaultValue: '无法访问麦克风 API（mediaDevices）。请确认用 https 打开、未禁用麦克风权限，且不在无权限的 iframe 内',
+          })
+      toast.error(msg)
+      return
+    }
     if (!isVoiceRecordingSupported()) {
       toast.error(t('chat.portal.voiceUnsupported', {
-        defaultValue: '当前环境不支持录音（需要 HTTPS / 本地安全上下文）',
+        defaultValue: '当前环境不支持录音',
       }))
       return
     }

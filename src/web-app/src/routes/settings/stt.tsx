@@ -81,7 +81,7 @@ const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?:
   },
   AGIM_STEPFUN_API_KEY: {
     title: 'API Key',
-    hint: '阶跃星辰开放平台 API Key（也可用 STEPFUN_API_KEY / STEP_API_KEY）',
+    hint: '专用于语音转写的阶跃 Key（勿与 LLM 的 STEPFUN_API_KEY 混用）',
     placeholder: '...',
   },
   AGIM_STEPFUN_BASE_URL: {
@@ -136,7 +136,7 @@ const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?:
   },
   AGIM_STEPFUN_API_KEY: {
     title: 'API Key',
-    hint: 'StepFun API Key (or STEPFUN_API_KEY / STEP_API_KEY)',
+    hint: 'STT-only StepFun key (do not reuse LLM STEPFUN_API_KEY)',
     placeholder: '...',
   },
   AGIM_STEPFUN_BASE_URL: {

@@ -1,7 +1,7 @@
 # 设计：梦境蒸馏（Dream Distillation）+ 可配置蒸馏 LLM
 
 > **归档草案** · 状态：草案 v1（待评审 / 未落地为现行指南）。  
-> 现行记忆行为见 [`memory-and-vector.md`](./memory-and-vector.md)。
+> 现行记忆行为见 [`memory-and-vector.md`](../memory-and-vector.md)。
 
 状态：草案 v1（待评审）· 关联：长期记忆子系统（`src/core/memory*.ts`、`src/core/persona.ts`）
 

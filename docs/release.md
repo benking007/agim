@@ -2,15 +2,20 @@
 
 本文记录 Agim 的 npm 发布流程，避免因为上下文过长忘记关键细节。
 
-Agim 的正式 npm 包名是 `agim-cli`。发布不是靠 tag 触发，而是靠 `.github/workflows/release.yml`：当 `package.json` 在 `main` 分支发生变更并被 push 后，GitHub Actions 运行 `Publish to npm`，再由 workflow 执行 `npm publish --access public`。
+Agim 的正式 npm 包名是 `agim-cli`。发布不是靠 git tag，而是靠 `.github/workflows/release.yml`。
+
+**首选路径**：PR 合入 `main` → **Auto Version Bump** 工作流 patch `package.json` → 同一工作流以 `workflow_call` 调用 Publish。注意：仅 bot 推送的 bump commit **不会**单独触发 push 型 Publish 钩子；必须走 `workflow_call`（或下方手动入口），否则会出现 git 版本领先 npm 的漂移。
+
+**手动 / 回退**：在非 bot 的 `main` 提交里 bump `package.json`（+ lockfile），或在 Actions 里对 “Publish to npm” 执行 `workflow_dispatch`。
 
 ## 快速结论
 
-- 发布入口：push 到 `main`。
+- 发布入口：合入 `main` 后的 Auto Version Bump（`workflow_call`），或手动 `workflow_dispatch` / 非 bot 的 version bump push。
 - 必须变更：`package.json` 的 `version`。
 - 应同步变更：`package-lock.json` 的版本字段。
 - 不需要本机执行：`npm publish`。
 - 不依赖 tag：推 tag 不会触发正式发布。
+- 发布后核对：Actions 绿灯 **且** `npm view agim-cli version` 与 `package.json` 一致；本地可用 `npm run check:npm-drift`。
 - 不要求本机 `npm whoami`：发布凭据在 GitHub Actions 里，通过 `NPM_TOKEN` / trusted publishing 路径完成。
 
 ## 标准发布流程

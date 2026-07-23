@@ -7,6 +7,7 @@ import {
   rename,
   rm,
   stat,
+  writeFile,
   type FileHandle,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -162,25 +163,28 @@ async function acquireConfigLock(
   const staleLockMs = options.staleLockMs ?? DEFAULT_STALE_LOCK_MS
   const deadline = Date.now() + timeoutMs
   const token = `${process.pid}:${randomUUID()}`
+  const payload = JSON.stringify({ pid: process.pid, token, createdAt: Date.now() })
   let delayMs = 10
 
   while (true) {
-    let handle: FileHandle | undefined
     try {
-      handle = await open(lockPath, 'wx', 0o600)
-      await handle.writeFile(JSON.stringify({ pid: process.pid, token, createdAt: Date.now() }), 'utf-8')
-      await handle.sync()
+      // Single O_EXCL write — avoids an empty-file window between open(wx) and writeFile
+      // that let waiters observe partial JSON during multi-process stress.
+      await writeFile(lockPath, payload, { flag: 'wx', mode: 0o600 })
       return async () => {
-        try { await handle?.close() } catch { /* best-effort */ }
         try {
-          const owner = JSON.parse(await readFile(lockPath, 'utf-8')) as { token?: unknown }
+          const raw = await readFile(lockPath, 'utf-8')
+          if (!raw.trim()) return
+          const owner = JSON.parse(raw) as { token?: unknown }
           if (owner.token === token) await rm(lockPath, { force: true })
         } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+          // Best-effort unlock: never fail the transaction because another waiter
+          // reclaimed/replaced the lock file mid-release.
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+          if (err instanceof SyntaxError) return
         }
       }
     } catch (err) {
-      try { await handle?.close() } catch { /* best-effort */ }
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
       if (await canReclaimLock(lockPath, staleLockMs)) {
         await rm(lockPath, { force: true }).catch(() => {})

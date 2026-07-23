@@ -149,7 +149,7 @@ describe('whisper.cpp built-in resolve', () => {
     const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 5}`)
     // Stub fetch so we don't hit the network in unit tests.
     const originalFetch = globalThis.fetch
-    globalThis.fetch = (async () => new Response(Buffer.alloc(1_500_000), { status: 200 })) as typeof fetch
+    globalThis.fetch = (async () => new Response(Buffer.alloc(1_500_000), { status: 200 })) as unknown as typeof fetch
     try {
       const start = mod.startWhisperModelDownload()
       expect(start.alreadyReady).toBe(false)

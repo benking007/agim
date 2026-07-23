@@ -5,7 +5,7 @@
 
 ## 当前建议
 
-- 架构理解：`docs/architecture-bridge-and-native.md`
+- 架构理解：`docs/architecture-bridge-and-agim-agent.md`
 - 配置与操作：`README.md` / `README.zh-CN.md`
 - 版本轨迹：`CHANGELOG.md`
 

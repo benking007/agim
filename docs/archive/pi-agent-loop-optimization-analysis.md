@@ -5,7 +5,7 @@
 > 路径已迁：文中历史链接指向的 `src/plugins/agents/agim-agent/` 现为  
 > [`src/plugins/agents/agim-agent/`](../src/plugins/agents/agim-agent/)。  
 > **已部分过时**：Agim Agent JSONL 退役 / quarantine 已在后续版本落地  
-> （见 [`session-model.md`](./session-model.md) §九 · [`tech-debt.md`](./tech-debt.md)）。  
+> （见 [`session-model.md`](../session-model.md) §九 · [`tech-debt.md`](../tech-debt.md)）。  
 > 工具前缀现以 `agim_*` 为主（`native_*` 仍为 dispatch 别名）。  
 > 现行能力与排障请以 README、`session-model.md`、CHANGELOG 为准。
 

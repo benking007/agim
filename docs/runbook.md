@@ -407,4 +407,4 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3000/api/config | jq '.f
 - [`docs/memory-and-vector.md`](./memory-and-vector.md) — 长期记忆与向量召回
 - [`docs/im-workspaces-guide.md`](./im-workspaces-guide.md) — IM 工作区
 - [`docs/session-model.md`](./session-model.md) — 会话模型（含 Web Chat 恢复）
-- （历史）[`docs/task-recovery-plan.md`](./task-recovery-plan.md) — 任务恢复早期设计（已归档）
+- （历史）[`docs/archive/task-recovery-plan.md`](./archive/task-recovery-plan.md) — 任务恢复早期设计（已归档）

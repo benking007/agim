@@ -11,7 +11,7 @@ Agim 的核心定位是“把各类 IM 连接到各类 Agent”。接入新 agen
 | 类型 | 例子 | 接入方式 |
 |---|---|---|
 | CLI agent | Claude Code、Codex、OpenCode、Cursor、Antigravity、Kimi Code、Qoder、PI、MiMo Code、Gemini CLI、Qwen Code | 实现 `AgentAdapter`，通常继承 `AgentBase`，每轮 spawn CLI |
-| In-process agent | Agim Agent / native | 直接在 Agim 进程内调用 LLM loop 和 tool dispatcher |
+| In-process agent | Agim Agent（`agim`，别名 `native`） | 直接在 Agim 进程内调用 LLM loop 和 tool dispatcher |
 | Remote agent | ACP endpoint、托管 agent 服务 | 通过 HTTP/ACP 客户端实现 `AgentAdapter` |
 | Prompt-only bridge | 不支持非交互、工具或 MCP 的 CLI | 只能降级为对话桥接，UI/文档必须明确能力受限 |
 
@@ -181,9 +181,9 @@ Plan/read-only：
 
 接入新 agent 时必须判断工具注入能力，不支持也要明确记录。
 
-### 6.1 Native / Agim Agent
+### 6.1 Agim Agent
 
-Native 走内部工具注册表：
+Agim Agent 走内部工具注册表：
 
 ```text
 src/plugins/agents/agim-agent-shared/tool-registry.ts

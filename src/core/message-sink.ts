@@ -10,7 +10,7 @@
 //     queue on failure). A background worker drains the queue with
 //     exponential backoff. Replies survive crashes and reconnects.
 //
-// Design constraints (per docs/task-recovery-plan.md):
+// Design constraints (per docs/archive/task-recovery-plan.md):
 //   - Reminder polish, memo polish, and any other content-shaping logic
 //     happens *upstream* of sink — sink only receives plain payload + IM
 //     coordinates. Don't add transformations here.

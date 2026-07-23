@@ -1,7 +1,7 @@
 # ADR-0001: Agent Base Abstraction
 
 - **日期**：2026-04-30
-- **状态**：提议（Phase 1 后续批次落地）
+- **状态**：已实施（`src/core/agent-base.ts`；各 CLI / ACP adapter 继承）
 
 ---
 

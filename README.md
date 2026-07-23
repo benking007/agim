@@ -148,7 +148,7 @@ Secrets are stored separately from this file.
 
 - Deployment guide: `docs/deployment.md`
 - Runbook: `docs/runbook.md`
-- Architecture stance: `docs/architecture-bridge-and-native.md`
+- Architecture stance: `docs/architecture-bridge-and-agim-agent.md`
 - Full changelog: `CHANGELOG.md`
 
 ## Docs index

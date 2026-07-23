@@ -141,6 +141,18 @@ OpenAI / Anthropic **不再**作为内置预设；用 `custom` 填入兼容 `bas
 | vLLM | openai-compat | `http://localhost:8000/v1` |
 | 自定义 OpenAI / Anthropic 兼容 | openai-compat / anthropic | 例如 `https://api.openai.com/v1` 或 `https://api.anthropic.com` |
 
+### 5.3 URL 安全（SSRF）
+
+写入 `baseUrl`（以及 MCP HTTP URL）时会走与 ACP 相同的 `assertSafeAcpUrl` 校验：拒绝非 http(s)、userinfo、解析到私网 / 回环 / 链路本地 / 云 metadata 的地址。
+
+| 场景 | 做法 |
+|------|------|
+| 公网 HTTPS API | 直接配置即可 |
+| 本机 Ollama / 局域网 vLLM | 启动前设 `AGIM_URL_ALLOW_PRIVATE=1`（或开发用 `AGIM_ACP_ALLOW_LOOPBACK=1`） |
+| DNS 解析失败 | 配置保存失败（fail-closed）；检查主机名是否可达 |
+
+组删除：设置页按品牌删组时走 `DELETE /api/llm/backends?label=` / `?names=`（原子事务），不必逐条 DELETE。
+
 ## 6. 角色绑定（可选）
 
 常见角色：
@@ -183,8 +195,9 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 
 1. `llmBackends` 是否至少有一项
 2. 对应 API key 是否存在（环境变量或 secrets 文件）
-3. `baseUrl` 是否可访问
+3. `baseUrl` 是否可访问；本机/私网是否已设 `AGIM_URL_ALLOW_PRIVATE=1`
 4. `model` 是否存在/可用
+5. 保存时报 SSRF / `dns_failed`：见 §5.3
 
 ### 9.2 刚保存配置但 Agim Agent 仍不可用
 
@@ -212,7 +225,7 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 ## 11. 相关文档
 
 - 上下文预算（晚压 / 清 tool / 中途 compact / 会话压缩率）：`agim-agent-context-budget.md`
-- 架构立场：`architecture-bridge-and-native.md`
+- 架构立场：`architecture-bridge-and-agim-agent.md`
 - 部署：`deployment.md`
 - 安全：`security-hardening.md`
 - 版本变更：`../CHANGELOG.md`

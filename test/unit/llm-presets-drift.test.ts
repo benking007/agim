@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { LLM_PRESETS as core } from '../../src/core/llm/presets.ts'
-import { LLM_PRESETS as spa } from '../../src/web-app/src/lib/llm-presets.ts'
+import { LLM_PRESETS as core } from '../../src/core/llm/presets.js'
+import { LLM_PRESETS as spa } from '../../src/web-app/src/lib/llm-presets.js'
 
 describe('llm presets SPA↔core drift', () => {
   it('SPA fallback keys match core order and identity fields', () => {
@@ -21,7 +21,7 @@ describe('llm presets SPA↔core drift', () => {
       expect(s.cheapModel).toBe(c.cheapModel)
       expect([...(s.models ?? [])]).toEqual([...(c.models ?? [])])
       expect(s.baseName).toBe(c.baseName)
-      expect(s.defaultThinking).toBe(c.defaultThinking)
+      expect(s.defaultThinking as string | undefined).toBe(c.defaultThinking as string | undefined)
     }
   })
 })

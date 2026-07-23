@@ -35,6 +35,10 @@ const ENV_KEYS = [
   'AGIM_ZHIPU_API_KEY',
   'AGIM_ZHIPU_BASE_URL',
   'AGIM_ZHIPU_TRANSCRIBE_MODEL',
+  'AGIM_MIMO_API_KEY',
+  'MIMO_API_KEY',
+  'AGIM_MIMO_BASE_URL',
+  'AGIM_MIMO_TRANSCRIBE_MODEL',
 ]
 
 function clearEnv(): void {
@@ -80,7 +84,7 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('whispercpp')
   })
 
-  it('honors explicit baidu / tencent / iflytek / glm', () => {
+  it('honors explicit baidu / tencent / iflytek / glm / mimo', () => {
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'baidu'
     expect(detectProvider()).toBe('baidu')
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'tencent'
@@ -89,6 +93,8 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('iflytek')
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'glm'
     expect(detectProvider()).toBe('glm')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'mimo'
+    expect(detectProvider()).toBe('mimo')
   })
 
   it('auto-picks any cloud provider before whispercpp fallback', () => {
@@ -99,10 +105,13 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('baidu')
   })
 
-  it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > glm > openai)', () => {
+  it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > mimo > glm > openai)', () => {
     process.env.OPENAI_API_KEY = 'sk-test'
     process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
     expect(detectProvider()).toBe('glm')
+
+    process.env.AGIM_MIMO_API_KEY = 'mimo-key'
+    expect(detectProvider()).toBe('mimo')
 
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
@@ -116,6 +125,11 @@ describe('transcribe — detectProvider', () => {
     process.env.AGIM_IFLYTEK_API_KEY = 'ak'
     process.env.AGIM_IFLYTEK_API_SECRET = 'sk'
     expect(detectProvider()).toBe('iflytek')
+  })
+
+  it('treats MIMO_API_KEY as configured for mimo', () => {
+    process.env.MIMO_API_KEY = 'legacy-mimo'
+    expect(detectProvider()).toBe('mimo')
   })
 
   it('explicit override wins over auto-detection', () => {
@@ -150,23 +164,25 @@ describe('transcribe — settings UI provider order', () => {
     const { providers, active } = listTranscribeProviders()
     expect(active).toBe('none')
     expect(providers.map((p) => p.id)).toEqual([
-      'iflytek', 'tencent', 'baidu', 'glm', 'openai', 'whispercpp',
+      'iflytek', 'tencent', 'baidu', 'mimo', 'glm', 'openai', 'whispercpp',
     ])
   })
 
   it('puts active + other configured ahead of missing, preserving priority', () => {
     process.env.OPENAI_API_KEY = 'sk-test'
     process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.AGIM_MIMO_API_KEY = 'mimo-key'
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
     process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
     process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
-    // auto → baidu (ahead of glm / openai / whispercpp)
+    // auto → baidu (ahead of mimo / glm / openai / whispercpp)
     const { providers, active } = listTranscribeProviders()
     expect(active).toBe('baidu')
     expect(providers.map((p) => p.id)).toEqual([
       'baidu',      // active
-      'glm',        // configured, ahead of openai
+      'mimo',
+      'glm',
       'openai',
       'whispercpp', // configured fallback
       'iflytek',    // missing
@@ -372,5 +388,63 @@ describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
     await transcribe(silenceWav, { provider: 'glm' })
     expect(capturedUrl).toContain('api.z.ai')
     expect(capturedModel).toBe('glm-asr-2512')
+  })
+})
+
+describe('transcribe — mimo path with mocked fetch', () => {
+  let originalFetch: typeof fetch
+  let saved: Record<string, string | undefined>
+  let silenceWav = ''
+
+  beforeAll(async () => {
+    await mkdir(TEST_ROOT, { recursive: true })
+    silenceWav = join(TEST_ROOT, 'mimo-silence.wav')
+    const { spawnSync } = await import('node:child_process')
+    const r = spawnSync('ffmpeg', [
+      '-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.2',
+      '-c:a', 'pcm_s16le', silenceWav,
+    ], { encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`ffmpeg fixture failed: ${r.stderr}`)
+  })
+  afterAll(async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
+  })
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+    process.env.AGIM_MIMO_API_KEY = 'mimo-test-key'
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('posts chat/completions with input_audio and returns content', async () => {
+    let capturedReq: Request | null = null
+    let capturedBody: Record<string, unknown> | null = null
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedReq = new Request(input as string, init)
+      capturedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '  小米你好  ' } }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+
+    const result = await transcribe(silenceWav, { provider: 'mimo', language: 'zh' })
+    expect(result.text).toBe('小米你好')
+    expect(result.provider).toBe('mimo')
+    expect(capturedReq!.url).toBe('https://api.xiaomimimo.com/v1/chat/completions')
+    expect(capturedReq!.headers.get('authorization')).toBe('Bearer mimo-test-key')
+    expect(capturedReq!.headers.get('api-key')).toBe('mimo-test-key')
+    expect(capturedBody!.model).toBe('mimo-v2.5-asr')
+    expect((capturedBody!.asr_options as { language: string }).language).toBe('zh')
+    const messages = capturedBody!.messages as Array<{ content: Array<{ input_audio: { data: string } }> }>
+    expect(messages[0].content[0].input_audio.data.startsWith('data:audio/wav;base64,')).toBe(true)
   })
 })

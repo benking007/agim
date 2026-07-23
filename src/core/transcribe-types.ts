@@ -5,6 +5,7 @@ export type TranscribeProvider =
   | 'tencent'
   | 'iflytek'
   | 'glm'
+  | 'mimo'
   | 'none'
 
 export interface TranscribeResult {
@@ -39,6 +40,7 @@ export const ALL_TRANSCRIBE_PROVIDERS: Exclude<TranscribeProvider, 'none'>[] = [
   'iflytek',    // strongest Chinese oral / dictation
   'tencent',    // stable cloud + monthly free quota
   'baidu',      // mature Mandarin short ASR
+  'mimo',       // MiMo-V2.5-ASR — Chinese + dialects, noise-robust
   'glm',        // Zhipu GLM-ASR — solid Chinese, strong cost
   'openai',     // multilingual; weaker Chinese CER; paid
   'whispercpp', // local offline fallback only

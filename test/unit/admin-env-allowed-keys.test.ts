@@ -76,9 +76,6 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_IFLYTEK_APP_ID',
     'AGIM_IFLYTEK_API_KEY',
     'AGIM_IFLYTEK_API_SECRET',
-    'AGIM_WHISPERCPP_BIN',
-    'AGIM_WHISPERCPP_MODEL',
-    'AGIM_WHISPERCPP_ARGS',
   ]
 
   // Keys that stay editable: A2A, plan mode, iteration, policy, critic.
@@ -153,6 +150,12 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     for (const k of STT_KEYS) {
       expect(keys.has(k)).toBe(true)
     }
+  })
+
+  it('does NOT expose whisper.cpp host paths via SPA env editor', () => {
+    expect(keys.has('AGIM_WHISPERCPP_BIN')).toBe(false)
+    expect(keys.has('AGIM_WHISPERCPP_MODEL')).toBe(false)
+    expect(keys.has('AGIM_WHISPERCPP_ARGS')).toBe(false)
   })
 
   it('keeps the live native-agent keys', () => {

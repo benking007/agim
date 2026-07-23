@@ -47,9 +47,6 @@ const ECHOABLE_ENV_KEYS = new Set([
   'OPENAI_BASE_URL',
   'AGIM_OPENAI_TRANSCRIBE_MODEL',
   'AGIM_TENCENT_ASR_ENGINE',
-  'AGIM_WHISPERCPP_BIN',
-  'AGIM_WHISPERCPP_MODEL',
-  'AGIM_WHISPERCPP_ARGS',
   'AGIM_IFLYTEK_APP_ID',
 ])
 
@@ -73,7 +70,8 @@ const PROVIDER_META: Record<
   whispercpp: {
     id: 'whispercpp',
     label: 'whisper.cpp（本地兜底）',
-    envKeys: ['AGIM_WHISPERCPP_BIN', 'AGIM_WHISPERCPP_MODEL', 'AGIM_WHISPERCPP_ARGS'],
+    // Paths are host/ops-only (process env / ~/.agim/env). Not exposed in SPA.
+    envKeys: [],
     fallback: true,
   },
   openai: {

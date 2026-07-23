@@ -3067,9 +3067,7 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_IFLYTEK_APP_ID',
   'AGIM_IFLYTEK_API_KEY',
   'AGIM_IFLYTEK_API_SECRET',
-  'AGIM_WHISPERCPP_BIN',
-  'AGIM_WHISPERCPP_MODEL',
-  'AGIM_WHISPERCPP_ARGS',
+  // whisper.cpp BIN/MODEL/ARGS are host/ops-only — not SPA-editable.
   // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
   // enforced in the pi tool bridge for the native path. Re-read per
   // call, so editing takes effect without a restart.

@@ -39,21 +39,6 @@ const SECRETISH = new Set([
 
 /** Human labels + hints for env keys (lazy chunk — not in entry i18n). */
 const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?: string }> = {
-  AGIM_WHISPERCPP_BIN: {
-    title: '可执行文件路径',
-    hint: '本机 whisper.cpp / whisper-cli 二进制，例如 /usr/local/bin/whisper-cli',
-    placeholder: '/path/to/whisper-cli',
-  },
-  AGIM_WHISPERCPP_MODEL: {
-    title: '模型文件路径',
-    hint: 'ggml 模型权重，例如 /models/ggml-base.bin 或 ggml-medium.bin',
-    placeholder: '/path/to/ggml-*.bin',
-  },
-  AGIM_WHISPERCPP_ARGS: {
-    title: '额外命令行参数（可选）',
-    hint: '逗号分隔，传给 whisper-cli，例如 -t,4。一般可留空。',
-    placeholder: '可选，如 -t,4',
-  },
   OPENAI_API_KEY: { title: 'API Key', hint: 'OpenAI 或兼容网关的密钥', placeholder: 'sk-...' },
   OPENAI_BASE_URL: { title: 'API 地址（可选）', hint: '默认 https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
   AGIM_OPENAI_TRANSCRIBE_MODEL: { title: '模型名（可选）', hint: '默认 whisper-1', placeholder: 'whisper-1' },
@@ -68,21 +53,6 @@ const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?:
 }
 
 const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?: string }> = {
-  AGIM_WHISPERCPP_BIN: {
-    title: 'Binary path',
-    hint: 'Path to whisper.cpp / whisper-cli, e.g. /usr/local/bin/whisper-cli',
-    placeholder: '/path/to/whisper-cli',
-  },
-  AGIM_WHISPERCPP_MODEL: {
-    title: 'Model file path',
-    hint: 'ggml weights, e.g. /models/ggml-base.bin',
-    placeholder: '/path/to/ggml-*.bin',
-  },
-  AGIM_WHISPERCPP_ARGS: {
-    title: 'Extra CLI args (optional)',
-    hint: 'Comma-separated flags for whisper-cli, e.g. -t,4. Usually leave empty.',
-    placeholder: 'optional, e.g. -t,4',
-  },
   OPENAI_API_KEY: { title: 'API Key', hint: 'OpenAI or compatible gateway key', placeholder: 'sk-...' },
   OPENAI_BASE_URL: { title: 'Base URL (optional)', hint: 'Default https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
   AGIM_OPENAI_TRANSCRIBE_MODEL: { title: 'Model (optional)', hint: 'Default whisper-1', placeholder: 'whisper-1' },
@@ -310,10 +280,11 @@ function ProviderCard(props: {
       {info.fallback && (
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '本地离线识别。云厂商都未配置或不可用时，自动模式会落到这里。'
-            : 'Local offline ASR. Auto mode falls back here when no cloud provider is configured.'}
+            ? '本地离线兜底。路径由主机环境配置（AGIM_WHISPERCPP_BIN / MODEL），控制台不开放修改，避免误改导致转写不可用。'
+            : 'Local offline fallback. Binary/model paths are host-managed (AGIM_WHISPERCPP_BIN / MODEL) and not editable here.'}
         </p>
       )}
+      {info.envKeys.length > 0 && (
       <div className="grid gap-3 sm:grid-cols-2">
         {info.envKeys.map((envKey) => {
           const secret = SECRETISH.has(envKey)
@@ -363,6 +334,7 @@ function ProviderCard(props: {
           )
         })}
       </div>
+      )}
     </div>
   )
 }

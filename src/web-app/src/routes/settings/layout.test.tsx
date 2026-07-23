@@ -41,7 +41,7 @@ function renderAt(path: string): ReturnType<typeof render> {
 }
 
 describe('/settings layout', () => {
-  it('groups settings entry points by operator intent', () => {
+  it('groups settings entry points by operator intent', async () => {
     renderAt('/settings/start')
 
     expect(screen.getByRole('heading', { name: 'Start' })).toBeInTheDocument()
@@ -55,6 +55,7 @@ describe('/settings layout', () => {
     expect(screen.getByRole('link', { name: /Access Rules/i })).toHaveAttribute('href', '/settings/workspaces')
     expect(screen.getByRole('link', { name: /Service/i })).toHaveAttribute('href', '/settings/service')
     expect(screen.getByTestId('settings-child')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('keeps nested routes active in the grouped navigation', () => {
@@ -63,5 +64,38 @@ describe('/settings layout', () => {
     const skills = screen.getByRole('link', { name: /agim Skills/i })
     expect(skills.className).toContain('text-brand-600')
     expect(screen.getByRole('link', { name: /Messengers/i }).className).not.toContain('text-brand-600')
+  })
+
+  it('surfaces AUTH_ADMIN_REQUIRED instead of a blank messengers/agents shell', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input) === '/api/config') {
+        return new Response(JSON.stringify({ code: 'AUTH_ADMIN_REQUIRED', error: 'admin role required' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return jsonResponse({})
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/messengers']}>
+          <Routes>
+            <Route path="/settings" element={<SettingsLayout />}>
+              <Route path="*" element={<div data-testid="settings-child">child</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/admin permission|管理权限/i)
+    expect(screen.getByRole('link', { name: /Sign in as admin|管理员 token 登录/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/login?reason=admin'),
+    )
   })
 })

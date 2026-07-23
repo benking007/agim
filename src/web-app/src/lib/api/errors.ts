@@ -57,3 +57,12 @@ export function isAuthError(err: unknown): boolean {
   return err instanceof ApiClientError
     && (err.code === 'AUTH_INVALID' || err.status === 401)
 }
+
+/** True when the call failed because the token lacks admin (settings control plane). */
+export function isAdminRequiredError(err: unknown): boolean {
+  if (!(err instanceof ApiClientError)) return false
+  if (err.code === 'AUTH_ADMIN_REQUIRED') return true
+  // Legacy bodies sometimes omit `code` and only set status + message.
+  return err.status === 403
+    && /admin role required/i.test(err.message)
+}

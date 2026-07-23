@@ -400,8 +400,12 @@
       "voiceTooShort": "Recording too short",
       "voiceEmpty": "No speech detected",
       "voiceFailed": "Speech recognition failed",
+      "voiceFilled": "Added to the composer — review and send",
       "voiceDenied": "Microphone permission is required for voice input",
-      "voiceUnsupported": "Recording is not supported here (needs HTTPS or a secure context)",
+      "voiceUnsupported": "Recording is not supported in this environment",
+      "voiceInsecure": "This page is not a secure context, so the browser blocks recording. Open via https:// (not http://) or localhost",
+      "voiceNoMediaRecorder": "This browser/shell has no MediaRecorder (common on older iOS Safari). Update the OS, or use desktop Chrome/Edge",
+      "voiceNoMediaDevices": "Microphone API (mediaDevices) is unavailable. Use https, allow mic permission, and avoid sandboxed iframes",
       "plusMenu": "More",
       "menu": {
         "plan": "Plan mode",

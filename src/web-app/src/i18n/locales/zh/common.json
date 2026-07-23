@@ -400,8 +400,12 @@
       "voiceTooShort": "说话时间太短",
       "voiceEmpty": "没有识别到语音",
       "voiceFailed": "语音识别失败",
+      "voiceFilled": "已填入输入框，确认后发送",
       "voiceDenied": "需要麦克风权限才能语音输入",
-      "voiceUnsupported": "当前环境不支持录音（需要 HTTPS 或本地安全上下文）",
+      "voiceUnsupported": "当前环境不支持录音",
+      "voiceInsecure": "当前不是安全上下文，浏览器禁止录音。请用 https:// 打开（不要用 http://），或用 localhost",
+      "voiceNoMediaRecorder": "当前浏览器/壳不支持 MediaRecorder（常见于旧版 iOS Safari）。请升级系统，或改用桌面 Chrome/Edge",
+      "voiceNoMediaDevices": "无法访问麦克风 API（mediaDevices）。请确认用 https 打开、未禁用麦克风权限，且不在无权限的 iframe 内",
       "plusMenu": "更多",
       "menu": {
         "plan": "Plan 模式",

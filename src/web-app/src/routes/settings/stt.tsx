@@ -28,68 +28,68 @@ interface Draft {
 }
 
 const SECRETISH = new Set([
-  'OPENAI_API_KEY',
-  'AGIM_BAIDU_SPEECH_API_KEY',
-  'AGIM_BAIDU_SPEECH_SECRET_KEY',
-  'AGIM_TENCENT_SECRET_ID',
-  'AGIM_TENCENT_SECRET_KEY',
-  'AGIM_IFLYTEK_API_KEY',
-  'AGIM_IFLYTEK_API_SECRET',
-  'AGIM_ZHIPU_API_KEY',
-  'AGIM_MIMO_API_KEY',
-  'AGIM_STEPFUN_API_KEY',
+  'AGIM_STT_OPENAI_API_KEY',
+  'AGIM_STT_BAIDU_API_KEY',
+  'AGIM_STT_BAIDU_SECRET_KEY',
+  'AGIM_STT_TENCENT_SECRET_ID',
+  'AGIM_STT_TENCENT_SECRET_KEY',
+  'AGIM_STT_IFLYTEK_API_KEY',
+  'AGIM_STT_IFLYTEK_API_SECRET',
+  'AGIM_STT_ZHIPU_API_KEY',
+  'AGIM_STT_MIMO_API_KEY',
+  'AGIM_STT_STEPFUN_API_KEY',
 ])
 
 /** Human labels + hints for env keys (lazy chunk — not in entry i18n). */
 const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?: string }> = {
-  OPENAI_API_KEY: { title: 'API Key', hint: 'OpenAI 或兼容网关的密钥', placeholder: 'sk-...' },
-  OPENAI_BASE_URL: { title: 'API 地址（可选）', hint: '默认 https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
-  AGIM_OPENAI_TRANSCRIBE_MODEL: { title: '模型名（可选）', hint: '默认 whisper-1', placeholder: 'whisper-1' },
-  AGIM_BAIDU_SPEECH_API_KEY: { title: 'API Key', hint: '百度智能云语音应用的 API Key' },
-  AGIM_BAIDU_SPEECH_SECRET_KEY: { title: 'Secret Key', hint: '百度智能云语音应用的 Secret Key' },
-  AGIM_TENCENT_SECRET_ID: { title: 'SecretId', hint: '腾讯云 API 密钥 SecretId' },
-  AGIM_TENCENT_SECRET_KEY: { title: 'SecretKey', hint: '腾讯云 API 密钥 SecretKey' },
-  AGIM_TENCENT_ASR_ENGINE: { title: '引擎（可选）', hint: '默认 16k_zh；英语可用 16k_en', placeholder: '16k_zh' },
-  AGIM_IFLYTEK_APP_ID: { title: 'AppID', hint: '讯飞开放平台应用 AppID' },
-  AGIM_IFLYTEK_API_KEY: { title: 'APIKey', hint: '讯飞开放平台 APIKey' },
-  AGIM_IFLYTEK_API_SECRET: { title: 'APISecret', hint: '讯飞开放平台 APISecret' },
-  AGIM_ZHIPU_API_KEY: { title: 'API Key', hint: '智谱开放平台 API Key（与 LLM 可用同一把）', placeholder: '...' },
-  AGIM_ZHIPU_BASE_URL: {
+  AGIM_STT_OPENAI_API_KEY: { title: 'API Key', hint: 'STT 专用 OpenAI/兼容网关密钥（勿复用 LLM 的 OPENAI_API_KEY）', placeholder: 'sk-...' },
+  AGIM_STT_OPENAI_BASE_URL: { title: 'API 地址（可选）', hint: '默认 https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
+  AGIM_STT_OPENAI_MODEL: { title: '模型名（可选）', hint: '默认 whisper-1', placeholder: 'whisper-1' },
+  AGIM_STT_BAIDU_API_KEY: { title: 'API Key', hint: '百度智能云语音应用的 API Key' },
+  AGIM_STT_BAIDU_SECRET_KEY: { title: 'Secret Key', hint: '百度智能云语音应用的 Secret Key' },
+  AGIM_STT_TENCENT_SECRET_ID: { title: 'SecretId', hint: '腾讯云 API 密钥 SecretId' },
+  AGIM_STT_TENCENT_SECRET_KEY: { title: 'SecretKey', hint: '腾讯云 API 密钥 SecretKey' },
+  AGIM_STT_TENCENT_ENGINE: { title: '引擎（可选）', hint: '默认 16k_zh；英语可用 16k_en', placeholder: '16k_zh' },
+  AGIM_STT_IFLYTEK_APP_ID: { title: 'AppID', hint: '讯飞开放平台应用 AppID' },
+  AGIM_STT_IFLYTEK_API_KEY: { title: 'APIKey', hint: '讯飞开放平台 APIKey' },
+  AGIM_STT_IFLYTEK_API_SECRET: { title: 'APISecret', hint: '讯飞开放平台 APISecret' },
+  AGIM_STT_ZHIPU_API_KEY: { title: 'API Key', hint: 'STT 专用智谱 Key（勿复用 LLM 的 AGIM_ZHIPU_API_KEY）', placeholder: '...' },
+  AGIM_STT_ZHIPU_BASE_URL: {
     title: 'API 地址（可选）',
     hint: '默认 https://open.bigmodel.cn/api/paas/v4；国际站可用 api.z.ai',
     placeholder: 'https://open.bigmodel.cn/api/paas/v4',
   },
-  AGIM_ZHIPU_TRANSCRIBE_MODEL: {
+  AGIM_STT_ZHIPU_MODEL: {
     title: '模型名（可选）',
     hint: '默认 glm-asr-2512；单段音频 ≤30 秒',
     placeholder: 'glm-asr-2512',
   },
-  AGIM_MIMO_API_KEY: {
+  AGIM_STT_MIMO_API_KEY: {
     title: 'API Key',
-    hint: '小米 MiMo 开放平台 API Key（也可用环境变量 MIMO_API_KEY）',
+    hint: 'STT 专用小米 MiMo Key（勿复用 LLM 的 MIMO_API_KEY）',
     placeholder: '...',
   },
-  AGIM_MIMO_BASE_URL: {
+  AGIM_STT_MIMO_BASE_URL: {
     title: 'API 地址（可选）',
     hint: '默认 https://api.xiaomimimo.com/v1',
     placeholder: 'https://api.xiaomimimo.com/v1',
   },
-  AGIM_MIMO_TRANSCRIBE_MODEL: {
+  AGIM_STT_MIMO_MODEL: {
     title: '模型名（可选）',
     hint: '默认 mimo-v2.5-asr；支持中英与多种方言',
     placeholder: 'mimo-v2.5-asr',
   },
-  AGIM_STEPFUN_API_KEY: {
+  AGIM_STT_STEPFUN_API_KEY: {
     title: 'API Key',
-    hint: '阶跃星辰开放平台 API Key（也可用 STEPFUN_API_KEY / STEP_API_KEY）',
+    hint: 'STT 专用阶跃 Key（AGIM_STT_*；勿与 LLM 的 STEPFUN_API_KEY 混用）',
     placeholder: '...',
   },
-  AGIM_STEPFUN_BASE_URL: {
+  AGIM_STT_STEPFUN_BASE_URL: {
     title: 'API 地址（可选）',
     hint: '默认 https://api.stepfun.com/v1',
     placeholder: 'https://api.stepfun.com/v1',
   },
-  AGIM_STEPFUN_TRANSCRIBE_MODEL: {
+  AGIM_STT_STEPFUN_MODEL: {
     title: '模型名（可选）',
     hint: '默认 stepaudio-2.5-asr；性价比高、中文转写强',
     placeholder: 'stepaudio-2.5-asr',
@@ -97,54 +97,54 @@ const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?:
 }
 
 const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?: string }> = {
-  OPENAI_API_KEY: { title: 'API Key', hint: 'OpenAI or compatible gateway key', placeholder: 'sk-...' },
-  OPENAI_BASE_URL: { title: 'Base URL (optional)', hint: 'Default https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
-  AGIM_OPENAI_TRANSCRIBE_MODEL: { title: 'Model (optional)', hint: 'Default whisper-1', placeholder: 'whisper-1' },
-  AGIM_BAIDU_SPEECH_API_KEY: { title: 'API Key', hint: 'Baidu Speech API Key' },
-  AGIM_BAIDU_SPEECH_SECRET_KEY: { title: 'Secret Key', hint: 'Baidu Speech Secret Key' },
-  AGIM_TENCENT_SECRET_ID: { title: 'SecretId', hint: 'Tencent Cloud SecretId' },
-  AGIM_TENCENT_SECRET_KEY: { title: 'SecretKey', hint: 'Tencent Cloud SecretKey' },
-  AGIM_TENCENT_ASR_ENGINE: { title: 'Engine (optional)', hint: 'Default 16k_zh; use 16k_en for English', placeholder: '16k_zh' },
-  AGIM_IFLYTEK_APP_ID: { title: 'AppID', hint: 'iFlytek AppID' },
-  AGIM_IFLYTEK_API_KEY: { title: 'APIKey', hint: 'iFlytek APIKey' },
-  AGIM_IFLYTEK_API_SECRET: { title: 'APISecret', hint: 'iFlytek APISecret' },
-  AGIM_ZHIPU_API_KEY: { title: 'API Key', hint: 'Zhipu open.bigmodel.cn API Key (can reuse LLM key)', placeholder: '...' },
-  AGIM_ZHIPU_BASE_URL: {
+  AGIM_STT_OPENAI_API_KEY: { title: 'API Key', hint: 'STT-only OpenAI/compatible key (do not reuse LLM OPENAI_API_KEY)', placeholder: 'sk-...' },
+  AGIM_STT_OPENAI_BASE_URL: { title: 'Base URL (optional)', hint: 'Default https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
+  AGIM_STT_OPENAI_MODEL: { title: 'Model (optional)', hint: 'Default whisper-1', placeholder: 'whisper-1' },
+  AGIM_STT_BAIDU_API_KEY: { title: 'API Key', hint: 'Baidu Speech API Key' },
+  AGIM_STT_BAIDU_SECRET_KEY: { title: 'Secret Key', hint: 'Baidu Speech Secret Key' },
+  AGIM_STT_TENCENT_SECRET_ID: { title: 'SecretId', hint: 'Tencent Cloud SecretId' },
+  AGIM_STT_TENCENT_SECRET_KEY: { title: 'SecretKey', hint: 'Tencent Cloud SecretKey' },
+  AGIM_STT_TENCENT_ENGINE: { title: 'Engine (optional)', hint: 'Default 16k_zh; use 16k_en for English', placeholder: '16k_zh' },
+  AGIM_STT_IFLYTEK_APP_ID: { title: 'AppID', hint: 'iFlytek AppID' },
+  AGIM_STT_IFLYTEK_API_KEY: { title: 'APIKey', hint: 'iFlytek APIKey' },
+  AGIM_STT_IFLYTEK_API_SECRET: { title: 'APISecret', hint: 'iFlytek APISecret' },
+  AGIM_STT_ZHIPU_API_KEY: { title: 'API Key', hint: 'STT-only Zhipu key (do not reuse LLM AGIM_ZHIPU_API_KEY)', placeholder: '...' },
+  AGIM_STT_ZHIPU_BASE_URL: {
     title: 'Base URL (optional)',
     hint: 'Default https://open.bigmodel.cn/api/paas/v4; intl: api.z.ai',
     placeholder: 'https://open.bigmodel.cn/api/paas/v4',
   },
-  AGIM_ZHIPU_TRANSCRIBE_MODEL: {
+  AGIM_STT_ZHIPU_MODEL: {
     title: 'Model (optional)',
     hint: 'Default glm-asr-2512; clips ≤30s',
     placeholder: 'glm-asr-2512',
   },
-  AGIM_MIMO_API_KEY: {
+  AGIM_STT_MIMO_API_KEY: {
     title: 'API Key',
-    hint: 'Xiaomi MiMo API Key (or env MIMO_API_KEY)',
+    hint: 'STT-only Xiaomi MiMo key (do not reuse LLM MIMO_API_KEY)',
     placeholder: '...',
   },
-  AGIM_MIMO_BASE_URL: {
+  AGIM_STT_MIMO_BASE_URL: {
     title: 'Base URL (optional)',
     hint: 'Default https://api.xiaomimimo.com/v1',
     placeholder: 'https://api.xiaomimimo.com/v1',
   },
-  AGIM_MIMO_TRANSCRIBE_MODEL: {
+  AGIM_STT_MIMO_MODEL: {
     title: 'Model (optional)',
     hint: 'Default mimo-v2.5-asr; Chinese + dialects',
     placeholder: 'mimo-v2.5-asr',
   },
-  AGIM_STEPFUN_API_KEY: {
+  AGIM_STT_STEPFUN_API_KEY: {
     title: 'API Key',
-    hint: 'StepFun API Key (or STEPFUN_API_KEY / STEP_API_KEY)',
+    hint: 'STT-only StepFun key (AGIM_STT_*; never reuse LLM STEPFUN_API_KEY)',
     placeholder: '...',
   },
-  AGIM_STEPFUN_BASE_URL: {
+  AGIM_STT_STEPFUN_BASE_URL: {
     title: 'Base URL (optional)',
     hint: 'Default https://api.stepfun.com/v1',
     placeholder: 'https://api.stepfun.com/v1',
   },
-  AGIM_STEPFUN_TRANSCRIBE_MODEL: {
+  AGIM_STT_STEPFUN_MODEL: {
     title: 'Model (optional)',
     hint: 'Default stepaudio-2.5-asr; strong Chinese, low cost',
     placeholder: 'stepaudio-2.5-asr',
@@ -160,43 +160,43 @@ const STT_PROVIDER_CATALOG: SttProviderInfo[] = [
   {
     id: 'iflytek',
     label: '讯飞语音听写',
-    envKeys: ['AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET'],
+    envKeys: ['AGIM_STT_IFLYTEK_APP_ID', 'AGIM_STT_IFLYTEK_API_KEY', 'AGIM_STT_IFLYTEK_API_SECRET'],
     configured: false,
   },
   {
     id: 'tencent',
     label: '腾讯云一句话识别',
-    envKeys: ['AGIM_TENCENT_SECRET_ID', 'AGIM_TENCENT_SECRET_KEY', 'AGIM_TENCENT_ASR_ENGINE'],
+    envKeys: ['AGIM_STT_TENCENT_SECRET_ID', 'AGIM_STT_TENCENT_SECRET_KEY', 'AGIM_STT_TENCENT_ENGINE'],
     configured: false,
   },
   {
     id: 'baidu',
     label: '百度短语音识别',
-    envKeys: ['AGIM_BAIDU_SPEECH_API_KEY', 'AGIM_BAIDU_SPEECH_SECRET_KEY'],
+    envKeys: ['AGIM_STT_BAIDU_API_KEY', 'AGIM_STT_BAIDU_SECRET_KEY'],
     configured: false,
   },
   {
     id: 'stepfun',
     label: '阶跃 StepAudio-ASR',
-    envKeys: ['AGIM_STEPFUN_API_KEY', 'AGIM_STEPFUN_BASE_URL', 'AGIM_STEPFUN_TRANSCRIBE_MODEL'],
+    envKeys: ['AGIM_STT_STEPFUN_API_KEY', 'AGIM_STT_STEPFUN_BASE_URL', 'AGIM_STT_STEPFUN_MODEL'],
     configured: false,
   },
   {
     id: 'mimo',
     label: '小米 MiMo-ASR',
-    envKeys: ['AGIM_MIMO_API_KEY', 'AGIM_MIMO_BASE_URL', 'AGIM_MIMO_TRANSCRIBE_MODEL'],
+    envKeys: ['AGIM_STT_MIMO_API_KEY', 'AGIM_STT_MIMO_BASE_URL', 'AGIM_STT_MIMO_MODEL'],
     configured: false,
   },
   {
     id: 'glm',
     label: '智谱 GLM-ASR',
-    envKeys: ['AGIM_ZHIPU_API_KEY', 'AGIM_ZHIPU_BASE_URL', 'AGIM_ZHIPU_TRANSCRIBE_MODEL'],
+    envKeys: ['AGIM_STT_ZHIPU_API_KEY', 'AGIM_STT_ZHIPU_BASE_URL', 'AGIM_STT_ZHIPU_MODEL'],
     configured: false,
   },
   {
     id: 'openai',
     label: 'OpenAI Whisper',
-    envKeys: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'AGIM_OPENAI_TRANSCRIBE_MODEL'],
+    envKeys: ['AGIM_STT_OPENAI_API_KEY', 'AGIM_STT_OPENAI_BASE_URL', 'AGIM_STT_OPENAI_MODEL'],
     configured: false,
   },
   {
@@ -212,13 +212,13 @@ const STT_PROVIDER_CATALOG: SttProviderInfo[] = [
 function configuredFromEnv(id: string, env: Record<string, string>): boolean {
   const has = (...keys: string[]) => keys.every((k) => !!(env[k] && String(env[k]).trim()))
   switch (id) {
-    case 'openai': return has('OPENAI_API_KEY')
-    case 'baidu': return has('AGIM_BAIDU_SPEECH_API_KEY', 'AGIM_BAIDU_SPEECH_SECRET_KEY')
-    case 'tencent': return has('AGIM_TENCENT_SECRET_ID', 'AGIM_TENCENT_SECRET_KEY')
-    case 'iflytek': return has('AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET')
-    case 'glm': return has('AGIM_ZHIPU_API_KEY')
-    case 'mimo': return has('AGIM_MIMO_API_KEY')
-    case 'stepfun': return has('AGIM_STEPFUN_API_KEY')
+    case 'openai': return has('AGIM_STT_OPENAI_API_KEY')
+    case 'baidu': return has('AGIM_STT_BAIDU_API_KEY', 'AGIM_STT_BAIDU_SECRET_KEY')
+    case 'tencent': return has('AGIM_STT_TENCENT_SECRET_ID', 'AGIM_STT_TENCENT_SECRET_KEY')
+    case 'iflytek': return has('AGIM_STT_IFLYTEK_APP_ID', 'AGIM_STT_IFLYTEK_API_KEY', 'AGIM_STT_IFLYTEK_API_SECRET')
+    case 'glm': return has('AGIM_STT_ZHIPU_API_KEY')
+    case 'mimo': return has('AGIM_STT_MIMO_API_KEY')
+    case 'stepfun': return has('AGIM_STT_STEPFUN_API_KEY')
     case 'whispercpp': return false // host-only paths — SPA cannot see them
     default: return false
   }
@@ -310,10 +310,10 @@ export default function SettingsSttRoute(): JSX.Element {
     : null
 
   const initial = useMemo<Draft>(() => ({
-    provider: (envData.AGIM_TRANSCRIBE_PROVIDER ?? '').trim(),
+    provider: (envData.AGIM_STT_PROVIDER ?? '').trim(),
     keys: {},
     keysTouched: {},
-  }), [envData.AGIM_TRANSCRIBE_PROVIDER])
+  }), [envData.AGIM_STT_PROVIDER])
 
   const [draft, setDraft] = useState<Draft>(initial)
   const [syncedHash, setSyncedHash] = useState('')
@@ -349,7 +349,7 @@ export default function SettingsSttRoute(): JSX.Element {
   async function onSave(): Promise<void> {
     const updates: Record<string, string | null> = {}
     if (draft.provider !== initial.provider) {
-      updates.AGIM_TRANSCRIBE_PROVIDER = draft.provider.trim() === '' ? null : draft.provider.trim()
+      updates.AGIM_STT_PROVIDER = draft.provider.trim() === '' ? null : draft.provider.trim()
     }
     for (const [envKey, touched] of Object.entries(draft.keysTouched)) {
       if (!touched) continue
@@ -523,8 +523,8 @@ function ProviderCard(props: {
       {info.fallback && (
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '本地离线兜底。路径由主机环境配置（AGIM_WHISPERCPP_BIN / MODEL），控制台不开放修改，避免误改导致转写不可用。'
-            : 'Local offline fallback. Binary/model paths are host-managed (AGIM_WHISPERCPP_BIN / MODEL) and not editable here.'}
+            ? '本地离线兜底。路径由主机环境配置（AGIM_STT_WHISPERCPP_BIN / MODEL），控制台不开放修改。'
+            : 'Local offline fallback. Paths are host-managed (AGIM_STT_WHISPERCPP_BIN / MODEL) and not editable here.'}
         </p>
       )}
       {(info.envKeys?.length ?? 0) > 0 && (

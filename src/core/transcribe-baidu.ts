@@ -2,9 +2,9 @@
  * Baidu short speech recognition (≤60s).
  * Docs: https://ai.baidu.com/ai-doc/SPEECH/Jlbxdezuf
  *
- * Env:
- *   AGIM_BAIDU_SPEECH_API_KEY
- *   AGIM_BAIDU_SPEECH_SECRET_KEY
+ * Env (STT-prefixed):
+ *   AGIM_STT_BAIDU_API_KEY
+ *   AGIM_STT_BAIDU_SECRET_KEY
  */
 
 import { readFile, rm } from 'node:fs/promises'
@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { convertToWav } from './transcribe-audio.js'
+import { sttEnv, STT_ENV } from './transcribe-env.js'
 import { TranscribeError } from './transcribe-types.js'
 
 const TOKEN_URL = 'https://aip.baidubce.com/oauth/2.0/token'
@@ -21,14 +22,14 @@ const TIMEOUT_MS = 60_000
 let cachedToken: { value: string; expiresAt: number } | null = null
 
 export function isBaiduSpeechConfigured(): boolean {
-  return !!(process.env.AGIM_BAIDU_SPEECH_API_KEY && process.env.AGIM_BAIDU_SPEECH_SECRET_KEY)
+  return !!(sttEnv('baiduApiKey') && sttEnv('baiduSecretKey'))
 }
 
 async function getAccessToken(): Promise<string> {
-  const apiKey = process.env.AGIM_BAIDU_SPEECH_API_KEY
-  const secretKey = process.env.AGIM_BAIDU_SPEECH_SECRET_KEY
+  const apiKey = sttEnv('baiduApiKey')
+  const secretKey = sttEnv('baiduSecretKey')
   if (!apiKey || !secretKey) {
-    throw new TranscribeError('AGIM_BAIDU_SPEECH_API_KEY / SECRET_KEY not set', 'baidu')
+    throw new TranscribeError(`${STT_ENV.baiduApiKey} / ${STT_ENV.baiduSecretKey} not set`, 'baidu')
   }
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
     return cachedToken.value

@@ -1,20 +1,22 @@
 // transcribe — speech-to-text with provider abstraction.
 //
-// Providers:
-//   - openai      — OpenAI Whisper API (OPENAI_API_KEY)
+// Providers (credentials: AGIM_STT_* only — never LLM shared keys):
+//   - openai      — OpenAI Whisper API
 //   - whispercpp  — local whisper.cpp binary
 //   - baidu       — 百度短语音识别
 //   - tencent     — 腾讯云一句话识别
 //   - iflytek     — 讯飞语音听写 (WebSocket IAT)
-//   - glm         — 智谱 GLM-ASR (AGIM_ZHIPU_API_KEY)
-//   - mimo        — 小米 MiMo-V2.5-ASR (AGIM_MIMO_API_KEY / MIMO_API_KEY)
-//   - stepfun     — 阶跃 StepAudio 2.5 ASR (AGIM_STEPFUN_API_KEY)
+//   - glm         — 智谱 GLM-ASR
+//   - mimo        — 小米 MiMo-V2.5-ASR
+//   - stepfun     — 阶跃 StepAudio 2.5 ASR
 //
 // Selection order (first hit wins):
-//   1. AGIM_TRANSCRIBE_PROVIDER=<name>|none — explicit default
+//   1. AGIM_STT_PROVIDER=<name>|none — explicit default
 //   2. Auto (Chinese quality / stability / cost):
 //        iflytek → tencent → baidu → stepfun → mimo → glm → openai → whispercpp
 //   3. else → 'none'
+//
+// All vendor credentials use AGIM_STT_* so they never collide with LLM envs.
 
 import { spawn } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
@@ -29,6 +31,11 @@ import { isIflytekSpeechConfigured, transcribeWithIflytek } from './transcribe-i
 import { isGlmSpeechConfigured, transcribeWithGlm } from './transcribe-glm.js'
 import { isMimoSpeechConfigured, transcribeWithMimo } from './transcribe-mimo.js'
 import { isStepfunSpeechConfigured, transcribeWithStepfun } from './transcribe-stepfun.js'
+import {
+  STT_ECHOABLE_ENV_KEYS,
+  STT_ENV,
+  sttEnv,
+} from './transcribe-env.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
   TranscribeError,
@@ -46,20 +53,6 @@ export {
 }
 
 const log = rootLogger.child({ component: 'transcribe' })
-
-/** Non-secret keys we can safely echo back to the settings UI. */
-const ECHOABLE_ENV_KEYS = new Set([
-  'OPENAI_BASE_URL',
-  'AGIM_OPENAI_TRANSCRIBE_MODEL',
-  'AGIM_TENCENT_ASR_ENGINE',
-  'AGIM_IFLYTEK_APP_ID',
-  'AGIM_ZHIPU_BASE_URL',
-  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
-  'AGIM_MIMO_BASE_URL',
-  'AGIM_MIMO_TRANSCRIBE_MODEL',
-  'AGIM_STEPFUN_BASE_URL',
-  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
-])
 
 export interface TranscribeProviderInfo {
   id: Exclude<TranscribeProvider, 'none'>
@@ -88,46 +81,46 @@ const PROVIDER_META: Record<
   openai: {
     id: 'openai',
     label: 'OpenAI Whisper',
-    envKeys: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'AGIM_OPENAI_TRANSCRIBE_MODEL'],
+    envKeys: [STT_ENV.openaiApiKey, STT_ENV.openaiBaseUrl, STT_ENV.openaiModel],
   },
   baidu: {
     id: 'baidu',
     label: '百度短语音识别',
-    envKeys: ['AGIM_BAIDU_SPEECH_API_KEY', 'AGIM_BAIDU_SPEECH_SECRET_KEY'],
+    envKeys: [STT_ENV.baiduApiKey, STT_ENV.baiduSecretKey],
   },
   tencent: {
     id: 'tencent',
     label: '腾讯云一句话识别',
-    envKeys: ['AGIM_TENCENT_SECRET_ID', 'AGIM_TENCENT_SECRET_KEY', 'AGIM_TENCENT_ASR_ENGINE'],
+    envKeys: [STT_ENV.tencentSecretId, STT_ENV.tencentSecretKey, STT_ENV.tencentEngine],
   },
   iflytek: {
     id: 'iflytek',
     label: '讯飞语音听写',
-    envKeys: ['AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET'],
+    envKeys: [STT_ENV.iflytekAppId, STT_ENV.iflytekApiKey, STT_ENV.iflytekApiSecret],
   },
   glm: {
     id: 'glm',
     label: '智谱 GLM-ASR',
-    envKeys: ['AGIM_ZHIPU_API_KEY', 'AGIM_ZHIPU_BASE_URL', 'AGIM_ZHIPU_TRANSCRIBE_MODEL'],
+    envKeys: [STT_ENV.zhipuApiKey, STT_ENV.zhipuBaseUrl, STT_ENV.zhipuModel],
   },
   mimo: {
     id: 'mimo',
     label: '小米 MiMo-ASR',
-    envKeys: ['AGIM_MIMO_API_KEY', 'AGIM_MIMO_BASE_URL', 'AGIM_MIMO_TRANSCRIBE_MODEL'],
+    envKeys: [STT_ENV.mimoApiKey, STT_ENV.mimoBaseUrl, STT_ENV.mimoModel],
   },
   stepfun: {
     id: 'stepfun',
     label: '阶跃 StepAudio-ASR',
-    envKeys: ['AGIM_STEPFUN_API_KEY', 'AGIM_STEPFUN_BASE_URL', 'AGIM_STEPFUN_TRANSCRIBE_MODEL'],
+    envKeys: [STT_ENV.stepfunApiKey, STT_ENV.stepfunBaseUrl, STT_ENV.stepfunModel],
   },
 }
 
 export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none'>): boolean {
   switch (provider) {
     case 'openai':
-      return !!process.env.OPENAI_API_KEY
+      return !!sttEnv('openaiApiKey')
     case 'whispercpp':
-      return !!(process.env.AGIM_WHISPERCPP_BIN && process.env.AGIM_WHISPERCPP_MODEL)
+      return !!(sttEnv('whisperBin') && sttEnv('whisperModel'))
     case 'baidu':
       return isBaiduSpeechConfigured()
     case 'tencent':
@@ -167,14 +160,14 @@ export function listTranscribeProviders(): {
   active: TranscribeProvider
   explicit: string | null
 } {
-  const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.trim() || null
+  const explicit = sttEnv('provider') || null
   const active = detectProvider()
   const providers = ALL_TRANSCRIBE_PROVIDERS.map((id) => {
     const meta = PROVIDER_META[id]
     const currentValues: Record<string, string> = {}
     for (const key of meta.envKeys) {
-      if (!ECHOABLE_ENV_KEYS.has(key)) continue
-      const v = process.env[key]
+      if (!STT_ECHOABLE_ENV_KEYS.has(key)) continue
+      const v = process.env[key]?.trim()
       if (v) currentValues[key] = v
     }
     return {
@@ -192,7 +185,7 @@ export function listTranscribeProviders(): {
 
 /** Resolve which provider to use given current env. Pure / sync. */
 export function detectProvider(): TranscribeProvider {
-  const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.toLowerCase()
+  const explicit = sttEnv('provider')?.toLowerCase()
   if (
     explicit === 'openai'
     || explicit === 'whispercpp'
@@ -214,14 +207,38 @@ export function detectProvider(): TranscribeProvider {
 
 const TRANSCRIBE_TIMEOUT_MS = 120 * 1000
 
-export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
-  const provider = opts.provider ?? detectProvider()
-  if (provider === 'none') {
-    throw new TranscribeError(
-      'no provider configured (set AGIM_TRANSCRIBE_PROVIDER + vendor keys, or OPENAI_API_KEY / AGIM_WHISPERCPP_BIN)',
-      'none',
-    )
-  }
+/** Operator-facing hint when no STT vendor is configured. */
+export const STT_NOT_CONFIGURED_HINT =
+  'no STT provider configured — open Web /settings/stt and set AGIM_STT_* vendor keys (or whisper.cpp)'
+
+/** Chinese hint for IM voice placeholders. */
+export const STT_NOT_CONFIGURED_HINT_ZH =
+  '未配置语音转写（请在 Web /settings/stt 填写 AGIM_STT_* 厂商密钥）'
+
+function isExplicitProviderName(value: string | undefined): value is Exclude<TranscribeProvider, 'none'> | 'none' {
+  return (
+    value === 'openai'
+    || value === 'whispercpp'
+    || value === 'baidu'
+    || value === 'tencent'
+    || value === 'iflytek'
+    || value === 'glm'
+    || value === 'mimo'
+    || value === 'stepfun'
+    || value === 'none'
+  )
+}
+
+/** Configured providers in Auto priority order (for failover). */
+export function configuredProvidersInAutoOrder(): Exclude<TranscribeProvider, 'none'>[] {
+  return ALL_TRANSCRIBE_PROVIDERS.filter((id) => isProviderConfigured(id))
+}
+
+async function transcribeOnce(
+  provider: Exclude<TranscribeProvider, 'none'>,
+  filePath: string,
+  opts: TranscribeOptions,
+): Promise<TranscribeResult> {
   const start = Date.now()
   let text: string
   switch (provider) {
@@ -257,11 +274,58 @@ export async function transcribe(filePath: string, opts: TranscribeOptions = {})
   return { text, provider, elapsedMs }
 }
 
+/**
+ * Run STT. Explicit `opts.provider` or `AGIM_STT_PROVIDER` pins one vendor.
+ * Auto mode tries configured vendors in priority order and fails over on error.
+ */
+export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
+  const explicitEnv = sttEnv('provider')?.toLowerCase()
+  const pinned = opts.provider
+    ?? (isExplicitProviderName(explicitEnv) ? explicitEnv : undefined)
+
+  if (pinned === 'none') {
+    throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
+  }
+
+  if (pinned) {
+    return transcribeOnce(pinned, filePath, opts)
+  }
+
+  const chain = configuredProvidersInAutoOrder()
+  if (chain.length === 0) {
+    throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
+  }
+
+  let lastErr: unknown
+  for (let i = 0; i < chain.length; i++) {
+    const provider = chain[i]!
+    try {
+      return await transcribeOnce(provider, filePath, opts)
+    } catch (err) {
+      lastErr = err
+      const next = chain[i + 1]
+      log.warn({
+        event: 'transcribe.failover',
+        provider,
+        next: next ?? null,
+        error: err instanceof Error ? err.message : String(err),
+        file: basename(filePath),
+      })
+      if (!next) break
+    }
+  }
+  if (lastErr instanceof TranscribeError) throw lastErr
+  throw new TranscribeError(
+    lastErr instanceof Error ? lastErr.message : String(lastErr),
+    chain[chain.length - 1] ?? 'none',
+  )
+}
+
 async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): Promise<string> {
-  const key = process.env.OPENAI_API_KEY
-  if (!key) throw new TranscribeError('OPENAI_API_KEY not set', 'openai')
-  const baseURL = process.env.OPENAI_BASE_URL?.replace(/\/$/, '') ?? 'https://api.openai.com/v1'
-  const model = process.env.AGIM_OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1'
+  const key = sttEnv('openaiApiKey')
+  if (!key) throw new TranscribeError(`${STT_ENV.openaiApiKey} not set`, 'openai')
+  const baseURL = (sttEnv('openaiBaseUrl') || 'https://api.openai.com/v1').replace(/\/$/, '')
+  const model = sttEnv('openaiModel') || 'whisper-1'
 
   const fileBuf = await readFile(filePath)
   const form = new FormData()
@@ -301,16 +365,16 @@ async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): 
 }
 
 async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOptions): Promise<string> {
-  const bin = process.env.AGIM_WHISPERCPP_BIN
-  const model = process.env.AGIM_WHISPERCPP_MODEL
-  if (!bin) throw new TranscribeError('AGIM_WHISPERCPP_BIN not set', 'whispercpp')
-  if (!model) throw new TranscribeError('AGIM_WHISPERCPP_MODEL not set', 'whispercpp')
+  const bin = sttEnv('whisperBin')
+  const model = sttEnv('whisperModel')
+  if (!bin) throw new TranscribeError(`${STT_ENV.whisperBin} not set`, 'whispercpp')
+  if (!model) throw new TranscribeError(`${STT_ENV.whisperModel} not set`, 'whispercpp')
 
   const wavPath = join(tmpdir(), `agim-whisper-${randomBytes(6).toString('hex')}.wav`)
   try {
     await convertToWav(filePath, wavPath, 'whispercpp')
 
-    const extraArgs = (process.env.AGIM_WHISPERCPP_ARGS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+    const extraArgs = (sttEnv('whisperArgs') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const args = ['-m', model, '-f', wavPath, '--no-prints', '--no-timestamps', ...extraArgs]
     if (opts.language) args.push('-l', opts.language)
 

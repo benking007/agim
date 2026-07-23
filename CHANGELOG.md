@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Portal hold-to-talk + multi-vendor STT**: `/m/chat` microphone hold-to-talk posts audio to `POST /api/chat/transcribe`. Providers: iFlytek / Tencent / Baidu / StepFun / MiMo / Zhipu GLM / OpenAI Whisper / whisper.cpp. Settings at `/settings/stt`; Auto order prefers Chinese quality → stability → cost. Secrets in `~/.agim/env` (`AGIM_STT_*` only).
+- **iOS / macOS App Icon**: ship Agim brand icons into both shell `AppIcon.appiconset`s (plus `assets/app-icon/` source + rounded preview). macOS assets use ~10% transparent margin so Dock size matches peers (full-bleed squircles look oversized).
 - **Chat Todo checklist UI**: `agim_todo_write` plans surface as a Cursor-style collapsible checklist above the tool accordion (desktop + Portal). Items update live with ☐ / ▶ / ☑ as the agent rewrites the list; activity steps keep a short “Plan updated” row without dumping the full checklist into the tool queue.
 - **Chat thumbs up/down (real feedback)**: votes persist in a session sidecar (`~/.agim/sessions/*.feedback.json`), restore on refresh, and expose `im_hub_feedback_total`. Downvote arms a consume-once ephemeral next-turn steer (not durable JSONL) and offers a composer “tell it what was wrong” prefill; upvote is persist-only. Does not affect context-compaction weights.
 - **Agim Agent context budget (晚压)**: L1 tool-result clearing + emergency clear, L2 late transcript compaction (pre-turn + mid-turn), lookahead soft-line, Prometheus `im_hub_ctx_*` + `AgentTurnOutcome.contextBudget`, Settings「晚压」knobs (`AGIM_CTX_*`), session **压缩率** in Usage (`/ctx` · auto/full/balanced/frequent), and Cursor-like Usage breakdown. See `docs/agim-agent-context-budget.md`.
@@ -17,12 +19,20 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Portal hold-to-talk: recognized text fills the composer for review/edit instead of sending immediately.
+- **STT env keys use `AGIM_STT_*` only** (feature not yet public — no short-name / LLM-key fallbacks):
+  - Provider: `AGIM_STT_PROVIDER`
+  - OpenAI / Baidu / Tencent / iFlytek / StepFun / MiMo / Zhipu / whisper.cpp: `AGIM_STT_<VENDOR>_*`
+  - LLM shared keys (`OPENAI_API_KEY`, `STEPFUN_API_KEY`, `MIMO_API_KEY`, `AGIM_ZHIPU_API_KEY`, …) and pre-release short names are ignored for STT
+- STT Auto mode fails over to the next configured vendor when the active cloud call errors (explicit `AGIM_STT_PROVIDER` still pins one vendor).
+- Portal voice unsupported toast distinguishes insecure context vs missing `mediaDevices` vs missing `MediaRecorder` (HTTPS alone is not enough on old iOS).
 - Agim Agent stuck-loop guards prefer **soft-steer** over an immediate hard stop: identical tool failures get one ephemeral “change approach” nudge (then hard-stop only if ignored). Semantic stuck-loop also requires recent failures (≥2 of last 3), so successful multi-tool debugging of the same URL/path is no longer treated as a dead loop.
 - Approval wait defaults **15 → 30 minutes** (`AGIM_APPROVAL_TIMEOUT_MS` + matching `AGIM_NATIVE_TURN_TIMEOUT_MS`) so human review of tool cards is less likely to race the turn watchdog.
 - Agim `AGENTS.md` seed + managed `<!-- agim:im-ops -->` baseline: 对话逻辑（>8k 落盘仍须完整回复；Viewer + IM 要点；Web/Portal/macOS 禁止截断）、说话/任务执行规则收紧为「对话给全」，去掉旧「一两句收尾 / 写文件代替回复」口径。
 
 ### Fixed
 
+- STT “not configured” errors (Portal / IM) now point at `/settings/stt` instead of only mentioning `OPENAI_API_KEY` / whisper.cpp.
 - Successful turn end auto-completes a sticky Plan last item: when the checklist is `N-1` completed with exactly one `in_progress` and zero `pending`, store + activity + SPA `DONE`/`RUN_FINISH` mark it completed so the UI shows `N/N` instead of hanging on an empty circle.
 - Chat lists (Portal `/m/chat` and web console `/`): scrolling up to read history no longer gets yanked back to the bottom when the live turn streams or tool-activity steps grow. Follow resumes when the user returns near the bottom or sends a message.
 - Settings `/settings/stt`: provider config cards no longer disappear when `GET /api/stt/providers` fails (stale process 404, non-admin 403, etc.). SPA keeps a built-in catalog, falls back to `GET /api/chat/transcribe`, and shows a warning so keys can still be edited via `/api/env`.

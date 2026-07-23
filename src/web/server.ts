@@ -3054,29 +3054,29 @@ const ENV_EDITABLE_KEYS = [
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
-  // Speech-to-text: default provider + OpenAI / CN cloud / local whisper.
-  'AGIM_TRANSCRIBE_PROVIDER',
-  'OPENAI_API_KEY',
-  'OPENAI_BASE_URL',
-  'AGIM_OPENAI_TRANSCRIBE_MODEL',
-  'AGIM_BAIDU_SPEECH_API_KEY',
-  'AGIM_BAIDU_SPEECH_SECRET_KEY',
-  'AGIM_TENCENT_SECRET_ID',
-  'AGIM_TENCENT_SECRET_KEY',
-  'AGIM_TENCENT_ASR_ENGINE',
-  'AGIM_IFLYTEK_APP_ID',
-  'AGIM_IFLYTEK_API_KEY',
-  'AGIM_IFLYTEK_API_SECRET',
-  'AGIM_ZHIPU_API_KEY',
-  'AGIM_ZHIPU_BASE_URL',
-  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
-  'AGIM_MIMO_API_KEY',
-  'AGIM_MIMO_BASE_URL',
-  'AGIM_MIMO_TRANSCRIBE_MODEL',
-  'AGIM_STEPFUN_API_KEY',
-  'AGIM_STEPFUN_BASE_URL',
-  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
-  // whisper.cpp BIN/MODEL/ARGS are host/ops-only — not SPA-editable.
+  // Speech-to-text — all AGIM_STT_* (never share LLM vendor keys).
+  'AGIM_STT_PROVIDER',
+  'AGIM_STT_OPENAI_API_KEY',
+  'AGIM_STT_OPENAI_BASE_URL',
+  'AGIM_STT_OPENAI_MODEL',
+  'AGIM_STT_BAIDU_API_KEY',
+  'AGIM_STT_BAIDU_SECRET_KEY',
+  'AGIM_STT_TENCENT_SECRET_ID',
+  'AGIM_STT_TENCENT_SECRET_KEY',
+  'AGIM_STT_TENCENT_ENGINE',
+  'AGIM_STT_IFLYTEK_APP_ID',
+  'AGIM_STT_IFLYTEK_API_KEY',
+  'AGIM_STT_IFLYTEK_API_SECRET',
+  'AGIM_STT_ZHIPU_API_KEY',
+  'AGIM_STT_ZHIPU_BASE_URL',
+  'AGIM_STT_ZHIPU_MODEL',
+  'AGIM_STT_MIMO_API_KEY',
+  'AGIM_STT_MIMO_BASE_URL',
+  'AGIM_STT_MIMO_MODEL',
+  'AGIM_STT_STEPFUN_API_KEY',
+  'AGIM_STT_STEPFUN_BASE_URL',
+  'AGIM_STT_STEPFUN_MODEL',
+  // whisper.cpp AGIM_STT_WHISPERCPP_* are host/ops-only — not SPA-editable.
   // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
   // enforced in the pi tool bridge for the native path. Re-read per
   // call, so editing takes effect without a restart.
@@ -3147,16 +3147,16 @@ const SECRET_KEYS = new Set<string>([
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
-  'OPENAI_API_KEY',
-  'AGIM_BAIDU_SPEECH_API_KEY',
-  'AGIM_BAIDU_SPEECH_SECRET_KEY',
-  'AGIM_TENCENT_SECRET_ID',
-  'AGIM_TENCENT_SECRET_KEY',
-  'AGIM_IFLYTEK_API_KEY',
-  'AGIM_IFLYTEK_API_SECRET',
-  'AGIM_ZHIPU_API_KEY',
-  'AGIM_MIMO_API_KEY',
-  'AGIM_STEPFUN_API_KEY',
+  'AGIM_STT_OPENAI_API_KEY',
+  'AGIM_STT_BAIDU_API_KEY',
+  'AGIM_STT_BAIDU_SECRET_KEY',
+  'AGIM_STT_TENCENT_SECRET_ID',
+  'AGIM_STT_TENCENT_SECRET_KEY',
+  'AGIM_STT_IFLYTEK_API_KEY',
+  'AGIM_STT_IFLYTEK_API_SECRET',
+  'AGIM_STT_ZHIPU_API_KEY',
+  'AGIM_STT_MIMO_API_KEY',
+  'AGIM_STT_STEPFUN_API_KEY',
 ])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file
@@ -5246,7 +5246,7 @@ async function handleChatTranscribe(
   const { TranscribeError } = await import('../core/transcribe.js')
   if (!isTranscribeConfigured()) {
     sendError(res, 503, 'STT_NOT_CONFIGURED', {
-      message: 'Speech-to-text is not configured. Set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN.',
+      message: 'Speech-to-text is not configured. Open /settings/stt and set AGIM_STT_* vendor keys (or whisper.cpp).',
     })
     return
   }

@@ -41,10 +41,27 @@ function filenameForMime(mime: string): string {
   return 'voice.webm'
 }
 
+/**
+ * Why hold-to-talk cannot start. The old toast always blamed HTTPS, but
+ * Safari / iOS WKWebView often fail on missing MediaRecorder even on https://.
+ */
+export type VoiceRecordingBlockReason =
+  | 'insecure'
+  | 'no-mediadevices'
+  | 'no-mediarecorder'
+
+export function getVoiceRecordingBlockReason(): VoiceRecordingBlockReason | null {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return 'no-mediadevices'
+  }
+  if (window.isSecureContext === false) return 'insecure'
+  if (!navigator.mediaDevices?.getUserMedia) return 'no-mediadevices'
+  if (typeof MediaRecorder === 'undefined') return 'no-mediarecorder'
+  return null
+}
+
 export function isVoiceRecordingSupported(): boolean {
-  return typeof navigator !== 'undefined'
-    && !!navigator.mediaDevices?.getUserMedia
-    && typeof MediaRecorder !== 'undefined'
+  return getVoiceRecordingBlockReason() === null
 }
 
 export class VoiceRecorder {

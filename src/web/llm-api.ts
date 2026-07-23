@@ -12,6 +12,8 @@
 //   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey }
 //                                        → 201 Created or 409 Conflict / 400 Validation
 //   DELETE /api/llm/backends/:name       → 200 OK { removedRoles }
+//   DELETE /api/llm/backends?label=…     → 200 OK { removed, removedRoles }  (atomic group)
+//   DELETE /api/llm/backends?names=a,b   → 200 OK { removed, removedRoles }  (atomic multi)
 //   PUT    /api/llm/roles                body { cheap?, evaluator?, "native-chat"?, … }
 //                                        → 200 OK; empty string / null deletes the binding
 //   POST   /api/llm/secrets/:name        body { apiKey }   → 200 OK
@@ -107,6 +109,11 @@ export async function handleLlmApi(
   }
   if (p === '/api/llm/backends' && m === 'POST') {
     await handleAddBackend(req, res); return true
+  }
+  // CR M2 — atomic group delete (label= or names=). Must run before the
+  // /backends/:name matcher so the collection path is not swallowed.
+  if (p === '/api/llm/backends' && m === 'DELETE') {
+    await handleRemoveBackendGroup(res, url); return true
   }
   if (p === '/api/llm/roles' && m === 'PUT') {
     await handlePutRoles(req, res); return true
@@ -328,6 +335,21 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     send(res, 400, { error: 'baseUrl must be an http(s) URL' })
     return
   }
+  // CR P1a — same SSRF posture as ACP discover/test. API keys are stored
+  // separately, so we don't force https here (local Ollama often uses http);
+  // private / link-local / metadata addresses still require AGIM_URL_ALLOW_PRIVATE=1.
+  {
+    const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+    try {
+      await assertSafeAcpUrl(baseUrl, { forwardsCredentials: false })
+    } catch (err) {
+      if (err instanceof UnsafeAcpUrlError) {
+        send(res, 400, { error: `baseUrl blocked: ${err.message}`, reason: err.reason })
+        return
+      }
+      throw err
+    }
+  }
   if (!model) {
     send(res, 400, { error: 'model is required' })
     return
@@ -451,6 +473,78 @@ async function handleRemoveBackend(res: ServerResponse, name: string): Promise<v
   removeSecret(name)
   refreshLlmRuntime(savedConfig)
   send(res, 200, { removedRoles })
+}
+
+/**
+ * DELETE /api/llm/backends?label=<presetKey>
+ * DELETE /api/llm/backends?names=a,b,c
+ *
+ * Atomic multi-remove inside one config-store transaction (CR M2).
+ * Secrets for every removed name are deleted after the write succeeds.
+ */
+async function handleRemoveBackendGroup(res: ServerResponse, url: URL): Promise<void> {
+  const label = (url.searchParams.get('label') || '').trim().toLowerCase()
+  const namesParam = (url.searchParams.get('names') || '').trim()
+  const names = namesParam
+    ? [...new Set(namesParam.split(',').map((s) => s.trim()).filter(Boolean))]
+    : []
+  if (!label && names.length === 0) {
+    send(res, 400, { error: 'query label= or names= is required' })
+    return
+  }
+  if (label && names.length > 0) {
+    send(res, 400, { error: 'pass only one of label= or names=' })
+    return
+  }
+
+  let savedConfig: RawConfig
+  let removedNames: string[] = []
+  let removedRoles = 0
+  try {
+    const update = await updateConfigObject((current) => {
+      const cfg = current as RawConfig
+      const backends = cfg.llmBackends ?? []
+      const toRemove = new Set<string>()
+      if (label) {
+        for (const b of backends) {
+          if ((b.label ?? '').trim().toLowerCase() === label) toRemove.add(b.name)
+        }
+      } else {
+        const known = new Set(backends.map((b) => b.name))
+        for (const n of names) {
+          if (known.has(n)) toRemove.add(n)
+        }
+      }
+      if (toRemove.size === 0) {
+        throw new LlmConfigError(
+          404,
+          label ? `no backends with label "${label}"` : 'no matching backends to remove',
+        )
+      }
+      const next = backends.filter((b) => !toRemove.has(b.name))
+      const cleaned: Record<string, string> = {}
+      removedRoles = 0
+      for (const [role, backend] of Object.entries(cfg.llmRoles ?? {})) {
+        if (toRemove.has(backend)) { removedRoles++; continue }
+        cleaned[role] = backend
+      }
+      removedNames = [...toRemove]
+      return {
+        config: { ...cfg, llmBackends: next, llmRoles: cleaned },
+        result: undefined,
+      }
+    })
+    savedConfig = update.config as RawConfig
+  } catch (err) {
+    if (!(err instanceof LlmConfigError)) throw err
+    send(res, err.status, { error: err.message })
+    return
+  }
+  for (const name of removedNames) {
+    try { removeSecret(name) } catch { /* best-effort */ }
+  }
+  refreshLlmRuntime(savedConfig)
+  send(res, 200, { removed: removedNames, removedRoles })
 }
 
 async function handlePutRoles(req: IncomingMessage, res: ServerResponse): Promise<void> {

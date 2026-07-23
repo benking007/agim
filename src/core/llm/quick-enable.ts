@@ -91,6 +91,16 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
     throw new QuickEnableError('validation', 'baseUrl must be an http(s) URL')
   }
+  try {
+    const { assertSafeAcpUrl } = await import('../../plugins/agents/acp/url-guard.js')
+    await assertSafeAcpUrl(baseUrl, { forwardsCredentials: false })
+  } catch (err) {
+    const { UnsafeAcpUrlError } = await import('../../plugins/agents/acp/url-guard.js')
+    if (err instanceof UnsafeAcpUrlError) {
+      throw new QuickEnableError('validation', `baseUrl blocked: ${err.message}`)
+    }
+    throw err
+  }
 
   const isCustom = preset.key === 'custom'
   let models = isCustom

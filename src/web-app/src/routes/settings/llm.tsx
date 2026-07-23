@@ -51,7 +51,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
-  useLlmList, useLlmAddBackend, useLlmQuickEnable, useLlmRemoveBackend, useLlmPutRoles, useLlmPing,
+  useLlmList, useLlmAddBackend, useLlmQuickEnable, useLlmRemoveBackendGroup, useLlmPutRoles, useLlmPing,
+  useLlmPresets,
   type LlmBackendRow,
   type LlmMaxTokensField,
   type LlmThinkingFormat,
@@ -62,6 +63,7 @@ import {
   firstAvailablePreset,
   installedBuiltinPresetKeys,
   LLM_PRESETS,
+  resolvePresetCatalog,
   suggestLlmBackendName,
   type LlmPresetKey,
 } from '@/lib/llm-presets'
@@ -278,6 +280,11 @@ function QuickAgentSetupCard({
   const quickEnable = useLlmQuickEnable()
   const putRoles = useLlmPutRoles()
   const ping = useLlmPing()
+  const presetsQuery = useLlmPresets()
+  const { presets: catalog, defaultPreset } = useMemo(
+    () => resolvePresetCatalog(presetsQuery.data),
+    [presetsQuery.data],
+  )
   const existingNames = useMemo(
     () => (data?.backends ?? []).map((b) => b.name),
     [data],
@@ -289,11 +296,11 @@ function QuickAgentSetupCard({
   const alreadyReady = Boolean(activeBackend && nativeRole && defaultIsNative)
 
   const installedPresets = useMemo(
-    () => installedBuiltinPresetKeys(data?.backends ?? []),
-    [data?.backends],
+    () => installedBuiltinPresetKeys(data?.backends ?? [], catalog),
+    [data?.backends, catalog],
   )
   const [presetKey, setPresetKey] = useState<LlmPresetKey>(() =>
-    firstAvailablePreset(installedBuiltinPresetKeys([])),
+    firstAvailablePreset(installedBuiltinPresetKeys([]), LLM_PRESETS),
   )
   const [name, setName] = useState(() => suggestLlmBackendName(DEFAULT_LLM_PRESET.baseName, existingNames))
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LLM_PRESET.baseUrl)
@@ -307,7 +314,7 @@ function QuickAgentSetupCard({
 
   function applyPreset(next: LlmPresetKey): void {
     if (next !== 'custom' && installedPresets.has(next)) return
-    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    const p = catalog.find((item) => item.key === next) ?? defaultPreset
     setPresetKey(next)
     setBaseUrl(p.baseUrl)
     setModel(p.model)
@@ -316,14 +323,14 @@ function QuickAgentSetupCard({
 
   useEffect(() => {
     if (presetKey === 'custom' || !installedPresets.has(presetKey)) return
-    const next = firstAvailablePreset(installedPresets)
+    const next = firstAvailablePreset(installedPresets, catalog)
     if (next === presetKey) return
-    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    const p = catalog.find((item) => item.key === next) ?? defaultPreset
     setPresetKey(next)
     setBaseUrl(p.baseUrl)
     setModel(p.model)
     setName(suggestLlmBackendName(p.baseName, existingNames))
-  }, [installedPresets, presetKey, existingNames])
+  }, [installedPresets, presetKey, existingNames, catalog, defaultPreset])
 
   async function enableExistingBackend(backendName: string): Promise<void> {
     try {
@@ -338,7 +345,7 @@ function QuickAgentSetupCard({
   }
 
   const isCustom = presetKey === 'custom'
-  const selectedPreset = LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET
+  const selectedPreset = catalog.find((p) => p.key === presetKey) ?? defaultPreset
 
   async function onQuickSubmit(e: FormEvent): Promise<void> {
     e.preventDefault()
@@ -473,7 +480,7 @@ function QuickAgentSetupCard({
             <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {LLM_PRESETS.map((p) => {
+                {catalog.map((p) => {
                   const added = p.key !== 'custom' && installedPresets.has(p.key)
                   return (
                     <SelectItem key={p.key} value={p.key} disabled={added}>
@@ -637,7 +644,7 @@ function groupBackends(
 
 function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
-  const removeBackend = useLlmRemoveBackend()
+  const removeGroup = useLlmRemoveBackendGroup()
   const ping = useLlmPing()
   const [pingResults, setPingResults] = useState<Record<string, string>>({})
   const [probeError, setProbeError] = useState<ProbeErrorState | null>(null)
@@ -650,15 +657,20 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
       count: group.backends.length,
     }))) return
     try {
-      let removedRoles = 0
-      for (const b of group.backends) {
-        const r = await removeBackend.mutateAsync(b.name)
-        removedRoles += r.removedRoles
-      }
+      const sharedLabel = group.backends[0]?.label?.trim().toLowerCase() ?? ''
+      const allSameLabel = Boolean(
+        sharedLabel
+        && group.backends.every((b) => (b.label ?? '').trim().toLowerCase() === sharedLabel),
+      )
+      const r = await removeGroup.mutateAsync(
+        allSameLabel
+          ? { label: sharedLabel }
+          : { names: group.backends.map((b) => b.name) },
+      )
       toast.success(t('llm.removedGroupToast', {
         title: group.title,
-        count: group.backends.length,
-        roles: removedRoles,
+        count: r.removed.length,
+        roles: r.removedRoles,
       }))
     } catch (err) {
       toast.error(((err as Error)?.message ?? String(err)))
@@ -757,7 +769,7 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
                   variant="ghost"
                   size="sm"
                   className="mt-0.5 shrink-0 text-danger hover:text-danger"
-                  disabled={removeBackend.isPending}
+                  disabled={removeGroup.isPending}
                   aria-label={t('llm.removeGroup', { title: group.title })}
                   title={t('llm.removeGroup', { title: group.title })}
                   onClick={(e) => {
@@ -946,12 +958,17 @@ function AddBackendCard(): JSX.Element {
   const addBackend = useLlmAddBackend()
   const quickEnable = useLlmQuickEnable()
   const listQuery = useLlmList()
+  const presetsQuery = useLlmPresets()
+  const { presets: catalog, defaultPreset } = useMemo(
+    () => resolvePresetCatalog(presetsQuery.data),
+    [presetsQuery.data],
+  )
   const installedPresets = useMemo(
-    () => installedBuiltinPresetKeys(listQuery.data?.backends ?? []),
-    [listQuery.data?.backends],
+    () => installedBuiltinPresetKeys(listQuery.data?.backends ?? [], catalog),
+    [listQuery.data?.backends, catalog],
   )
   const [presetKey, setPresetKey] = useState<LlmPresetKey>(() =>
-    firstAvailablePreset(installedBuiltinPresetKeys([])),
+    firstAvailablePreset(installedBuiltinPresetKeys([]), LLM_PRESETS),
   )
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
@@ -968,7 +985,7 @@ function AddBackendCard(): JSX.Element {
   const [extraHeaders, setExtraHeaders] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const isCustom = presetKey === 'custom'
-  const selected = LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET
+  const selected = catalog.find((p) => p.key === presetKey) ?? defaultPreset
   const busy = addBackend.isPending || quickEnable.isPending
   const presetAlreadyAdded = !isCustom && installedPresets.has(presetKey)
 
@@ -1019,7 +1036,7 @@ function AddBackendCard(): JSX.Element {
   function onPickPreset(next: LlmPresetKey): void {
     if (next !== 'custom' && installedPresets.has(next)) return
     setPresetKey(next)
-    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    const p = catalog.find((item) => item.key === next) ?? defaultPreset
     if (next === 'custom') {
       setBaseUrl('')
       setModel('')
@@ -1037,9 +1054,9 @@ function AddBackendCard(): JSX.Element {
   // the next available option so the form never submits a duplicate.
   useEffect(() => {
     if (presetKey === 'custom' || !installedPresets.has(presetKey)) return
-    const next = firstAvailablePreset(installedPresets)
+    const next = firstAvailablePreset(installedPresets, catalog)
     if (next === presetKey) return
-    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    const p = catalog.find((item) => item.key === next) ?? defaultPreset
     setPresetKey(next)
     setCompatTemplate('none')
     setTemperature('')
@@ -1059,7 +1076,7 @@ function AddBackendCard(): JSX.Element {
       setModel(p.model)
       setName('')
     }
-  }, [installedPresets, presetKey])
+  }, [installedPresets, presetKey, catalog, defaultPreset])
 
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
@@ -1141,7 +1158,7 @@ function AddBackendCard(): JSX.Element {
             <Select value={presetKey} onValueChange={(v) => onPickPreset(v as LlmPresetKey)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {LLM_PRESETS.map((p) => {
+                {catalog.map((p) => {
                   const added = p.key !== 'custom' && installedPresets.has(p.key)
                   return (
                     <SelectItem key={p.key} value={p.key} disabled={added}>

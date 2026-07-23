@@ -1,6 +1,6 @@
 # 代码审查报告（2026-07-21）
 
-> 状态：本轮已落地一批高优先级修复（见 §4）；P0b / P1b 已在后续安全加固中关闭；其余项记入 `tech-debt.md` / 本文 backlog。  
+> 状态：**本轮 CR 主清单已收口**。H1–H8 见 §4；P0b/P1b 见 [#219](https://github.com/benking007/agim/pull/219)（已合）；P1a / P2a–P2c / M1 / M2 见 [#220](https://github.com/benking007/agim/pull/220)。残留：P1c（FS 非 restrict 产品默认）、L1、runtime `redirect:manual` → `tech-debt.md`。  
 > 入口：`docs/README.md` · 规范：`docs/coding-standards.md` · 安全基线：`docs/security-hardening.md`
 
 审查范围：全仓高风险面（鉴权 / 密钥 / LLM / Agent 执行 / WebSocket / 发布），并复核近日 LLM 预设与自定义高级参数改动。
@@ -28,15 +28,15 @@
 | H7 | Medium | Auth cookie 缺 `HttpOnly` | **已修**（SPA 走 localStorage） |
 | H8 | Medium | Backend name 大小写唯一性不一致 | **已修**（add 路径） |
 | P0a | P0* | `role=user` 可经 WS 驱动 Agent | **文档澄清**（Portal 有意设计；非 REST 越权） |
-| P0b | P0* | 默认 `AGIM_AUTO_APPROVE=1` + 空 allowlist | **已修**（默认关；开放 IM 无 strict allowlist 时 suppress；见 #218/#219） |
-| P1a | P1 | LLM/MCP URL 缺 ACP 级 SSRF 护栏 | Backlog |
-| P1b | P1 | WS `threadOwners` 仅内存；重启后 first-claim | **已修**（`web-thread-owners.ts` 持久化） |
+| P0b | P0* | 默认 `AGIM_AUTO_APPROVE=1` + 空 allowlist | **已修（#219）**（默认关；开放 IM 无 strict allowlist 时 suppress） |
+| P1a | P1 | LLM/MCP URL 缺 ACP 级 SSRF 护栏 | **已修（#220）**（配置写入走 `assertSafeAcpUrl`；本地需 `AGIM_URL_ALLOW_PRIVATE=1`） |
+| P1b | P1 | WS `threadOwners` 仅内存；重启后 first-claim | **已修（#219）**（`web-thread-owners.ts`） |
 | P1c | P1 | 默认 FS 非 restrict | Backlog（产品默认；`AGIM_NATIVE_FS_RESTRICT=1` 可选） |
-| P2a | P2 | MCP GET 返回 auth headers 明文 | Backlog |
-| P2b | P2 | `tokens.json` RMW 竞态 | Backlog |
-| P2c | P2 | 移动 QR 把 raw token 放进 query | Backlog |
-| M1 | Medium | SPA 预设 SSOT 与 `/api/llm/presets` 未接通 | Backlog |
-| M2 | Medium | 组删除非原子（逐条 DELETE） | Backlog |
+| P2a | P2 | MCP GET 返回 auth headers 明文 | **已修（#220）**（list 脱敏；磁盘仍保留明文供连接） |
+| P2b | P2 | `tokens.json` RMW 竞态 | **部分已修（#220）**（原子 tmp+rename；进程内仍 sync RMW） |
+| P2c | P2 | 移动 QR 把 raw token 放进 query | **已修（#220）**（短 TTL 一次性 `?c=` 兑换；旧 `?t=` 兼容） |
+| M1 | Medium | SPA 预设 SSOT 与 `/api/llm/presets` 未接通 | **已修（#220）**（`useLlmPresets` + fallback + drift test） |
+| M2 | Medium | 组删除非原子（逐条 DELETE） | **已修（#220）**（`DELETE /api/llm/backends?label=` / `?names=`） |
 | L1 | Low | i18n：secret source / role 标签硬编码 | Backlog |
 
 \*P0 标注为「开放 IM / 误配场景下的真实风险」；对「本机单用户 + Web 控制台」默认画像不视为阻断。
@@ -65,12 +65,12 @@
 
 ## 5. 建议后续迭代（不阻塞发版）
 
-1. 复用 `assertSafeAcpUrl` 护 LLM `baseUrl` + MCP HTTP URL；`redirect: 'manual'`
-2. ~~持久化 `threadId → tokenId`~~（已落地 `web-thread-owners.ts`）
-3. MCP list 脱敏 auth headers
-4. SPA 运行时消费 `GET /api/llm/presets`（或 codegen 对齐测试）
-5. `DELETE /api/llm/backends?label=` 组删事务
-6. Mobile QR 改为 short-TTL exchange code
+1. ~~复用 `assertSafeAcpUrl` 护 LLM/MCP 配置 URL~~（#220；runtime fetch 仍可补 `redirect: 'manual'`）
+2. ~~持久化 `threadId → tokenId`~~（#219 `web-thread-owners.ts`）
+3. ~~MCP list 脱敏 auth headers~~（#220）
+4. ~~SPA 运行时消费 `GET /api/llm/presets`~~（#220）
+5. ~~`DELETE /api/llm/backends?label=` 组删事务~~（#220）
+6. ~~Mobile QR short-TTL exchange code~~（#220）
 7. 继续 peel `approval-bus.ts` 厚门面；触摸 >800 行软警告文件时顺带拆分
 
 ## 6. 测试与发版

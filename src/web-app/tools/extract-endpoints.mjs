@@ -22,6 +22,7 @@ const checkMode = process.argv.includes('--check')
 
 const publicRoutes = new Set([
   'POST /api/auth/login',
+  'POST /api/auth/exchange-mobile',
   'GET /api/health',
   'POST /api/loc',
   'GET /api/loc/info',

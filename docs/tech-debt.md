@@ -24,6 +24,12 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `pi-sessions` → `agim-sessions` | Boot rename when target absent |
 | Config `workspaces[]` → `tenants[]` | Prefer `tenants`; dual-write on SPA save |
 | Agim Agent JSONL orphaned on `/new` / TTL | Quarantine + grace purge (`agim-agent-session-lifecycle`) |
+| LLM/MCP URL SSRF guard | CR P1a → `assertSafeAcpUrl` on add; hatch `AGIM_URL_ALLOW_PRIVATE=1` (#220) |
+| MCP GET redact auth headers | CR P2a → list masks Authorization / api-key (#220) |
+| Atomic `tokens.json` writes | CR P2b → tmp+rename like `llm-secrets.json` (#220) |
+| Mobile QR short-TTL exchange | CR P2c → `?c=` + `POST /api/auth/exchange-mobile` (#220) |
+| SPA consume `GET /api/llm/presets` | CR M1 → `useLlmPresets` + fallback + drift test (#220) |
+| Atomic LLM group delete | CR M2 → `DELETE /api/llm/backends?label=` / `?names=` (#220) |
 
 ## Intentionally keep (ops / compat)
 
@@ -51,13 +57,9 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | Full activity-lease before hard-delete | Quarantine uses sessionLocks wait; richer lease is milestone B |
 | Agim Agent metadata index | After retention stable (milestone H) |
 | Unify TUI `/new` id with sessionManager | TUI still mints independent ids |
-| LLM/MCP URL SSRF guard (reuse ACP `url-guard`) | CR 2026-07-21 P1a |
-| MCP GET redact auth headers | CR 2026-07-21 P2a |
-| Atomic / locked `tokens.json` writes | CR 2026-07-21 P2b |
-| Mobile QR: short-TTL exchange code (no raw token in query) | CR 2026-07-21 P2c |
-| SPA consume `GET /api/llm/presets` (drop mirror drift) | CR 2026-07-21 M1 |
-| Atomic LLM group delete API | CR 2026-07-21 M2 |
 | Default FS non-restrict product stance | CR 2026-07-21 P1c — keep opt-in `AGIM_NATIVE_FS_RESTRICT` |
+| LLM/MCP fetch `redirect: 'manual'` + re-validate | Runtime fetch hardening beyond config-time guard |
+| i18n hard-coded secret/role labels | CR L1 |
 
 ## Docs debt (living)
 

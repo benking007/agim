@@ -60,12 +60,19 @@ describe('isPrivateAddr (IPv6)', () => {
 
 describe('assertSafeAcpUrl', () => {
   const ALLOW = 'AGIM_ACP_ALLOW_LOOPBACK'
+  const ALLOW_PRIVATE = 'AGIM_URL_ALLOW_PRIVATE'
   const publicLookup = async () => ({ address: '93.184.216.34', family: 4 })
   const orig = process.env[ALLOW]
-  beforeEach(() => { delete process.env[ALLOW] })
+  const origPrivate = process.env[ALLOW_PRIVATE]
+  beforeEach(() => {
+    delete process.env[ALLOW]
+    delete process.env[ALLOW_PRIVATE]
+  })
   afterEach(() => {
     if (orig === undefined) delete process.env[ALLOW]
     else process.env[ALLOW] = orig
+    if (origPrivate === undefined) delete process.env[ALLOW_PRIVATE]
+    else process.env[ALLOW_PRIVATE] = origPrivate
   })
 
   it('rejects non-http schemes', async () => {
@@ -129,6 +136,12 @@ describe('assertSafeAcpUrl', () => {
     process.env[ALLOW] = '1'
     const u = await assertSafeAcpUrl('http://127.0.0.1:8080/agent/card', { forwardsCredentials: false })
     expect(u.host).toBe('127.0.0.1:8080')
+  })
+
+  it('allows loopback when AGIM_URL_ALLOW_PRIVATE=1 (shared LLM/MCP hatch)', async () => {
+    process.env[ALLOW_PRIVATE] = '1'
+    const u = await assertSafeAcpUrl('http://127.0.0.1:11434/v1', { forwardsCredentials: false })
+    expect(u.port).toBe('11434')
   })
 
   it('accepts a public https URL without credentials', async () => {

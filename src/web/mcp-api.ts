@@ -118,6 +118,25 @@ async function handleAddServer(req: IncomingMessage, res: ServerResponse): Promi
     send(res, 400, { error: 'request body must be a JSON object' })
     return
   }
+  const mcpUrl = typeof body.url === 'string' ? body.url.trim() : ''
+  if (mcpUrl) {
+    const headers = body.headers && typeof body.headers === 'object' ? body.headers : undefined
+    const forwardsCredentials = headers
+      ? Object.keys(headers).some((k) => /^(authorization|proxy-authorization|x-api-key|api-key)$/i.test(k))
+      : false
+    {
+      const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+      try {
+        await assertSafeAcpUrl(mcpUrl, { forwardsCredentials })
+      } catch (err) {
+        if (err instanceof UnsafeAcpUrlError) {
+          send(res, 400, { error: `url blocked: ${err.message}`, reason: err.reason })
+          return
+        }
+        throw err
+      }
+    }
+  }
   try {
     await updateConfigObject((current) => {
       const cfg = current as RawConfig
@@ -217,14 +236,24 @@ async function handleReload(res: ServerResponse): Promise<void> {
 
 // ─── helpers ────────────────────────────────────────────────────────
 
-/** Strip nothing — mcp configs don't contain secrets the way LLM ones
- *  do. Operator-supplied headers MAY contain bearer tokens; for now
- *  we surface them as-is in the API response. SECURITY: the /api/mcp
- *  GET is gated by requireAdmin upstream (see server.ts), so this is
- *  admin-only data. If we later add operator-scoped read-only views,
- *  this is where we'd mask `headers.Authorization`. */
+/** Mask operator-supplied auth headers on GET. /api/mcp is admin-gated,
+ *  but list responses still land in browser memory / HAR / support dumps
+ *  — same posture as LLM `extraHeaders` redaction. */
+const SENSITIVE_MCP_HEADER = /^(authorization|proxy-authorization|x-api-key|api-key)$/i
+
 function sanitizeServer(s: RawMcpServer): RawMcpServer {
-  return s
+  if (!s.headers || typeof s.headers !== 'object') return s
+  const headers: Record<string, string> = {}
+  let masked = false
+  for (const [k, v] of Object.entries(s.headers)) {
+    if (SENSITIVE_MCP_HEADER.test(k) && typeof v === 'string' && v.length > 0) {
+      headers[k] = '***'
+      masked = true
+    } else {
+      headers[k] = v
+    }
+  }
+  return masked ? { ...s, headers } : s
 }
 
 async function readConfig(): Promise<RawConfig> {

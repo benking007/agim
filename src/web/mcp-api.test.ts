@@ -103,6 +103,38 @@ describe('handleMcpApi — add server', () => {
     expect(res.statusCode).toBe(201)
   })
 
+  it('GET list redacts Authorization headers', async () => {
+    await handleMcpApi(makeReq('POST', {
+      name: 'secret-http',
+      url: 'https://example.com/mcp',
+      headers: { Authorization: 'Bearer super-secret', 'X-Custom': 'ok' },
+    }), asRes(makeRes()), url('/api/mcp/servers'))
+    const res = makeRes()
+    await handleMcpApi(makeReq('GET'), asRes(res), url('/api/mcp'))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as {
+      servers: Array<{ name: string; headers?: Record<string, string> }>
+    }
+    const row = body.servers.find((s) => s.name === 'secret-http')
+    expect(row?.headers?.Authorization).toBe('***')
+    expect(row?.headers?.['X-Custom']).toBe('ok')
+    // Disk keeps the raw secret for runtime connect.
+    const config = JSON.parse(readFileSync(join(TMP, 'config.json'), 'utf-8')) as {
+      mcpServers: Array<{ headers?: Record<string, string> }>
+    }
+    expect(config.mcpServers[0]?.headers?.Authorization).toBe('Bearer super-secret')
+  })
+
+  it('rejects private MCP url (SSRF guard)', async () => {
+    const res = makeRes()
+    await handleMcpApi(makeReq('POST', {
+      name: 'ssrf',
+      url: 'http://169.254.169.254/latest/meta-data/',
+    }), asRes(res), url('/api/mcp/servers'))
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body).reason).toBe('private_address')
+  })
+
   it('rejects server with neither command nor url', async () => {
     const res = makeRes()
     await handleMcpApi(makeReq('POST', { name: 'bad1' }),

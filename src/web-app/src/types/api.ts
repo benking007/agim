@@ -1024,10 +1024,12 @@ export interface MobileQRResponse {
   tokenId: string
   /** Human-readable token label written into the token store. */
   label: string
-  /** Full URL embedded in the QR (also useful for copy-paste flows). */
+  /** Full URL embedded in the QR (short-TTL `?c=` exchange code, not raw token). */
   loginUrl: string
   /** PNG data: URL produced by the `qrcode` lib. ~3–5 KB. */
   qrDataUrl: string
+  /** Epoch ms when the one-shot exchange code expires. */
+  exchangeExpiresAt?: number
   /** SPA path to take the admin to for revoke ("/settings/security/tokens"). */
   revokeHint: string
 }

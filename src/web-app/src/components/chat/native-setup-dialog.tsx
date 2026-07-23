@@ -2,7 +2,7 @@ import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { useLlmList, useLlmQuickEnable } from '@/hooks/use-llm-admin'
+import { useLlmList, useLlmPresets, useLlmQuickEnable } from '@/hooks/use-llm-admin'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import {
   DEFAULT_LLM_PRESET,
-  LLM_PRESETS,
+  resolvePresetCatalog,
   suggestLlmBackendName,
   type LlmPresetKey,
 } from '@/lib/llm-presets'
@@ -44,11 +44,16 @@ export function NativeSetupDialog({
   const { t } = useTranslation(['common', 'settings'])
   const quickEnable = useLlmQuickEnable()
   const llmList = useLlmList()
+  const presetsQuery = useLlmPresets()
+  const { presets: catalog, defaultPreset } = useMemo(
+    () => resolvePresetCatalog(presetsQuery.data),
+    [presetsQuery.data],
+  )
 
   const [presetKey, setPresetKey] = useState<LlmPresetKey>('deepseek')
   const preset = useMemo(
-    () => LLM_PRESETS.find((p) => p.key === presetKey) ?? DEFAULT_LLM_PRESET,
-    [presetKey],
+    () => catalog.find((p) => p.key === presetKey) ?? defaultPreset,
+    [presetKey, catalog, defaultPreset],
   )
   const existingNames = useMemo(
     () => (llmList.data?.backends ?? []).map((b) => b.name),
@@ -56,13 +61,13 @@ export function NativeSetupDialog({
   )
 
   const [name, setName] = useState(() => suggestLlmBackendName(DEFAULT_LLM_PRESET.baseName, []))
-  const [baseUrl, setBaseUrl] = useState(preset.baseUrl)
-  const [model, setModel] = useState(preset.model)
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_LLM_PRESET.baseUrl)
+  const [model, setModel] = useState(DEFAULT_LLM_PRESET.model)
   const [apiKey, setApiKey] = useState('')
   const isCustom = presetKey === 'custom'
 
   function applyPreset(next: LlmPresetKey): void {
-    const p = LLM_PRESETS.find((item) => item.key === next) ?? DEFAULT_LLM_PRESET
+    const p = catalog.find((item) => item.key === next) ?? defaultPreset
     setPresetKey(next)
     setBaseUrl(p.baseUrl)
     setModel(p.model)
@@ -139,7 +144,7 @@ export function NativeSetupDialog({
               <Select value={presetKey} onValueChange={(v) => applyPreset(v as LlmPresetKey)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {LLM_PRESETS.map((p) => (
+                  {catalog.map((p) => (
                     <SelectItem key={p.key} value={p.key}>
                       {t(`llm.presets.${p.key}`, { ns: 'settings' })}
                     </SelectItem>

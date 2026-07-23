@@ -69,6 +69,65 @@ function mockLlmFetch(opts: {
     if (u === '/api/llm' && method === 'GET') {
       return jsonResponse({ backends, roles })
     }
+    if (u === '/api/llm/presets' && method === 'GET') {
+      return jsonResponse({
+        defaultPreset: 'deepseek',
+        presets: [
+          {
+            key: 'deepseek',
+            label: 'DeepSeek (recommended)',
+            provider: 'openai-compat',
+            baseUrl: 'https://api.deepseek.com',
+            model: 'deepseek-v4-pro',
+            cheapModel: 'deepseek-v4-flash',
+            models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+            baseName: 'deepseek-agim',
+            defaultThinking: 'high',
+          },
+          {
+            key: 'moonshot',
+            label: 'Kimi',
+            provider: 'openai-compat',
+            baseUrl: 'https://api.moonshot.cn/v1',
+            model: 'kimi-k3',
+            cheapModel: 'kimi-k2.6',
+            models: ['kimi-k3', 'kimi-k2.6'],
+            baseName: 'kimi-agim',
+            defaultThinking: 'high',
+          },
+          {
+            key: 'zhipu',
+            label: 'GLM',
+            provider: 'openai-compat',
+            baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+            model: 'glm-5.2',
+            cheapModel: 'glm-4.7-flash',
+            models: ['glm-5.2', 'glm-4.7-flash'],
+            baseName: 'glm-agim',
+            defaultThinking: 'high',
+          },
+          {
+            key: 'mimo',
+            label: 'MiMo',
+            provider: 'openai-compat',
+            baseUrl: 'https://api.xiaomimimo.com/v1',
+            model: 'mimo-v2.5-pro',
+            cheapModel: 'mimo-v2.5',
+            models: ['mimo-v2.5-pro', 'mimo-v2.5'],
+            baseName: 'mimo-agim',
+            defaultThinking: 'high',
+          },
+          {
+            key: 'custom',
+            label: 'Custom',
+            provider: 'openai-compat',
+            baseUrl: '',
+            model: '',
+            baseName: 'agim-api',
+          },
+        ],
+      })
+    }
     if (u === '/api/config' && method === 'GET') {
       return jsonResponse(config)
     }
@@ -152,6 +211,32 @@ function mockLlmFetch(opts: {
         tokensOut: 2,
         sampleText: 'pong',
       })
+    }
+    if (u.startsWith('/api/llm/backends?') && method === 'DELETE') {
+      const qs = new URL(u, 'http://local').searchParams
+      const label = (qs.get('label') || '').trim().toLowerCase()
+      const names = (qs.get('names') || '').split(',').map((s) => s.trim()).filter(Boolean)
+      const toRemove = new Set<string>()
+      if (label) {
+        for (const b of backends) {
+          if ((b.label ?? '').trim().toLowerCase() === label) toRemove.add(b.name)
+        }
+      } else {
+        for (const n of names) toRemove.add(n)
+      }
+      let removedRoles = 0
+      for (let i = backends.length - 1; i >= 0; i -= 1) {
+        const row = backends[i]
+        if (!row || !toRemove.has(row.name)) continue
+        backends.splice(i, 1)
+      }
+      for (const [role, bound] of Object.entries(roles)) {
+        if (toRemove.has(bound)) {
+          delete roles[role]
+          removedRoles += 1
+        }
+      }
+      return jsonResponse({ removed: [...toRemove], removedRoles })
     }
     const del = u.match(/^\/api\/llm\/backends\/([^/?]+)$/)
     if (del && method === 'DELETE') {
@@ -432,12 +517,10 @@ describe('/settings/llm quick setup', () => {
     expect(confirmSpy).toHaveBeenCalled()
     await waitFor(() => {
       const deletes = fetchSpy.mock.calls.filter(
-        (c) => String(c[0]).startsWith('/api/llm/backends/') && (c[1] as RequestInit | undefined)?.method === 'DELETE',
+        (c) => String(c[0]).startsWith('/api/llm/backends') && (c[1] as RequestInit | undefined)?.method === 'DELETE',
       )
-      expect(deletes.map((c) => String(c[0])).sort()).toEqual([
-        '/api/llm/backends/deepseek-v4-flash',
-        '/api/llm/backends/deepseek-v4-pro',
-      ])
+      expect(deletes).toHaveLength(1)
+      expect(String(deletes[0]?.[0])).toBe('/api/llm/backends?label=deepseek')
     })
   })
 

@@ -35,12 +35,12 @@ describe('decideRender — envelope parsing', () => {
     }
   })
 
-  it('falls back to inline when envelope present but viewer disabled', () => {
+  it('falls back to inline full body when envelope present but viewer disabled', () => {
     const text = '<im-summary>S</im-summary>\n<full-md>BODY</full-md>'
     const r = decideRender(text, { viewerEnabled: false })
     expect(r.mode).toBe('inline')
     if (r.mode === 'inline') {
-      expect(r.inlineText).toBe('S')
+      expect(r.inlineText).toBe('BODY')
     }
   })
 

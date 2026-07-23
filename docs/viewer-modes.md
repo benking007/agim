@@ -21,6 +21,16 @@ Those non-IM surfaces already render markdown well; truncating them into
 📎 links would only hide content. The env flag still exists as the
 master switch for **IM** long-reply routing.
 
+**Hard delivery constraint (not prompt-only):** for `platform=web`
+(browser console, Portal `/m/chat`, macOS/iOS shells) and `tui`, agim
+expands summary-only shapes before the user sees the final bubble:
+
+- `<im-summary>…</im-summary><full-md>…</full-md>` → deliver the full body
+- 「报告已落盘：path.md」+ short digest → append the on-disk markdown when
+  it is longer than the chat text
+
+See `src/core/inline-delivery.ts`.
+
 ## Why this matters
 
 WeChat / Telegram / Feishu / DingTalk all render rich markdown poorly

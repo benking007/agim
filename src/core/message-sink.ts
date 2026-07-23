@@ -34,7 +34,15 @@ import {
 } from './outbox.js'
 import { markJobDelivered, markJobFailed } from './job-board.js'
 import { decideRender } from './render-router.js'
-import { buildPasteUrl, isViewerEnabledForPlatform, getViewerConfig, resolveViewerMode } from './viewer-config.js'
+import {
+  buildPasteUrl,
+  isViewerApplicablePlatform,
+  isViewerEnabledForPlatform,
+  getViewerConfig,
+  resolveViewerMode,
+} from './viewer-config.js'
+import { expandInlineChannelReply } from './inline-delivery.js'
+import { defaultAgentCwd } from './agent-cwd.js'
 import { savePaste } from './viewer-local.js'
 import { postPasteRemote } from './viewer-remote.js'
 
@@ -194,7 +202,14 @@ async function doSend(row: OutboxRow, overrideAdapter?: MessengerAdapter): Promi
  */
 async function applyViewerRouting(text: string, p: SinkPayload, threadKey: string): Promise<string> {
   const cfg = getViewerConfig()
-  // IM-only: AGIM_VIEWER_ENABLED is ignored for web/Portal shells / TUI.
+  // Web / Portal (incl. macOS·iOS shells) / TUI: never summary-only — unwrap
+  // envelopes and expand 「落盘+要点」into the full markdown body.
+  if (!isViewerApplicablePlatform(p.platform)) {
+    return expandInlineChannelReply(text, {
+      workspaceRoot: defaultAgentCwd('agim'),
+    })
+  }
+  // IM-only: AGIM_VIEWER_ENABLED gates truncate-link / summary-link.
   if (!isViewerEnabledForPlatform(p.platform, cfg)) return text
   const decision = decideRender(text, { thresholds: cfg.thresholds, viewerEnabled: true })
 

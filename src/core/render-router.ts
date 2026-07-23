@@ -72,8 +72,9 @@ export function decideRender(text: string, opts: DecideOpts): RenderDecision {
     if (fullMd.length > 0 && opts.viewerEnabled) {
       return { mode: 'summary-link', summary, fullMd }
     }
-    // Envelope present but viewer off — fall through to inline using summary only.
-    return { mode: 'inline', inlineText: summary || fullMd }
+    // Envelope present but viewer off (or non-IM path): prefer the full body.
+    // Summary-only would hide content on Web / Portal / TUI.
+    return { mode: 'inline', inlineText: fullMd || summary }
   }
 
   const th = opts.thresholds ?? DEFAULT_THRESHOLDS

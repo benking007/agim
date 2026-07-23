@@ -47,7 +47,6 @@ import type {
   SearchProvidersResponse,
   SearchTestBody,
   SearchTestResponse,
-  SttProvidersResponse,
   CancelReminderResponse,
   ConsolidateMemoryResponse,
   ConsolidateStatusResponse,
@@ -150,10 +149,6 @@ export const api = {
    *  query and report latency / hit count / error. */
   testSearchProvider: (body: SearchTestBody) =>
     client.post<SearchTestResponse>('/api/search/test', { body }),
-
-  /** GET /api/stt/providers — speech-to-text backends + active default. */
-  getSttProviders: () =>
-    client.get<SttProvidersResponse>('/api/stt/providers'),
 
   /** POST /api/mobile/qr — admin generates a fresh role=user token +
    *  QR PNG (data URL) pointing the scanner at /m/login. v1.2.129. */

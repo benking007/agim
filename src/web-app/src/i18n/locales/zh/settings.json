@@ -995,34 +995,6 @@
     "compactKeepRecentTokens": "保留近期 tokens",
     "compactKeepRecentTokensHint": "AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS。压缩后保留的原始尾部。1M 推荐约 32000。"
   },
-  "stt": {
-    "title": "语音转写",
-    "subtitle": "Portal 按住说话与 IM 语音消息共用这套 STT。可配置 OpenAI / 百度 / 腾讯 / 讯飞 / 本地 whisper.cpp，并指定默认服务。密钥写入 ~/.agim/env，热生效。",
-    "refresh": "刷新",
-    "save": "保存",
-    "discard": "放弃",
-    "unsaved": "有未保存改动",
-    "savedToast": "已保存。下一次转写即生效。",
-    "activeLabel": "当前生效：",
-    "activeOk": "已就绪",
-    "activeNone": "未配置",
-    "activeHint": "由 AGIM_TRANSCRIBE_PROVIDER 决定；留空则按 openai → 百度 → 腾讯 → 讯飞 → whisper.cpp 自动选择第一个已配置项。",
-    "defaultLabel": "默认转写服务",
-    "defaultAuto": "自动（按可用密钥选择）",
-    "defaultNone": "禁用转写",
-    "defaultHint": "写入 AGIM_TRANSCRIBE_PROVIDER。选「自动」时清空该变量。",
-    "providers": {
-      "baidu": "百度短语音识别",
-      "tencent": "腾讯云一句话识别",
-      "iflytek": "讯飞语音听写"
-    },
-    "configured": "已配置",
-    "missing": "未配置",
-    "inUse": "使用中",
-    "keyPlaceholder": "输入新密钥（留空不改）",
-    "valuePlaceholder": "输入值",
-    "clearKey": "清空（删除已保存值）"
-  },
   "search": {
     "title": "Web 搜索 Provider",
     "subtitle": "agim_web_search 工具的后端链路。失败时按顺序回退到下一家。键留空 = 删除该值；填则覆盖。所有修改热生效。",

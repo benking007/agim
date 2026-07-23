@@ -89,7 +89,7 @@ Workspace / 文件 / skill 以蓝色 chip 显示在输入区；光标在文本�
 | Chip 输入 | `portal-composer-input.tsx`、`portal-mention-chip.tsx` |
 | 加号菜单 | `portal-composer-plus.tsx` |
 | 气泡渲染 | `portal-user-content.tsx`、`lib/parse-user-media.ts` |
-| 媒体 API | `src/core/web-media-upload.ts`、`src/web/server.ts` |
+| 媒体 API | `src/core/web-media-upload.ts`、`src/web/chat-media-api.ts` |
 
 ## 安全与权限摘要
 

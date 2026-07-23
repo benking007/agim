@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 /**
- * Extract the REST routes dispatched directly by src/web/server.ts.
+ * Extract REST routes from the web composition root + domain API modules.
  *
- * Default mode updates tools/endpoints.json. `--check` compares the fresh
- * extraction with the committed manifest without touching the worktree.
- * Delegated protocol routers (/api/llm, /api/mcp, /api/goals, and similar)
- * are intentionally out of scope because their routes live in other modules.
+ * After the arch split, most exact/dynamic matches live in
+ * `src/web/*-api.ts` (and auth helpers), while `server.ts` only prefixes
+ * and delegates via `handleXxxApi`. This scanner reads every `src/web/*.ts`
+ * source (except tests) and builds tools/endpoints.json.
+ *
+ * Default mode updates tools/endpoints.json. `--check` compares without writing.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const toolDir = dirname(fileURLToPath(import.meta.url))
 const root = resolve(toolDir, '../../..')
-const serverPath = resolve(root, 'src/web/server.ts')
+const webDir = resolve(root, 'src/web')
 const manifestPath = resolve(toolDir, 'endpoints.json')
 const checkMode = process.argv.includes('--check')
 
@@ -26,8 +28,7 @@ const publicRoutes = new Set([
 ])
 
 // Regex routes cannot be recovered reliably from arbitrary regular
-// expressions. Keeping this small map explicit makes additions reviewable;
-// the detector below fails when server.ts introduces an unmapped *Match.
+// expressions. Keeping this map explicit makes additions reviewable.
 const dynamicRoutes = {
   jobIdMatch: [['GET', '/api/jobs/:id']],
   jobCancelMatch: [['POST', '/api/jobs/:id/cancel']],
@@ -51,6 +52,8 @@ const dynamicRoutes = {
   memFactIdMatch: [['DELETE', '/api/memory/facts/:id']],
   skillDetailMatch: [['GET', '/api/skills/:slug']],
   approvalResolveMatch: [['POST', '/api/approvals/:reqId/resolve']],
+  removeMatch: [['DELETE', '/api/mcp/servers/:name']],
+  healthMatch: [['POST', '/api/mcp/servers/:name/health']],
 }
 
 const ignoredDynamicMatches = new Set([
@@ -59,9 +62,20 @@ const ignoredDynamicMatches = new Set([
 ])
 
 const exactPatterns = [
+  // url.pathname === '/api/x' && req.method === 'GET'
   /if \(url\.pathname === '([^']+)'\s*&&\s*req\.method === '([A-Z]+)'\)/g,
   /if \(req\.method === '([A-Z]+)'\s*&&\s*url\.pathname === '([^']+)'\)/g,
+  // Domain dispatchers: p === '/api/x' && m === 'GET'
+  /if \(p === '([^']+)'\s*&&\s*m === '([A-Z]+)'\)/g,
+  /if \(m === '([A-Z]+)'\s*&&\s*p === '([^']+)'\)/g,
 ]
+
+function listWebSources() {
+  return readdirSync(webDir)
+    .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts') && !name.endsWith('.d.ts'))
+    .map((name) => join(webDir, name))
+    .sort()
+}
 
 function routeKey(endpoint) {
   return `${endpoint.method} ${endpoint.path}`
@@ -80,11 +94,9 @@ function addEndpoint(target, seen, method, path, source) {
   })
 }
 
-function extractEndpoints(sourceText) {
-  const endpoints = []
-  const seen = new Set()
-
+function extractFromText(sourceText, endpoints, seen, detectedMatches) {
   for (const pattern of exactPatterns) {
+    pattern.lastIndex = 0
     for (const match of sourceText.matchAll(pattern)) {
       const first = match[1]
       const second = match[2]
@@ -94,8 +106,8 @@ function extractEndpoints(sourceText) {
     }
   }
 
-  const detectedMatches = new Set()
-  const matchPattern = /const\s+(\w+Match)\s*=\s*url\.pathname\.match\(/g
+  // p.match(...) or url.pathname.match(...)
+  const matchPattern = /const\s+(\w+Match)\s*=\s*(?:p|url\.pathname)\.match\(/g
   for (const match of sourceText.matchAll(matchPattern)) {
     const variable = match[1]
     detectedMatches.add(variable)
@@ -103,42 +115,59 @@ function extractEndpoints(sourceText) {
 
     const routes = dynamicRoutes[variable]
     if (!routes) {
-      throw new Error(`Unmapped dynamic route ${variable}; add it to dynamicRoutes`)
+      throw new Error(`Unmapped dynamic route ${variable}; add it to dynamicRoutes in extract-endpoints.mjs`)
     }
-    const nearbySource = sourceText.slice(match.index, match.index + 600)
+    const nearbySource = sourceText.slice(match.index, match.index + 800)
     const escapedVariable = variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const methodPattern = new RegExp(
-      `if \\(${escapedVariable}\\s*&&\\s*req\\.method === '([A-Z]+)'\\)`,
+      `if \\(${escapedVariable}\\s*&&\\s*(?:m|req\\.method) === '([A-Z]+)'\\)`,
       'g',
     )
-    const detectedMethods = new Set([...nearbySource.matchAll(methodPattern)].map((methodMatch) => methodMatch[1]))
+    const detectedMethods = new Set(
+      [...nearbySource.matchAll(methodPattern)].map((methodMatch) => methodMatch[1]),
+    )
     const expectedMethods = new Set(routes.map(([method]) => method))
     if (
       detectedMethods.size !== expectedMethods.size
       || [...expectedMethods].some((method) => !detectedMethods.has(method))
     ) {
       throw new Error(
-        `${variable} is mapped as ${[...expectedMethods].join(', ')} but server.ts dispatches ${[...detectedMethods].join(', ') || 'an unknown method'}`,
+        `${variable} is mapped as ${[...expectedMethods].join(', ')} but sources dispatch ${[...detectedMethods].join(', ') || 'an unknown method'}`,
       )
     }
     for (const [method, path] of routes) addEndpoint(endpoints, seen, method, path, 'dynamic')
   }
+}
+
+function extractEndpoints() {
+  const endpoints = []
+  const seen = new Set()
+  const detectedMatches = new Set()
+  const sources = listWebSources()
+
+  for (const file of sources) {
+    extractFromText(readFileSync(file, 'utf8'), endpoints, seen, detectedMatches)
+  }
 
   for (const variable of Object.keys(dynamicRoutes)) {
     if (!detectedMatches.has(variable)) {
-      throw new Error(`Stale dynamic route mapping ${variable}; it no longer exists in server.ts`)
+      throw new Error(`Stale dynamic route mapping ${variable}; it no longer exists under src/web/`)
     }
   }
 
-  return endpoints.sort((a, b) => routeKey(a).localeCompare(routeKey(b)))
+  return {
+    sources: sources.map((p) => p.slice(root.length + 1)),
+    endpoints: endpoints.sort((a, b) => routeKey(a).localeCompare(routeKey(b))),
+  }
 }
 
-function serialize(endpoints) {
+function serialize(result) {
   return `${JSON.stringify({
-    generatedFrom: 'src/web/server.ts',
-    scope: 'REST routes dispatched directly by startWebServer',
-    count: endpoints.length,
-    endpoints,
+    generatedFrom: 'src/web/*.ts (composition root + domain *-api modules)',
+    scope: 'REST routes handled by startWebServer and its domain dispatchers',
+    sourceFiles: result.sources,
+    count: result.endpoints.length,
+    endpoints: result.endpoints,
   }, null, 2)}\n`
 }
 
@@ -167,20 +196,20 @@ function printRouteDiff(currentText, endpoints) {
   }
 }
 
-const endpoints = extractEndpoints(readFileSync(serverPath, 'utf8'))
-const next = serialize(endpoints)
+const result = extractEndpoints()
+const next = serialize(result)
 
 if (checkMode) {
   const current = readManifest()
   if (current !== next) {
     console.error('✗ tools/endpoints.json is stale.')
-    printRouteDiff(current, endpoints)
+    printRouteDiff(current, result.endpoints)
     console.error('  Run `npm --prefix src/web-app run update-endpoints` and review the manifest diff.')
     process.exitCode = 1
   } else {
-    console.log(`✓ ${endpoints.length} direct REST routes match tools/endpoints.json`)
+    console.log(`✓ ${result.endpoints.length} REST routes match tools/endpoints.json`)
   }
 } else {
   writeFileSync(manifestPath, next)
-  console.log(`Wrote ${endpoints.length} direct REST routes to tools/endpoints.json`)
+  console.log(`Wrote ${result.endpoints.length} REST routes to tools/endpoints.json`)
 }

@@ -301,10 +301,10 @@ export AGIM_SKILLHUB_ENABLED=0
 |---|---|
 | `approval.allow` / `approval.deny` | `core/approval-router.ts:tryHandleApprovalReply` + R13 G2 sensitive-paths 块 |
 | `admin.elevate` / `admin.revoke` | `core/admin-allowlist.ts:promoteAdmin` + `core/access-token.ts:setTokenRole` |
-| `config.put` | `web/server.ts:handlePutConfig` + R13/R14 几处系统事件 (e.g. ACP bind / 非回环 Web bind / 超时策略=allow / 安全 advisory) |
-| `env.put` | `web/server.ts:handlePutEnv` |
+| `config.put` | `web/config-api.ts`（及 R13/R14 几处系统事件，e.g. ACP bind / 非回环 Web bind / 超时策略=allow / 安全 advisory） |
+| `env.put` | `web/env-api.ts` |
 | `token.create` / `token.revoke` | `core/access-token.ts:createToken/revokeToken` |
-| `workspace.add` / `workspace.delete` | `web/server.ts:handleCreateOrUpdateWorkspace / handleDeleteWorkspace` |
+| `workspace.add` / `workspace.delete` | `web/workspaces-api.ts` |
 
 每条 `details` 字段：**字段名 / 长度 / 哈希前缀**，**严禁原值**。客户端通过 `GET /api/audit/events?types=&actor=&days=&limit=`（admin only）查询。
 

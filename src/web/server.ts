@@ -5290,8 +5290,19 @@ async function handleChatTranscribe(
     }
     if (err instanceof TranscribeError || e.name === 'TranscribeError') {
       const reason = e.reason || e.message
-      if (String(reason).includes('no provider')) {
-        sendError(res, 503, 'STT_NOT_CONFIGURED', { message: reason })
+      const reasonText = String(reason)
+      // Credential / path missing — guide operators to Settings, not raw env names.
+      if (
+        reasonText.includes('no STT provider configured')
+        || reasonText.includes('no provider')
+        || reasonText.includes('not configured')
+        || /AGIM_STT_\w+ not set/.test(reasonText)
+      ) {
+        sendError(res, 503, 'STT_NOT_CONFIGURED', {
+          message: reasonText.includes('/settings/stt')
+            ? reasonText
+            : 'Speech-to-text is not configured. Open /settings/stt and set a cloud vendor (or host whisper.cpp paths).',
+        })
         return
       }
       webLog.warn({ err: e, provider: e.provider }, 'chat transcribe failed')

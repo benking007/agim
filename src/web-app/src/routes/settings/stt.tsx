@@ -427,7 +427,9 @@ export default function SettingsSttRoute(): JSX.Element {
                 ? (zh ? ' · 使用中' : ' · in use')
                 : info.configured
                   ? (zh ? ' · 已配置' : ' · configured')
-                  : ''}
+                  : info.id === 'whispercpp'
+                    ? (zh ? ' · 需主机配置路径' : ' · needs host paths')
+                    : (zh ? ' · 未配置' : ' · not configured')}
             </option>
           ))}
           <option value="none">{zh ? '禁用转写' : 'Disable STT'}</option>

@@ -186,17 +186,11 @@ export function listTranscribeProviders(): {
 /** Resolve which provider to use given current env. Pure / sync. */
 export function detectProvider(): TranscribeProvider {
   const explicit = sttEnv('provider')?.toLowerCase()
-  if (
-    explicit === 'openai'
-    || explicit === 'whispercpp'
-    || explicit === 'baidu'
-    || explicit === 'tencent'
-    || explicit === 'iflytek'
-    || explicit === 'glm'
-    || explicit === 'mimo'
-    || explicit === 'stepfun'
-    || explicit === 'none'
-  ) {
+  if (explicit === 'none') return 'none'
+  // Pin only counts when credentials/paths are actually present. Otherwise
+  // a saved `AGIM_STT_PROVIDER=whispercpp` with no host BIN looks "ready"
+  // and Portal toasts `AGIM_STT_WHISPERCPP_BIN not set`.
+  if (isExplicitProviderName(explicit) && explicit !== 'none' && isProviderConfigured(explicit)) {
     return explicit
   }
   for (const id of ALL_TRANSCRIBE_PROVIDERS) {
@@ -274,21 +268,46 @@ async function transcribeOnce(
   return { text, provider, elapsedMs }
 }
 
+function missingProviderHint(provider: Exclude<TranscribeProvider, 'none'>): string {
+  if (provider === 'whispercpp') {
+    return (
+      'whisper.cpp is not configured on this host '
+      + `(set ${STT_ENV.whisperBin} + ${STT_ENV.whisperModel}) — `
+      + 'or open Web /settings/stt and pick a cloud vendor'
+    )
+  }
+  const keys = PROVIDER_META[provider].envKeys.filter((k) => k.includes('KEY') || k.includes('SECRET') || k.includes('APP_ID'))
+  const keyHint = keys.length ? keys.join(' / ') : 'AGIM_STT_*'
+  return (
+    `${provider} STT is not configured (need ${keyHint}) — open Web /settings/stt`
+  )
+}
+
 /**
- * Run STT. Explicit `opts.provider` or `AGIM_STT_PROVIDER` pins one vendor.
+ * Run STT. Explicit `opts.provider` or a *configured* `AGIM_STT_PROVIDER` pins
+ * one vendor (no failover). Unconfigured env pins fall through to Auto.
  * Auto mode tries configured vendors in priority order and fails over on error.
  */
 export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
   const explicitEnv = sttEnv('provider')?.toLowerCase()
-  const pinned = opts.provider
-    ?? (isExplicitProviderName(explicitEnv) ? explicitEnv : undefined)
+  const envPinned = isExplicitProviderName(explicitEnv) ? explicitEnv : undefined
 
-  if (pinned === 'none') {
+  if (opts.provider === 'none' || envPinned === 'none') {
     throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
   }
 
-  if (pinned) {
-    return transcribeOnce(pinned, filePath, opts)
+  // Caller-requested provider always wins (tests / admin tools).
+  if (opts.provider) {
+    if (!isProviderConfigured(opts.provider)) {
+      throw new TranscribeError(missingProviderHint(opts.provider), opts.provider)
+    }
+    return transcribeOnce(opts.provider, filePath, opts)
+  }
+
+  // Env pin only when credentials exist; otherwise treat as Auto so a
+  // leftover whispercpp pin does not block cloud keys.
+  if (envPinned && isProviderConfigured(envPinned)) {
+    return transcribeOnce(envPinned, filePath, opts)
   }
 
   const chain = configuredProvidersInAutoOrder()

@@ -118,13 +118,23 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('none')
   })
 
-  it('honors explicit AGIM_STT_PROVIDER', () => {
+  it('honors explicit AGIM_STT_PROVIDER when that vendor is configured', () => {
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     process.env.AGIM_STT_PROVIDER = 'openai'
     expect(detectProvider()).toBe('openai')
+    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
     process.env.AGIM_STT_PROVIDER = 'none'
     expect(detectProvider()).toBe('none')
+  })
+
+  it('ignores unconfigured AGIM_STT_PROVIDER=whispercpp pin (no host BIN)', () => {
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    expect(detectProvider()).toBe('none')
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    expect(detectProvider()).toBe('openai')
   })
 
   it('falls back to openai when AGIM_STT_OPENAI_API_KEY is set', () => {
@@ -138,17 +148,32 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('whispercpp')
   })
 
-  it('honors explicit baidu / tencent / iflytek / glm / mimo / stepfun', () => {
+  it('honors explicit baidu / tencent / iflytek / glm / mimo / stepfun when configured', () => {
+    process.env.AGIM_STT_BAIDU_API_KEY = 'ak'
+    process.env.AGIM_STT_BAIDU_SECRET_KEY = 'sk'
     process.env.AGIM_STT_PROVIDER = 'baidu'
     expect(detectProvider()).toBe('baidu')
+
+    process.env.AGIM_STT_TENCENT_SECRET_ID = 'id'
+    process.env.AGIM_STT_TENCENT_SECRET_KEY = 'key'
     process.env.AGIM_STT_PROVIDER = 'tencent'
     expect(detectProvider()).toBe('tencent')
+
+    process.env.AGIM_STT_IFLYTEK_APP_ID = 'app'
+    process.env.AGIM_STT_IFLYTEK_API_KEY = 'ak'
+    process.env.AGIM_STT_IFLYTEK_API_SECRET = 'sk'
     process.env.AGIM_STT_PROVIDER = 'iflytek'
     expect(detectProvider()).toBe('iflytek')
+
+    process.env.AGIM_STT_ZHIPU_API_KEY = 'z'
     process.env.AGIM_STT_PROVIDER = 'glm'
     expect(detectProvider()).toBe('glm')
+
+    process.env.AGIM_STT_MIMO_API_KEY = 'm'
     process.env.AGIM_STT_PROVIDER = 'mimo'
     expect(detectProvider()).toBe('mimo')
+
+    process.env.AGIM_STT_STEPFUN_API_KEY = 's'
     process.env.AGIM_STT_PROVIDER = 'stepfun'
     expect(detectProvider()).toBe('stepfun')
   })
@@ -204,10 +229,18 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('stepfun')
   })
 
-  it('explicit override wins over auto-detection', () => {
+  it('explicit configured override wins over auto-detection', () => {
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
+  })
+
+  it('unconfigured explicit pin falls through to auto cloud', () => {
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    expect(detectProvider()).toBe('openai')
   })
 
   it('ignores pre-release short STT names (no legacy fallback)', () => {
@@ -355,7 +388,24 @@ describe('transcribe — Auto failover across configured providers', () => {
     expect(hits.some((u) => u.includes('/audio/transcriptions'))).toBe(true)
   })
 
-  it('does not failover when AGIM_STT_PROVIDER pins a vendor', async () => {
+  it('unconfigured whispercpp pin falls through to Auto cloud', async () => {
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    const audioPath = join(TEST_ROOT, 'unpin.wav')
+    await writeMinimalWav(audioPath)
+
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ text: 'unpinned ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch
+
+    const result = await transcribe(audioPath)
+    expect(result.provider).toBe('openai')
+    expect(result.text).toBe('unpinned ok')
+  })
+
+  it('does not failover when AGIM_STT_PROVIDER pins a configured vendor', async () => {
     process.env.AGIM_STT_PROVIDER = 'glm'
     process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-key'
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'

@@ -152,6 +152,45 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(decisions2).toEqual([{ behavior: 'allow' }])
   })
 
+  it('pinnable explicit: long timeoutMs override does not stretch auto-allow grace', async () => {
+    // Regression: confirmUnconfinedGoalExec always passes a multi-minute
+    // timeoutMs. Once a session pin exists, that override used to win over
+    // autoAllowGraceMs — SPA hit "Auto-allowing now…" while the bus waited.
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'exec-long-1',
+      reqId: 'unconfined-long-1',
+      toolName: 'agim_exec',
+      input: { command: 'curl -s http://example.com/pin' },
+      requiresExplicitDecision: true,
+      allowSessionPin: true,
+      timeoutMs: 30 * 60 * 1000,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+    bus.resolvePending(KEY, { behavior: 'allow', autoAllowFurther: true }, RUN_CTX.userId)
+    expect(decisions).toEqual([{ behavior: 'allow', autoAllowFurther: true }])
+
+    const decisions2: Decision[] = []
+    await bus.registerSyntheticPending({
+      runId: 'exec-long-2',
+      reqId: 'unconfined-long-2',
+      toolName: 'agim_exec',
+      input: { command: 'curl -s http://example.com/pin2' },
+      requiresExplicitDecision: true,
+      allowSessionPin: true,
+      timeoutMs: 30 * 60 * 1000,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions2.push(d),
+    })
+    expect(notifications[1]?.autoAllow).toEqual({ graceMs: 80 })
+    await sleep(150)
+    expect(decisions2).toEqual([{ behavior: 'allow' }])
+  })
+
   it('lifecycle cancellation preserves a non-user resolution cause', async () => {
     bus.setNotifier(async () => {})
     const causes: string[] = []

@@ -59,20 +59,23 @@ export function VoiceInputOverlay({
         </p>
       </div>
 
-      {/* Bottom arc + translucent ripple + mic (≈ half prior 42vh band) */}
-      <div className="relative h-[21vh] w-full overflow-hidden">
-        {/* Soft ripple halo */}
+      {/* Bottom arc + translucent ripple + mic (≈ half prior 42vh band).
+          No overflow-hidden — clipping the radial halo caused a hard horizontal line. */}
+      <div className="relative h-[21vh] w-full overflow-visible">
+        {/* Soft ripple halo — fades out via gradient + mask, never a clipped edge */}
         {!busy && (
           <div
-            className="absolute inset-x-[-10%] bottom-[-70%] mx-auto aspect-square max-w-none rounded-full"
+            className="pointer-events-none absolute inset-x-[-10%] bottom-[-70%] mx-auto aspect-square max-w-none rounded-full"
             style={{
               width: '120%',
               left: '-10%',
               transform: `scale(${pulse})`,
               transition: 'transform 80ms linear',
               background: cancelling
-                ? 'radial-gradient(circle at 50% 38%, rgba(161,161,170,0.5) 0%, rgba(161,161,170,0.14) 36%, transparent 58%)'
-                : 'radial-gradient(circle at 50% 38%, rgba(52,199,89,0.55) 0%, rgba(52,199,89,0.18) 36%, transparent 58%)',
+                ? 'radial-gradient(circle at 50% 42%, rgba(161,161,170,0.45) 0%, rgba(161,161,170,0.16) 28%, rgba(161,161,170,0.05) 44%, transparent 62%)'
+                : 'radial-gradient(circle at 50% 42%, rgba(52,199,89,0.5) 0%, rgba(52,199,89,0.2) 28%, rgba(52,199,89,0.06) 44%, transparent 62%)',
+              WebkitMaskImage: 'linear-gradient(to top, #000 35%, transparent 92%)',
+              maskImage: 'linear-gradient(to top, #000 35%, transparent 92%)',
             }}
           />
         )}

@@ -476,9 +476,9 @@ program
     const { startSweepTimer: startMemoSweep } = await import('./core/memos.js')
     startMemoSweep()
 
-    // Built-in whisper.cpp: silently prefetch ggml-base.bin in the background
-    // when local STT is likely (pin / CLI present). Never blocks boot; first
-    // transcription still ensures the model if warmup has not finished.
+    // Built-in whisper.cpp: silently install official whisper-cli prebuild
+    // (Linux/Windows) + prefetch ggml-base.bin when local STT is likely.
+    // Never blocks boot; first transcription still ensures runtime if needed.
     try {
       const { startWhisperModelWarmup } = await import('./core/transcribe-whispercpp-resolve.js')
       startWhisperModelWarmup()

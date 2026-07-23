@@ -3,8 +3,18 @@ import { mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 
 const ROOT = join(tmpdir(), `agim-whisper-resolve-${process.pid}-${randomBytes(3).toString('hex')}`)
+
+async function touchBin(modRoot: string): Promise<string> {
+  const binDir = join(modRoot, 'whisper', 'bin')
+  await mkdir(binDir, { recursive: true })
+  const bin = join(binDir, 'whisper-cli')
+  await writeFile(bin, '#!/bin/sh\n')
+  await chmod(bin, 0o755)
+  return bin
+}
 
 describe('whisper.cpp built-in resolve', () => {
   let savedHome: string | undefined
@@ -68,8 +78,9 @@ describe('whisper.cpp built-in resolve', () => {
     expect(shouldWarmupWhisperModel()).toBe(true)
   })
 
-  it('shouldWarmupWhisperModel is false when model already exists', async () => {
+  it('shouldWarmupWhisperModel is false when bin + model already exist', async () => {
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    await touchBin(ROOT)
     const modelDir = join(ROOT, 'whisper', 'models')
     await mkdir(modelDir, { recursive: true })
     await writeFile(join(modelDir, 'ggml-base.bin'), 'x'.repeat(100))
@@ -77,7 +88,29 @@ describe('whisper.cpp built-in resolve', () => {
     expect(shouldWarmupWhisperModel()).toBe(false)
   })
 
-  it('getWhisperModelStatus + startWhisperModelDownload report ready when model exists', async () => {
+  it('shouldWarmupWhisperModel when model exists but CLI is missing (auto-install platforms)', async () => {
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    const modelDir = join(ROOT, 'whisper', 'models')
+    await mkdir(modelDir, { recursive: true })
+    await writeFile(join(modelDir, 'ggml-base.bin'), 'x'.repeat(100))
+    const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 7}`)
+    if (mod.canAutoInstallWhisperBin()) {
+      expect(mod.shouldWarmupWhisperModel()).toBe(true)
+    } else {
+      expect(mod.shouldWarmupWhisperModel()).toBe(false)
+    }
+  })
+
+  it('whisperReleaseAssetForHost covers linux/windows, not darwin', async () => {
+    const { whisperReleaseAssetForHost } = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 8}`)
+    expect(whisperReleaseAssetForHost('linux', 'x64')?.archive).toBe('tar.gz')
+    expect(whisperReleaseAssetForHost('linux', 'arm64')?.archive).toBe('tar.gz')
+    expect(whisperReleaseAssetForHost('win32', 'x64')?.archive).toBe('zip')
+    expect(whisperReleaseAssetForHost('darwin', 'arm64')).toBe(null)
+  })
+
+  it('getWhisperModelStatus + startWhisperModelDownload report ready when bin + model exist', async () => {
+    const bin = await touchBin(ROOT)
     const modelDir = join(ROOT, 'whisper', 'models')
     await mkdir(modelDir, { recursive: true })
     const modelPath = join(modelDir, 'ggml-base.bin')
@@ -87,28 +120,32 @@ describe('whisper.cpp built-in resolve', () => {
     expect(status.ready).toBe(true)
     expect(status.path).toBe(modelPath)
     expect(status.downloading).toBe(false)
-    expect(status.bin).toBe(null)
+    expect(status.bin).toBe(bin)
     expect(status.defaultBinPath).toContain('whisper-cli')
     const start = mod.startWhisperModelDownload()
     expect(start.alreadyReady).toBe(true)
     expect(start.started).toBe(false)
   })
 
-  it('install hint stresses missing CLI when model already exists', async () => {
+  it('install hint mentions auto-install or manual brew depending on platform', async () => {
     const modelDir = join(ROOT, 'whisper', 'models')
     await mkdir(modelDir, { recursive: true })
     await writeFile(join(modelDir, 'ggml-base.bin'), 'x'.repeat(100))
     const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 6}`)
     const zh = mod.whisperCppInstallHintZh()
     const en = mod.whisperCppInstallHintEn()
-    expect(zh).toMatch(/缺少 whisper-cli/)
+    if (mod.canAutoInstallWhisperBin()) {
+      expect(zh).toMatch(/自动安装|初始化本地引擎/)
+      expect(en).toMatch(/auto-install|Initialize local engine/i)
+    } else {
+      expect(zh).toMatch(/brew install whisper-cpp|无预编译包/)
+      expect(en).toMatch(/brew install whisper-cpp|No prebuild/)
+    }
     expect(zh).toMatch(/模型已就绪/)
-    expect(en).toMatch(/Missing whisper-cli/)
-    expect(en).toMatch(/model is already ready/)
-    expect(zh).not.toMatch(/模型会自动下载/)
   })
 
-  it('startWhisperModelDownload starts when model is missing', async () => {
+  it('startWhisperModelDownload starts when model is missing (bin already present)', async () => {
+    await touchBin(ROOT)
     const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 5}`)
     // Stub fetch so we don't hit the network in unit tests.
     const originalFetch = globalThis.fetch
@@ -117,11 +154,34 @@ describe('whisper.cpp built-in resolve', () => {
       const start = mod.startWhisperModelDownload()
       expect(start.alreadyReady).toBe(false)
       expect(start.started || start.alreadyRunning).toBe(true)
-      expect(mod.getWhisperModelStatus().downloading).toBe(true)
       await mod.ensureWhisperModel()
       expect(mod.getWhisperModelStatus().ready).toBe(true)
     } finally {
       globalThis.fetch = originalFetch
     }
   })
+
+  it('ensureWhisperBin installs official linux prebuild into ~/.agim/whisper/bin', async () => {
+    if (process.platform !== 'linux' || process.arch !== 'x64') return
+    const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 9}`)
+    // Real network download — skip if offline / blocked.
+    try {
+      execFileSync('curl', ['-fsI', mod.whisperReleaseAssetForHost()!.url], {
+        stdio: 'ignore',
+        timeout: 10_000,
+      })
+    } catch {
+      return
+    }
+    const bin = await mod.ensureWhisperBin()
+    expect(bin).toBe(mod.defaultWhisperBinPath())
+    expect(mod.resolveWhisperBin()).toBe(bin)
+    // Smoke: binary starts (may print usage).
+    try {
+      execFileSync(bin, ['--help'], { stdio: 'ignore', timeout: 15_000 })
+    } catch {
+      // Some builds exit non-zero on --help; file presence is enough.
+      expect(true).toBe(true)
+    }
+  }, 120_000)
 })

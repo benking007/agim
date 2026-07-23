@@ -41,7 +41,6 @@ import {
   getWhisperModelStatus,
   isWhisperCppReady,
   resolveWhisperCppForTranscribe,
-  whisperCppInstallHintEn,
   whisperCppInstallHintZh,
   type WhisperModelStatus,
 } from './transcribe-whispercpp-resolve.js'

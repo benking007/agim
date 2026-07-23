@@ -127,8 +127,9 @@ describe('transcribe — detectProvider', () => {
     }
   })
 
-  it('returns "none" when nothing is configured', () => {
-    expect(detectProvider()).toBe('none')
+  it('returns none — or whispercpp when CLI can auto-install — when nothing is configured', async () => {
+    const { canAutoInstallWhisperBin } = await import('./transcribe-whispercpp-resolve.js')
+    expect(detectProvider()).toBe(canAutoInstallWhisperBin() ? 'whispercpp' : 'none')
   })
 
   it('honors explicit AGIM_STT_PROVIDER when that vendor is configured', async () => {
@@ -222,20 +223,23 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('iflytek')
   })
 
-  it('does not treat LLM MIMO_API_KEY as STT-configured', () => {
+  it('does not treat LLM MIMO_API_KEY as STT-configured', async () => {
+    const { canAutoInstallWhisperBin } = await import('./transcribe-whispercpp-resolve.js')
     process.env.MIMO_API_KEY = 'legacy-mimo'
-    expect(detectProvider()).toBe('none')
+    // LLM keys never unlock STT; local whisper.cpp may still Auto-install.
+    expect(detectProvider()).toBe(canAutoInstallWhisperBin() ? 'whispercpp' : 'none')
     process.env.AGIM_STT_MIMO_API_KEY = 'stt-mimo'
     expect(detectProvider()).toBe('mimo')
   })
 
-  it('does not treat LLM STEPFUN_API_KEY / STEP_API_KEY / AGIM_ZHIPU_API_KEY / OPENAI_API_KEY as STT-configured', () => {
+  it('does not treat LLM STEPFUN_API_KEY / STEP_API_KEY / AGIM_ZHIPU_API_KEY / OPENAI_API_KEY as STT-configured', async () => {
+    const { canAutoInstallWhisperBin } = await import('./transcribe-whispercpp-resolve.js')
     process.env.STEPFUN_API_KEY = 'llm-only-step'
     process.env.STEP_API_KEY = 'alt-llm-step'
     process.env.AGIM_ZHIPU_API_KEY = 'llm-zhipu'
     process.env.OPENAI_API_KEY = 'llm-openai'
     process.env.MIMO_API_KEY = 'llm-mimo'
-    expect(detectProvider()).toBe('none')
+    expect(detectProvider()).toBe(canAutoInstallWhisperBin() ? 'whispercpp' : 'none')
     process.env.AGIM_STT_STEPFUN_API_KEY = 'stt-step'
     expect(detectProvider()).toBe('stepfun')
   })
@@ -253,7 +257,8 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('whispercpp')
   })
 
-  it('ignores pre-release short STT names (no legacy fallback)', () => {
+  it('ignores pre-release short STT names (no legacy fallback)', async () => {
+    const { canAutoInstallWhisperBin } = await import('./transcribe-whispercpp-resolve.js')
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'openai'
@@ -261,7 +266,8 @@ describe('transcribe — detectProvider', () => {
     process.env.AGIM_MIMO_API_KEY = 'mimo'
     process.env.AGIM_WHISPERCPP_BIN = '/bin/whisper'
     process.env.AGIM_WHISPERCPP_MODEL = '/models/m.bin'
-    expect(detectProvider()).toBe('none')
+    // Short names ignored; Auto may still offer silent local whisper.cpp.
+    expect(detectProvider()).toBe(canAutoInstallWhisperBin() ? 'whispercpp' : 'none')
   })
 
   it('ignores unknown explicit value and falls through to auto-detect', () => {
@@ -286,12 +292,22 @@ describe('transcribe — settings UI provider order', () => {
     }
   })
 
-  it('lists by auto priority when nothing is configured', () => {
+  it('lists by auto priority when nothing is configured', async () => {
+    const { canAutoInstallWhisperBin } = await import('./transcribe-whispercpp-resolve.js')
     const { providers, active } = listTranscribeProviders()
-    expect(active).toBe('none')
-    expect(providers.map((p) => p.id)).toEqual([
-      'iflytek', 'tencent', 'baidu', 'stepfun', 'mimo', 'glm', 'openai', 'whispercpp',
-    ])
+    if (canAutoInstallWhisperBin()) {
+      // Silent CLI install makes whisper.cpp Auto-available on Linux/Windows.
+      expect(active).toBe('whispercpp')
+      expect(providers[0]?.id).toBe('whispercpp')
+      expect(providers.map((p) => p.id).sort()).toEqual([
+        'baidu', 'glm', 'iflytek', 'mimo', 'openai', 'stepfun', 'tencent', 'whispercpp',
+      ].sort())
+    } else {
+      expect(active).toBe('none')
+      expect(providers.map((p) => p.id)).toEqual([
+        'iflytek', 'tencent', 'baidu', 'stepfun', 'mimo', 'glm', 'openai', 'whispercpp',
+      ])
+    }
   })
 
   it('puts active + other configured ahead of missing, preserving priority', async () => {
@@ -344,6 +360,7 @@ describe('transcribe — none provider raises clear error', () => {
   })
 
   it('throws TranscribeError with helpful message', async () => {
+    process.env.AGIM_STT_PROVIDER = 'none'
     await expect(transcribe('/no/such/file')).rejects.toThrow(/no STT provider configured|\/settings\/stt/)
   })
 })
@@ -400,10 +417,22 @@ describe('transcribe — Auto failover across configured providers', () => {
   it('whispercpp pin does not silently fall through to Auto cloud', async () => {
     process.env.AGIM_STT_PROVIDER = 'whispercpp'
     process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_HOME = TEST_ROOT
     const audioPath = join(TEST_ROOT, 'unpin.wav')
     await writeMinimalWav(audioPath)
-
-    await expect(transcribe(audioPath)).rejects.toThrow(/whisper-cli|缺少 whisper-cli|\.agim\/whisper/i)
+    // Block silent CLI/model download so the pin fails locally (not via OpenAI).
+    const prevFetch = globalThis.fetch
+    globalThis.fetch = (async () => {
+      throw new Error('network blocked in test')
+    }) as unknown as typeof fetch
+    try {
+      await expect(transcribe(audioPath)).rejects.toThrow(
+        /whisper|本地|自动安装|初始化本地|brew install|\.agim\/whisper|network blocked/i,
+      )
+    } finally {
+      globalThis.fetch = prevFetch
+      delete process.env.AGIM_HOME
+    }
   })
 
   it('does not failover when AGIM_STT_PROVIDER pins a configured vendor', async () => {

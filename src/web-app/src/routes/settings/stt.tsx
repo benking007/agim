@@ -293,7 +293,10 @@ function useSttProviders() {
     queryFn: fetchSttProviders,
     retry: 1,
     // Poll while the model is downloading so the card flips to "ready".
-    refetchInterval: (q) => (q.state.data?.whisperModel?.downloading ? 2000 : false),
+    refetchInterval: (q) => {
+      const m = q.state.data?.whisperModel
+      return m?.downloading || m?.binDownloading ? 2000 : false
+    },
   })
 }
 
@@ -520,9 +523,9 @@ function ProviderCard(props: {
     onSuccess: (r) => {
       onWhisperModelChanged?.()
       if (r.alreadyReady) {
-        toast.success(zh ? '模型已就绪' : 'Model already ready')
-      } else if (r.alreadyRunning || r.started || r.downloading) {
-        toast.message(zh ? '正在下载模型…' : 'Downloading model…')
+        toast.success(zh ? '本地引擎已就绪' : 'Local engine already ready')
+      } else if (r.alreadyRunning || r.started || r.downloading || r.binDownloading) {
+        toast.message(zh ? '正在安装本地引擎…' : 'Installing local engine…')
       }
     },
     onError: (e) => toast.error((e as Error).message),
@@ -531,22 +534,30 @@ function ProviderCard(props: {
   // Toast once when a download we were watching finishes (or fails).
   const [wasDownloading, setWasDownloading] = useState(false)
   useEffect(() => {
-    if (whisperModel?.downloading) {
+    const busy = !!(whisperModel?.downloading || whisperModel?.binDownloading)
+    if (busy) {
       setWasDownloading(true)
       return
     }
     if (!wasDownloading || !whisperModel) return
     setWasDownloading(false)
-    if (whisperModel.ready) {
-      toast.success(zh ? '模型下载完成' : 'Model download complete')
-    } else if (whisperModel.lastError) {
+    if (whisperModel.ready && whisperModel.bin) {
+      toast.success(zh ? '本地引擎就绪' : 'Local engine ready')
+    } else if (whisperModel.binLastError || whisperModel.lastError) {
       toast.error(
         zh
-          ? `模型下载失败：${whisperModel.lastError}`
-          : `Model download failed: ${whisperModel.lastError}`,
+          ? `安装失败：${whisperModel.binLastError || whisperModel.lastError}`
+          : `Install failed: ${whisperModel.binLastError || whisperModel.lastError}`,
       )
     }
   }, [whisperModel, wasDownloading, zh])
+
+  const runtimeBusy = !!(
+    initModel.isPending
+    || whisperModel?.downloading
+    || whisperModel?.binDownloading
+  )
+  const runtimeReady = !!(whisperModel?.ready && whisperModel?.bin)
 
   return (
     <div className="rounded-md border border-border bg-surface p-4 space-y-3">
@@ -570,8 +581,8 @@ function ProviderCard(props: {
       {info.fallback && (
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '内置开源本地转写（whisper.cpp）。默认查找 PATH / ~/.agim/whisper/bin/whisper-cli；模型可静默预热或点下方「初始化模型」下载到 ~/.agim/whisper/models/。也可设 AGIM_STT_WHISPERCPP_BIN / MODEL。'
-            : 'Built-in open-source local STT (whisper.cpp). Looks up PATH / ~/.agim/whisper/bin/whisper-cli; model can prefetch silently or via Initialize below into ~/.agim/whisper/models/. Optional AGIM_STT_WHISPERCPP_BIN / MODEL.'}
+            ? '内置开源本地转写（whisper.cpp）。Linux/Windows 可在 agim start 或点下方「初始化本地引擎」自动安装官方 CLI + 模型到 ~/.agim/whisper/；macOS 请 brew install whisper-cpp。也可设 AGIM_STT_WHISPERCPP_BIN / MODEL。'
+            : 'Built-in open-source local STT (whisper.cpp). On Linux/Windows, agim start or Initialize below auto-installs the official CLI + model under ~/.agim/whisper/; macOS: brew install whisper-cpp. Optional AGIM_STT_WHISPERCPP_BIN / MODEL.'}
         </p>
       )}
       {info.id === 'whispercpp' && (
@@ -579,7 +590,12 @@ function ProviderCard(props: {
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2 text-[12px]">
               <span className="text-text-dim">{zh ? 'CLI：' : 'CLI:'}</span>
-              {whisperModel?.bin ? (
+              {whisperModel?.binDownloading ? (
+                <Badge variant="info" className="gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {zh ? '安装中' : 'Installing'}
+                </Badge>
+              ) : whisperModel?.bin ? (
                 <Badge variant="success" className="gap-1">
                   <CheckCircle2 className="h-3 w-3" />
                   {zh ? '已安装' : 'Installed'}
@@ -587,7 +603,9 @@ function ProviderCard(props: {
               ) : (
                 <Badge variant="outline" className="gap-1 text-warning">
                   <XCircle className="h-3 w-3" />
-                  {zh ? '未安装（转写需要）' : 'Missing (required)'}
+                  {whisperModel?.canAutoInstallBin
+                    ? (zh ? '未安装（可自动安装）' : 'Missing (auto-install)')
+                    : (zh ? '未安装（需手动）' : 'Missing (manual)')}
                 </Badge>
               )}
             </div>
@@ -601,17 +619,24 @@ function ProviderCard(props: {
             </p>
             {!whisperModel?.bin && (
               <p className="text-[11px] text-warning">
-                {zh
-                  ? '模型就绪也不够：请安装 whisper-cli 到上述路径，或 brew install whisper-cpp / 放入 PATH。'
-                  : 'Model alone is not enough — install whisper-cli at the path above (or brew install whisper-cpp / PATH).'}
+                {whisperModel?.canAutoInstallBin
+                  ? (zh
+                    ? '可点下方按钮或等 agim start 静默安装官方预编译包。'
+                    : 'Use the button below or wait for silent install on agim start.')
+                  : (zh
+                    ? '当前平台无预编译包：请 brew install whisper-cpp 或自备 whisper-cli。'
+                    : 'No prebuild for this platform — brew install whisper-cpp or provide whisper-cli.')}
               </p>
+            )}
+            {whisperModel?.binLastError && !whisperModel.bin && !whisperModel.binDownloading && (
+              <p className="text-[11px] text-warning break-all">{whisperModel.binLastError}</p>
             )}
           </div>
           <div className="flex flex-col gap-2 border-t border-border/50 pt-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2 text-[12px]">
                 <span className="text-text-dim">{zh ? '模型：' : 'Model:'}</span>
-                {whisperModel?.downloading || initModel.isPending ? (
+                {whisperModel?.downloading ? (
                   <Badge variant="info" className="gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {zh ? '下载中' : 'Downloading'}
@@ -639,21 +664,17 @@ function ProviderCard(props: {
               type="button"
               size="sm"
               variant="secondary"
-              disabled={
-                initModel.isPending
-                || !!whisperModel?.downloading
-                || !!whisperModel?.ready
-              }
+              disabled={runtimeBusy || runtimeReady}
               onClick={() => initModel.mutate()}
             >
-              {initModel.isPending || whisperModel?.downloading
+              {runtimeBusy
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <Download className="h-4 w-4" />}
-              {whisperModel?.ready
-                ? (zh ? '模型已就绪' : 'Model ready')
-                : whisperModel?.downloading || initModel.isPending
-                  ? (zh ? '下载中…' : 'Downloading…')
-                  : (zh ? '初始化模型' : 'Initialize model')}
+              {runtimeReady
+                ? (zh ? '本地引擎已就绪' : 'Engine ready')
+                : runtimeBusy
+                  ? (zh ? '安装中…' : 'Installing…')
+                  : (zh ? '初始化本地引擎' : 'Initialize local engine')}
             </Button>
           </div>
         </div>

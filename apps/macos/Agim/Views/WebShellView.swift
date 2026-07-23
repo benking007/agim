@@ -154,6 +154,18 @@ struct WebViewRepresentable: NSViewRepresentable {
             }
         }
 
+        /// Portal hold-to-talk: grant mic for the paired host origin.
+        @available(macOS 12.0, *)
+        func webView(
+            _ webView: WKWebView,
+            requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+            initiatedByFrame frame: WKFrameInfo,
+            type: WKMediaCaptureType,
+            decisionHandler: @escaping (WKPermissionDecision) -> Void
+        ) {
+            decisionHandler(.grant)
+        }
+
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage

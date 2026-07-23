@@ -870,6 +870,13 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/chat/media' && req.method === 'POST') {
       return handleChatMediaUpload(req, res, url)
     }
+    // Portal hold-to-talk → Whisper / whisper.cpp → plain text for chat send.
+    if (url.pathname === '/api/chat/transcribe' && req.method === 'POST') {
+      return handleChatTranscribe(req, res, url)
+    }
+    if (url.pathname === '/api/chat/transcribe' && req.method === 'GET') {
+      return handleChatTranscribeStatus(req, res)
+    }
     // Serve a previously uploaded chat media file for in-bubble preview.
     if (url.pathname === '/api/chat/media/file' && req.method === 'GET') {
       return handleChatMediaFile(req, res, url)
@@ -5156,6 +5163,88 @@ async function handleChatFeedback(
     messageIndex,
     messageId: resolvedId || null,
   })
+}
+
+async function handleChatTranscribeStatus(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { isTranscribeConfigured } = await import('../core/chat-transcribe.js')
+  const { detectProvider } = await import('../core/transcribe.js')
+  sendJson(res, 200, {
+    configured: isTranscribeConfigured(),
+    provider: detectProvider(),
+  })
+}
+
+async function handleChatTranscribe(
+  req: IncomingMessage,
+  res: ServerResponse,
+  _url: URL,
+): Promise<void> {
+  const {
+    CHAT_TRANSCRIBE_MAX_BYTES,
+    isTranscribeConfigured,
+    transcribeChatAudio,
+  } = await import('../core/chat-transcribe.js')
+  const { TranscribeError } = await import('../core/transcribe.js')
+  if (!isTranscribeConfigured()) {
+    sendError(res, 503, 'STT_NOT_CONFIGURED', {
+      message: 'Speech-to-text is not configured. Set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN.',
+    })
+    return
+  }
+  const filenameHeader = req.headers['x-agim-filename']
+  const mimeHeader = req.headers['x-agim-mime']
+  const langHeader = req.headers['x-agim-language']
+  const filenameRaw = Array.isArray(filenameHeader) ? filenameHeader[0] : filenameHeader
+  const mime = Array.isArray(mimeHeader) ? mimeHeader[0] : mimeHeader
+  const language = Array.isArray(langHeader) ? langHeader[0] : langHeader
+  let filename = filenameRaw
+  if (filename) {
+    try { filename = decodeURIComponent(filename) } catch { /* keep raw */ }
+  }
+  try {
+    const body = await readBinaryBody(req, res, CHAT_TRANSCRIBE_MAX_BYTES)
+    const result = await transcribeChatAudio({
+      body,
+      mime: mime || undefined,
+      filename: filename || undefined,
+      language: language || 'zh',
+    })
+    const text = (result.text || '').trim()
+    if (!text) {
+      sendError(res, 422, 'STT_EMPTY', { message: 'No speech detected' })
+      return
+    }
+    sendJson(res, 200, {
+      text,
+      provider: result.provider,
+      elapsedMs: result.elapsedMs,
+    })
+  } catch (err) {
+    const e = err as Error & { code?: string; handled?: boolean; reason?: string; provider?: string }
+    if (e.handled) return
+    if (e.code === 'TOO_LARGE') {
+      sendError(res, 413, 'STT_TOO_LARGE', {
+        message: e.message,
+        extra: { maxBytes: CHAT_TRANSCRIBE_MAX_BYTES },
+      })
+      return
+    }
+    if (err instanceof TranscribeError || e.name === 'TranscribeError') {
+      const reason = e.reason || e.message
+      if (String(reason).includes('no provider')) {
+        sendError(res, 503, 'STT_NOT_CONFIGURED', { message: reason })
+        return
+      }
+      webLog.warn({ err: e, provider: e.provider }, 'chat transcribe failed')
+      sendError(res, 502, 'STT_FAILED', { message: reason || 'transcription failed' })
+      return
+    }
+    webLog.warn({ err: e }, 'chat transcribe failed')
+    sendError(res, 500, 'STT_FAILED', { message: e.message || 'transcription failed' })
+  }
 }
 
 async function handleChatMediaUpload(

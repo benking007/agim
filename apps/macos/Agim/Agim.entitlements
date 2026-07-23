@@ -9,5 +9,8 @@
 	<!-- Portal: file pick (open) + save-as Markdown (NSSavePanel). -->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<!-- Portal hold-to-talk: WKWebView getUserMedia microphone. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>

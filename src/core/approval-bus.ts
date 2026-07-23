@@ -14,15 +14,59 @@
 // 单实例 export approvalBus；测试可 new ApprovalBus({approvalTimeoutMs}) 调小超时。
 
 import { createServer, type Server, type Socket } from 'node:net'
-import { readFileSync } from 'node:fs'
 import { unlink, stat as fsStat, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
-import { CONFIG_FILE } from './config-store.js'
-import { isSenderAllowlistStrict } from './sender-allowlist.js'
+import {
+  isAutoApproveEnabled,
+  isAutoApproveEffective,
+  isTimeoutDefaultAllow,
+  announceTimeoutDefaultIfAllow,
+  stopTimeoutDefaultReminder,
+  READONLY_TOOLS,
+  READONLY_AUTO_ALLOW_GLOBAL_ENABLED,
+} from './approval/policy.js'
+import {
+  autoAllowRuleKey,
+  humanizeFingerprint,
+  inputFingerprint,
+} from './approval/fingerprint.js'
+import type {
+  RunContext,
+  Decision,
+  ApprovalNotification,
+  ApprovalNotifier,
+  ResolvedInfo,
+  ResolutionCause,
+  ResolutionEvent,
+  ResolutionListener,
+  ApprovalBusOptions,
+} from './approval/types.js'
+import { threadKey } from './approval/types.js'
+
+export type {
+  RunContext,
+  Decision,
+  ApprovalNotification,
+  ApprovalNotifier,
+  ResolvedInfo,
+  ResolutionCause,
+  ResolutionEvent,
+  ResolutionListener,
+  ApprovalBusOptions,
+}
+export { threadKey }
+export {
+  isAutoApproveEnabled,
+  isAutoApproveEffective,
+  isTimeoutDefaultAllow,
+  announceTimeoutDefaultIfAllow,
+  stopTimeoutDefaultReminder,
+}
+export { humanizeFingerprint, inputFingerprint }
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
@@ -47,207 +91,6 @@ const MAX_PENDING_APPROVALS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// AGIM_AUTO_APPROVE — first-class auto-approve switch (default OFF).
-// When enabled, tool calls are approved immediately after safety checks
-// (sensitive-path hard-deny + self-protect), without sending an IM
-// approval card or waiting for any timeout. The approval bus still runs
-// so audit trail, metrics, and safety checks all remain active.
-//
-// Safe default is OFF: open IM + auto-approve is a remote command surface.
-// Opt in with AGIM_AUTO_APPROVE=1. When IM messengers are configured and
-// AGIM_ALLOWED_USERS is not a strict platform:userId list, auto-approve
-// is suppressed unless AGIM_AUTO_APPROVE_OPEN_IM=1 (explicit ack).
-//
-// Read per call (not cached at module load) so the Web Settings panel
-// can hot-toggle it via handlePutEnv.
-export function isAutoApproveEnabled(): boolean {
-  const raw = (process.env.AGIM_AUTO_APPROVE ?? '0').toLowerCase().trim()
-  return raw !== '0' && raw !== 'off' && raw !== 'false' && raw !== 'no' && raw !== ''
-}
-
-/** True when auto-approve may actually fire (env on AND open-IM gate OK). */
-export function isAutoApproveEffective(): boolean {
-  if (!isAutoApproveEnabled()) return false
-  if ((process.env.AGIM_AUTO_APPROVE_OPEN_IM || '').trim() === '1') return true
-  if (isSenderAllowlistStrict()) return true
-  // Web-console-only (no IM messengers) may keep auto-approve without
-  // a sender allowlist — tokens already gate the control plane.
-  if (!hasConfiguredImMessengersSync()) return true
-  return false
-}
-
-function hasConfiguredImMessengersSync(): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as { messengers?: unknown }
-    return Array.isArray(parsed.messengers) && parsed.messengers.length > 0
-  } catch {
-    return false
-  }
-}
-
-// AGIM_APPROVAL_ON_TIMEOUT=allow | deny (default allow). Legacy alias:
-// AGIM_TIMEOUT_DEFAULT. Decides what the bus returns when a pending
-// approval times out without a human response. Only relevant when
-// AGIM_AUTO_APPROVE is off (otherwise tools never reach the timeout
-// path). Default 'allow' auto-approves on timeout; set 'deny' for
-// strict interactive mode.
-//
-// Read at every timer fire (not captured at module load) so the Web
-// Settings card can hot-toggle it.
-export function isTimeoutDefaultAllow(): boolean {
-  // Canonical: AGIM_APPROVAL_ON_TIMEOUT. Legacy: AGIM_TIMEOUT_DEFAULT.
-  // Both accept allow|deny; default allow. Read at every timer fire so
-  // the Web Settings card can hot-toggle without restart.
-  const raw = (
-    process.env.AGIM_APPROVAL_ON_TIMEOUT
-    ?? process.env.AGIM_TIMEOUT_DEFAULT
-    ?? 'allow'
-  ).toLowerCase()
-  return raw !== 'deny'
-}
-
-// R13 C1 — visibility for "user away" mode. When AGIM_APPROVAL_ON_TIMEOUT
-// (legacy AGIM_TIMEOUT_DEFAULT) is `allow`, every approval that times out
-// without IM response auto-approves — that's a meaningful weakening of the
-// human-in-the-loop guarantee.
-let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
-
-export function announceTimeoutDefaultIfAllow(): void {
-  // Log auto-approve status at startup. Enabled is now opt-in and gets a
-  // loud banner — especially when IM is open without a strict allowlist.
-  if (isAutoApproveEnabled()) {
-    const effective = isAutoApproveEffective()
-    const banner = [
-      '',
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      effective
-        ? '⚠️  AGIM_AUTO_APPROVE=1 — tool calls auto-approved after safety checks'
-        : '⚠️  AGIM_AUTO_APPROVE=1 but SUPPRESSED (open IM without strict allowlist)',
-      '',
-      effective
-        ? '   Mutating tools skip IM approval cards. For untrusted IM set AGIM_AUTO_APPROVE=0.'
-        : '   IM messengers are configured and AGIM_ALLOWED_USERS is not a strict',
-      effective
-        ? '   Or lock senders: AGIM_ALLOWED_USERS=platform:userId,...'
-        : '   platform:userId list — auto-approve will not fire. Fix with either:',
-      ...(effective
-        ? []
-        : [
-          '     • AGIM_ALLOWED_USERS=telegram:123,...   (recommended)',
-          '     • AGIM_AUTO_APPROVE_OPEN_IM=1           (explicit open-IM ack)',
-        ]),
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-      '',
-    ].join('\n')
-    process.stdout.write(banner)
-    log.warn({
-      event: effective
-        ? 'approval.bus.auto_approve_enabled'
-        : 'approval.bus.auto_approve_suppressed_open_im',
-      effective,
-    }, effective
-      ? 'AGIM_AUTO_APPROVE=on — tool calls auto-approved after safety checks'
-      : 'AGIM_AUTO_APPROVE=on but suppressed — open IM without strict allowlist')
-    if (_timeoutAllowHourlyTimer) {
-      clearInterval(_timeoutAllowHourlyTimer)
-      _timeoutAllowHourlyTimer = null
-    }
-    return
-  }
-
-  if (!isTimeoutDefaultAllow()) {
-    if (_timeoutAllowHourlyTimer) {
-      clearInterval(_timeoutAllowHourlyTimer)
-      _timeoutAllowHourlyTimer = null
-    }
-    return
-  }
-  const banner = [
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '⚠️  APPROVAL TIMEOUT POLICY: allow',
-    '',
-    '   AGIM_APPROVAL_ON_TIMEOUT=allow → unresolved approvals auto-approve.',
-    '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
-    '   Revert with: AGIM_APPROVAL_ON_TIMEOUT=deny.',
-    '   Or set AGIM_AUTO_APPROVE=1 only after locking AGIM_ALLOWED_USERS.',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '',
-  ].join('\n')
-  process.stdout.write(banner)
-  log.warn({
-    event: 'approval.bus.timeout_default_allow',
-    msg: 'AGIM_APPROVAL_ON_TIMEOUT=allow — approval timeouts auto-approve',
-  })
-  try {
-    void (async () => {
-      const { logAuditEvent } = await import('./audit-log.js')
-      logAuditEvent({
-        eventType: 'config.put',
-        actor: 'system',
-        target: 'approval.timeout_default',
-        outcome: 'ok',
-        details: { value: 'allow', startup: true },
-      })
-    })()
-  } catch { /* best-effort */ }
-  if (_timeoutAllowHourlyTimer === null) {
-    _timeoutAllowHourlyTimer = setInterval(() => {
-      if (!isTimeoutDefaultAllow()) {
-        if (_timeoutAllowHourlyTimer) {
-          clearInterval(_timeoutAllowHourlyTimer)
-          _timeoutAllowHourlyTimer = null
-        }
-        return
-      }
-      log.warn({
-        event: 'approval.bus.timeout_default_allow.reminder',
-        msg: 'reminder: AGIM_APPROVAL_ON_TIMEOUT=allow still in effect',
-      })
-    }, 60 * 60 * 1000)
-    if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
-        && 'unref' in _timeoutAllowHourlyTimer) {
-      (_timeoutAllowHourlyTimer as { unref: () => void }).unref()
-    }
-  }
-}
-
-/** Stop the C1 hourly reminder. Used by graceful shutdown + tests. */
-export function stopTimeoutDefaultReminder(): void {
-  if (_timeoutAllowHourlyTimer) {
-    clearInterval(_timeoutAllowHourlyTimer)
-    _timeoutAllowHourlyTimer = null
-  }
-}
-
-/**
- * Tools whose contract is "read filesystem state, return it" — no writes,
- * no shell exec, no network. These short-circuit the approval flow with an
- * immediate `allow` and never reach the IM notifier. Saves the ~3–5s round
- * trip per call AND removes the noise of "🔐 Read /tmp/foo.txt y/n" cards
- * that LLMs spam during exploration.
- *
- * Conservative starting list — only tools whose name guarantees the
- * contract. Excluded on purpose:
- *  - `Bash` (cannot statically tell `cat` from `rm -rf /`)
- *  - `WebFetch` / `WebSearch` (outbound HTTP — leaks context, hits rate
- *    limits, has third-party side effects even if "readonly" locally)
- *  - any `mcp__*` (third-party MCP servers; arbitrary semantics)
- *
- * Per-thread opt-out: `/approval readonly off`. Global opt-out:
- * `AGIM_AUTOALLOW_READONLY=0`.
- */
-const READONLY_TOOLS = new Set<string>([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
-])
-
-const READONLY_AUTO_ALLOW_GLOBAL_ENABLED =
-  (process.env.AGIM_AUTOALLOW_READONLY ?? '1') !== '0'
-
 function parseEnvMs(raw: string | undefined, fallback: number): number {
   if (!raw) return fallback
   const n = Number(raw)
@@ -256,138 +99,6 @@ function parseEnvMs(raw: string | undefined, fallback: number): number {
 }
 const MAX_LINE_BYTES = 256 * 1024
 const MAX_BUFFER_BYTES = MAX_LINE_BYTES * 4
-
-/** Fallback prefix length for tools without a semantic key (Glob/Grep
- *  patterns, WebSearch queries, unknown tools). The mainline path uses
- *  per-tool semantic fingerprints — see inputFingerprint() — so this only
- *  governs the long tail. Kept at 10 for parity with the pre-semantic
- *  behavior. */
-const AUTO_ALLOW_PREFIX_LEN = 10
-
-export interface RunContext {
-  threadId: string
-  platform: string
-  userId: string
-  channelId: string
-  /** A2A-L1: name of the agent this run is executing under (claude-code /
-   *  opencode / codex / …). Adapters fill this when calling
-   *  approvalBus.registerRun so bus.handleA2A can reject self-calls and
-   *  audit can record the chain. Optional for legacy callers; the
-   *  self-call check just no-ops when absent. */
-  callerAgent?: string
-  /** A2A-L1: this run's own call_depth. 0 for user-originated runs;
-   *  bumped to caller.callDepth+1 when an A2A invocation spawns a new
-   *  agent run. Used to enforce AGIM_A2A_MAX_DEPTH. */
-  callDepth?: number
-  /** A2A-L1: id of the inline-jobs row that's tracking this run, when
-   *  the run was spawned from another agent's mcp__agim__call_agent
-   *  call. Optional for top-level runs. */
-  parentJobId?: number
-  /** SEC: this run is executing under plan-mode (user did /plan on, so the
-   *  parent agent runs read-only). Adapters set this when registering a run
-   *  whose opts.planMode is true. bus.handleA2A propagates it to the callee
-   *  so a plan-mode run can't delegate a write task to another agent that
-   *  would launch with full write access — bypassing the user's intent.
-   *  Mirrors a2a.ts / agim-dispatcher.ts (callerPlanMode) which already do
-   *  this for their own spawn paths. */
-  callerPlanMode?: boolean
-  /** Filesystem cwd used by the running agent subprocess. Extension-based
-   *  agents (PI, future custom-tool CLIs) use it when Agim proxies native
-   *  write/exec tools on their behalf, so approved filesystem operations land
-   *  in the same workspace the agent is reasoning about. */
-  cwd?: string
-  /** Root invocation trace used to bind goal evidence lineage. */
-  traceId?: string
-  /** Web chat activity accordion — forwarded into handleA2A → callAgentByName
-   *  so CLI agents (claude-code etc.) can surface "Waiting for subagent". */
-  onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
-}
-
-/** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
- *  internal-only — `sendDecision` strips it before serializing. */
-export type Decision =
-  | { behavior: 'allow'; updatedInput?: Record<string, unknown>; autoAllowFurther?: boolean }
-  | { behavior: 'deny'; message?: string }
-
-export interface ApprovalNotification {
-  runId: string
-  reqId: string
-  toolName: string
-  input: Record<string, unknown>
-  toolUseId: string
-  ctx: RunContext
-  /** Present iff this request matched a per-thread auto-allow rule. The
-   *  notifier should render a softer prompt ("⏱ 自动放行中, 5s 内回 n 可拒绝")
-   *  instead of the regular y/n one — the bus will allow on timer expiry,
-   *  unless the user actively denies first. */
-  autoAllow?: { graceMs: number }
-  /** Security-sensitive state transitions (for example exiting Plan Mode)
-   * require a one-time human decision. Auto-approve, remembered allow rules,
-   * allow-on-timeout, and "allow all" must not bypass this prompt — unless
-   * `allowSessionPin` is also set (see below). */
-  requiresExplicitDecision?: boolean
-  /** When paired with `requiresExplicitDecision`, still bypass global
-   *  auto-approve / allow-on-timeout, but let the operator click
-   *  "Auto for similar" to seed a per-thread remembered rule (and honor
-   *  that rule on later matching requests via the grace path). */
-  allowSessionPin?: boolean
-}
-
-/** Notifier 只负责"通知 IM 推卡片/消息"。不要在这里返回决策；决策走 resolvePending。 */
-export type ApprovalNotifier = (n: ApprovalNotification) => Promise<void>
-
-/** Snapshot returned by {@link ApprovalBus.resolvePending} so the router can
- *  send the user a confirmation receipt ("✅ 已批准并启用自动放行 …" or
- *  "❌ 已拒绝并撤销自动放行 …") without re-scanning bus internals. */
-export interface ResolvedInfo {
-  reqId: string
-  runId: string
-  threadId: string
-  platform: string
-  toolName: string
-  /** Same fingerprint the bus uses for the auto-allow rule key. */
-  fingerprint: string
-  /** True iff the resolved pending had been created in auto-allow grace
-   *  mode — i.e. matched an existing rule. Lets the router distinguish
-   *  "user denied a normal prompt" from "user denied an auto-allow prompt
-   *  (which also revoked the rule)". */
-  wasAutoAllow: boolean
-}
-
-/** Why an approval was resolved. Used by ResolutionListener consumers (e.g.
- *  approval-router) to decide whether to edit a UI card to "expired" — only
- *  non-`user` causes need cleanup, since the user-driven path (button click /
- *  text reply) edits the card itself before the listener fires. */
-export type ResolutionCause =
-  | 'user'             // explicit decision via resolvePending
-  | 'timeout'          // bus timer fired — auto-allow grace expiry (allow) or normal timeout (deny)
-  | 'sidecar-disconnect'
-  | 'run-terminated'
-  | 'shutdown'
-  | 'notifier-error'
-
-/** Fired exactly once per pending when it transitions from pending → resolved.
- *  Mirrors the wire decision sent to sidecar/dispatch but adds context (cause,
- *  threadId, platform) so listeners can route side-effects without scanning
- *  bus internals. Synchronous; listener errors are logged + swallowed. */
-export interface ResolutionEvent {
-  reqId: string
-  runId: string
-  threadId: string
-  platform: string
-  toolName: string
-  fingerprint: string
-  decision: Decision
-  wasAutoAllow: boolean
-  cause: ResolutionCause
-}
-
-export type ResolutionListener = (e: ResolutionEvent) => void
-
-/** Composite key that prevents cross-platform/channel thread collisions. */
-export function threadKey(platform: string, channelId: string, threadId: string): string {
-  return `${platform}:${channelId}:${threadId}`
-}
 
 interface PendingApproval {
   runId: string
@@ -434,13 +145,6 @@ interface PendingApproval {
   requiresExplicitDecision: boolean
   /** See {@link ApprovalNotification.allowSessionPin}. */
   allowSessionPin: boolean
-}
-
-export interface ApprovalBusOptions {
-  approvalTimeoutMs?: number
-  /** Window between sending the auto-allow notice and auto-resolving as
-   *  allow (when the user doesn't actively deny in the meantime). */
-  autoAllowGraceMs?: number
 }
 
 export class ApprovalBus {
@@ -2063,124 +1767,6 @@ export class ApprovalBus {
       if (err) log.warn({ event: 'approval.bus.write_failed', reqId, err: String(err) })
     })
   }
-}
-
-function autoAllowRuleKey(toolName: string, fingerprint: string): string {
-  return `${toolName}::${fingerprint}`
-}
-
-/**
- * Translate a raw fingerprint string (e.g. `cmd:git+status`) into the
- * human-readable form shown in IM receipts and `/approval` listings
- * (e.g. `命令 git status`). The inverse of inputFingerprint()'s internal
- * encoding — keep the scheme list in sync if you add new fingerprint
- * variants.
- *
- * Unknown / legacy schemes pass through unchanged so the function is
- * forward-compatible with future fingerprint additions and backward-
- * compatible with rules created before the semantic split (no scheme).
- */
-export function humanizeFingerprint(fingerprint: string): string {
-  const sep = fingerprint.indexOf(':')
-  if (sep < 0) return fingerprint
-  const scheme = fingerprint.slice(0, sep)
-  const rest = fingerprint.slice(sep + 1)
-  switch (scheme) {
-    case 'cmd':   return `命令 ${rest.replace(/\+/g, ' ')}`
-    case 'dir':   return `目录 ${rest}`
-    case 'host':  return `主机 ${rest}`
-    case 'path':  return `路径 ${rest}`
-    case 'pat':   return `模式 ${rest}`
-    case 'query': return `查询 ${rest}`
-    case 'url':   return `URL ${rest}`
-    case 'raw':   return `入参 ${rest}`
-    default:      return fingerprint
-  }
-}
-
-/**
- * Compute the auto-allow fingerprint — the "kind" of call that, when
- * approved with `all`, covers future similar calls.
- *
- * Semantic per tool (rather than a uniform prefix slice) — fixes two
- * footguns of the old prefix-based approach:
- *   1. `Bash git status` and `git stash` collided at 5 chars but split at
- *      10 — neither setting matched user intuition. We extract the first
- *      two tokens (`cmd:git+status` vs `cmd:git+stash`) so the family is
- *      narrow and predictable.
- *   2. `Read /tmp/a.txt` and `Read /tmp/b.txt` got distinct fingerprints
- *      at any prefix length below the filename, forcing users to re-`all`
- *      every file. We key on dirname (`dir:/tmp`) so one approval covers
- *      the whole directory.
- *
- * Prefixes (`cmd:` / `dir:` / `host:` / `path:` / `pat:` / `query:` /
- * `url:` / `raw:`) keep the key space disambiguated — rules from
- * different schemes can never accidentally alias each other, and `raw:`
- * preserves backward compatibility for unknown tools.
- *
- * EXPORTED for unit tests. Not part of the bus's public API; production
- * call sites all live inside this module.
- */
-export function inputFingerprint(toolName: string, input: Record<string, unknown>): string {
-  const getStr = (k: string): string | null => {
-    const v = input[k]
-    return typeof v === 'string' && v.length > 0 ? v : null
-  }
-
-  switch (toolName) {
-    case 'Bash':
-    case 'agim_exec': {
-      const cmd = getStr('command')
-      if (!cmd) break
-      // First 1–2 whitespace-separated tokens. Quoted strings aren't
-      // unwrapped — we want `bash -c "..."` to fingerprint as `bash+-c`,
-      // not whatever's inside the quotes (the user is approving "running
-      // bash -c", a meta-pattern). Same scheme for agim_exec so
-      // "Auto for similar" groups by command family (e.g. `cmd:curl+-s`).
-      const tokens = cmd.trim().split(/\s+/).slice(0, 2)
-      return `cmd:${tokens.join('+')}`
-    }
-
-    case 'Read': case 'Write': case 'Edit': case 'NotebookEdit':
-    case 'NotebookRead': case 'LS': {
-      const fp = getStr('file_path') ?? getStr('path')
-      if (!fp) break
-      // dirname('/tmp/x.txt') → '/tmp'  (group all files in dir)
-      // dirname('file.txt')   → '.'     (no dir — fall back to the path
-      //                                  itself so we don't lump every
-      //                                  relative-path call together)
-      const d = dirname(fp)
-      return d === '.' || d === '' ? `path:${fp.slice(0, AUTO_ALLOW_PREFIX_LEN)}` : `dir:${d}`
-    }
-
-    case 'WebFetch': {
-      const u = getStr('url')
-      if (!u) break
-      // Hostname captures "calls to this API"; path / query string are
-      // intentionally dropped — they vary per call but the user means
-      // "trust this host" when they say `all`.
-      try { return `host:${new URL(u).hostname}` }
-      catch { return `url:${u.slice(0, AUTO_ALLOW_PREFIX_LEN)}` }
-    }
-
-    case 'WebSearch': {
-      const q = getStr('query')
-      if (!q) break
-      return `query:${q.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
-    }
-
-    case 'Glob': case 'Grep': {
-      const p = getStr('pattern')
-      if (!p) break
-      return `pat:${p.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
-    }
-  }
-
-  // Unknown tool or known tool whose primary field was missing — fall
-  // back to a stringified prefix so the dedup key remains stable.
-  let s: string
-  try { s = JSON.stringify(input) } catch { s = '' }
-  return `raw:${s.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
 }
 
 function defaultSocketPath(): string {

@@ -1,19 +1,20 @@
 // transcribe — speech-to-text with provider abstraction.
 //
-// Two providers ship: OpenAI Whisper API (cloud, paid, ~95%+ accuracy) and
-// whisper.cpp (local binary, free, ~85-90% with medium model). Both take a
-// file path, both return plain text. Provider selection is env-driven so ops
-// can flip between them without code changes.
+// Providers:
+//   - openai      — OpenAI Whisper API (OPENAI_API_KEY)
+//   - whispercpp  — local whisper.cpp binary
+//   - baidu       — 百度短语音识别
+//   - tencent     — 腾讯云一句话识别
+//   - iflytek     — 讯飞语音听写 (WebSocket IAT)
+//   - glm         — 智谱 GLM-ASR (AGIM_ZHIPU_API_KEY)
+//   - mimo        — 小米 MiMo-V2.5-ASR (AGIM_MIMO_API_KEY / MIMO_API_KEY)
+//   - stepfun     — 阶跃 StepAudio 2.5 ASR (AGIM_STEPFUN_API_KEY)
 //
 // Selection order (first hit wins):
-//   1. AGIM_TRANSCRIBE_PROVIDER=openai|whispercpp|none — explicit override
-//   2. OPENAI_API_KEY set → openai
-//   3. AGIM_WHISPERCPP_BIN set → whispercpp
-//   4. else → 'none' (callers should surface a fallback message to the user)
-//
-// Failures throw {@link TranscribeError} with provider + reason; the caller
-// (TG adapter) catches and surfaces a "[语音转写失败：...]" marker so the
-// user's interaction isn't silently dropped.
+//   1. AGIM_TRANSCRIBE_PROVIDER=<name>|none — explicit default
+//   2. Auto (Chinese quality / stability / cost):
+//        iflytek → tencent → baidu → stepfun → mimo → glm → openai → whispercpp
+//   3. else → 'none'
 
 import { spawn } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
@@ -21,67 +22,235 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
+import { convertToWav } from './transcribe-audio.js'
+import { isBaiduSpeechConfigured, transcribeWithBaidu } from './transcribe-baidu.js'
+import { isTencentSpeechConfigured, transcribeWithTencent } from './transcribe-tencent.js'
+import { isIflytekSpeechConfigured, transcribeWithIflytek } from './transcribe-iflytek.js'
+import { isGlmSpeechConfigured, transcribeWithGlm } from './transcribe-glm.js'
+import { isMimoSpeechConfigured, transcribeWithMimo } from './transcribe-mimo.js'
+import { isStepfunSpeechConfigured, transcribeWithStepfun } from './transcribe-stepfun.js'
+import {
+  ALL_TRANSCRIBE_PROVIDERS,
+  TranscribeError,
+  type TranscribeOptions,
+  type TranscribeProvider,
+  type TranscribeResult,
+} from './transcribe-types.js'
+
+export {
+  TranscribeError,
+  ALL_TRANSCRIBE_PROVIDERS,
+  type TranscribeOptions,
+  type TranscribeProvider,
+  type TranscribeResult,
+}
 
 const log = rootLogger.child({ component: 'transcribe' })
 
-export type TranscribeProvider = 'openai' | 'whispercpp' | 'none'
+/** Non-secret keys we can safely echo back to the settings UI. */
+const ECHOABLE_ENV_KEYS = new Set([
+  'OPENAI_BASE_URL',
+  'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_TENCENT_ASR_ENGINE',
+  'AGIM_IFLYTEK_APP_ID',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
+  'AGIM_MIMO_BASE_URL',
+  'AGIM_MIMO_TRANSCRIBE_MODEL',
+  'AGIM_STEPFUN_BASE_URL',
+  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
+])
 
-export interface TranscribeResult {
-  text: string
-  provider: Exclude<TranscribeProvider, 'none'>
-  /** Wall-clock duration of the transcription call (ms). Useful for logging
-   *  cost / latency without re-instrumenting at every call site. */
-  elapsedMs: number
+export interface TranscribeProviderInfo {
+  id: Exclude<TranscribeProvider, 'none'>
+  label: string
+  /** Env keys the operator should fill (secrets + paths). */
+  envKeys: string[]
+  /** True when credentials / binary look present. */
+  configured: boolean
+  /** Local offline fallback (whisper.cpp). */
+  fallback?: boolean
+  /** Current non-secret values from process.env (for path/model fields). */
+  currentValues?: Record<string, string>
 }
 
-export interface TranscribeOptions {
-  /** ISO 639-1 hint (e.g. 'zh', 'en'). Whisper auto-detects but a hint
-   *  improves short-clip accuracy. */
-  language?: string
-  /** Per-call provider override (mostly for tests). */
-  provider?: TranscribeProvider
+const PROVIDER_META: Record<
+  Exclude<TranscribeProvider, 'none'>,
+  Omit<TranscribeProviderInfo, 'configured' | 'currentValues'>
+> = {
+  whispercpp: {
+    id: 'whispercpp',
+    label: 'whisper.cpp（本地兜底）',
+    // Paths are host/ops-only (process env / ~/.agim/env). Not exposed in SPA.
+    envKeys: [],
+    fallback: true,
+  },
+  openai: {
+    id: 'openai',
+    label: 'OpenAI Whisper',
+    envKeys: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'AGIM_OPENAI_TRANSCRIBE_MODEL'],
+  },
+  baidu: {
+    id: 'baidu',
+    label: '百度短语音识别',
+    envKeys: ['AGIM_BAIDU_SPEECH_API_KEY', 'AGIM_BAIDU_SPEECH_SECRET_KEY'],
+  },
+  tencent: {
+    id: 'tencent',
+    label: '腾讯云一句话识别',
+    envKeys: ['AGIM_TENCENT_SECRET_ID', 'AGIM_TENCENT_SECRET_KEY', 'AGIM_TENCENT_ASR_ENGINE'],
+  },
+  iflytek: {
+    id: 'iflytek',
+    label: '讯飞语音听写',
+    envKeys: ['AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET'],
+  },
+  glm: {
+    id: 'glm',
+    label: '智谱 GLM-ASR',
+    envKeys: ['AGIM_ZHIPU_API_KEY', 'AGIM_ZHIPU_BASE_URL', 'AGIM_ZHIPU_TRANSCRIBE_MODEL'],
+  },
+  mimo: {
+    id: 'mimo',
+    label: '小米 MiMo-ASR',
+    envKeys: ['AGIM_MIMO_API_KEY', 'AGIM_MIMO_BASE_URL', 'AGIM_MIMO_TRANSCRIBE_MODEL'],
+  },
+  stepfun: {
+    id: 'stepfun',
+    label: '阶跃 StepAudio-ASR',
+    envKeys: ['AGIM_STEPFUN_API_KEY', 'AGIM_STEPFUN_BASE_URL', 'AGIM_STEPFUN_TRANSCRIBE_MODEL'],
+  },
 }
 
-export class TranscribeError extends Error {
-  constructor(public reason: string, public provider: TranscribeProvider) {
-    super(`transcribe failed (${provider}): ${reason}`)
-    this.name = 'TranscribeError'
+export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none'>): boolean {
+  switch (provider) {
+    case 'openai':
+      return !!process.env.OPENAI_API_KEY
+    case 'whispercpp':
+      return !!(process.env.AGIM_WHISPERCPP_BIN && process.env.AGIM_WHISPERCPP_MODEL)
+    case 'baidu':
+      return isBaiduSpeechConfigured()
+    case 'tencent':
+      return isTencentSpeechConfigured()
+    case 'iflytek':
+      return isIflytekSpeechConfigured()
+    case 'glm':
+      return isGlmSpeechConfigured()
+    case 'mimo':
+      return isMimoSpeechConfigured()
+    case 'stepfun':
+      return isStepfunSpeechConfigured()
+    default:
+      return false
   }
 }
 
-/** Resolve which provider to use given current env. Pure / sync so callers
- *  can quickly check "is anything configured" without doing IO. */
+/** Settings list order: currently active → other configured → rest, each by auto priority. */
+export function sortProvidersForUi(
+  providers: TranscribeProviderInfo[],
+  active: TranscribeProvider,
+): TranscribeProviderInfo[] {
+  const priority = new Map(ALL_TRANSCRIBE_PROVIDERS.map((id, i) => [id, i]))
+  return [...providers].sort((a, b) => {
+    const aActive = a.id === active ? 0 : 1
+    const bActive = b.id === active ? 0 : 1
+    if (aActive !== bActive) return aActive - bActive
+    const aCfg = a.configured ? 0 : 1
+    const bCfg = b.configured ? 0 : 1
+    if (aCfg !== bCfg) return aCfg - bCfg
+    return (priority.get(a.id) ?? 99) - (priority.get(b.id) ?? 99)
+  })
+}
+
+export function listTranscribeProviders(): {
+  providers: TranscribeProviderInfo[]
+  active: TranscribeProvider
+  explicit: string | null
+} {
+  const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.trim() || null
+  const active = detectProvider()
+  const providers = ALL_TRANSCRIBE_PROVIDERS.map((id) => {
+    const meta = PROVIDER_META[id]
+    const currentValues: Record<string, string> = {}
+    for (const key of meta.envKeys) {
+      if (!ECHOABLE_ENV_KEYS.has(key)) continue
+      const v = process.env[key]
+      if (v) currentValues[key] = v
+    }
+    return {
+      ...meta,
+      configured: isProviderConfigured(id),
+      currentValues: Object.keys(currentValues).length ? currentValues : undefined,
+    }
+  })
+  return {
+    providers: sortProvidersForUi(providers, active),
+    active,
+    explicit,
+  }
+}
+
+/** Resolve which provider to use given current env. Pure / sync. */
 export function detectProvider(): TranscribeProvider {
   const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.toLowerCase()
-  if (explicit === 'openai' || explicit === 'whispercpp' || explicit === 'none') {
+  if (
+    explicit === 'openai'
+    || explicit === 'whispercpp'
+    || explicit === 'baidu'
+    || explicit === 'tencent'
+    || explicit === 'iflytek'
+    || explicit === 'glm'
+    || explicit === 'mimo'
+    || explicit === 'stepfun'
+    || explicit === 'none'
+  ) {
     return explicit
   }
-  if (process.env.OPENAI_API_KEY) return 'openai'
-  if (process.env.AGIM_WHISPERCPP_BIN) return 'whispercpp'
+  for (const id of ALL_TRANSCRIBE_PROVIDERS) {
+    if (isProviderConfigured(id)) return id
+  }
   return 'none'
 }
 
-/** Hard cap on a single transcription call. whisper.cpp on CPU can take
- *  multiple minutes for a long clip; we'd rather fail fast and let the user
- *  know than have grammy's update queue stall. 120 s covers a ~30 s voice
- *  clip on a 2-core VM with the base model (real-time factor ~3-4x); shorter
- *  clips finish in single-digit seconds. */
 const TRANSCRIBE_TIMEOUT_MS = 120 * 1000
 
 export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
   const provider = opts.provider ?? detectProvider()
   if (provider === 'none') {
     throw new TranscribeError(
-      'no provider configured (set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN)',
+      'no provider configured (set AGIM_TRANSCRIBE_PROVIDER + vendor keys, or OPENAI_API_KEY / AGIM_WHISPERCPP_BIN)',
       'none',
     )
   }
   const start = Date.now()
   let text: string
-  if (provider === 'openai') {
-    text = await transcribeWithOpenAI(filePath, opts)
-  } else {
-    text = await transcribeWithWhisperCpp(filePath, opts)
+  switch (provider) {
+    case 'openai':
+      text = await transcribeWithOpenAI(filePath, opts)
+      break
+    case 'whispercpp':
+      text = await transcribeWithWhisperCpp(filePath, opts)
+      break
+    case 'baidu':
+      text = await transcribeWithBaidu(filePath, opts)
+      break
+    case 'tencent':
+      text = await transcribeWithTencent(filePath, opts)
+      break
+    case 'iflytek':
+      text = await transcribeWithIflytek(filePath, opts)
+      break
+    case 'glm':
+      text = await transcribeWithGlm(filePath, opts)
+      break
+    case 'mimo':
+      text = await transcribeWithMimo(filePath, opts)
+      break
+    case 'stepfun':
+      text = await transcribeWithStepfun(filePath, opts)
+      break
+    default:
+      throw new TranscribeError(`unknown provider: ${provider as string}`, 'none')
   }
   const elapsedMs = Date.now() - start
   log.info({ event: 'transcribe.ok', provider, elapsedMs, chars: text.length, file: basename(filePath) })
@@ -96,7 +265,6 @@ async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): 
 
   const fileBuf = await readFile(filePath)
   const form = new FormData()
-  // Blob + filename — OpenAI server uses extension to pick decoder.
   form.append('file', new Blob([new Uint8Array(fileBuf)]), basename(filePath))
   form.append('model', model)
   form.append('response_format', 'json')
@@ -138,19 +306,10 @@ async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOption
   if (!bin) throw new TranscribeError('AGIM_WHISPERCPP_BIN not set', 'whispercpp')
   if (!model) throw new TranscribeError('AGIM_WHISPERCPP_MODEL not set', 'whispercpp')
 
-  // whisper.cpp's "native" multi-format support (flac/mp3/ogg) covers Vorbis
-  // but NOT Opus, which is what TG voice messages use. Pre-converting to
-  // 16 kHz mono PCM WAV via ffmpeg is what whisper actually wants internally
-  // and works for every codec ffmpeg recognizes — strictly more reliable
-  // than trusting whisper-cli's reader. Cost: one short ffmpeg invocation
-  // per voice message (≈100 ms for a few-second clip).
   const wavPath = join(tmpdir(), `agim-whisper-${randomBytes(6).toString('hex')}.wav`)
   try {
-    await convertToWav(filePath, wavPath)
+    await convertToWav(filePath, wavPath, 'whispercpp')
 
-    // Default args target whisper.cpp's `whisper-cli` (newer build) which prints
-    // the transcript to stdout when --no-prints + --no-timestamps are set.
-    // Older `main` binary will need AGIM_WHISPERCPP_ARGS overrides.
     const extraArgs = (process.env.AGIM_WHISPERCPP_ARGS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const args = ['-m', model, '-f', wavPath, '--no-prints', '--no-timestamps', ...extraArgs]
     if (opts.language) args.push('-l', opts.language)
@@ -189,41 +348,4 @@ async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOption
   } finally {
     await rm(wavPath, { force: true }).catch(() => {})
   }
-}
-
-/**
- * Spawn ffmpeg to transcode `inputPath` to a 16 kHz mono PCM WAV at
- * `outputPath`. Hard timeout 30 s — voice clips are typically 1-30 s, so
- * this is generous. Throws TranscribeError on any non-zero exit.
- */
-async function convertToWav(inputPath: string, outputPath: string): Promise<void> {
-  const args = ['-y', '-loglevel', 'error', '-i', inputPath, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', outputPath]
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
-    const stderr: Buffer[] = []
-    let settled = false
-    const settle = (fn: () => void): void => {
-      if (settled) return
-      settled = true
-      fn()
-    }
-    const timer = setTimeout(() => {
-      try { child.kill('SIGKILL') } catch { /* ignore */ }
-      settle(() => reject(new TranscribeError('ffmpeg conversion timeout (30s)', 'whispercpp')))
-    }, 30 * 1000)
-    child.stderr.on('data', (b: Buffer) => stderr.push(b))
-    child.on('error', (e) => {
-      clearTimeout(timer)
-      settle(() => reject(new TranscribeError(`ffmpeg spawn failed: ${e.message}`, 'whispercpp')))
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code === 0) {
-        settle(() => resolve())
-        return
-      }
-      const errText = Buffer.concat(stderr).toString().slice(0, 400)
-      settle(() => reject(new TranscribeError(`ffmpeg exit ${code}: ${errText}`, 'whispercpp')))
-    })
-  })
 }

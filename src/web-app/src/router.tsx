@@ -162,6 +162,7 @@ const router = createBrowserRouter([
       { path: 'native-agent', element: <Navigate to="/settings/llm" replace /> },
       // v1.2.126 — web_search provider chain + per-provider API keys.
       { path: 'search',       lazy: lazy(() => import('@/routes/settings/search')) },
+      { path: 'stt',          lazy: lazy(() => import('@/routes/settings/stt')) },
       // v1.2.129 — admin generates mobile QR for /m/chat.
       { path: 'mobile',       lazy: lazy(() => import('@/routes/settings/mobile')) },
       {

@@ -141,6 +141,18 @@ struct WebViewRepresentable: UIViewRepresentable {
             return nil
         }
 
+        /// Portal hold-to-talk: grant mic (and camera if asked) for the paired host.
+        @available(iOS 15.0, *)
+        func webView(
+            _ webView: WKWebView,
+            requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+            initiatedByFrame frame: WKFrameInfo,
+            type: WKMediaCaptureType,
+            decisionHandler: @escaping (WKPermissionDecision) -> Void
+        ) {
+            decisionHandler(.grant)
+        }
+
         func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage

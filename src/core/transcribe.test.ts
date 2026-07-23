@@ -9,7 +9,35 @@ import { join } from 'node:path'
 
 const TEST_ROOT = join(tmpdir(), `agim-transcribe-test-${process.pid}`)
 
-const { transcribe, detectProvider, TranscribeError } = await import('./transcribe.js')
+/** Minimal 16 kHz mono PCM WAV (~0.05s silence) — no ffmpeg required. */
+async function writeMinimalWav(path: string): Promise<void> {
+  const sampleRate = 16_000
+  const numSamples = 800 // 50 ms
+  const dataSize = numSamples * 2
+  const buf = Buffer.alloc(44 + dataSize)
+  buf.write('RIFF', 0)
+  buf.writeUInt32LE(36 + dataSize, 4)
+  buf.write('WAVE', 8)
+  buf.write('fmt ', 12)
+  buf.writeUInt32LE(16, 16) // PCM fmt chunk size
+  buf.writeUInt16LE(1, 20) // PCM
+  buf.writeUInt16LE(1, 22) // mono
+  buf.writeUInt32LE(sampleRate, 24)
+  buf.writeUInt32LE(sampleRate * 2, 28) // byte rate
+  buf.writeUInt16LE(2, 32) // block align
+  buf.writeUInt16LE(16, 34) // bits
+  buf.write('data', 36)
+  buf.writeUInt32LE(dataSize, 40)
+  await writeFile(path, buf)
+}
+
+const {
+  transcribe,
+  detectProvider,
+  listTranscribeProviders,
+  sortProvidersForUi,
+  TranscribeError,
+} = await import('./transcribe.js')
 
 const ENV_KEYS = [
   'AGIM_TRANSCRIBE_PROVIDER',
@@ -19,6 +47,25 @@ const ENV_KEYS = [
   'AGIM_WHISPERCPP_BIN',
   'AGIM_WHISPERCPP_MODEL',
   'AGIM_WHISPERCPP_ARGS',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_IFLYTEK_APP_ID',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
+  'AGIM_MIMO_API_KEY',
+  'MIMO_API_KEY',
+  'AGIM_MIMO_BASE_URL',
+  'AGIM_MIMO_TRANSCRIBE_MODEL',
+  'AGIM_STEPFUN_API_KEY',
+  'STEPFUN_API_KEY',
+  'STEP_API_KEY',
+  'AGIM_STEPFUN_BASE_URL',
+  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
 ]
 
 function clearEnv(): void {
@@ -58,9 +105,71 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('openai')
   })
 
-  it('falls back to whispercpp when only the bin is set', () => {
+  it('falls back to whispercpp when bin + model are set', () => {
     process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     expect(detectProvider()).toBe('whispercpp')
+  })
+
+  it('honors explicit baidu / tencent / iflytek / glm / mimo / stepfun', () => {
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'baidu'
+    expect(detectProvider()).toBe('baidu')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'tencent'
+    expect(detectProvider()).toBe('tencent')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'iflytek'
+    expect(detectProvider()).toBe('iflytek')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'glm'
+    expect(detectProvider()).toBe('glm')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'mimo'
+    expect(detectProvider()).toBe('mimo')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'stepfun'
+    expect(detectProvider()).toBe('stepfun')
+  })
+
+  it('auto-picks any cloud provider before whispercpp fallback', () => {
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    expect(detectProvider()).toBe('baidu')
+  })
+
+  it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > stepfun > mimo > glm > openai)', () => {
+    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    expect(detectProvider()).toBe('glm')
+
+    process.env.AGIM_MIMO_API_KEY = 'mimo-key'
+    expect(detectProvider()).toBe('mimo')
+
+    process.env.AGIM_STEPFUN_API_KEY = 'step-key'
+    expect(detectProvider()).toBe('stepfun')
+
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    expect(detectProvider()).toBe('baidu')
+
+    process.env.AGIM_TENCENT_SECRET_ID = 'id'
+    process.env.AGIM_TENCENT_SECRET_KEY = 'key'
+    expect(detectProvider()).toBe('tencent')
+
+    process.env.AGIM_IFLYTEK_APP_ID = 'app'
+    process.env.AGIM_IFLYTEK_API_KEY = 'ak'
+    process.env.AGIM_IFLYTEK_API_SECRET = 'sk'
+    expect(detectProvider()).toBe('iflytek')
+  })
+
+  it('treats MIMO_API_KEY as configured for mimo', () => {
+    process.env.MIMO_API_KEY = 'legacy-mimo'
+    expect(detectProvider()).toBe('mimo')
+  })
+
+  it('treats STEPFUN_API_KEY / STEP_API_KEY as configured for stepfun', () => {
+    process.env.STEPFUN_API_KEY = 'legacy-step'
+    expect(detectProvider()).toBe('stepfun')
+    delete process.env.STEPFUN_API_KEY
+    process.env.STEP_API_KEY = 'alt-step'
+    expect(detectProvider()).toBe('stepfun')
   })
 
   it('explicit override wins over auto-detection', () => {
@@ -73,6 +182,66 @@ describe('transcribe — detectProvider', () => {
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'garbage'
     process.env.OPENAI_API_KEY = 'sk-test'
     expect(detectProvider()).toBe('openai')
+  })
+})
+
+describe('transcribe — settings UI provider order', () => {
+  let saved: Record<string, string | undefined>
+
+  beforeEach(() => {
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+  })
+
+  afterEach(() => {
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('lists by auto priority when nothing is configured', () => {
+    const { providers, active } = listTranscribeProviders()
+    expect(active).toBe('none')
+    expect(providers.map((p) => p.id)).toEqual([
+      'iflytek', 'tencent', 'baidu', 'stepfun', 'mimo', 'glm', 'openai', 'whispercpp',
+    ])
+  })
+
+  it('puts active + other configured ahead of missing, preserving priority', () => {
+    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.AGIM_MIMO_API_KEY = 'mimo-key'
+    process.env.AGIM_STEPFUN_API_KEY = 'step-key'
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    // auto → baidu (ahead of stepfun / mimo / glm / openai / whispercpp)
+    const { providers, active } = listTranscribeProviders()
+    expect(active).toBe('baidu')
+    expect(providers.map((p) => p.id)).toEqual([
+      'baidu',      // active
+      'stepfun',
+      'mimo',
+      'glm',
+      'openai',
+      'whispercpp', // configured fallback
+      'iflytek',    // missing
+      'tencent',    // missing
+    ])
+  })
+
+  it('sortProvidersForUi keeps active first even when unconfigured flag flips', () => {
+    const sorted = sortProvidersForUi(
+      [
+        { id: 'openai', label: 'o', envKeys: [], configured: true },
+        { id: 'baidu', label: 'b', envKeys: [], configured: false },
+        { id: 'iflytek', label: 'i', envKeys: [], configured: true },
+      ],
+      'baidu',
+    )
+    expect(sorted.map((p) => p.id)).toEqual(['baidu', 'iflytek', 'openai'])
   })
 })
 
@@ -189,5 +358,172 @@ describe('transcribe — openai path with mocked fetch', () => {
       expect(err).toBeInstanceOf(TranscribeError)
       expect((err as InstanceType<typeof TranscribeError>).provider).toBe('openai')
     }
+  })
+})
+
+describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
+  let originalFetch: typeof fetch
+  let saved: Record<string, string | undefined>
+  let silenceWav = ''
+
+  beforeAll(async () => {
+    await mkdir(TEST_ROOT, { recursive: true })
+    silenceWav = join(TEST_ROOT, 'silence.wav')
+    await writeMinimalWav(silenceWav)
+  })
+  afterAll(async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
+  })
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-test-key'
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('posts to bigmodel transcriptions and returns text', async () => {
+    let capturedReq: Request | null = null
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedReq = new Request(input as string, init)
+      return new Response(JSON.stringify({ text: '  你好智谱  ' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const result = await transcribe(silenceWav, { provider: 'glm' })
+    expect(result.text).toBe('你好智谱')
+    expect(result.provider).toBe('glm')
+    expect(capturedReq!.url).toBe('https://open.bigmodel.cn/api/paas/v4/audio/transcriptions')
+    expect(capturedReq!.headers.get('authorization')).toBe('Bearer zhipu-test-key')
+    expect(capturedReq!.method).toBe('POST')
+  })
+
+  it('honors AGIM_ZHIPU_BASE_URL + model', async () => {
+    process.env.AGIM_ZHIPU_BASE_URL = 'https://api.z.ai/api/paas/v4'
+    process.env.AGIM_ZHIPU_TRANSCRIBE_MODEL = 'glm-asr-2512'
+    let capturedUrl = ''
+    let capturedModel = ''
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedUrl = String(input)
+      const req = new Request(input as string, init)
+      const form = await req.formData()
+      capturedModel = String(form.get('model') ?? '')
+      return new Response(JSON.stringify({ text: 'ok' }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await transcribe(silenceWav, { provider: 'glm' })
+    expect(capturedUrl).toContain('api.z.ai')
+    expect(capturedModel).toBe('glm-asr-2512')
+  })
+})
+
+describe('transcribe — mimo path with mocked fetch', () => {
+  let originalFetch: typeof fetch
+  let saved: Record<string, string | undefined>
+  let silenceWav = ''
+
+  beforeAll(async () => {
+    await mkdir(TEST_ROOT, { recursive: true })
+    silenceWav = join(TEST_ROOT, 'mimo-silence.wav')
+    await writeMinimalWav(silenceWav)
+  })
+  afterAll(async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
+  })
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+    process.env.AGIM_MIMO_API_KEY = 'mimo-test-key'
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('posts chat/completions with input_audio and returns content', async () => {
+    let capturedReq: Request | null = null
+    let capturedBody: Record<string, unknown> | null = null
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedReq = new Request(input as string, init)
+      capturedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '  小米你好  ' } }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+
+    const result = await transcribe(silenceWav, { provider: 'mimo', language: 'zh' })
+    expect(result.text).toBe('小米你好')
+    expect(result.provider).toBe('mimo')
+    expect(capturedReq!.url).toBe('https://api.xiaomimimo.com/v1/chat/completions')
+    expect(capturedReq!.headers.get('authorization')).toBe('Bearer mimo-test-key')
+    expect(capturedReq!.headers.get('api-key')).toBe('mimo-test-key')
+    expect(capturedBody!.model).toBe('mimo-v2.5-asr')
+    expect((capturedBody!.asr_options as { language: string }).language).toBe('zh')
+    const messages = capturedBody!.messages as Array<{ content: Array<{ input_audio: { data: string } }> }>
+    expect(messages[0].content[0].input_audio.data.startsWith('data:audio/wav;base64,')).toBe(true)
+  })
+})
+
+describe('transcribe — stepfun path with mocked fetch', () => {
+  let originalFetch: typeof fetch
+  let saved: Record<string, string | undefined>
+  let silenceWav = ''
+
+  beforeAll(async () => {
+    await mkdir(TEST_ROOT, { recursive: true })
+    silenceWav = join(TEST_ROOT, 'step-silence.wav')
+    await writeMinimalWav(silenceWav)
+  })
+  afterAll(async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
+  })
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+    process.env.AGIM_STEPFUN_API_KEY = 'step-test-key'
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('posts multipart transcriptions and returns text', async () => {
+    let capturedReq: Request | null = null
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedReq = new Request(input as string, init)
+      return new Response(JSON.stringify({ text: '  阶跃你好  ' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const result = await transcribe(silenceWav, { provider: 'stepfun' })
+    expect(result.text).toBe('阶跃你好')
+    expect(result.provider).toBe('stepfun')
+    expect(capturedReq!.url).toBe('https://api.stepfun.com/v1/audio/transcriptions')
+    expect(capturedReq!.headers.get('authorization')).toBe('Bearer step-test-key')
+    expect(capturedReq!.method).toBe('POST')
   })
 })

@@ -856,6 +856,11 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleSearchTest(req, res)
     }
+    // Speech-to-text provider list (admin settings).
+    if (url.pathname === '/api/stt/providers' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleSttProviders(req, res)
+    }
     // v1.2.129 — mobile QR. Admin generates a fresh role=user token with
     // a date-stamped label and gets back a QR data URL + the raw login
     // URL. The token persists until the admin revokes it via the regular
@@ -869,6 +874,13 @@ export async function startWebServer(options: {
     // Auth already enforced by checkAuth; any signed-in web user may upload.
     if (url.pathname === '/api/chat/media' && req.method === 'POST') {
       return handleChatMediaUpload(req, res, url)
+    }
+    // Portal hold-to-talk → Whisper / whisper.cpp → plain text for chat send.
+    if (url.pathname === '/api/chat/transcribe' && req.method === 'POST') {
+      return handleChatTranscribe(req, res, url)
+    }
+    if (url.pathname === '/api/chat/transcribe' && req.method === 'GET') {
+      return handleChatTranscribeStatus(req, res)
     }
     // Serve a previously uploaded chat media file for in-bubble preview.
     if (url.pathname === '/api/chat/media/file' && req.method === 'GET') {
@@ -3042,6 +3054,29 @@ const ENV_EDITABLE_KEYS = [
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
+  // Speech-to-text: default provider + OpenAI / CN cloud / local whisper.
+  'AGIM_TRANSCRIBE_PROVIDER',
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_TENCENT_ASR_ENGINE',
+  'AGIM_IFLYTEK_APP_ID',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
+  'AGIM_MIMO_API_KEY',
+  'AGIM_MIMO_BASE_URL',
+  'AGIM_MIMO_TRANSCRIBE_MODEL',
+  'AGIM_STEPFUN_API_KEY',
+  'AGIM_STEPFUN_BASE_URL',
+  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
+  // whisper.cpp BIN/MODEL/ARGS are host/ops-only — not SPA-editable.
   // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
   // enforced in the pi tool bridge for the native path. Re-read per
   // call, so editing takes effect without a restart.
@@ -3112,6 +3147,16 @@ const SECRET_KEYS = new Set<string>([
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
+  'OPENAI_API_KEY',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
+  'AGIM_MIMO_API_KEY',
+  'AGIM_STEPFUN_API_KEY',
 ])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file
@@ -5156,6 +5201,100 @@ async function handleChatFeedback(
     messageIndex,
     messageId: resolvedId || null,
   })
+}
+
+async function handleChatTranscribeStatus(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { isTranscribeConfigured } = await import('../core/chat-transcribe.js')
+  const { detectProvider, listTranscribeProviders } = await import('../core/transcribe.js')
+  const listed = listTranscribeProviders()
+  sendJson(res, 200, {
+    configured: isTranscribeConfigured(),
+    provider: detectProvider(),
+    active: listed.active,
+    explicit: listed.explicit,
+    providers: listed.providers,
+  })
+}
+
+async function handleSttProviders(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { listTranscribeProviders } = await import('../core/transcribe.js')
+  sendJson(res, 200, listTranscribeProviders())
+}
+
+async function handleChatTranscribe(
+  req: IncomingMessage,
+  res: ServerResponse,
+  _url: URL,
+): Promise<void> {
+  const {
+    CHAT_TRANSCRIBE_MAX_BYTES,
+    isTranscribeConfigured,
+    transcribeChatAudio,
+  } = await import('../core/chat-transcribe.js')
+  const { TranscribeError } = await import('../core/transcribe.js')
+  if (!isTranscribeConfigured()) {
+    sendError(res, 503, 'STT_NOT_CONFIGURED', {
+      message: 'Speech-to-text is not configured. Set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN.',
+    })
+    return
+  }
+  const filenameHeader = req.headers['x-agim-filename']
+  const mimeHeader = req.headers['x-agim-mime']
+  const langHeader = req.headers['x-agim-language']
+  const filenameRaw = Array.isArray(filenameHeader) ? filenameHeader[0] : filenameHeader
+  const mime = Array.isArray(mimeHeader) ? mimeHeader[0] : mimeHeader
+  const language = Array.isArray(langHeader) ? langHeader[0] : langHeader
+  let filename = filenameRaw
+  if (filename) {
+    try { filename = decodeURIComponent(filename) } catch { /* keep raw */ }
+  }
+  try {
+    const body = await readBinaryBody(req, res, CHAT_TRANSCRIBE_MAX_BYTES)
+    const result = await transcribeChatAudio({
+      body,
+      mime: mime || undefined,
+      filename: filename || undefined,
+      language: language || 'zh',
+    })
+    const text = (result.text || '').trim()
+    if (!text) {
+      sendError(res, 422, 'STT_EMPTY', { message: 'No speech detected' })
+      return
+    }
+    sendJson(res, 200, {
+      text,
+      provider: result.provider,
+      elapsedMs: result.elapsedMs,
+    })
+  } catch (err) {
+    const e = err as Error & { code?: string; handled?: boolean; reason?: string; provider?: string }
+    if (e.handled) return
+    if (e.code === 'TOO_LARGE') {
+      sendError(res, 413, 'STT_TOO_LARGE', {
+        message: e.message,
+        extra: { maxBytes: CHAT_TRANSCRIBE_MAX_BYTES },
+      })
+      return
+    }
+    if (err instanceof TranscribeError || e.name === 'TranscribeError') {
+      const reason = e.reason || e.message
+      if (String(reason).includes('no provider')) {
+        sendError(res, 503, 'STT_NOT_CONFIGURED', { message: reason })
+        return
+      }
+      webLog.warn({ err: e, provider: e.provider }, 'chat transcribe failed')
+      sendError(res, 502, 'STT_FAILED', { message: reason || 'transcription failed' })
+      return
+    }
+    webLog.warn({ err: e }, 'chat transcribe failed')
+    sendError(res, 500, 'STT_FAILED', { message: e.message || 'transcription failed' })
+  }
 }
 
 async function handleChatMediaUpload(

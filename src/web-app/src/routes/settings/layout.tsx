@@ -53,6 +53,8 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
       { to: 'agim-skills', i18nKey: 'tabs.agimSkills', mounted: true },
       // v1.2.126 — web_search provider chain + per-provider keys.
       { to: 'search',      i18nKey: 'tabs.search',     mounted: true },
+      // Speech-to-text: OpenAI / 百度 / 腾讯 / 讯飞 / whisper.cpp
+      { to: 'stt',         i18nKey: 'tabs.stt',        mounted: true },
       { to: 'mcp',         i18nKey: 'tabs.mcp',        mounted: true },
       { to: 'email',       i18nKey: 'tabs.email',      mounted: true },
       { to: 'viewer',      i18nKey: 'tabs.viewer',     mounted: true },

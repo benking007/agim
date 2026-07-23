@@ -26,6 +26,8 @@
 	<string>Scan pairing QR codes and take photos to send in chat.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose photos from your library to send in Agim chat.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record voice messages in chat so Agim can turn speech into text.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

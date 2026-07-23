@@ -63,6 +63,30 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_TOOL_TIMEOUT_MS',
   ]
 
+  const STT_KEYS = [
+    'AGIM_TRANSCRIBE_PROVIDER',
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+    'AGIM_OPENAI_TRANSCRIBE_MODEL',
+    'AGIM_BAIDU_SPEECH_API_KEY',
+    'AGIM_BAIDU_SPEECH_SECRET_KEY',
+    'AGIM_TENCENT_SECRET_ID',
+    'AGIM_TENCENT_SECRET_KEY',
+    'AGIM_TENCENT_ASR_ENGINE',
+    'AGIM_IFLYTEK_APP_ID',
+    'AGIM_IFLYTEK_API_KEY',
+    'AGIM_IFLYTEK_API_SECRET',
+    'AGIM_ZHIPU_API_KEY',
+    'AGIM_ZHIPU_BASE_URL',
+    'AGIM_ZHIPU_TRANSCRIBE_MODEL',
+    'AGIM_MIMO_API_KEY',
+    'AGIM_MIMO_BASE_URL',
+    'AGIM_MIMO_TRANSCRIBE_MODEL',
+    'AGIM_STEPFUN_API_KEY',
+    'AGIM_STEPFUN_BASE_URL',
+    'AGIM_STEPFUN_TRANSCRIBE_MODEL',
+  ]
+
   // Keys that stay editable: A2A, plan mode, iteration, policy, critic.
   const LIVE_NATIVE_KEYS = [
     // A2A
@@ -129,6 +153,18 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     for (const k of V126_KEYS) {
       expect(keys.has(k)).toBe(true)
     }
+  })
+
+  it('keeps speech-to-text provider keys', () => {
+    for (const k of STT_KEYS) {
+      expect(keys.has(k)).toBe(true)
+    }
+  })
+
+  it('does NOT expose whisper.cpp host paths via SPA env editor', () => {
+    expect(keys.has('AGIM_WHISPERCPP_BIN')).toBe(false)
+    expect(keys.has('AGIM_WHISPERCPP_MODEL')).toBe(false)
+    expect(keys.has('AGIM_WHISPERCPP_ARGS')).toBe(false)
   })
 
   it('keeps the live native-agent keys', () => {

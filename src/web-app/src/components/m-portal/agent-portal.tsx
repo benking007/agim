@@ -9,7 +9,10 @@
  * Transport: existing useChat() WebSocket.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  useCallback, useEffect, useMemo, useRef, useState,
+  type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -68,7 +71,12 @@ import {
   type PortalSlashCommand,
 } from './portal-slash-commands'
 import { PortalUserContent } from './portal-user-content'
-import { VoiceOverlay } from './voice-overlay'
+import { VoiceInputOverlay, type VoiceInputPhase } from './voice-input-overlay'
+import {
+  isVoiceRecordingSupported,
+  transcribeVoiceBlob,
+  VoiceRecorder,
+} from '@/lib/voice-recorder'
 
 type Tab = 'chat' | 'explore'
 type Theme = 'dark' | 'light'
@@ -343,7 +351,12 @@ export function AgentPortal(): JSX.Element {
     clearError()
   }, [state.error, clearError])
   const [showModelDropdown, setShowModelDropdown] = useState(false)
-  const [showVoiceOverlay, setShowVoiceOverlay] = useState(false)
+  const [voicePhase, setVoicePhase] = useState<VoiceInputPhase | null>(null)
+  const [voiceLevel, setVoiceLevel] = useState(0.3)
+  const voiceRecorderRef = useRef<VoiceRecorder | null>(null)
+  const voiceCancelRef = useRef(false)
+  const voiceStartYRef = useRef(0)
+  const voiceActiveRef = useRef(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [exploreCategory, setExploreCategory] = useState<(typeof EXPLORE_CATS)[number]>('All')
   const [inputMessage, setInputMessage] = useState('')
@@ -663,6 +676,116 @@ export function AgentPortal(): JSX.Element {
       setUploading(false)
     }
   }
+
+  const endVoiceSession = useCallback(async (cancelled: boolean) => {
+    if (!voiceActiveRef.current && !voiceRecorderRef.current) {
+      setVoicePhase(null)
+      return
+    }
+    voiceActiveRef.current = false
+    const recorder = voiceRecorderRef.current
+    voiceRecorderRef.current = null
+    if (!recorder) {
+      setVoicePhase(null)
+      return
+    }
+    if (cancelled) {
+      recorder.cancel()
+      setVoicePhase(null)
+      setVoiceLevel(0.3)
+      return
+    }
+    setVoicePhase('transcribing')
+    try {
+      const clip = await recorder.stop()
+      if (!clip || clip.durationMs < 280) {
+        toast.error(t('chat.portal.voiceTooShort', { defaultValue: '说话时间太短' }))
+        setVoicePhase(null)
+        return
+      }
+      if (state.status !== 'open') {
+        toast.error('Not connected')
+        setVoicePhase(null)
+        return
+      }
+      const { text } = await transcribeVoiceBlob(clip, {
+        language: prefs.lang === 'zh' ? 'zh' : 'en',
+      })
+      const trimmed = text.trim()
+      if (!trimmed) {
+        toast.error(t('chat.portal.voiceEmpty', { defaultValue: '没有识别到语音' }))
+        setVoicePhase(null)
+        return
+      }
+      setVoicePhase(null)
+      send(trimmed)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('chat.portal.voiceFailed', {
+        defaultValue: '语音识别失败',
+      }))
+      setVoicePhase(null)
+    } finally {
+      setVoiceLevel(0.3)
+    }
+  }, [prefs.lang, send, state.status, t])
+
+  const onVoicePointerDown = useCallback(async (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (canStop || uploading || voicePhase === 'transcribing') return
+    if (!isVoiceRecordingSupported()) {
+      toast.error(t('chat.portal.voiceUnsupported', {
+        defaultValue: '当前环境不支持录音（需要 HTTPS / 本地安全上下文）',
+      }))
+      return
+    }
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    voiceStartYRef.current = e.clientY
+    voiceCancelRef.current = false
+    voiceActiveRef.current = true
+    setVoicePhase('listening')
+    setVoiceLevel(0.3)
+    const recorder = new VoiceRecorder({
+      onLevel: (level) => setVoiceLevel(level),
+      onError: (err) => toast.error(err.message),
+    })
+    voiceRecorderRef.current = recorder
+    try {
+      await recorder.start()
+      // Released / cancelled while awaiting getUserMedia — drop the session.
+      if (!voiceActiveRef.current || voiceRecorderRef.current !== recorder) {
+        recorder.cancel()
+        if (voiceRecorderRef.current === recorder) voiceRecorderRef.current = null
+        if (!voiceActiveRef.current) setVoicePhase(null)
+      }
+    } catch (err) {
+      voiceActiveRef.current = false
+      voiceRecorderRef.current = null
+      setVoicePhase(null)
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(
+        /Permission|NotAllowed|denied/i.test(msg)
+          ? t('chat.portal.voiceDenied', { defaultValue: '需要麦克风权限才能语音输入' })
+          : msg,
+      )
+    }
+  }, [canStop, t, uploading, voicePhase])
+
+  const onVoicePointerMove = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!voiceActiveRef.current || voicePhase === 'transcribing') return
+    const dy = voiceStartYRef.current - e.clientY
+    const cancel = dy > 72
+    if (cancel !== voiceCancelRef.current) {
+      voiceCancelRef.current = cancel
+      setVoicePhase(cancel ? 'cancel' : 'listening')
+    }
+  }, [voicePhase])
+
+  const onVoicePointerUp = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!voiceActiveRef.current && voicePhase !== 'listening' && voicePhase !== 'cancel') return
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    const cancelled = voiceCancelRef.current
+    void endVoiceSession(cancelled)
+  }, [endVoiceSession, voicePhase])
 
   const syncTriggers = useCallback((caret: number, plainText: string) => {
     setTextCaret(caret)
@@ -1433,14 +1556,30 @@ export function AgentPortal(): JSX.Element {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setShowVoiceOverlay(true)}
+                    onPointerDown={(e) => { void onVoicePointerDown(e) }}
+                    onPointerMove={onVoicePointerMove}
+                    onPointerUp={onVoicePointerUp}
+                    onPointerCancel={onVoicePointerUp}
+                    onContextMenu={(e) => e.preventDefault()}
                     className={cn(
-                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
-                      dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600',
+                      'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors touch-none select-none',
+                      voicePhase === 'listening' || voicePhase === 'cancel'
+                        ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
+                        : (dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-400 hover:bg-zinc-100 hover:text-teal-600'),
                     )}
-                    title={t('chat.portal.voice')}
+                    title={t('chat.portal.voiceHold', { defaultValue: '按住说话' })}
+                    aria-label={t('chat.portal.voiceHold', { defaultValue: '按住说话' })}
                   >
-                    <Mic className="h-3.5 w-3.5" />
+                    {(voicePhase === 'listening' || voicePhase === 'cancel') && (
+                      <span
+                        className={cn(
+                          'pointer-events-none absolute inset-[-6px] rounded-full',
+                          voicePhase === 'cancel' ? 'bg-zinc-400/25' : 'bg-teal-500/20',
+                        )}
+                        style={{ transform: `scale(${1 + voiceLevel * 0.45})` }}
+                      />
+                    )}
+                    <Mic className="relative h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
@@ -1515,8 +1654,8 @@ export function AgentPortal(): JSX.Element {
         </div>
       )}
 
-      {showVoiceOverlay && (
-        <VoiceOverlay theme={theme} agentId={agentId} onClose={() => setShowVoiceOverlay(false)} />
+      {voicePhase && (
+        <VoiceInputOverlay phase={voicePhase} level={voiceLevel} dark={dark} />
       )}
     </div>
   )

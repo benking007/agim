@@ -142,7 +142,7 @@ CREATE TABLE user_aiwatch_settings (
 
 ### 4. Web `/api/reminders`
 
-简单 REST，Web `/reminders` 页面消费。`web/server.ts` 加了 3 个路由 + 1 个 HTML 页面（`web/public/reminders.html`）。无 per-user 过滤，**单运营者部署专用**。
+简单 REST，Web `/reminders` 页面消费。路由在 `web/jobs-api.ts`（由 `server.ts` prefix 委托）+ HTML 页面（`web/public/reminders.html`）。无 per-user 过滤，**单运营者部署专用**。
 
 ---
 
@@ -268,7 +268,8 @@ src/plugins/agents/claude-code/mcp-approval-server.ts   4 reminder tools + _im_c
 src/plugins/agents/opencode/opencode-stdio-adapter.ts   per-spawn extraEnv (AGIM_RUN_ID)
 src/plugins/agents/opencode/opencode-http-adapter.ts    buildImContextInstruction prompt prefix
 src/plugins/messengers/wechat/ilink-adapter.ts          context-store 写穿/warm/cleanup
-src/web/server.ts                            /reminders 页面路由 + 3 个 /api/reminders endpoint
+src/web/jobs-api.ts                          3 个 /api/reminders endpoint（server.ts prefix 委托）
+src/web/static-serve.ts / public             /reminders 页面静态资源
 package.json                                 nodemailer 依赖
 ```
 

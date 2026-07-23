@@ -59,7 +59,7 @@ agim 当前使用 `console.log()` / `console.error()` 输出日志，存在以�
 
 2. **MessageContext 扩展**：在 `core/types.ts` 的 `MessageContext` 接口中加 `traceId` 字段（必填），在命令行中 `--trace-id` 参数可选用于外部注入
 
-3. **注入点**：在 `src/cli.ts` 和 `src/web/server.ts` 的消息入口处生成，通过 `ctx.traceId` 传入 `src/core/router.ts`，再通过 `opts.traceId` 传入 agent adapter
+3. **注入点**：在 `src/cli.ts` / `src/cli/*` 与 `src/web/server.ts` / `ws-chat.ts` 等消息入口处生成，通过 `ctx.traceId` 传入 `src/core/router.ts`，再通过 `opts.traceId` 传入 agent adapter
 
 4. **记录点**：
    - Messenger → `message.received` (info)

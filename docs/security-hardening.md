@@ -17,7 +17,7 @@ agim **默认状态**偏「单人本机助手」合规友好，但**不是**面�
 | Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 | 公网暴露需运维主动确认 |
 | Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）| 全球 IM 默认不开 |
 | 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）| 远端执行默认不开 |
-| 工具审批 | **自动放行**（`AGIM_AUTO_APPROVE=1`）；安全检查（敏感路径硬拒 + 自保护）仍在 auto-approve 之前执行；设 `=0` 回退到 IM 审批卡 + 超时流程 | **单人自用友好；非受信 IM 必须关掉** |
+| 工具审批 | **默认人工审批**（`AGIM_AUTO_APPROVE=0`）；显式 `=1` 才自动放行（安全检查仍先执行）。接 IM 且未配严格 `AGIM_ALLOWED_USERS` 时自动审批会被抑制，除非 `AGIM_AUTO_APPROVE_OPEN_IM=1` | **安全默认；单人自用可显式打开** |
 | 审批超时 | 超时默认 **放行**（`AGIM_TIMEOUT_DEFAULT=allow`）；仅自动审批关闭时生效；设 `deny` 启用严格交互模式 | HITL 严格模式需显式改 |
 | IM 发送者 | 默认开放（未设 `AGIM_ALLOWED_USERS`）| 谁能私聊 bot 谁就能驱 agent |
 | 长期记忆 | 默认开（P3 opt-out，`AGIM_MEMORY_ENABLED=0` 关闭）；向量检索默认关 | — |
@@ -75,7 +75,9 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | `AGIM_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
 | `AGIM_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
 | `AGIM_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
-| `AGIM_AUTO_APPROVE` | `1`（开） | 默认开启；工具调用在安全检查后立即自动放行。`=0` 关闭后回退到 IM 审批+超时流程 | v1.5.7 |
+| `AGIM_AUTO_APPROVE` | `0`（关） | 默认关闭；`=1` 时工具调用在安全检查后立即自动放行。接 IM 时还需严格 allowlist 或 `AGIM_AUTO_APPROVE_OPEN_IM=1` | v1.5.7 / hardened |
+| `AGIM_AUTO_APPROVE_OPEN_IM` | 未设 = 关 | `=1` 显式确认：即使 IM 开放且无严格 `AGIM_ALLOWED_USERS`，仍允许 auto-approve | hardened |
+| `AGIM_EXEC_ALLOW_ANY_CWD` | 未设 = 关 | `=1` 允许 `agim_exec` 的 cwd 落在 agent workspace 之外（默认 realpath 限制在 workspace 内） | hardened |
 | (已有) `AGIM_TIMEOUT_DEFAULT` | `allow` | 审批超时策略（仅 AUTO_APPROVE 关闭时生效）；设 `deny` 启用严格交互模式 | R13 G5 C1 |
 | `AGIM_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `AGIM_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
 | `AGIM_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
@@ -299,10 +301,10 @@ export AGIM_SKILLHUB_ENABLED=0
 |---|---|
 | `approval.allow` / `approval.deny` | `core/approval-router.ts:tryHandleApprovalReply` + R13 G2 sensitive-paths 块 |
 | `admin.elevate` / `admin.revoke` | `core/admin-allowlist.ts:promoteAdmin` + `core/access-token.ts:setTokenRole` |
-| `config.put` | `web/server.ts:handlePutConfig` + R13/R14 几处系统事件 (e.g. ACP bind / 非回环 Web bind / 超时策略=allow / 安全 advisory) |
-| `env.put` | `web/server.ts:handlePutEnv` |
+| `config.put` | `web/config-api.ts`（及 R13/R14 几处系统事件，e.g. ACP bind / 非回环 Web bind / 超时策略=allow / 安全 advisory） |
+| `env.put` | `web/env-api.ts` |
 | `token.create` / `token.revoke` | `core/access-token.ts:createToken/revokeToken` |
-| `workspace.add` / `workspace.delete` | `web/server.ts:handleCreateOrUpdateWorkspace / handleDeleteWorkspace` |
+| `workspace.add` / `workspace.delete` | `web/workspaces-api.ts` |
 
 每条 `details` 字段：**字段名 / 长度 / 哈希前缀**，**严禁原值**。客户端通过 `GET /api/audit/events?types=&actor=&days=&limit=`（admin only）查询。
 
@@ -395,7 +397,7 @@ ExecStart=/usr/local/bin/agim start
 - [ ] 一次性引导令牌首次提升后 `shred -u`
 - [ ] `LOG_LEVEL=warn`（防消息正文进日志）
 - [ ] `AGIM_AUDIT_RETENTION_DAYS=180`（满足等保三级）
-- [ ] `AGIM_AUTO_APPROVE=0`（关闭自动审批；默认开启）
+- [ ] 确认未设 `AGIM_AUTO_APPROVE=1`（默认已关；接开放 IM 时勿设 `AGIM_AUTO_APPROVE_OPEN_IM=1`）
 - [ ] `AGIM_TIMEOUT_DEFAULT=deny`（严格交互模式；默认 allow）
 - [ ] 用 `user` 角色 token 给非管理员账号（`createToken(label, { role: 'user' })`）
 

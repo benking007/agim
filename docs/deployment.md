@@ -111,7 +111,7 @@ sudo systemctl status agim
 - Web 控制台默认 `127.0.0.1:3000`
 - ACP 默认 `127.0.0.1:9090`
 - Web token 鉴权默认开启
-- 工具调用自动审批默认开启（`AGIM_AUTO_APPROVE=1`）
+- 工具调用自动审批默认关闭（`AGIM_AUTO_APPROVE=0`）；单人自用可显式开启
 
 建议：
 

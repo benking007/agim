@@ -73,6 +73,14 @@ export function isSenderAllowlistConfigured(): boolean {
   return wildcard || entries.length > 0
 }
 
+/** Returns `true` iff the allowlist has concrete `platform:userId`
+ *  entries (not empty, not wildcard-only). Used as the "safe for
+ *  AGIM_AUTO_APPROVE with IM" gate — `*` / unset still means open IM. */
+export function isSenderAllowlistStrict(): boolean {
+  const { entries } = load()
+  return entries.length > 0
+}
+
 /** Returns `true` iff (platform, userId) is allowed to use the bot.
  *  When allowlist is unconfigured: returns `true` (open access).
  *  When `*` is in the list: returns `true` for any caller.

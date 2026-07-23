@@ -47,7 +47,7 @@
 
 ## 架构补充
 
-- `architecture/current.md`：当前实现结构图、模块说明与决策交互链路
+- `architecture/current.md`：拆解后的组合根 / 域模块地图、数据流、文件预算与扩展配方
 - `architecture/agent-cwd-and-memory.md`：工作目录与记忆隔离（已实施）
 - `endpoint-contracts.md`：Web 服务端路由清单与 SPA API 合同维护
 - `adr/`：架构决策记录（ADR）

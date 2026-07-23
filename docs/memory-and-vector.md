@@ -315,5 +315,5 @@ DELETE FROM facts_fts WHERE rowid IN (
 | 整合（persona 重建） | `src/core/memory-consolidate.ts` |
 | MCP RPC handler | `src/core/memory-rpc.ts` |
 | Approval Bus 路由（含 `_im_context` 关闭） | `src/core/approval-bus.ts` `handleMemory()` |
-| Web API + UI | `src/web/server.ts` `/api/memory/*`、`src/web/public/tasks.html` `#memory` 节 |
+| Web API + UI | `src/web/memory-api.ts`（`/api/memory/*`）、`src/web/public/tasks.html` `#memory` 节 |
 | Settings 开关 | `src/web/public/settings.html` 「自动化记忆」 |

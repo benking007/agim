@@ -397,7 +397,7 @@ export interface SnoozeReminderResponse extends OkResponse {
  * ============================================================ */
 
 /** Field naming reflects the WIRE format produced by handleListMemos
- *  in src/web/server.ts (snake_case in the DB, camelCase on the API
+ *  in src/web/memos-api.ts (snake_case in the DB, camelCase on the API
  *  for timestamps + ids, but where_* stays snake_case to match the
  *  location bundle the IM-side picker speaks). */
 export interface Memo {

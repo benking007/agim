@@ -16,10 +16,66 @@
 import { createServer, type Server, type Socket } from 'node:net'
 import { unlink, stat as fsStat, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
+import { dispatchRpc } from './approval/socket-rpc.js'
+import type { ApprovalRpcHost } from './approval/socket-rpc.js'
+import {
+  type PendingApproval,
+  removePending,
+  addAutoAllowRule,
+  removeAutoAllowRule,
+  evictOldestPending,
+} from './approval/pending.js'
+import {
+  isAutoApproveEnabled,
+  isAutoApproveEffective,
+  isTimeoutDefaultAllow,
+  announceTimeoutDefaultIfAllow,
+  stopTimeoutDefaultReminder,
+  READONLY_TOOLS,
+  READONLY_AUTO_ALLOW_GLOBAL_ENABLED,
+} from './approval/policy.js'
+import {
+  autoAllowRuleKey,
+  humanizeFingerprint,
+  inputFingerprint,
+} from './approval/fingerprint.js'
+import type {
+  RunContext,
+  Decision,
+  ApprovalNotification,
+  ApprovalNotifier,
+  ResolvedInfo,
+  ResolutionCause,
+  ResolutionEvent,
+  ResolutionListener,
+  ApprovalBusOptions,
+} from './approval/types.js'
+import { threadKey } from './approval/types.js'
+
+export type {
+  RunContext,
+  Decision,
+  ApprovalNotification,
+  ApprovalNotifier,
+  ResolvedInfo,
+  ResolutionCause,
+  ResolutionEvent,
+  ResolutionListener,
+  ApprovalBusOptions,
+}
+export { threadKey }
+export {
+  isAutoApproveEnabled,
+  isAutoApproveEffective,
+  isTimeoutDefaultAllow,
+  announceTimeoutDefaultIfAllow,
+  stopTimeoutDefaultReminder,
+}
+export { humanizeFingerprint, inputFingerprint }
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
@@ -44,153 +100,6 @@ const MAX_PENDING_APPROVALS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// AGIM_AUTO_APPROVE — first-class auto-approve switch (default ON).
-// Tool calls are approved immediately after safety checks (sensitive-path
-// hard-deny + self-protect), without sending an IM approval card or
-// waiting for any timeout. The approval bus still runs so audit trail,
-// metrics, and safety checks all remain active. Set '0'/'off'/'false'
-// to disable and fall back to the IM-card + timeout flow.
-//
-// Read per call (not cached at module load) so the Web Settings panel
-// can hot-toggle it via handlePutEnv.
-export function isAutoApproveEnabled(): boolean {
-  const raw = (process.env.AGIM_AUTO_APPROVE ?? '1').toLowerCase().trim()
-  return raw !== '0' && raw !== 'off' && raw !== 'false' && raw !== 'no'
-}
-
-// AGIM_APPROVAL_ON_TIMEOUT=allow | deny (default allow). Legacy alias:
-// AGIM_TIMEOUT_DEFAULT. Decides what the bus returns when a pending
-// approval times out without a human response. Only relevant when
-// AGIM_AUTO_APPROVE is off (otherwise tools never reach the timeout
-// path). Default 'allow' auto-approves on timeout; set 'deny' for
-// strict interactive mode.
-//
-// Read at every timer fire (not captured at module load) so the Web
-// Settings card can hot-toggle it.
-export function isTimeoutDefaultAllow(): boolean {
-  // Canonical: AGIM_APPROVAL_ON_TIMEOUT. Legacy: AGIM_TIMEOUT_DEFAULT.
-  // Both accept allow|deny; default allow. Read at every timer fire so
-  // the Web Settings card can hot-toggle without restart.
-  const raw = (
-    process.env.AGIM_APPROVAL_ON_TIMEOUT
-    ?? process.env.AGIM_TIMEOUT_DEFAULT
-    ?? 'allow'
-  ).toLowerCase()
-  return raw !== 'deny'
-}
-
-// R13 C1 — visibility for "user away" mode. When AGIM_APPROVAL_ON_TIMEOUT
-// (legacy AGIM_TIMEOUT_DEFAULT) is `allow`, every approval that times out
-// without IM response auto-approves — that's a meaningful weakening of the
-// human-in-the-loop guarantee.
-let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
-
-export function announceTimeoutDefaultIfAllow(): void {
-  // Log auto-approve status at startup.
-  if (isAutoApproveEnabled()) {
-    log.info({
-      event: 'approval.bus.auto_approve_enabled',
-    }, 'AGIM_AUTO_APPROVE=on — tool calls auto-approved after safety checks')
-    if (_timeoutAllowHourlyTimer) {
-      clearInterval(_timeoutAllowHourlyTimer)
-      _timeoutAllowHourlyTimer = null
-    }
-    return
-  }
-
-  if (!isTimeoutDefaultAllow()) {
-    if (_timeoutAllowHourlyTimer) {
-      clearInterval(_timeoutAllowHourlyTimer)
-      _timeoutAllowHourlyTimer = null
-    }
-    return
-  }
-  const banner = [
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '⚠️  APPROVAL TIMEOUT POLICY: allow',
-    '',
-    '   AGIM_APPROVAL_ON_TIMEOUT=allow → unresolved approvals auto-approve.',
-    '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
-    '   Revert with: AGIM_APPROVAL_ON_TIMEOUT=deny (or unset).',
-    '   Prefer: AGIM_AUTO_APPROVE=1 for immediate auto-approve.',
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    '',
-  ].join('\n')
-  process.stdout.write(banner)
-  log.warn({
-    event: 'approval.bus.timeout_default_allow',
-    msg: 'AGIM_APPROVAL_ON_TIMEOUT=allow — approval timeouts auto-approve',
-  })
-  try {
-    void (async () => {
-      const { logAuditEvent } = await import('./audit-log.js')
-      logAuditEvent({
-        eventType: 'config.put',
-        actor: 'system',
-        target: 'approval.timeout_default',
-        outcome: 'ok',
-        details: { value: 'allow', startup: true },
-      })
-    })()
-  } catch { /* best-effort */ }
-  if (_timeoutAllowHourlyTimer === null) {
-    _timeoutAllowHourlyTimer = setInterval(() => {
-      if (!isTimeoutDefaultAllow()) {
-        if (_timeoutAllowHourlyTimer) {
-          clearInterval(_timeoutAllowHourlyTimer)
-          _timeoutAllowHourlyTimer = null
-        }
-        return
-      }
-      log.warn({
-        event: 'approval.bus.timeout_default_allow.reminder',
-        msg: 'reminder: AGIM_APPROVAL_ON_TIMEOUT=allow still in effect',
-      })
-    }, 60 * 60 * 1000)
-    if (typeof _timeoutAllowHourlyTimer === 'object' && _timeoutAllowHourlyTimer
-        && 'unref' in _timeoutAllowHourlyTimer) {
-      (_timeoutAllowHourlyTimer as { unref: () => void }).unref()
-    }
-  }
-}
-
-/** Stop the C1 hourly reminder. Used by graceful shutdown + tests. */
-export function stopTimeoutDefaultReminder(): void {
-  if (_timeoutAllowHourlyTimer) {
-    clearInterval(_timeoutAllowHourlyTimer)
-    _timeoutAllowHourlyTimer = null
-  }
-}
-
-/**
- * Tools whose contract is "read filesystem state, return it" — no writes,
- * no shell exec, no network. These short-circuit the approval flow with an
- * immediate `allow` and never reach the IM notifier. Saves the ~3–5s round
- * trip per call AND removes the noise of "🔐 Read /tmp/foo.txt y/n" cards
- * that LLMs spam during exploration.
- *
- * Conservative starting list — only tools whose name guarantees the
- * contract. Excluded on purpose:
- *  - `Bash` (cannot statically tell `cat` from `rm -rf /`)
- *  - `WebFetch` / `WebSearch` (outbound HTTP — leaks context, hits rate
- *    limits, has third-party side effects even if "readonly" locally)
- *  - any `mcp__*` (third-party MCP servers; arbitrary semantics)
- *
- * Per-thread opt-out: `/approval readonly off`. Global opt-out:
- * `AGIM_AUTOALLOW_READONLY=0`.
- */
-const READONLY_TOOLS = new Set<string>([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
-])
-
-const READONLY_AUTO_ALLOW_GLOBAL_ENABLED =
-  (process.env.AGIM_AUTOALLOW_READONLY ?? '1') !== '0'
-
 function parseEnvMs(raw: string | undefined, fallback: number): number {
   if (!raw) return fallback
   const n = Number(raw)
@@ -200,191 +109,6 @@ function parseEnvMs(raw: string | undefined, fallback: number): number {
 const MAX_LINE_BYTES = 256 * 1024
 const MAX_BUFFER_BYTES = MAX_LINE_BYTES * 4
 
-/** Fallback prefix length for tools without a semantic key (Glob/Grep
- *  patterns, WebSearch queries, unknown tools). The mainline path uses
- *  per-tool semantic fingerprints — see inputFingerprint() — so this only
- *  governs the long tail. Kept at 10 for parity with the pre-semantic
- *  behavior. */
-const AUTO_ALLOW_PREFIX_LEN = 10
-
-export interface RunContext {
-  threadId: string
-  platform: string
-  userId: string
-  channelId: string
-  /** A2A-L1: name of the agent this run is executing under (claude-code /
-   *  opencode / codex / …). Adapters fill this when calling
-   *  approvalBus.registerRun so bus.handleA2A can reject self-calls and
-   *  audit can record the chain. Optional for legacy callers; the
-   *  self-call check just no-ops when absent. */
-  callerAgent?: string
-  /** A2A-L1: this run's own call_depth. 0 for user-originated runs;
-   *  bumped to caller.callDepth+1 when an A2A invocation spawns a new
-   *  agent run. Used to enforce AGIM_A2A_MAX_DEPTH. */
-  callDepth?: number
-  /** A2A-L1: id of the inline-jobs row that's tracking this run, when
-   *  the run was spawned from another agent's mcp__agim__call_agent
-   *  call. Optional for top-level runs. */
-  parentJobId?: number
-  /** SEC: this run is executing under plan-mode (user did /plan on, so the
-   *  parent agent runs read-only). Adapters set this when registering a run
-   *  whose opts.planMode is true. bus.handleA2A propagates it to the callee
-   *  so a plan-mode run can't delegate a write task to another agent that
-   *  would launch with full write access — bypassing the user's intent.
-   *  Mirrors a2a.ts / agim-dispatcher.ts (callerPlanMode) which already do
-   *  this for their own spawn paths. */
-  callerPlanMode?: boolean
-  /** Filesystem cwd used by the running agent subprocess. Extension-based
-   *  agents (PI, future custom-tool CLIs) use it when Agim proxies native
-   *  write/exec tools on their behalf, so approved filesystem operations land
-   *  in the same workspace the agent is reasoning about. */
-  cwd?: string
-  /** Root invocation trace used to bind goal evidence lineage. */
-  traceId?: string
-  /** Web chat activity accordion — forwarded into handleA2A → callAgentByName
-   *  so CLI agents (claude-code etc.) can surface "Waiting for subagent". */
-  onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
-}
-
-/** Wire-format decision sent back to the sidecar. `autoAllowFurther` is
- *  internal-only — `sendDecision` strips it before serializing. */
-export type Decision =
-  | { behavior: 'allow'; updatedInput?: Record<string, unknown>; autoAllowFurther?: boolean }
-  | { behavior: 'deny'; message?: string }
-
-export interface ApprovalNotification {
-  runId: string
-  reqId: string
-  toolName: string
-  input: Record<string, unknown>
-  toolUseId: string
-  ctx: RunContext
-  /** Present iff this request matched a per-thread auto-allow rule. The
-   *  notifier should render a softer prompt ("⏱ 自动放行中, 5s 内回 n 可拒绝")
-   *  instead of the regular y/n one — the bus will allow on timer expiry,
-   *  unless the user actively denies first. */
-  autoAllow?: { graceMs: number }
-  /** Security-sensitive state transitions (for example exiting Plan Mode)
-   * require a one-time human decision. Auto-approve, remembered allow rules,
-   * allow-on-timeout, and "allow all" must not bypass this prompt — unless
-   * `allowSessionPin` is also set (see below). */
-  requiresExplicitDecision?: boolean
-  /** When paired with `requiresExplicitDecision`, still bypass global
-   *  auto-approve / allow-on-timeout, but let the operator click
-   *  "Auto for similar" to seed a per-thread remembered rule (and honor
-   *  that rule on later matching requests via the grace path). */
-  allowSessionPin?: boolean
-}
-
-/** Notifier 只负责"通知 IM 推卡片/消息"。不要在这里返回决策；决策走 resolvePending。 */
-export type ApprovalNotifier = (n: ApprovalNotification) => Promise<void>
-
-/** Snapshot returned by {@link ApprovalBus.resolvePending} so the router can
- *  send the user a confirmation receipt ("✅ 已批准并启用自动放行 …" or
- *  "❌ 已拒绝并撤销自动放行 …") without re-scanning bus internals. */
-export interface ResolvedInfo {
-  reqId: string
-  runId: string
-  threadId: string
-  platform: string
-  toolName: string
-  /** Same fingerprint the bus uses for the auto-allow rule key. */
-  fingerprint: string
-  /** True iff the resolved pending had been created in auto-allow grace
-   *  mode — i.e. matched an existing rule. Lets the router distinguish
-   *  "user denied a normal prompt" from "user denied an auto-allow prompt
-   *  (which also revoked the rule)". */
-  wasAutoAllow: boolean
-}
-
-/** Why an approval was resolved. Used by ResolutionListener consumers (e.g.
- *  approval-router) to decide whether to edit a UI card to "expired" — only
- *  non-`user` causes need cleanup, since the user-driven path (button click /
- *  text reply) edits the card itself before the listener fires. */
-export type ResolutionCause =
-  | 'user'             // explicit decision via resolvePending
-  | 'timeout'          // bus timer fired — auto-allow grace expiry (allow) or normal timeout (deny)
-  | 'sidecar-disconnect'
-  | 'run-terminated'
-  | 'shutdown'
-  | 'notifier-error'
-
-/** Fired exactly once per pending when it transitions from pending → resolved.
- *  Mirrors the wire decision sent to sidecar/dispatch but adds context (cause,
- *  threadId, platform) so listeners can route side-effects without scanning
- *  bus internals. Synchronous; listener errors are logged + swallowed. */
-export interface ResolutionEvent {
-  reqId: string
-  runId: string
-  threadId: string
-  platform: string
-  toolName: string
-  fingerprint: string
-  decision: Decision
-  wasAutoAllow: boolean
-  cause: ResolutionCause
-}
-
-export type ResolutionListener = (e: ResolutionEvent) => void
-
-/** Composite key that prevents cross-platform/channel thread collisions. */
-export function threadKey(platform: string, channelId: string, threadId: string): string {
-  return `${platform}:${channelId}:${threadId}`
-}
-
-interface PendingApproval {
-  runId: string
-  reqId: string
-  toolName: string
-  threadId: string
-  /** `platform:channelId:threadId` — used as the Map key for pendingByThread
-   *  and autoAllowByThread so different platforms/channels don't collide. */
-  compositeKey: string
-  /** Cached at registration so cancelPending can fire ResolutionListener with
-   *  a valid platform even when the underlying runContext has already been
-   *  cleared (e.g. unregisterRun deletes the context BEFORE cancelling). */
-  platform: string
-  /** Only this user may resolve an explicit-decision request. */
-  approverUserId: string
-  /** Truncated input fingerprint used for auto-allow lookups + revocation. */
-  fingerprint: string
-  /** Original tool input — kept verbatim so dashboard / `listPending` can
-   *  surface a useful preview to operators. Never sent over the wire by
-   *  the bus itself; sidecar already has the original. */
-  input: Record<string, unknown>
-  /** Wall-clock ms when the pending was registered. Used by listPending
-   *  to compute age; zero in pre-existing rehydrated state (impossible
-   *  in practice — bus is process-local). */
-  registeredAt: number
-  /** Set when the pending was created from a unix-socket sidecar (Claude
-   *  path). cancelPending writes the decision back over this socket. Either
-   *  `socket` or `dispatch` must be set, never both. */
-  socket?: Socket
-  /** Set when the pending was created via {@link ApprovalBus.registerSyntheticPending}
-   *  (opencode HTTP path, P2). cancelPending invokes this callback instead
-   *  of writing to a socket — the caller is responsible for delivering the
-   *  decision to its own backend (e.g. POST /permission/:id/reply). Errors
-   *  thrown from dispatch are logged, never propagated. */
-  dispatch?: (decision: Decision) => void
-  timer: ReturnType<typeof setTimeout>
-  resolved: boolean
-  /** When true, this pending was created in auto-allow mode: timer expiry
-   *  resolves to allow rather than deny, and an explicit deny revokes the
-   *  matching auto-allow rule. */
-  autoAllow: boolean
-  /** True for approval-only state transitions that must be decided by a
-   *  human for this exact request. */
-  requiresExplicitDecision: boolean
-  /** See {@link ApprovalNotification.allowSessionPin}. */
-  allowSessionPin: boolean
-}
-
-export interface ApprovalBusOptions {
-  approvalTimeoutMs?: number
-  /** Window between sending the auto-allow notice and auto-resolving as
-   *  allow (when the user doesn't actively deny in the meantime). */
-  autoAllowGraceMs?: number
-}
 
 export class ApprovalBus {
   private server: Server | null = null
@@ -425,6 +149,12 @@ export class ApprovalBus {
     totalDenied: 0,
     totalTimedOut: 0,
     totalReadonlyAutoAllowed: 0,
+  }
+
+  /** Adapter exposing the minimal ApprovalRpcHost surface to socket-rpc handlers. */
+  private readonly rpcHost: ApprovalRpcHost = {
+    getRunContext: (runId) => this.runContexts.get(runId),
+    registerSyntheticPending: (input) => this.registerSyntheticPending(input),
   }
 
   constructor(opts: ApprovalBusOptions = {}) {
@@ -638,7 +368,7 @@ export class ApprovalBus {
       wasAutoAllow: target.autoAllow,
     }
     if (decision.behavior === 'deny' && target.autoAllow) {
-      this.removeAutoAllowRule(target.compositeKey, target.toolName, target.fingerprint)
+      removeAutoAllowRule(this.autoAllowByThread, target.compositeKey, target.toolName, target.fingerprint)
     }
     this.cancelPending(target, decision, 'user')
     return info
@@ -837,652 +567,10 @@ export class ApprovalBus {
       await this.handleApproval(m, socket)
       return
     }
-    if (m.type === 'reminder') {
-      await this.handleReminder(m, socket)
-      return
+    const handled = await dispatchRpc(m, socket, this.rpcHost)
+    if (!handled) {
+      log.warn({ event: 'approval.bus.unknown_type', type: m.type })
     }
-    if (m.type === 'memo') {
-      await this.handleMemo(m, socket)
-      return
-    }
-    if (m.type === 'a2a') {
-      await this.handleA2A(m, socket)
-      return
-    }
-    if (m.type === 'push') {
-      await this.handlePush(m, socket)
-      return
-    }
-    if (m.type === 'ask') {
-      await this.handleAsk(m, socket)
-      return
-    }
-    if (m.type === 'skill') {
-      await this.handleSkill(m, socket)
-      return
-    }
-    if (m.type === 'native_tool') {
-      await this.handleNativeTool(m, socket)
-      return
-    }
-    if (m.type === 'memory') {
-      await this.handleMemory(m, socket)
-      return
-    }
-    if (m.type === 'goal') {
-      await this.handleGoal(m, socket)
-      return
-    }
-    log.warn({ event: 'approval.bus.unknown_type', type: m.type })
-  }
-
-  /**
-   * Handle an A2A call RPC sent by the MCP sidecar. Wire format:
-   *
-   *   {
-   *     v: 1, type: 'a2a', reqId, runId,
-   *     payload: { agent: string, prompt: string, timeoutMs?: number }
-   *   }
-   *
-   * Response (sent via {@link sendA2AResult}):
-   *
-   *   { v: 1, type: 'a2a.result', reqId,
-   *     ok: true,  result, jobId, agent, durationMs }
-   *   | { v: 1, type: 'a2a.result', reqId,
-   *       ok: false, error }
-   *
-   * Validation order:
-   *   1. reqId/runId/payload shape — wire-level
-   *   2. runId → RunContext (no _im_context fallback for A2A: a forged
-   *      context could let a compromised callee escalate to a different
-   *      user's workspace, and the cost is real money)
-   *   3. agent + prompt presence
-   *   4. self-call check (caller agent vs target agent)
-   *   5. depth check (handled inside a2a.callAgentByName)
-   */
-  private async handleA2A(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-
-    if (!reqId) {
-      log.warn({ event: 'a2a.bus.missing_reqId' })
-      return
-    }
-    if (!runId) {
-      this.sendA2AResult(socket, reqId, { ok: false, error: 'missing runId' })
-      return
-    }
-    const ctx = this.runContexts.get(runId)
-    if (!ctx) {
-      this.sendA2AResult(socket, reqId, { ok: false, error: `unknown runId: ${runId}` })
-      return
-    }
-    const agentName = typeof payload.agent === 'string' ? payload.agent : ''
-    const prompt    = typeof payload.prompt === 'string' ? payload.prompt : ''
-    if (!agentName || !prompt) {
-      this.sendA2AResult(socket, reqId, {
-        ok: false, error: 'payload.agent and payload.prompt are required',
-      })
-      return
-    }
-    const timeoutMs = typeof payload.timeoutMs === 'number' && payload.timeoutMs > 0
-      ? payload.timeoutMs : undefined
-
-    // L2 — caller-supplied artifacts inputs + optional expectOutputs.
-    // We forward as-is; callAgentByName / artifacts.ts validates shape
-    // and returns a clean error for malformed entries.
-    const rawInputs = Array.isArray(payload.inputs) ? payload.inputs : undefined
-    const inputs = rawInputs?.filter(
-      (x): x is Parameters<typeof import('./a2a.js').callAgentByName>[3] extends infer T
-        ? T extends { inputs?: (infer U)[] | undefined } ? U : never
-        : never =>
-        !!x && typeof x === 'object' && !Array.isArray(x)
-        && typeof (x as Record<string, unknown>).name === 'string',
-    )
-    const rawExpect = Array.isArray(payload.expectOutputs) ? payload.expectOutputs : undefined
-    const expectOutputs = rawExpect?.filter((s): s is string => typeof s === 'string')
-
-    // Lazy-import so the bus module stays free of router/registry at load
-    // time (matters for tests that mock route side effects).
-    const { callAgentByName } = await import('./a2a.js')
-    // Synthesize a minimal RouteContext from the RunContext. logger is a
-    // child of the bus log so we get traceability without dragging the
-    // cli's logger plumbing through the bus.
-    const routeCtx = {
-      threadId: ctx.threadId,
-      channelId: ctx.channelId,
-      platform: ctx.platform,
-      defaultAgent: agentName,  // not strictly used by callAgentByName
-      traceId: reqId,
-      logger: log,
-      userId: ctx.userId,
-    } as Parameters<typeof callAgentByName>[2]
-    const result = await callAgentByName(agentName, prompt, routeCtx, {
-      callerAgent: ctx.callerAgent,
-      callerDepth: ctx.callDepth ?? 0,
-      parentJobId: ctx.parentJobId ?? null,
-      // SEC: a plan-mode parent must not launch the callee with write access.
-      ...(ctx.callerPlanMode ? { planMode: true } : {}),
-      ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
-      timeoutMs,
-      ...(inputs && inputs.length > 0 ? { inputs } : {}),
-      ...(expectOutputs && expectOutputs.length > 0 ? { expectOutputs } : {}),
-    })
-    if (result.ok) {
-      this.sendA2AResult(socket, reqId, {
-        ok: true, result: result.result, jobId: result.jobId,
-        agent: result.agent, durationMs: result.durationMs,
-        artifactsDir: result.artifactsDir,
-        outputs: result.outputs,
-        ...(result.warnings ? { warnings: result.warnings } : {}),
-      })
-    } else {
-      this.sendA2AResult(socket, reqId, { ok: false, error: result.error })
-    }
-  }
-
-  private sendA2AResult(
-    socket: Socket, reqId: string,
-    res:
-      | {
-          ok: true;  result: string; jobId: number; agent: string; durationMs: number
-          artifactsDir?: string
-          outputs?: Array<{ name: string; bytes: number; mtime: string }>
-          warnings?: string[]
-        }
-      | { ok: false; error: string },
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'a2a.result', reqId, ok: res.ok }
-    if (res.ok) {
-      wire.result = res.result
-      wire.jobId = res.jobId
-      wire.agent = res.agent
-      wire.durationMs = res.durationMs
-      if (res.artifactsDir) wire.artifactsDir = res.artifactsDir
-      if (res.outputs && res.outputs.length > 0) wire.outputs = res.outputs
-      if (res.warnings && res.warnings.length > 0) wire.warnings = res.warnings
-    } else {
-      wire.error = res.error
-    }
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'a2a.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * Handle a reminder RPC sent by the MCP sidecar (mcp-approval-server.ts).
-   * Same socket as approvals; different `type`. Two ways to identify the
-   * IM thread:
-   *
-   *   1. runId → RunContext lookup (preferred — used by claude-code via
-   *      --mcp-config env, and opencode stdio via per-spawn extraEnv)
-   *   2. _im_context inline (fallback — used by opencode http where the
-   *      MCP server is shared across sessions and per-spawn env can't be
-   *      injected; the agent itself asserts the context)
-   *
-   * Path 2 is **single-user only** by design: a multi-tenant deployment
-   * would let one user's agent forge reminders for another. Adapters that
-   * want to use path 2 must opt in by sending `_im_context`. We log it
-   * loudly so operators can audit.
-   */
-  private async handleReminder(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const op = typeof m.op === 'string' ? m.op : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-
-    if (!reqId) {
-      log.warn({ event: 'reminder.bus.missing_reqId' })
-      return // can't reply without reqId
-    }
-    if (!op) {
-      this.sendReminderResult(socket, reqId, { ok: false, error: 'invalid reminder message' })
-      return
-    }
-
-    // Resolve context: runId path first, then inline _im_context fallback.
-    let ctx: RunContext | null = null
-    if (runId) {
-      ctx = this.runContexts.get(runId) ?? null
-    }
-    if (!ctx) {
-      // Try to extract _im_context from the payload itself (path 2)
-      const inlineCtx = payload._im_context
-      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
-        const ic = inlineCtx as Record<string, unknown>
-        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
-            && typeof ic.channelId === 'string') {
-          ctx = {
-            platform: ic.platform,
-            threadId: ic.threadId,
-            channelId: ic.channelId,
-            userId: typeof ic.userId === 'string' ? ic.userId : '',
-          }
-          log.info({
-            event: 'reminder.bus.inline_ctx',
-            platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'reminder using agent-asserted _im_context (single-user mode)')
-          // Strip _im_context from payload so it doesn't leak into the
-          // RPC handler's field validation.
-          delete payload._im_context
-        }
-      }
-    }
-
-    if (!ctx) {
-      this.sendReminderResult(socket, reqId, {
-        ok: false,
-        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
-      })
-      return
-    }
-    // Lazy-import so the bus module stays free of reminders.ts at load time
-    // (matters for tests that mock reminder side-effects).
-    const { handleReminderOp } = await import('./reminder-rpc.js')
-    const result = await handleReminderOp(op, payload, ctx)
-    this.sendReminderResult(socket, reqId, result)
-  }
-
-  private sendReminderResult(
-    socket: Socket, reqId: string,
-    result: { ok: true; result: unknown } | { ok: false; error: string },
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'reminder.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'reminder.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * Handle a memo RPC from the MCP sidecar — same socket as approvals and
-   * reminders, different `type`. Mirror of {@link handleReminder}. Both
-   * runId-resolved context and the inline `_im_context` fallback are
-   * supported, with the same single-user-only caveat for path 2.
-   *
-   * Wire history: pre-0.2.42 this was `type: 'location'` carrying geo-only
-   * memos; 0.2.42 generalized to 5W1H memos and renamed the wire type.
-   */
-  private async handleMemo(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const op = typeof m.op === 'string' ? m.op : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-
-    if (!reqId) {
-      log.warn({ event: 'memo.bus.missing_reqId' })
-      return
-    }
-    if (!op) {
-      this.sendMemoResult(socket, reqId, { ok: false, error: 'invalid memo message' })
-      return
-    }
-
-    let ctx: RunContext | null = null
-    if (runId) ctx = this.runContexts.get(runId) ?? null
-    if (!ctx) {
-      const inlineCtx = payload._im_context
-      if (inlineCtx && typeof inlineCtx === 'object' && !Array.isArray(inlineCtx)) {
-        const ic = inlineCtx as Record<string, unknown>
-        if (typeof ic.platform === 'string' && typeof ic.threadId === 'string'
-            && typeof ic.channelId === 'string') {
-          ctx = {
-            platform: ic.platform,
-            threadId: ic.threadId,
-            channelId: ic.channelId,
-            userId: typeof ic.userId === 'string' ? ic.userId : '',
-          }
-          log.info({
-            event: 'memo.bus.inline_ctx',
-            platform: ctx.platform, threadId: ctx.threadId, runId,
-          }, 'memo using agent-asserted _im_context (single-user mode)')
-          delete payload._im_context
-        }
-      }
-    }
-
-    if (!ctx) {
-      this.sendMemoResult(socket, reqId, {
-        ok: false,
-        error: `unknown runId: ${runId} (and no _im_context fallback provided)`,
-      })
-      return
-    }
-    const { handleMemoOp } = await import('./memo-rpc.js')
-    const result = await handleMemoOp(op, payload, ctx)
-    this.sendMemoResult(socket, reqId, result)
-  }
-
-  private sendMemoResult(
-    socket: Socket, reqId: string,
-    result: { ok: true; result: unknown } | { ok: false; error: string },
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'memo.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'memo.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * v1.3 — agent-initiated push (`mcp__agim__push_message`). Wire format:
-   *   { v: 1, type: 'push', runId, reqId, payload: { text, toThread?, kind? } }
-   * Response: { v: 1, type: 'push.result', reqId, ok, result?, error? }
-   *
-   * Context resolution mirrors handleReminder / handleMemo: runId → ctx
-   * with an inline _im_context fallback for single-user MCP setups.
-   * Per-user rate limit + cross-thread gating are enforced in push-rpc.
-   */
-  private async handlePush(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-    if (!reqId) { log.warn({ event: 'push.bus.missing_reqId' }); return }
-    // _im_context fallback is intentionally NOT supported for push. push
-    // sends a message to a user's IM thread — accepting an agent-asserted
-    // identity would let any caller spoof userId and push to other users
-    // when MCP daemons are shared across users (e.g. opencode's single
-    // long-lived MCP process). Force runId resolution.
-    if (payload._im_context) delete payload._im_context
-    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
-    if (!ctx) {
-      this.sendPushResult(socket, reqId, {
-        ok: false, error: `unknown runId: ${runId} — push requires a live runContext (no _im_context fallback)`,
-      })
-      return
-    }
-
-    const { handlePushOp } = await import('./push-rpc.js')
-    const result = await handlePushOp(payload as import('./push-rpc.js').PushPayload, ctx)
-    this.sendPushResult(socket, reqId, result)
-  }
-
-  private sendPushResult(
-    socket: Socket, reqId: string,
-    result: { ok: true; result: unknown } | { ok: false; error: string },
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'push.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'push.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * P0 #5 — agent-driven structured ask. Wire format:
-   *   { v:1, type:'ask', runId, reqId, payload:{question, choices, timeoutSec?, allowTextReply?} }
-   * Response: { v:1, type:'ask.result', reqId, ok, result?, error?, reason? }
-   *
-   * Like push, runId resolution is REQUIRED — no _im_context fallback,
-   * because the ask delivers a question to a specific IM user thread
-   * and accepting an agent-asserted thread would let any caller spoof
-   * a different user's context.
-   */
-  private async handleAsk(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-    if (!reqId) { log.warn({ event: 'ask.bus.missing_reqId' }); return }
-    if (payload._im_context) delete payload._im_context
-    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
-    if (!ctx) {
-      this.sendAskResult(socket, reqId, {
-        ok: false,
-        error: `unknown runId: ${runId} — ask_user requires a live runContext (no _im_context fallback)`,
-        reason: 'invalid',
-      })
-      return
-    }
-    const { handleAskOp } = await import('./ask-user-rpc.js')
-    const result = await handleAskOp(payload as import('./ask-user-rpc.js').AskPayload, ctx)
-    this.sendAskResult(socket, reqId, result)
-  }
-
-  private sendAskResult(
-    socket: Socket, reqId: string,
-    result: import('./ask-user-rpc.js').AskResult,
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'ask.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else {
-      wire.error = result.error
-      if (result.reason) wire.reason = result.reason
-    }
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'ask.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * Stage 3 / P0 #3 — skills loader RPC. agim-owned skills are
-   * injected as a tier-1 summary into every prompt; this RPC lets the
-   * agent pull the tier-2 body on-demand. Same _im_context-free
-   * posture as push: skills are agim-global, no per-user scoping.
-   *   { v:1, type:'skill', reqId, payload:{op, name?} }
-   *   { v:1, type:'skill.result', reqId, ok, result?, error? }
-   */
-  private async handleSkill(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-    if (!reqId) { log.warn({ event: 'skill.bus.missing_reqId' }); return }
-    const { handleSkillsOp } = await import('./skills-rpc.js')
-    const result = await handleSkillsOp(payload as import('./skills-rpc.js').SkillsPayload)
-    this.sendSkillResult(socket, reqId, result)
-  }
-
-  private sendSkillResult(
-    socket: Socket, reqId: string,
-    result: import('./skills-rpc.js').SkillsResult,
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'skill.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'skill.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * Read-only Agim native tool bridge for extension-based agents such as PI.
-   *
-   * This is intentionally a small whitelist, not a generic "call any native
-   * tool" escape hatch. The payload name is resolved in native-tool-rpc.ts
-   * (currently web_search/web_fetch aliases only), and the call must be tied
-   * to a live runId so a stray process cannot reuse the socket after cleanup.
-   */
-  private async handleNativeTool(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-    if (!reqId) { log.warn({ event: 'native_tool.bus.missing_reqId' }); return }
-    if (payload._im_context) delete payload._im_context
-    if (!runId) {
-      this.sendNativeToolResult(socket, reqId, {
-        ok: false,
-        error: 'unknown runId: null — native_tool requires a live runContext',
-      })
-      return
-    }
-    const ctx: RunContext | null = this.runContexts.get(runId) ?? null
-    if (!ctx) {
-      this.sendNativeToolResult(socket, reqId, {
-        ok: false,
-        error: `unknown runId: ${runId} — native_tool requires a live runContext`,
-      })
-      return
-    }
-
-    const { handleNativeToolOp } = await import('./native-tool-rpc.js')
-    try {
-      const result = await handleNativeToolOp(payload, {
-        reqId,
-        runContext: ctx,
-        requestApproval: ({ toolName, input }) => new Promise((resolve, reject) => {
-          const approvalReqId = `${reqId}:native:${randomUUID()}`
-          void this.registerSyntheticPending({
-            runId,
-            reqId: approvalReqId,
-            toolName,
-            input,
-            ctx,
-            dispatch: (decision) => resolve(decision),
-          }).catch((err) => reject(err))
-        }),
-      })
-      this.sendNativeToolResult(socket, reqId, result)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.sendNativeToolResult(socket, reqId, { ok: false, error: `native_tool failed: ${msg}` })
-    }
-  }
-
-  private sendNativeToolResult(
-    socket: Socket,
-    reqId: string,
-    result: import('./native-tool-rpc.js').NativeToolRpcResult,
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'native_tool.result', reqId, ok: result.ok }
-    if (result.source) wire.source = result.source
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'native_tool.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /**
-   * v1.5 — long-term memory ops (memory_query / save / list / delete).
-   * Same dispatch pattern as handleReminder / handlePush. Context resolved
-   * from runId; inline _im_context fallback supported for single-user MCP.
-   */
-  private async handleMemory(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const op = typeof m.op === 'string' ? m.op : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-    if (!reqId) { log.warn({ event: 'memory.bus.missing_reqId' }); return }
-    if (!op) {
-      this.sendMemoryResult(socket, reqId, { ok: false, error: 'invalid memory message (op missing)' })
-      return
-    }
-
-    // _im_context fallback is intentionally NOT supported for memory ops.
-    // memory_query / memory_save / memory_list / memory_delete are scoped
-    // by RunContext.userId; accepting an agent-asserted identity would let
-    // any caller read or modify other users' memory when MCP daemons are
-    // shared across users (e.g. opencode's single long-lived MCP process).
-    // Force runId resolution.
-    if (payload._im_context) delete payload._im_context
-    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
-    if (!ctx) {
-      this.sendMemoryResult(socket, reqId, {
-        ok: false,
-        error: `unknown runId: ${runId} — memory ops require a live runContext (no _im_context fallback)`,
-      })
-      return
-    }
-    const { handleMemoryOp } = await import('./memory-rpc.js')
-    const result = await handleMemoryOp(op, payload, ctx)
-    this.sendMemoryResult(socket, reqId, result)
-  }
-
-  private sendMemoryResult(
-    socket: Socket, reqId: string,
-    result: { ok: true; result: unknown } | { ok: false; error: string },
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'memory.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'memory.bus.write_failed', reqId, err: String(err) })
-    })
-  }
-
-  /** v1.2.63 — long_task / complete_goal RPC handler. Mirrors handleMemo's
-   *  shape exactly; goals.ts state lives per-thread so we tie identity to
-   *  the live RunContext (no _im_context fallback — same reasoning as
-   *  memory ops). */
-  private async handleGoal(m: Record<string, unknown>, socket: Socket): Promise<void> {
-    const reqId = typeof m.reqId === 'string' ? m.reqId : null
-    const runId = typeof m.runId === 'string' ? m.runId : null
-    const op = typeof m.op === 'string' ? m.op : null
-    const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-      ? m.payload as Record<string, unknown>
-      : {}
-    if (!reqId) { log.warn({ event: 'goal.bus.missing_reqId' }); return }
-    if (!op || (op !== 'long_task' && op !== 'complete_goal')) {
-      this.sendGoalResult(socket, reqId, { ok: false, error: 'invalid goal message (op must be long_task|complete_goal)' })
-      return
-    }
-    const ctx: RunContext | null = runId ? (this.runContexts.get(runId) ?? null) : null
-    if (!ctx) {
-      this.sendGoalResult(socket, reqId, {
-        ok: false,
-        error: `unknown runId: ${runId} — goal ops require a live runContext`,
-      })
-      return
-    }
-    const { handleGoalOp } = await import('./goal-rpc.js')
-    const { hashWorkspaceScope } = await import('./goal-evidence.js')
-    const { defaultAgentCwd, resolveAgentCwd } = await import('./agent-cwd.js')
-    const agentName = ctx.callerAgent || 'agim'
-    const result = await handleGoalOp(op, payload, {
-      platform: ctx.platform,
-      channelId: ctx.channelId,
-      threadId: ctx.threadId,
-      userId: ctx.userId,
-      callerAgent: ctx.callerAgent,
-      traceId: ctx.traceId,
-      workspaceScope: hashWorkspaceScope(
-        resolveAgentCwd(agentName, {
-          platform: ctx.platform,
-          channelId: ctx.channelId,
-          threadId: ctx.threadId,
-        }) || defaultAgentCwd(agentName),
-      ),
-    })
-    this.sendGoalResult(socket, reqId, result)
-  }
-
-  private sendGoalResult(
-    socket: Socket, reqId: string,
-    result: { ok: true; result: unknown } | { ok: false; error: string },
-  ): void {
-    if (!socket.writable) return
-    const wire: Record<string, unknown> = { v: 1, type: 'goal.result', reqId, ok: result.ok }
-    if (result.ok) wire.result = result.result
-    else wire.error = result.error
-    socket.write(`${JSON.stringify(wire)}\n`, (err) => {
-      if (err) log.warn({ event: 'goal.bus.write_failed', reqId, err: String(err) })
-    })
   }
 
   private async handleApproval(m: Record<string, unknown>, socket: Socket): Promise<void> {
@@ -1692,7 +780,8 @@ export class ApprovalBus {
     // Fires after sensitive-path hard-deny (above) and self-protect
     // (inline below). Skips the notifier entirely so we must run
     // self-protect here rather than relying on approval-router.
-    if (!args.requiresExplicitDecision && isAutoApproveEnabled()) {
+    // isAutoApproveEffective() also gates open-IM + empty allowlist.
+    if (!args.requiresExplicitDecision && isAutoApproveEffective()) {
       try {
         const { checkToolUse } = await import('./self-protect.js')
         const selfGuard = checkToolUse(args.toolName, args.input)
@@ -1787,7 +876,9 @@ export class ApprovalBus {
     // Evict the oldest unresolved request (deny) so a flood can't grow the
     // maps without bound. The new request always gets a slot.
     if (this.pendingById.size >= MAX_PENDING_APPROVALS) {
-      this.evictOldestPending()
+      evictOldestPending(this.pendingById, MAX_PENDING_APPROVALS, (p) => {
+        this.cancelPending(p, { behavior: 'deny', message: 'approval evicted: too many pending approvals' }, 'timeout')
+      })
     }
     this.pendingById.set(args.reqId, pending)
     const q = this.pendingByThread.get(cKey) ?? []
@@ -1833,22 +924,6 @@ export class ApprovalBus {
     }
   }
 
-  /** v1.3.7 (F8) — deny + drop the oldest unresolved pending approval so the
-   *  maps stay under MAX_PENDING_APPROVALS. Insertion order of a Map is
-   *  iteration order, and pendingById is inserted in registration order, so
-   *  the first unresolved entry is the oldest. */
-  private evictOldestPending(): void {
-    for (const p of this.pendingById.values()) {
-      if (p.resolved) continue
-      log.warn({
-        event: 'approval.bus.pending_cap_evict',
-        reqId: p.reqId, runId: p.runId, toolName: p.toolName,
-        pending: this.pendingById.size, cap: MAX_PENDING_APPROVALS,
-      }, `pending-approval cap (${MAX_PENDING_APPROVALS}) reached — denying oldest request ${p.reqId}`)
-      this.cancelPending(p, { behavior: 'deny', message: 'approval evicted: too many pending approvals' }, 'timeout')
-      return
-    }
-  }
 
   private cancelPending(p: PendingApproval, decision: Decision, cause: ResolutionCause = 'sidecar-disconnect'): void {
     if (p.resolved) return
@@ -1910,7 +985,7 @@ export class ApprovalBus {
     // so non-user denies (run terminated, sidecar disconnect, shutdown)
     // don't accidentally clear rules the user still wants.
     if (decision.behavior === 'allow' && decision.autoAllowFurther) {
-      this.addAutoAllowRule(p.compositeKey, p.toolName, p.fingerprint)
+      addAutoAllowRule(this.autoAllowByThread, p.compositeKey, p.toolName, p.fingerprint)
     }
 
     if (p.dispatch) {
@@ -1926,7 +1001,7 @@ export class ApprovalBus {
       this.sendDecision(p.socket, p.reqId, decision)
     }
     // (Neither set is impossible — _registerPending guarantees one of the two.)
-    this.removePending(p)
+    removePending(p, this.pendingById, this.pendingByThread)
 
     // Fire resolution listener last so subscribers see fully-cleaned state
     // (pending already removed, rules already updated). Listener errors are
@@ -1948,31 +1023,6 @@ export class ApprovalBus {
         log.warn({ event: 'approval.bus.listener_error', reqId: p.reqId, err: String(err) })
       }
     }
-  }
-
-  private addAutoAllowRule(compositeKey: string, toolName: string, fingerprint: string): void {
-    const key = autoAllowRuleKey(toolName, fingerprint)
-    let set = this.autoAllowByThread.get(compositeKey)
-    if (!set) { set = new Set(); this.autoAllowByThread.set(compositeKey, set) }
-    set.add(key)
-    log.info({ event: 'approval.bus.autoallow_added', compositeKey, toolName, fingerprint })
-  }
-
-  private removeAutoAllowRule(compositeKey: string, toolName: string, fingerprint: string): void {
-    const key = autoAllowRuleKey(toolName, fingerprint)
-    const set = this.autoAllowByThread.get(compositeKey)
-    if (!set) return
-    if (set.delete(key) && set.size === 0) this.autoAllowByThread.delete(compositeKey)
-    log.info({ event: 'approval.bus.autoallow_removed', compositeKey, toolName, fingerprint })
-  }
-
-  private removePending(p: PendingApproval): void {
-    this.pendingById.delete(p.reqId)
-    const q = this.pendingByThread.get(p.compositeKey)
-    if (!q) return
-    const idx = q.indexOf(p)
-    if (idx >= 0) q.splice(idx, 1)
-    if (q.length === 0) this.pendingByThread.delete(p.compositeKey)
   }
 
   private sendDecision(socket: Socket, reqId: string, decision: Decision): void {
@@ -2005,124 +1055,6 @@ export class ApprovalBus {
       if (err) log.warn({ event: 'approval.bus.write_failed', reqId, err: String(err) })
     })
   }
-}
-
-function autoAllowRuleKey(toolName: string, fingerprint: string): string {
-  return `${toolName}::${fingerprint}`
-}
-
-/**
- * Translate a raw fingerprint string (e.g. `cmd:git+status`) into the
- * human-readable form shown in IM receipts and `/approval` listings
- * (e.g. `命令 git status`). The inverse of inputFingerprint()'s internal
- * encoding — keep the scheme list in sync if you add new fingerprint
- * variants.
- *
- * Unknown / legacy schemes pass through unchanged so the function is
- * forward-compatible with future fingerprint additions and backward-
- * compatible with rules created before the semantic split (no scheme).
- */
-export function humanizeFingerprint(fingerprint: string): string {
-  const sep = fingerprint.indexOf(':')
-  if (sep < 0) return fingerprint
-  const scheme = fingerprint.slice(0, sep)
-  const rest = fingerprint.slice(sep + 1)
-  switch (scheme) {
-    case 'cmd':   return `命令 ${rest.replace(/\+/g, ' ')}`
-    case 'dir':   return `目录 ${rest}`
-    case 'host':  return `主机 ${rest}`
-    case 'path':  return `路径 ${rest}`
-    case 'pat':   return `模式 ${rest}`
-    case 'query': return `查询 ${rest}`
-    case 'url':   return `URL ${rest}`
-    case 'raw':   return `入参 ${rest}`
-    default:      return fingerprint
-  }
-}
-
-/**
- * Compute the auto-allow fingerprint — the "kind" of call that, when
- * approved with `all`, covers future similar calls.
- *
- * Semantic per tool (rather than a uniform prefix slice) — fixes two
- * footguns of the old prefix-based approach:
- *   1. `Bash git status` and `git stash` collided at 5 chars but split at
- *      10 — neither setting matched user intuition. We extract the first
- *      two tokens (`cmd:git+status` vs `cmd:git+stash`) so the family is
- *      narrow and predictable.
- *   2. `Read /tmp/a.txt` and `Read /tmp/b.txt` got distinct fingerprints
- *      at any prefix length below the filename, forcing users to re-`all`
- *      every file. We key on dirname (`dir:/tmp`) so one approval covers
- *      the whole directory.
- *
- * Prefixes (`cmd:` / `dir:` / `host:` / `path:` / `pat:` / `query:` /
- * `url:` / `raw:`) keep the key space disambiguated — rules from
- * different schemes can never accidentally alias each other, and `raw:`
- * preserves backward compatibility for unknown tools.
- *
- * EXPORTED for unit tests. Not part of the bus's public API; production
- * call sites all live inside this module.
- */
-export function inputFingerprint(toolName: string, input: Record<string, unknown>): string {
-  const getStr = (k: string): string | null => {
-    const v = input[k]
-    return typeof v === 'string' && v.length > 0 ? v : null
-  }
-
-  switch (toolName) {
-    case 'Bash':
-    case 'agim_exec': {
-      const cmd = getStr('command')
-      if (!cmd) break
-      // First 1–2 whitespace-separated tokens. Quoted strings aren't
-      // unwrapped — we want `bash -c "..."` to fingerprint as `bash+-c`,
-      // not whatever's inside the quotes (the user is approving "running
-      // bash -c", a meta-pattern). Same scheme for agim_exec so
-      // "Auto for similar" groups by command family (e.g. `cmd:curl+-s`).
-      const tokens = cmd.trim().split(/\s+/).slice(0, 2)
-      return `cmd:${tokens.join('+')}`
-    }
-
-    case 'Read': case 'Write': case 'Edit': case 'NotebookEdit':
-    case 'NotebookRead': case 'LS': {
-      const fp = getStr('file_path') ?? getStr('path')
-      if (!fp) break
-      // dirname('/tmp/x.txt') → '/tmp'  (group all files in dir)
-      // dirname('file.txt')   → '.'     (no dir — fall back to the path
-      //                                  itself so we don't lump every
-      //                                  relative-path call together)
-      const d = dirname(fp)
-      return d === '.' || d === '' ? `path:${fp.slice(0, AUTO_ALLOW_PREFIX_LEN)}` : `dir:${d}`
-    }
-
-    case 'WebFetch': {
-      const u = getStr('url')
-      if (!u) break
-      // Hostname captures "calls to this API"; path / query string are
-      // intentionally dropped — they vary per call but the user means
-      // "trust this host" when they say `all`.
-      try { return `host:${new URL(u).hostname}` }
-      catch { return `url:${u.slice(0, AUTO_ALLOW_PREFIX_LEN)}` }
-    }
-
-    case 'WebSearch': {
-      const q = getStr('query')
-      if (!q) break
-      return `query:${q.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
-    }
-
-    case 'Glob': case 'Grep': {
-      const p = getStr('pattern')
-      if (!p) break
-      return `pat:${p.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
-    }
-  }
-
-  // Unknown tool or known tool whose primary field was missing — fall
-  // back to a stringified prefix so the dedup key remains stable.
-  let s: string
-  try { s = JSON.stringify(input) } catch { s = '' }
-  return `raw:${s.slice(0, AUTO_ALLOW_PREFIX_LEN)}`
 }
 
 function defaultSocketPath(): string {

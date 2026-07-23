@@ -2,9 +2,10 @@
  * Hand-curated, typed SPA facade for backend REST endpoints.
  *
  * `npm run check:contracts` verifies every client call against the route
- * manifest extracted from src/web/server.ts. Not every backend route needs a
- * SPA wrapper, but every wrapper must resolve to a real route. Keep request
- * and response types here; this file is never overwritten by a generator.
+ * manifest extracted from `src/web/*.ts` domain modules (server.ts only
+ * prefixes and delegates). Not every backend route needs a SPA wrapper,
+ * but every wrapper must resolve to a real route. Keep request and
+ * response types here; this file is never overwritten by a generator.
  */
 
 import { client } from './client'

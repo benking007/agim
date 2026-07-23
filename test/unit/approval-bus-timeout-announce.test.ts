@@ -9,11 +9,16 @@ import {
   stopTimeoutDefaultReminder,
   isTimeoutDefaultAllow,
   isAutoApproveEnabled,
+  isAutoApproveEffective,
 } from '../../src/core/approval-bus'
+import { _resetCache as resetSenderAllowlist } from '../../src/core/sender-allowlist'
 
 afterEach(() => {
   delete process.env.AGIM_TIMEOUT_DEFAULT
   delete process.env.AGIM_AUTO_APPROVE
+  delete process.env.AGIM_AUTO_APPROVE_OPEN_IM
+  delete process.env.AGIM_ALLOWED_USERS
+  resetSenderAllowlist()
   stopTimeoutDefaultReminder()
 })
 
@@ -76,22 +81,50 @@ describe('announceTimeoutDefaultIfAllow', () => {
 })
 
 describe('isAutoApproveEnabled', () => {
-  it('defaults to true', () => {
+  it('defaults to false (safe default)', () => {
     delete process.env.AGIM_AUTO_APPROVE
-    expect(isAutoApproveEnabled()).toBe(true)
+    expect(isAutoApproveEnabled()).toBe(false)
   })
 
   it('recognized OFF values', () => {
-    for (const v of ['0', 'off', 'false', 'no']) {
+    for (const v of ['0', 'off', 'false', 'no', '']) {
       process.env.AGIM_AUTO_APPROVE = v
       expect(isAutoApproveEnabled()).toBe(false)
     }
   })
 
   it('non-off values are treated as on', () => {
-    for (const v of ['1', 'on', 'true', 'yes', 'ON', 'True', 'YES', '']) {
+    for (const v of ['1', 'on', 'true', 'yes', 'ON', 'True', 'YES']) {
       process.env.AGIM_AUTO_APPROVE = v
       expect(isAutoApproveEnabled()).toBe(true)
     }
+  })
+})
+
+describe('isAutoApproveEffective', () => {
+  it('is false when auto-approve env is off', () => {
+    delete process.env.AGIM_AUTO_APPROVE
+    expect(isAutoApproveEffective()).toBe(false)
+  })
+
+  it('is true for web-console-only when auto-approve is on', () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    // No messengers in default test env config → effective
+    expect(isAutoApproveEffective()).toBe(true)
+  })
+
+  it('is true when strict allowlist is configured', () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_ALLOWED_USERS = 'telegram:12345'
+    resetSenderAllowlist()
+    expect(isAutoApproveEffective()).toBe(true)
+  })
+
+  it('OPEN_IM ack restores auto-approve without strict allowlist', () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_AUTO_APPROVE_OPEN_IM = '1'
+    delete process.env.AGIM_ALLOWED_USERS
+    resetSenderAllowlist()
+    expect(isAutoApproveEffective()).toBe(true)
   })
 })

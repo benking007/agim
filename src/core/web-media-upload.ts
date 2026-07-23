@@ -6,9 +6,10 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, extname, join, resolve } from 'node:path'
+import { basename, extname, join, resolve, sep } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
 
@@ -99,20 +100,75 @@ export function formatMediaMarker(saved: SavedWebMedia): string {
   return `[文件附件：${saved.path} (${saved.name}, ${sizeStr})]`
 }
 
-export function resolveSafeWebMediaPath(requested: string): string | null {
+function realpathSyncSoft(abs: string): string {
+  try {
+    return realpathSync(abs)
+  } catch {
+    // File may not exist yet — resolve parent when possible.
+    const lastSep = abs.lastIndexOf(sep)
+    if (lastSep <= 0) return abs
+    try {
+      return join(realpathSync(abs.slice(0, lastSep)), abs.slice(lastSep + 1))
+    } catch {
+      return abs
+    }
+  }
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  const rootWithSep = root.endsWith(sep) ? root : `${root}${sep}`
+  return candidate === root || candidate.startsWith(rootWithSep)
+}
+
+/**
+ * Resolve a media path for GET /api/chat/media/file.
+ * Lexical resolve + realpath (symlink escape) must stay under a media root.
+ * When `threadId` is provided, path must live under `…/web/<sanitized>/`.
+ */
+export function resolveSafeWebMediaPath(
+  requested: string,
+  opts?: { threadId?: string },
+): string | null {
   const raw = (requested || '').trim()
   if (!raw) return null
   const abs = resolve(raw)
-  const roots = new Set<string>([
-    getWebMediaRoot(),
-    resolve(join(AGIM_HOME, 'media')),
-    resolve(join(homedir(), '.agim', 'media')),
-  ])
-  for (const root of roots) {
-    const rootWithSep = root.endsWith('/') ? root : `${root}/`
-    if (abs === root || abs.startsWith(rootWithSep)) return abs
+  const real = realpathSyncSoft(abs)
+  const roots = [getWebMediaRoot(), resolve(join(AGIM_HOME, 'media')), resolve(join(homedir(), '.agim', 'media'))]
+    .map((r) => realpathSyncSoft(r))
+  const matchedRoot = roots.find((root) => isInsideRoot(root, real) || isInsideRoot(root, abs))
+  if (!matchedRoot) return null
+  if (opts?.threadId) {
+    const sub = join('web', sanitizeThreadId(opts.threadId))
+    const threadRoot = realpathSyncSoft(resolve(matchedRoot, sub))
+    if (!isInsideRoot(threadRoot, real) && !isInsideRoot(threadRoot, abs)) return null
   }
-  return null
+  return real
+}
+
+/** Async variant used when callers already await (tests / future). */
+export async function resolveSafeWebMediaPathAsync(
+  requested: string,
+  opts?: { threadId?: string },
+): Promise<string | null> {
+  const raw = (requested || '').trim()
+  if (!raw) return null
+  const abs = resolve(raw)
+  let real = abs
+  try { real = await realpath(abs) } catch { /* keep abs */ }
+  const rootCandidates = [getWebMediaRoot(), resolve(join(AGIM_HOME, 'media')), resolve(join(homedir(), '.agim', 'media'))]
+  const roots: string[] = []
+  for (const r of rootCandidates) {
+    try { roots.push(await realpath(r)) } catch { roots.push(r) }
+  }
+  const matchedRoot = roots.find((root) => isInsideRoot(root, real) || isInsideRoot(root, abs))
+  if (!matchedRoot) return null
+  if (opts?.threadId) {
+    const threadRoot = resolve(matchedRoot, 'web', sanitizeThreadId(opts.threadId))
+    let realThread = threadRoot
+    try { realThread = await realpath(threadRoot) } catch { /* keep */ }
+    if (!isInsideRoot(realThread, real) && !isInsideRoot(realThread, abs)) return null
+  }
+  return real
 }
 
 /** Guess a Content-Type from filename when the on-disk mime is unknown. */

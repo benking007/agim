@@ -1,6 +1,6 @@
 # 代码审查报告（2026-07-21）
 
-> 状态：本轮已落地一批高优先级修复（见 §4）；其余项记入 `tech-debt.md` / 本文 backlog。  
+> 状态：本轮已落地一批高优先级修复（见 §4）；P0b / P1b 已在后续安全加固中关闭；其余项记入 `tech-debt.md` / 本文 backlog。  
 > 入口：`docs/README.md` · 规范：`docs/coding-standards.md` · 安全基线：`docs/security-hardening.md`
 
 审查范围：全仓高风险面（鉴权 / 密钥 / LLM / Agent 执行 / WebSocket / 发布），并复核近日 LLM 预设与自定义高级参数改动。
@@ -28,10 +28,10 @@
 | H7 | Medium | Auth cookie 缺 `HttpOnly` | **已修**（SPA 走 localStorage） |
 | H8 | Medium | Backend name 大小写唯一性不一致 | **已修**（add 路径） |
 | P0a | P0* | `role=user` 可经 WS 驱动 Agent | **文档澄清**（Portal 有意设计；非 REST 越权） |
-| P0b | P0* | 默认 `AGIM_AUTO_APPROVE=1` + 空 allowlist | **保留**（单用户默认；加固见 security-hardening） |
+| P0b | P0* | 默认 `AGIM_AUTO_APPROVE=1` + 空 allowlist | **已修**（默认关；开放 IM 无 strict allowlist 时 suppress；见 #218/#219） |
 | P1a | P1 | LLM/MCP URL 缺 ACP 级 SSRF 护栏 | Backlog |
-| P1b | P1 | WS `threadOwners` 仅内存；重启后 first-claim | Backlog |
-| P1c | P1 | 默认 FS 非 restrict | Backlog（部署文档强化） |
+| P1b | P1 | WS `threadOwners` 仅内存；重启后 first-claim | **已修**（`web-thread-owners.ts` 持久化） |
+| P1c | P1 | 默认 FS 非 restrict | Backlog（产品默认；`AGIM_NATIVE_FS_RESTRICT=1` 可选） |
 | P2a | P2 | MCP GET 返回 auth headers 明文 | Backlog |
 | P2b | P2 | `tokens.json` RMW 竞态 | Backlog |
 | P2c | P2 | 移动 QR 把 raw token 放进 query | Backlog |
@@ -66,11 +66,12 @@
 ## 5. 建议后续迭代（不阻塞发版）
 
 1. 复用 `assertSafeAcpUrl` 护 LLM `baseUrl` + MCP HTTP URL；`redirect: 'manual'`
-2. 持久化 `threadId → tokenId`；拒绝「已有会话被他人 first-claim」
+2. ~~持久化 `threadId → tokenId`~~（已落地 `web-thread-owners.ts`）
 3. MCP list 脱敏 auth headers
 4. SPA 运行时消费 `GET /api/llm/presets`（或 codegen 对齐测试）
 5. `DELETE /api/llm/backends?label=` 组删事务
 6. Mobile QR 改为 short-TTL exchange code
+7. 继续 peel `approval-bus.ts` 厚门面；触摸 >800 行软警告文件时顺带拆分
 
 ## 6. 测试与发版
 

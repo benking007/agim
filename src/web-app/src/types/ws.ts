@@ -1,8 +1,8 @@
 /**
  * types/ws.ts — typed messages on the /ws WebSocket.
  *
- * Wire shape source: src/web/server.ts handleClientMessage() +
- * sendToClient() calls. Discriminated unions so the chat reducer can
+ * Wire shape source: src/web/ws-chat.ts (handleClientMessage /
+ * sendToClient). Discriminated unions so the chat reducer can
  * switch on `msg.type` with exhaustive checks.
  *
  * Note: this is the SPA-side schema. If the backend gains a new

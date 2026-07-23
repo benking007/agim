@@ -19,12 +19,14 @@
  */
 
 import {
-  access, chmod, cp, mkdir, mkdtemp, readdir, rename, rm, unlink, writeFile,
+  access, chmod, cp, mkdir, mkdtemp, readdir, rename, rm, stat, unlink, writeFile,
 } from 'node:fs/promises'
-import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
+import { accessSync, constants as fsConstants, createWriteStream, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { AGIM_HOME } from './agim-paths.js'
 import { STT_ENV } from './transcribe-env.js'
@@ -369,6 +371,19 @@ async function extractArchive(
   await execFileAsync('tar', ['-xf', archivePath, '-C', destDir])
 }
 
+/** Stream a URL to disk (avoids buffering multi‑hundred‑MB archives in RAM). */
+async function downloadUrlToFile(url: string, dest: string): Promise<number> {
+  const res = await fetch(url, { redirect: 'follow' })
+  if (!res.ok || !res.body) {
+    throw new Error(`HTTP ${res.status} downloading ${url}`)
+  }
+  await mkdir(dirname(dest), { recursive: true })
+  const nodeStream = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream)
+  await pipeline(nodeStream, createWriteStream(dest))
+  const st = await stat(dest)
+  return st.size
+}
+
 async function downloadWhisperBinToDefault(): Promise<string> {
   const asset = whisperReleaseAssetForHost()
   if (!asset) {
@@ -381,19 +396,14 @@ async function downloadWhisperBinToDefault(): Promise<string> {
   const staging = await mkdtemp(join(tmpdir(), 'agim-whisper-bin-'))
   log.info({ event: 'whisper.bin.download_start', url: asset.url, dest })
   try {
-    const res = await fetch(asset.url, { redirect: 'follow' })
-    if (!res.ok || !res.body) {
-      throw new Error(`HTTP ${res.status} downloading ${asset.url}`)
-    }
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength < 100_000) {
-      throw new Error(`CLI archive too small (${buf.byteLength} bytes)`)
-    }
     const archivePath = join(
       staging,
       asset.archive === 'tar.gz' ? 'pack.tar.gz' : 'pack.zip',
     )
-    await writeFile(archivePath, buf)
+    const bytes = await downloadUrlToFile(asset.url, archivePath)
+    if (bytes < 100_000) {
+      throw new Error(`CLI archive too small (${bytes} bytes)`)
+    }
     const extractRoot = join(staging, 'out')
     await extractArchive(archivePath, asset.archive, extractRoot)
     const cliPath = await findNamedFile(extractRoot, asset.cliName)
@@ -420,7 +430,7 @@ async function downloadWhisperBinToDefault(): Promise<string> {
     log.info({
       event: 'whisper.bin.download_ok',
       dest,
-      bytes: buf.byteLength,
+      bytes,
       release: WHISPER_CPP_RELEASE,
     })
     return dest
@@ -464,17 +474,12 @@ async function downloadWhisperModelToDefault(): Promise<string> {
   const tmp = `${dest}.partial`
   log.info({ event: 'whisper.model.download_start', url: MODEL_URL, dest })
   try {
-    const res = await fetch(MODEL_URL, { redirect: 'follow' })
-    if (!res.ok || !res.body) {
-      throw new Error(`HTTP ${res.status} downloading ${MODEL_URL}`)
+    const bytes = await downloadUrlToFile(MODEL_URL, tmp)
+    if (bytes < 1_000_000) {
+      throw new Error(`model download too small (${bytes} bytes)`)
     }
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength < 1_000_000) {
-      throw new Error(`model download too small (${buf.byteLength} bytes)`)
-    }
-    await writeFile(tmp, buf)
     await rename(tmp, dest)
-    log.info({ event: 'whisper.model.download_ok', dest, bytes: buf.byteLength })
+    log.info({ event: 'whisper.model.download_ok', dest, bytes })
     return dest
   } catch (err) {
     await unlink(tmp).catch(() => {})

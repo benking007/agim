@@ -63,7 +63,7 @@
 
 | 变量 | 默认取向 | 备注 |
 |---|---|---|
-| `AGIM_AUTO_APPROVE` | `1`（开放） | 接公网 IM 必须关 + allowlist |
+| `AGIM_AUTO_APPROVE` | `0`（安全默认） | 单人自用可显式 `=1`；接 IM 须严格 allowlist 或 `AGIM_AUTO_APPROVE_OPEN_IM=1` |
 | `AGIM_NATIVE_FS_RESTRICT` | off | 多用户/IM 建议 on |
 | `AGIM_WEB_AUTH=off` | 显式逃逸 | 非 loopback 绑定极危险 |
 | `AGIM_WEB_AUTH` cookie | HttpOnly | XSS 仍可经 localStorage 偷 token——修 XSS 优先 |

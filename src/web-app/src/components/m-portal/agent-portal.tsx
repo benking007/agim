@@ -801,14 +801,23 @@ export function AgentPortal(): JSX.Element {
       voiceRecorderRef.current = null
       setVoicePhase(null)
       const msg = err instanceof Error ? err.message : String(err)
+      const name = err instanceof DOMException || (err && typeof err === 'object' && 'name' in err)
+        ? String((err as { name?: string }).name || '')
+        : ''
       toast.error(
-        /Permission|NotAllowed|denied/i.test(msg)
+        /Permission|NotAllowed|denied/i.test(msg) || name === 'NotAllowedError'
           ? t('chat.portal.voiceDenied', { defaultValue: '需要麦克风权限才能语音输入' })
-          : /Invalid constraint|Overconstrained|constraint/i.test(msg)
-            ? t('chat.portal.voiceConstraint', {
-              defaultValue: '无法打开麦克风（未弹出权限框）。请：① 硬刷新页面或重启 Agim；② 系统设置 → 隐私 → 麦克风，允许浏览器/Agim；③ 地址栏站点权限里麦克风选「允许」',
+          : /Requested device not found|NotFound|DevicesNotFound|no.*device/i.test(msg)
+            || name === 'NotFoundError'
+            || name === 'DevicesNotFoundError'
+            ? t('chat.portal.voiceNoDevice', {
+              defaultValue: '浏览器找不到麦克风。请确认：电脑已接麦/耳机麦、系统未禁用输入设备，且不是远程桌面无音频透传；然后刷新页面再试',
             })
-            : msg,
+            : /Invalid constraint|Overconstrained|constraint/i.test(msg)
+              ? t('chat.portal.voiceConstraint', {
+                defaultValue: '无法打开麦克风（未弹出权限框）。请：① 硬刷新页面或重启 Agim；② 系统设置 → 隐私 → 麦克风，允许浏览器/Agim；③ 地址栏站点权限里麦克风选「允许」',
+              })
+              : msg,
       )
     }
   }, [canStop, t, uploading, voicePhase])

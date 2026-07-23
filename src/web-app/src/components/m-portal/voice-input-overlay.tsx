@@ -48,7 +48,8 @@ export function VoiceInputOverlay({
       <div className="flex flex-1 items-center justify-center px-6">
         <p
           className={cn(
-            'text-center text-[17px] font-medium tracking-wide',
+            'rounded-full px-5 py-2 text-center text-[17px] font-medium tracking-wide backdrop-blur-md',
+            dark ? 'bg-zinc-950/75' : 'bg-white/90',
             cancelling ? 'text-rose-500' : 'text-sky-500',
             busy && 'animate-pulse text-sky-500',
           )}

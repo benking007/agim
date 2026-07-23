@@ -3067,6 +3067,9 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_IFLYTEK_APP_ID',
   'AGIM_IFLYTEK_API_KEY',
   'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
   // whisper.cpp BIN/MODEL/ARGS are host/ops-only — not SPA-editable.
   // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
   // enforced in the pi tool bridge for the native path. Re-read per
@@ -3145,6 +3148,7 @@ const SECRET_KEYS = new Set<string>([
   'AGIM_TENCENT_SECRET_KEY',
   'AGIM_IFLYTEK_API_KEY',
   'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
 ])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file

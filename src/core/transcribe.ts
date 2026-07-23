@@ -6,11 +6,12 @@
 //   - baidu       — 百度短语音识别
 //   - tencent     — 腾讯云一句话识别
 //   - iflytek     — 讯飞语音听写 (WebSocket IAT)
+//   - glm         — 智谱 GLM-ASR (AGIM_ZHIPU_API_KEY)
 //
 // Selection order (first hit wins):
 //   1. AGIM_TRANSCRIBE_PROVIDER=<name>|none — explicit default
 //   2. Auto (Chinese quality / stability / cost):
-//        iflytek → tencent → baidu → openai → whispercpp(fallback)
+//        iflytek → tencent → baidu → glm → openai → whispercpp(fallback)
 //   3. else → 'none'
 
 import { spawn } from 'node:child_process'
@@ -23,6 +24,7 @@ import { convertToWav } from './transcribe-audio.js'
 import { isBaiduSpeechConfigured, transcribeWithBaidu } from './transcribe-baidu.js'
 import { isTencentSpeechConfigured, transcribeWithTencent } from './transcribe-tencent.js'
 import { isIflytekSpeechConfigured, transcribeWithIflytek } from './transcribe-iflytek.js'
+import { isGlmSpeechConfigured, transcribeWithGlm } from './transcribe-glm.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
   TranscribeError,
@@ -47,6 +49,8 @@ const ECHOABLE_ENV_KEYS = new Set([
   'AGIM_OPENAI_TRANSCRIBE_MODEL',
   'AGIM_TENCENT_ASR_ENGINE',
   'AGIM_IFLYTEK_APP_ID',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
 ])
 
 export interface TranscribeProviderInfo {
@@ -93,6 +97,11 @@ const PROVIDER_META: Record<
     label: '讯飞语音听写',
     envKeys: ['AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET'],
   },
+  glm: {
+    id: 'glm',
+    label: '智谱 GLM-ASR',
+    envKeys: ['AGIM_ZHIPU_API_KEY', 'AGIM_ZHIPU_BASE_URL', 'AGIM_ZHIPU_TRANSCRIBE_MODEL'],
+  },
 }
 
 export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none'>): boolean {
@@ -107,6 +116,8 @@ export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none
       return isTencentSpeechConfigured()
     case 'iflytek':
       return isIflytekSpeechConfigured()
+    case 'glm':
+      return isGlmSpeechConfigured()
     default:
       return false
   }
@@ -166,6 +177,7 @@ export function detectProvider(): TranscribeProvider {
     || explicit === 'baidu'
     || explicit === 'tencent'
     || explicit === 'iflytek'
+    || explicit === 'glm'
     || explicit === 'none'
   ) {
     return explicit
@@ -203,6 +215,9 @@ export async function transcribe(filePath: string, opts: TranscribeOptions = {})
       break
     case 'iflytek':
       text = await transcribeWithIflytek(filePath, opts)
+      break
+    case 'glm':
+      text = await transcribeWithGlm(filePath, opts)
       break
     default:
       throw new TranscribeError(`unknown provider: ${provider as string}`, 'none')

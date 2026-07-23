@@ -32,6 +32,9 @@ const ENV_KEYS = [
   'AGIM_IFLYTEK_APP_ID',
   'AGIM_IFLYTEK_API_KEY',
   'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
 ]
 
 function clearEnv(): void {
@@ -77,13 +80,15 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('whispercpp')
   })
 
-  it('honors explicit baidu / tencent / iflytek', () => {
+  it('honors explicit baidu / tencent / iflytek / glm', () => {
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'baidu'
     expect(detectProvider()).toBe('baidu')
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'tencent'
     expect(detectProvider()).toBe('tencent')
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'iflytek'
     expect(detectProvider()).toBe('iflytek')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'glm'
+    expect(detectProvider()).toBe('glm')
   })
 
   it('auto-picks any cloud provider before whispercpp fallback', () => {
@@ -94,8 +99,11 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('baidu')
   })
 
-  it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > openai)', () => {
+  it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > glm > openai)', () => {
     process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    expect(detectProvider()).toBe('glm')
+
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
     expect(detectProvider()).toBe('baidu')
@@ -142,22 +150,24 @@ describe('transcribe — settings UI provider order', () => {
     const { providers, active } = listTranscribeProviders()
     expect(active).toBe('none')
     expect(providers.map((p) => p.id)).toEqual([
-      'iflytek', 'tencent', 'baidu', 'openai', 'whispercpp',
+      'iflytek', 'tencent', 'baidu', 'glm', 'openai', 'whispercpp',
     ])
   })
 
   it('puts active + other configured ahead of missing, preserving priority', () => {
     process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
     process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
     process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
-    // auto → baidu (ahead of openai / whispercpp)
+    // auto → baidu (ahead of glm / openai / whispercpp)
     const { providers, active } = listTranscribeProviders()
     expect(active).toBe('baidu')
     expect(providers.map((p) => p.id)).toEqual([
       'baidu',      // active
-      'openai',     // configured, higher priority than whisper
+      'glm',        // configured, ahead of openai
+      'openai',
       'whispercpp', // configured fallback
       'iflytek',    // missing
       'tencent',    // missing
@@ -290,5 +300,77 @@ describe('transcribe — openai path with mocked fetch', () => {
       expect(err).toBeInstanceOf(TranscribeError)
       expect((err as InstanceType<typeof TranscribeError>).provider).toBe('openai')
     }
+  })
+})
+
+describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
+  let originalFetch: typeof fetch
+  let saved: Record<string, string | undefined>
+  let silenceWav = ''
+
+  beforeAll(async () => {
+    await mkdir(TEST_ROOT, { recursive: true })
+    silenceWav = join(TEST_ROOT, 'silence.wav')
+    // 0.2s of silence — ffmpeg input for convertToWav in the glm path.
+    const { spawnSync } = await import('node:child_process')
+    const r = spawnSync('ffmpeg', [
+      '-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.2',
+      '-c:a', 'pcm_s16le', silenceWav,
+    ], { encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`ffmpeg fixture failed: ${r.stderr}`)
+  })
+  afterAll(async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
+  })
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-test-key'
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('posts to bigmodel transcriptions and returns text', async () => {
+    let capturedReq: Request | null = null
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedReq = new Request(input as string, init)
+      return new Response(JSON.stringify({ text: '  你好智谱  ' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const result = await transcribe(silenceWav, { provider: 'glm' })
+    expect(result.text).toBe('你好智谱')
+    expect(result.provider).toBe('glm')
+    expect(capturedReq!.url).toBe('https://open.bigmodel.cn/api/paas/v4/audio/transcriptions')
+    expect(capturedReq!.headers.get('authorization')).toBe('Bearer zhipu-test-key')
+    expect(capturedReq!.method).toBe('POST')
+  })
+
+  it('honors AGIM_ZHIPU_BASE_URL + model', async () => {
+    process.env.AGIM_ZHIPU_BASE_URL = 'https://api.z.ai/api/paas/v4'
+    process.env.AGIM_ZHIPU_TRANSCRIBE_MODEL = 'glm-asr-2512'
+    let capturedUrl = ''
+    let capturedModel = ''
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      capturedUrl = String(input)
+      const req = new Request(input as string, init)
+      const form = await req.formData()
+      capturedModel = String(form.get('model') ?? '')
+      return new Response(JSON.stringify({ text: 'ok' }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await transcribe(silenceWav, { provider: 'glm' })
+    expect(capturedUrl).toContain('api.z.ai')
+    expect(capturedModel).toBe('glm-asr-2512')
   })
 })

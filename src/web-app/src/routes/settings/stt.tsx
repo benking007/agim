@@ -35,6 +35,7 @@ const SECRETISH = new Set([
   'AGIM_TENCENT_SECRET_KEY',
   'AGIM_IFLYTEK_API_KEY',
   'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
 ])
 
 /** Human labels + hints for env keys (lazy chunk — not in entry i18n). */
@@ -50,6 +51,17 @@ const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?:
   AGIM_IFLYTEK_APP_ID: { title: 'AppID', hint: '讯飞开放平台应用 AppID' },
   AGIM_IFLYTEK_API_KEY: { title: 'APIKey', hint: '讯飞开放平台 APIKey' },
   AGIM_IFLYTEK_API_SECRET: { title: 'APISecret', hint: '讯飞开放平台 APISecret' },
+  AGIM_ZHIPU_API_KEY: { title: 'API Key', hint: '智谱开放平台 API Key（与 LLM 可用同一把）', placeholder: '...' },
+  AGIM_ZHIPU_BASE_URL: {
+    title: 'API 地址（可选）',
+    hint: '默认 https://open.bigmodel.cn/api/paas/v4；国际站可用 api.z.ai',
+    placeholder: 'https://open.bigmodel.cn/api/paas/v4',
+  },
+  AGIM_ZHIPU_TRANSCRIBE_MODEL: {
+    title: '模型名（可选）',
+    hint: '默认 glm-asr-2512；单段音频 ≤30 秒',
+    placeholder: 'glm-asr-2512',
+  },
 }
 
 const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?: string }> = {
@@ -64,6 +76,17 @@ const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?:
   AGIM_IFLYTEK_APP_ID: { title: 'AppID', hint: 'iFlytek AppID' },
   AGIM_IFLYTEK_API_KEY: { title: 'APIKey', hint: 'iFlytek APIKey' },
   AGIM_IFLYTEK_API_SECRET: { title: 'APISecret', hint: 'iFlytek APISecret' },
+  AGIM_ZHIPU_API_KEY: { title: 'API Key', hint: 'Zhipu open.bigmodel.cn API Key (can reuse LLM key)', placeholder: '...' },
+  AGIM_ZHIPU_BASE_URL: {
+    title: 'Base URL (optional)',
+    hint: 'Default https://open.bigmodel.cn/api/paas/v4; intl: api.z.ai',
+    placeholder: 'https://open.bigmodel.cn/api/paas/v4',
+  },
+  AGIM_ZHIPU_TRANSCRIBE_MODEL: {
+    title: 'Model (optional)',
+    hint: 'Default glm-asr-2512; clips ≤30s',
+    placeholder: 'glm-asr-2512',
+  },
 }
 
 function useSttProviders() {
@@ -164,8 +187,8 @@ export default function SettingsSttRoute(): JSX.Element {
       </header>
       <p className="text-sm text-text-dim">
         {zh
-          ? 'Portal 按住说话与 IM 语音共用。可配置 OpenAI / 百度 / 腾讯 / 讯飞 / whisper.cpp，并指定默认服务。密钥写入 ~/.agim/env。'
-          : 'Shared by Portal hold-to-talk and IM voice. Configure OpenAI, Baidu, Tencent, iFlytek, or whisper.cpp. Secrets go to ~/.agim/env.'}
+          ? 'Portal 按住说话与 IM 语音共用。可配置 讯飞 / 腾讯 / 百度 / 智谱 GLM / OpenAI / whisper.cpp，并指定默认服务。密钥写入 ~/.agim/env。'
+          : 'Shared by Portal hold-to-talk and IM voice. Configure iFlytek, Tencent, Baidu, Zhipu GLM, OpenAI, or whisper.cpp. Secrets go to ~/.agim/env.'}
       </p>
 
       <section className="rounded-md border border-border bg-surface px-4 py-3">
@@ -181,8 +204,8 @@ export default function SettingsSttRoute(): JSX.Element {
         </div>
         <p className="mt-1 text-[11px] text-text-dim">
           {zh
-            ? '由「默认转写服务」决定。选「自动」时：只要配置了任一云厂商，就优先用云服务（讯飞 → 腾讯 → 百度 → OpenAI）；都没有才用本地 whisper.cpp 兜底。'
-            : 'Set by the default below. Auto prefers any configured cloud STT (iFlytek → Tencent → Baidu → OpenAI) over local whisper.cpp.'}
+            ? '由「默认转写服务」决定。选「自动」时：只要配置了任一云厂商，就优先用云服务（讯飞 → 腾讯 → 百度 → 智谱 GLM → OpenAI）；都没有才用本地 whisper.cpp 兜底。'
+            : 'Set by the default below. Auto prefers any configured cloud STT (iFlytek → Tencent → Baidu → Zhipu GLM → OpenAI) over local whisper.cpp.'}
         </p>
       </section>
 

@@ -76,6 +76,9 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_IFLYTEK_APP_ID',
     'AGIM_IFLYTEK_API_KEY',
     'AGIM_IFLYTEK_API_SECRET',
+    'AGIM_ZHIPU_API_KEY',
+    'AGIM_ZHIPU_BASE_URL',
+    'AGIM_ZHIPU_TRANSCRIBE_MODEL',
   ]
 
   // Keys that stay editable: A2A, plan mode, iteration, policy, critic.

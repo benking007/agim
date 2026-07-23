@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **iOS / macOS App Icon**: ship Agim brand icons into both shell `AppIcon.appiconset`s (plus `assets/app-icon/` source + rounded preview).
 - **Chat Todo checklist UI**: `agim_todo_write` plans surface as a Cursor-style collapsible checklist above the tool accordion (desktop + Portal). Items update live with ☐ / ▶ / ☑ as the agent rewrites the list; activity steps keep a short “Plan updated” row without dumping the full checklist into the tool queue.
 - **Chat thumbs up/down (real feedback)**: votes persist in a session sidecar (`~/.agim/sessions/*.feedback.json`), restore on refresh, and expose `im_hub_feedback_total`. Downvote arms a consume-once ephemeral next-turn steer (not durable JSONL) and offers a composer “tell it what was wrong” prefill; upvote is persist-only. Does not affect context-compaction weights.
 - **Agim Agent context budget (晚压)**: L1 tool-result clearing + emergency clear, L2 late transcript compaction (pre-turn + mid-turn), lookahead soft-line, Prometheus `im_hub_ctx_*` + `AgentTurnOutcome.contextBudget`, Settings「晚压」knobs (`AGIM_CTX_*`), session **压缩率** in Usage (`/ctx` · auto/full/balanced/frequent), and Cursor-like Usage breakdown. See `docs/agim-agent-context-budget.md`.

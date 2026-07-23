@@ -24,10 +24,20 @@ export class TranscribeError extends Error {
   }
 }
 
+/** Auto-detect priority (first configured wins). whisper.cpp is last = fallback. */
 export const ALL_TRANSCRIBE_PROVIDERS: Exclude<TranscribeProvider, 'none'>[] = [
   'openai',
   'baidu',
   'tencent',
   'iflytek',
   'whispercpp',
+]
+
+/** Settings UI order — whisper.cpp pinned first as the local fallback. */
+export const STT_UI_PROVIDER_ORDER: Exclude<TranscribeProvider, 'none'>[] = [
+  'whispercpp',
+  'openai',
+  'baidu',
+  'tencent',
+  'iflytek',
 ]

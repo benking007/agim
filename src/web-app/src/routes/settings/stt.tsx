@@ -37,6 +37,65 @@ const SECRETISH = new Set([
   'AGIM_IFLYTEK_API_SECRET',
 ])
 
+/** Human labels + hints for env keys (lazy chunk — not in entry i18n). */
+const FIELD_META_ZH: Record<string, { title: string; hint: string; placeholder?: string }> = {
+  AGIM_WHISPERCPP_BIN: {
+    title: '可执行文件路径',
+    hint: '本机 whisper.cpp / whisper-cli 二进制，例如 /usr/local/bin/whisper-cli',
+    placeholder: '/path/to/whisper-cli',
+  },
+  AGIM_WHISPERCPP_MODEL: {
+    title: '模型文件路径',
+    hint: 'ggml 模型权重，例如 /models/ggml-base.bin 或 ggml-medium.bin',
+    placeholder: '/path/to/ggml-*.bin',
+  },
+  AGIM_WHISPERCPP_ARGS: {
+    title: '额外命令行参数（可选）',
+    hint: '逗号分隔，传给 whisper-cli，例如 -t,4。一般可留空。',
+    placeholder: '可选，如 -t,4',
+  },
+  OPENAI_API_KEY: { title: 'API Key', hint: 'OpenAI 或兼容网关的密钥', placeholder: 'sk-...' },
+  OPENAI_BASE_URL: { title: 'API 地址（可选）', hint: '默认 https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
+  AGIM_OPENAI_TRANSCRIBE_MODEL: { title: '模型名（可选）', hint: '默认 whisper-1', placeholder: 'whisper-1' },
+  AGIM_BAIDU_SPEECH_API_KEY: { title: 'API Key', hint: '百度智能云语音应用的 API Key' },
+  AGIM_BAIDU_SPEECH_SECRET_KEY: { title: 'Secret Key', hint: '百度智能云语音应用的 Secret Key' },
+  AGIM_TENCENT_SECRET_ID: { title: 'SecretId', hint: '腾讯云 API 密钥 SecretId' },
+  AGIM_TENCENT_SECRET_KEY: { title: 'SecretKey', hint: '腾讯云 API 密钥 SecretKey' },
+  AGIM_TENCENT_ASR_ENGINE: { title: '引擎（可选）', hint: '默认 16k_zh；英语可用 16k_en', placeholder: '16k_zh' },
+  AGIM_IFLYTEK_APP_ID: { title: 'AppID', hint: '讯飞开放平台应用 AppID' },
+  AGIM_IFLYTEK_API_KEY: { title: 'APIKey', hint: '讯飞开放平台 APIKey' },
+  AGIM_IFLYTEK_API_SECRET: { title: 'APISecret', hint: '讯飞开放平台 APISecret' },
+}
+
+const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?: string }> = {
+  AGIM_WHISPERCPP_BIN: {
+    title: 'Binary path',
+    hint: 'Path to whisper.cpp / whisper-cli, e.g. /usr/local/bin/whisper-cli',
+    placeholder: '/path/to/whisper-cli',
+  },
+  AGIM_WHISPERCPP_MODEL: {
+    title: 'Model file path',
+    hint: 'ggml weights, e.g. /models/ggml-base.bin',
+    placeholder: '/path/to/ggml-*.bin',
+  },
+  AGIM_WHISPERCPP_ARGS: {
+    title: 'Extra CLI args (optional)',
+    hint: 'Comma-separated flags for whisper-cli, e.g. -t,4. Usually leave empty.',
+    placeholder: 'optional, e.g. -t,4',
+  },
+  OPENAI_API_KEY: { title: 'API Key', hint: 'OpenAI or compatible gateway key', placeholder: 'sk-...' },
+  OPENAI_BASE_URL: { title: 'Base URL (optional)', hint: 'Default https://api.openai.com/v1', placeholder: 'https://api.openai.com/v1' },
+  AGIM_OPENAI_TRANSCRIBE_MODEL: { title: 'Model (optional)', hint: 'Default whisper-1', placeholder: 'whisper-1' },
+  AGIM_BAIDU_SPEECH_API_KEY: { title: 'API Key', hint: 'Baidu Speech API Key' },
+  AGIM_BAIDU_SPEECH_SECRET_KEY: { title: 'Secret Key', hint: 'Baidu Speech Secret Key' },
+  AGIM_TENCENT_SECRET_ID: { title: 'SecretId', hint: 'Tencent Cloud SecretId' },
+  AGIM_TENCENT_SECRET_KEY: { title: 'SecretKey', hint: 'Tencent Cloud SecretKey' },
+  AGIM_TENCENT_ASR_ENGINE: { title: 'Engine (optional)', hint: 'Default 16k_zh; use 16k_en for English', placeholder: '16k_zh' },
+  AGIM_IFLYTEK_APP_ID: { title: 'AppID', hint: 'iFlytek AppID' },
+  AGIM_IFLYTEK_API_KEY: { title: 'APIKey', hint: 'iFlytek APIKey' },
+  AGIM_IFLYTEK_API_SECRET: { title: 'APISecret', hint: 'iFlytek APISecret' },
+}
+
 function useSttProviders() {
   return useQuery<SttProvidersResponse>({
     queryKey: ['settings', 'stt', 'providers'],
@@ -152,8 +211,8 @@ export default function SettingsSttRoute(): JSX.Element {
         </div>
         <p className="mt-1 text-[11px] text-text-dim">
           {zh
-            ? '由 AGIM_TRANSCRIBE_PROVIDER 决定；留空则自动选第一个已配置项。'
-            : 'Set by AGIM_TRANSCRIBE_PROVIDER; empty = auto-pick first configured.'}
+            ? '由「默认转写服务」决定。选「自动」时按优先级选用已配置服务：云厂商优先，本地 whisper.cpp 兜底。'
+            : 'Set by the default below. “Auto” picks the first configured cloud provider, then local whisper.cpp as fallback.'}
         </p>
       </section>
 
@@ -165,12 +224,12 @@ export default function SettingsSttRoute(): JSX.Element {
           value={draft.provider}
           onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value }))}
         >
-          <option value="">{zh ? '自动（按可用密钥选择）' : 'Auto (first configured)'}</option>
+          <option value="">{zh ? '自动（按优先级选用已配置服务）' : 'Auto (priority among configured)'}</option>
+          <option value="whispercpp">{zh ? 'whisper.cpp（本地兜底）' : 'whisper.cpp (local fallback)'}</option>
           <option value="openai">OpenAI Whisper</option>
           <option value="baidu">{zh ? '百度短语音识别' : 'Baidu short ASR'}</option>
           <option value="tencent">{zh ? '腾讯云一句话识别' : 'Tencent SentenceRecognition'}</option>
           <option value="iflytek">{zh ? '讯飞语音听写' : 'iFlytek dictation'}</option>
-          <option value="whispercpp">whisper.cpp</option>
           <option value="none">{zh ? '禁用转写' : 'Disable STT'}</option>
         </select>
       </section>
@@ -228,11 +287,15 @@ function ProviderCard(props: {
   onClearKey: (envKey: string) => void
 }): JSX.Element {
   const { info, active, zh, draftKeys, keysTouched, onSetKey, onClearKey } = props
+  const fieldMeta = zh ? FIELD_META_ZH : FIELD_META_EN
   return (
     <div className="rounded-md border border-border bg-surface p-4 space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{info.label}</span>
         <Badge variant="outline" className="font-mono text-[10px]">{info.id}</Badge>
+        {info.fallback && (
+          <Badge variant="accent">{zh ? '兜底' : 'Fallback'}</Badge>
+        )}
         {info.configured || active ? (
           <Badge variant="success" className="gap-1">
             <CheckCircle2 className="h-3 w-3" /> {zh ? '已配置' : 'Configured'}
@@ -244,23 +307,34 @@ function ProviderCard(props: {
         )}
         {active && <Badge variant="info">{zh ? '使用中' : 'In use'}</Badge>}
       </div>
+      {info.fallback && (
+        <p className="text-[11px] text-text-dim">
+          {zh
+            ? '本地离线识别。云厂商都未配置或不可用时，自动模式会落到这里。'
+            : 'Local offline ASR. Auto mode falls back here when no cloud provider is configured.'}
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {info.envKeys.map((envKey) => {
           const secret = SECRETISH.has(envKey)
           const touched = !!keysTouched[envKey]
+          const meta = fieldMeta[envKey]
+          const current = info.currentValues?.[envKey]
+          const placeholder = secret
+            ? (zh ? '输入新密钥（留空不改）' : 'New secret (blank = keep)')
+            : (current || meta?.placeholder || (zh ? '输入值' : 'Value'))
           return (
             <div key={envKey} className="space-y-1.5">
-              <Label className="font-mono text-[11px] text-text-dim flex items-center gap-1">
-                {secret && <Key className="h-3 w-3" />}
-                {envKey}
+              <Label className="text-[12px] flex items-center gap-1">
+                {secret && <Key className="h-3 w-3 text-text-dim" />}
+                <span>{meta?.title ?? envKey}</span>
               </Label>
+              <p className="font-mono text-[10px] text-text-dim">{envKey}</p>
               <div className="flex gap-2">
                 <Input
                   type={secret ? 'password' : 'text'}
                   autoComplete="off"
-                  placeholder={secret
-                    ? (zh ? '输入新密钥（留空不改）' : 'New secret (blank = keep)')
-                    : (zh ? '输入值' : 'Value')}
+                  placeholder={placeholder}
                   value={draftKeys[envKey] ?? ''}
                   onChange={(e) => onSetKey(envKey, e.target.value)}
                 />
@@ -276,6 +350,15 @@ function ProviderCard(props: {
                   </Button>
                 )}
               </div>
+              {meta?.hint && (
+                <p className="text-[11px] text-text-dim">{meta.hint}</p>
+              )}
+              {!secret && !touched && current && (
+                <p className="text-[11px] text-text-dim">
+                  {zh ? '当前生效：' : 'Active: '}
+                  <span className="font-mono break-all">{current}</span>
+                </p>
+              )}
             </div>
           )
         })}

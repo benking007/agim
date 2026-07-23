@@ -24,6 +24,7 @@ import { isTencentSpeechConfigured, transcribeWithTencent } from './transcribe-t
 import { isIflytekSpeechConfigured, transcribeWithIflytek } from './transcribe-iflytek.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
+  STT_UI_PROVIDER_ORDER,
   TranscribeError,
   type TranscribeOptions,
   type TranscribeProvider,
@@ -33,12 +34,24 @@ import {
 export {
   TranscribeError,
   ALL_TRANSCRIBE_PROVIDERS,
+  STT_UI_PROVIDER_ORDER,
   type TranscribeOptions,
   type TranscribeProvider,
   type TranscribeResult,
 }
 
 const log = rootLogger.child({ component: 'transcribe' })
+
+/** Non-secret keys we can safely echo back to the settings UI. */
+const ECHOABLE_ENV_KEYS = new Set([
+  'OPENAI_BASE_URL',
+  'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_TENCENT_ASR_ENGINE',
+  'AGIM_WHISPERCPP_BIN',
+  'AGIM_WHISPERCPP_MODEL',
+  'AGIM_WHISPERCPP_ARGS',
+  'AGIM_IFLYTEK_APP_ID',
+])
 
 export interface TranscribeProviderInfo {
   id: Exclude<TranscribeProvider, 'none'>
@@ -47,9 +60,22 @@ export interface TranscribeProviderInfo {
   envKeys: string[]
   /** True when credentials / binary look present. */
   configured: boolean
+  /** Local fallback shown first in the settings UI. */
+  fallback?: boolean
+  /** Current non-secret values from process.env (for path/model fields). */
+  currentValues?: Record<string, string>
 }
 
-const PROVIDER_META: Record<Exclude<TranscribeProvider, 'none'>, Omit<TranscribeProviderInfo, 'configured'>> = {
+const PROVIDER_META: Record<
+  Exclude<TranscribeProvider, 'none'>,
+  Omit<TranscribeProviderInfo, 'configured' | 'currentValues'>
+> = {
+  whispercpp: {
+    id: 'whispercpp',
+    label: 'whisper.cpp（本地兜底）',
+    envKeys: ['AGIM_WHISPERCPP_BIN', 'AGIM_WHISPERCPP_MODEL', 'AGIM_WHISPERCPP_ARGS'],
+    fallback: true,
+  },
   openai: {
     id: 'openai',
     label: 'OpenAI Whisper',
@@ -69,11 +95,6 @@ const PROVIDER_META: Record<Exclude<TranscribeProvider, 'none'>, Omit<Transcribe
     id: 'iflytek',
     label: '讯飞语音听写',
     envKeys: ['AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET'],
-  },
-  whispercpp: {
-    id: 'whispercpp',
-    label: 'whisper.cpp（本地）',
-    envKeys: ['AGIM_WHISPERCPP_BIN', 'AGIM_WHISPERCPP_MODEL', 'AGIM_WHISPERCPP_ARGS'],
   },
 }
 
@@ -101,10 +122,20 @@ export function listTranscribeProviders(): {
 } {
   const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.trim() || null
   return {
-    providers: ALL_TRANSCRIBE_PROVIDERS.map((id) => ({
-      ...PROVIDER_META[id],
-      configured: isProviderConfigured(id),
-    })),
+    providers: STT_UI_PROVIDER_ORDER.map((id) => {
+      const meta = PROVIDER_META[id]
+      const currentValues: Record<string, string> = {}
+      for (const key of meta.envKeys) {
+        if (!ECHOABLE_ENV_KEYS.has(key)) continue
+        const v = process.env[key]
+        if (v) currentValues[key] = v
+      }
+      return {
+        ...meta,
+        configured: isProviderConfigured(id),
+        currentValues: Object.keys(currentValues).length ? currentValues : undefined,
+      }
+    }),
     active: detectProvider(),
     explicit,
   }

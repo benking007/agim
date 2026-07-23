@@ -957,6 +957,8 @@ export interface SttProviderInfo {
   label: string
   envKeys: string[]
   configured: boolean
+  fallback?: boolean
+  currentValues?: Record<string, string>
 }
 
 export interface SttProvidersResponse {

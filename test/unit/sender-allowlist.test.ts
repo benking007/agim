@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
   isSenderAllowed,
   isSenderAllowlistConfigured,
+  isSenderAllowlistStrict,
   senderDenialMessage,
   _resetCache,
 } from '../../src/core/sender-allowlist.js'
@@ -22,6 +23,9 @@ describe('sender-allowlist', () => {
     it('isSenderAllowlistConfigured returns false', () => {
       expect(isSenderAllowlistConfigured()).toBe(false)
     })
+    it('isSenderAllowlistStrict returns false', () => {
+      expect(isSenderAllowlistStrict()).toBe(false)
+    })
     it('isSenderAllowed returns true for anyone', () => {
       expect(isSenderAllowed('telegram', '123')).toBe(true)
       expect(isSenderAllowed('wechat-ilink', 'wxid_abc')).toBe(true)
@@ -34,17 +38,21 @@ describe('sender-allowlist', () => {
     it('treats env="*" as open (configured but open)', () => {
       setEnv('*')
       expect(isSenderAllowlistConfigured()).toBe(true)
+      expect(isSenderAllowlistStrict()).toBe(false)
       expect(isSenderAllowed('telegram', 'anything')).toBe(true)
     })
     it('treats env="*,foo:bar" as still wildcard', () => {
       setEnv('*, telegram:123')
       expect(isSenderAllowed('discord', '999')).toBe(true)
+      // Concrete entries exist → strict for auto-approve gate
+      expect(isSenderAllowlistStrict()).toBe(true)
     })
   })
 
   describe('explicit allowlist', () => {
     it('exact platform:userId match passes', () => {
       setEnv('telegram:8754479311, wechat-ilink:wxid_abc')
+      expect(isSenderAllowlistStrict()).toBe(true)
       expect(isSenderAllowed('telegram', '8754479311')).toBe(true)
       expect(isSenderAllowed('wechat-ilink', 'wxid_abc')).toBe(true)
     })

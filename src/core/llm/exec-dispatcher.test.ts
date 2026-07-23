@@ -13,6 +13,8 @@ import {
   rewriteBgjobCommand,
   buildExecEnv,
   clampTimeout,
+  resolveExecCwd,
+  bwrapMaskedStateDirs,
 } from './exec-dispatcher.js'
 
 const NEVER_ABORT = new AbortController().signal
@@ -32,12 +34,14 @@ describe('exec-dispatcher', () => {
     delete process.env.AGIM_EXEC_SANDBOX
     delete process.env.AGIM_EXEC_TIMEOUT_MS
     delete process.env.AGIM_EXEC_MAX_OUTPUT
+    delete process.env.AGIM_EXEC_ALLOW_ANY_CWD
   })
 
   afterEach(() => {
     delete process.env.AGIM_EXEC_SANDBOX
     delete process.env.AGIM_EXEC_TIMEOUT_MS
     delete process.env.AGIM_EXEC_MAX_OUTPUT
+    delete process.env.AGIM_EXEC_ALLOW_ANY_CWD
   })
 
   describe('buildExecEnv — env allow-list (F1)', () => {
@@ -175,16 +179,43 @@ describe('exec-dispatcher', () => {
       expect(parsed.exit_code).toBe(7)
     })
 
-    it('respects cwd argument', async () => {
-      const d = buildExecDispatcher({ cwd: '/tmp' })  // dispatcher default
+    it('respects cwd argument inside workspace', async () => {
+      const sub = await realpath(await mkdtemp(join(cwd, 'sub-')))
+      const d = buildExecDispatcher({ cwd })
       const r = await d(
-        { id: 't', name: 'agim_exec', arguments: { command: 'pwd', cwd } },
+        { id: 't', name: 'agim_exec', arguments: { command: 'pwd', cwd: sub } },
         NEVER_ABORT,
       )
       expect(r.isError).toBe(false)
       const parsed = JSON.parse(r.text)
-      // cwd override wins
-      expect(parsed.stdout.trim()).toBe(cwd)
+      expect(parsed.stdout.trim()).toBe(sub)
+    })
+
+    it('refuses cwd outside workspace', async () => {
+      const d = buildExecDispatcher({ cwd })
+      const r = await d(
+        { id: 't', name: 'agim_exec', arguments: { command: 'pwd', cwd: '/tmp' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/outside workspace/)
+    })
+
+    it('AGIM_EXEC_ALLOW_ANY_CWD=1 permits outside cwd', async () => {
+      process.env.AGIM_EXEC_ALLOW_ANY_CWD = '1'
+      const outside = await realpath(await mkdtemp(join(tmpdir(), 'agim-exec-out-')))
+      try {
+        const d = buildExecDispatcher({ cwd })
+        const r = await d(
+          { id: 't', name: 'agim_exec', arguments: { command: 'pwd', cwd: outside } },
+          NEVER_ABORT,
+        )
+        expect(r.isError).toBe(false)
+        const parsed = JSON.parse(r.text)
+        expect(parsed.stdout.trim()).toBe(outside)
+      } finally {
+        await rm(outside, { recursive: true, force: true }).catch(() => {})
+      }
     })
 
     it('timeout kills the process', async () => {
@@ -377,6 +408,34 @@ describe('exec-dispatcher', () => {
     it('does NOT match an empty / whitespace command', () => {
       expect(isBgjobInvocation('')).toBe(false)
       expect(isBgjobInvocation('   ')).toBe(false)
+    })
+  })
+
+  describe('resolveExecCwd / bwrapMaskedStateDirs', () => {
+    it('allows relative paths inside workspace', async () => {
+      const sub = await realpath(await mkdtemp(join(cwd, 'rel-')))
+      const name = sub.slice(cwd.length + 1)
+      const r = await resolveExecCwd(name, cwd)
+      expect(r.ok).toBe(true)
+      if (r.ok) expect(r.cwd).toBe(sub)
+    })
+
+    it('rejects path escape via ..', async () => {
+      const r = await resolveExecCwd('../..', cwd)
+      expect(r.ok).toBe(false)
+    })
+
+    it('masks custom AGIM_HOME and legacy ~/.agim', () => {
+      const saved = process.env.AGIM_HOME
+      process.env.AGIM_HOME = '/custom/agim-state'
+      try {
+        const dirs = bwrapMaskedStateDirs()
+        expect(dirs).toContain('/custom/agim-state')
+        expect(dirs).toContain(join(homedir(), '.agim'))
+      } finally {
+        if (saved === undefined) delete process.env.AGIM_HOME
+        else process.env.AGIM_HOME = saved
+      }
     })
   })
 })

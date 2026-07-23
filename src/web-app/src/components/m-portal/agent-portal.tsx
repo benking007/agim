@@ -1241,6 +1241,7 @@ export function AgentPortal(): JSX.Element {
                     dark={dark}
                     content={turn.user.content}
                     messageId={turn.user.id}
+                    threadId={portalThreadId || undefined}
                   />
                 </div>
               )}

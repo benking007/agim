@@ -40,9 +40,9 @@
 //                            safe allow-list, NOT the whole process.env)
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from 'node:path'
 import { AGIM_HOME } from '../agim-paths.js'
 import { agimBgjobScript, bgjobAllowedPaths } from '../bgjob-install.js'
 import { logger as rootLogger } from '../logger.js'
@@ -78,7 +78,12 @@ export function getExecTools(): ToolDef[] {
         properties: {
           command: { type: 'string', description: 'Shell command. Will be invoked via /bin/sh -c.' },
           timeout_ms: { type: 'number', description: 'Per-call timeout in ms (default 60000, max 600000).' },
-          cwd: { type: 'string', description: 'Override cwd. Defaults to the agent workspace.' },
+          cwd: {
+            type: 'string',
+            description:
+              'Override cwd within the agent workspace (realpath-checked). Defaults to the agent workspace. ' +
+              'Set AGIM_EXEC_ALLOW_ANY_CWD=1 to allow paths outside the workspace.',
+          },
         },
         required: ['command'],
         additionalProperties: false,
@@ -154,7 +159,22 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   }
 
   const timeoutMs = clampTimeout(args.timeout_ms)
-  const cwd = typeof args.cwd === 'string' && args.cwd.length > 0 ? args.cwd : ctx.cwd
+  const requestedCwd = typeof args.cwd === 'string' && args.cwd.length > 0 ? args.cwd : ctx.cwd
+  const cwdResolved = await resolveExecCwd(requestedCwd, ctx.cwd)
+  if (!cwdResolved.ok) {
+    log.warn({
+      event: 'exec.refused.cwd_outside_workspace',
+      requested: requestedCwd,
+      workspace: ctx.cwd,
+      reason: cwdResolved.reason,
+    })
+    return {
+      text: `agim_exec refused: ${cwdResolved.reason}`,
+      isError: true,
+      source: 'exec',
+    }
+  }
+  const cwd = cwdResolved.cwd
 
   const sandboxMode = (process.env.AGIM_EXEC_SANDBOX || '').toLowerCase()
   const bwrapAvail = existsSync('/usr/bin/bwrap')
@@ -391,6 +411,65 @@ function scanCommandForInternalUrl(cmd: string): string | null {
   return null
 }
 
+/**
+ * Resolve and confine exec cwd to the agent workspace.
+ * Escape hatch: AGIM_EXEC_ALLOW_ANY_CWD=1 (operator-only).
+ */
+export async function resolveExecCwd(
+  requested: string,
+  workspaceRoot: string,
+): Promise<{ ok: true; cwd: string } | { ok: false; reason: string }> {
+  let raw = requested.trim()
+  if (!raw) return { ok: false, reason: 'cwd must be a non-empty string' }
+  if (raw === '~') raw = homedir()
+  else if (raw.startsWith('~/')) raw = homedir() + raw.slice(1)
+  const abs = isAbsolute(raw) ? resolvePath(raw) : resolvePath(workspaceRoot, raw)
+  const allowAny = (process.env.AGIM_EXEC_ALLOW_ANY_CWD || '').trim() === '1'
+  if (allowAny) {
+    const realAny = await realpathSoft(abs)
+    return { ok: true, cwd: realAny }
+  }
+  const realWs = await realpathSoft(workspaceRoot)
+  const realCwd = await realpathSoft(abs)
+  const rel = relative(realWs, realCwd)
+  if (rel.startsWith('..') || (rel.length > 0 && isAbsolute(rel))) {
+    return {
+      ok: false,
+      reason:
+        `cwd "${realCwd}" is outside workspace "${realWs}". ` +
+        'Pass a path inside the agent workspace, or set AGIM_EXEC_ALLOW_ANY_CWD=1.',
+    }
+  }
+  return { ok: true, cwd: realCwd }
+}
+
+async function realpathSoft(abs: string): Promise<string> {
+  try {
+    return await fs.realpath(abs)
+  } catch {
+    const lastSep = abs.lastIndexOf(sep)
+    if (lastSep <= 0) return abs
+    const parent = abs.slice(0, lastSep)
+    const name = abs.slice(lastSep + 1)
+    try {
+      const realParent = await fs.realpath(parent)
+      return resolvePath(realParent, name)
+    } catch {
+      return abs
+    }
+  }
+}
+
+/** State dirs that must be tmpfs-masked inside bwrap (secrets / tokens). */
+export function bwrapMaskedStateDirs(): string[] {
+  const dirs = new Set<string>()
+  const runtimeHome = (process.env.AGIM_HOME?.trim() || AGIM_HOME)
+  dirs.add(resolvePath(runtimeHome))
+  dirs.add(resolvePath(AGIM_HOME))
+  dirs.add(resolvePath(join(homedir(), '.agim')))
+  return [...dirs]
+}
+
 function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { bin: string; argv: string[] } {
   // v1.2.66 — tmpfs-mask the agim state dir + the cwd's parent before
   // binding cwd back. Without this, even though sensitive-paths.ts
@@ -399,7 +478,9 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
   // Mirrors nanobot's `--tmpfs <ws.parent>` pattern, adapted for
   // agim's path layout (`~/.agim` is a sibling of
   // `~/.agim-workspaces`, not a parent).
-  const home = homedir()
+  //
+  // Mask resolved AGIM_HOME (custom override) AND the legacy ~/.agim
+  // path so secrets/tokens stay unreachable when operators relocate state.
   const cwdParent = dirname(cwd)
   const argv: string[] = [
     '--die-with-parent',
@@ -416,8 +497,11 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
     '--proc', '/proc',
     '--dev', '/dev',
     '--tmpfs', '/tmp',
-    // Mask the agim per-user state dir (~/.agim/).
-    '--tmpfs', `${home}/.agim`,
+  ]
+  for (const stateDir of bwrapMaskedStateDirs()) {
+    argv.push('--tmpfs', stateDir)
+  }
+  argv.push(
     // Mask the parent of the workspace cwd so the agent can't list
     // sibling threads' workspaces. cwdParent is typically
     // ~/.agim-workspaces/native/, and other threads live there.
@@ -428,7 +512,7 @@ function buildBwrapInvocation(command: string, cwd: string, netOff: boolean): { 
     '--dir', cwd,
     '--bind', cwd, cwd,
     '--chdir', cwd,
-  ]
+  )
   if (netOff) argv.push('--unshare-net')
   // v1.2.100 — use /usr/bin/sh instead of /bin/sh. On modern Debian /
   // Ubuntu (usrmerge: /bin is a symlink to usr/bin), bwrap's

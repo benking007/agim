@@ -227,14 +227,33 @@ export class VoiceRecorder {
       this.cleanup()
       return null
     }
+    const STOP_TIMEOUT_MS = 5_000
     const blob = await new Promise<Blob>((resolve) => {
+      let settled = false
+      const finish = (b: Blob) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(b)
+      }
+      const timer = setTimeout(() => {
+        // MediaRecorder.onstop can hang on some WebViews — force-finalize.
+        try {
+          if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop()
+        } catch { /* ignore */ }
+        finish(new Blob(this.chunks, { type: mime }))
+      }, STOP_TIMEOUT_MS)
       recorder.onstop = () => {
-        resolve(new Blob(this.chunks, { type: mime }))
+        finish(new Blob(this.chunks, { type: mime }))
       }
       try {
         if (recorder.state === 'recording') recorder.requestData()
       } catch { /* older Safari */ }
-      recorder.stop()
+      try {
+        recorder.stop()
+      } catch {
+        finish(new Blob(this.chunks, { type: mime }))
+      }
     })
     this.cleanup()
     if (!blob.size) return null

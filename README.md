@@ -11,7 +11,7 @@ It is designed for production use: at-least-once persistent delivery, session co
 - **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, Agim Agent (in-process LLM), and ACP remote agents.
 - **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
 - **Reliable runtime**: SQLite outbox (at-least-once delivery), restart recovery, job board, structured audit. Production requires native `better-sqlite3`; without it the outbox is unavailable.
-- **Safety by default**: token auth, sensitive-path denylist, optional global-IM disable. Tool auto-approve is on by default (single-operator); tighten for untrusted IM using the hardening checklist.
+- **Safety by default**: token auth, sensitive-path denylist, optional global-IM disable. Tool auto-approve is **off** by default; opt in with `AGIM_AUTO_APPROVE=1` (and a strict sender allowlist when IM is enabled).
 
 ## Quick start
 
@@ -95,7 +95,7 @@ Supported agent details: `docs/agents.md`
 ## Security defaults
 
 - Web token auth enabled by default.
-- Auto-approve enabled by default (`AGIM_AUTO_APPROVE=1`): tool calls auto-approved after safety checks (sensitive-path deny + self-protect). Set `AGIM_AUTO_APPROVE=0` for manual IM approval flow.
+- Auto-approve **disabled** by default (`AGIM_AUTO_APPROVE=0`): mutating tools go through IM/Web approval cards. Set `AGIM_AUTO_APPROVE=1` for single-operator convenience; with IM messengers configured, also set a strict `AGIM_ALLOWED_USERS=platform:userId,...` (or acknowledge open IM with `AGIM_AUTO_APPROVE_OPEN_IM=1`).
 - Sensitive files/paths are denied by policy (hard-deny, cannot be overridden).
 - Self-protect prevents agents from killing/restarting agim.
 - Global IM connectors can stay disabled in domestic deployments.

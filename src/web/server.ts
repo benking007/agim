@@ -391,9 +391,10 @@ export async function startWebServer(options: {
   // first connection (verifyClient already verified the token); later
   // `get-history { threadId }` rekey requests must come from a peer
   // holding the same tokenId, otherwise an authenticated operator could
-  // adopt and wipe another operator's session. Survives reconnects
-  // within the process lifetime so a page refresh still works.
-  const threadOwners = new Map<string, string>()
+  // adopt and wipe another operator's session. Persisted to
+  // ~/.agim/web-thread-owners.json so a process restart cannot reset
+  // first-claim and let another token hijack a thread.
+  const { webThreadOwners: threadOwners } = await import('../core/web-thread-owners.js')
 
   // v1.1.10+: token-based auth for the web console.
   // ─ loopback peers (127.0.0.1 / ::1) bypass auth (local CLI / curl)
@@ -724,10 +725,13 @@ export async function startWebServer(options: {
       return
     }
 
-    // REST API — open access (no built-in auth). See top-of-function note.
+    // REST API — authenticated via checkAuth above. Mutating / sensitive
+    // read surfaces additionally require admin (role=user tokens from
+    // mobile QR must not enumerate jobs, config, or other operators' data).
 
     // REST API
     if (url.pathname === '/api/config' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleGetConfig(req, res)
     }
     if (url.pathname === '/api/config' && req.method === 'PUT') {
@@ -773,20 +777,24 @@ export async function startWebServer(options: {
 
     // bgjobs (read-only view of ~/.claude/bgjobs, ~/.config/opencode/bgjobs, ~/.codex/bgjobs)
     if (url.pathname === '/api/bgjobs' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListBgjobs(req, res, url)
     }
     const bgjobIdMatch = url.pathname.match(/^\/api\/bgjobs\/([\w.-]+)$/)
     if (bgjobIdMatch && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleGetBgjob(req, res, bgjobIdMatch[1], url)
     }
 
     // Subtasks (flattened view of session.subtasks across all conversations)
     if (url.pathname === '/api/subtasks' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListSubtasks(req, res, url)
     }
 
     // Schedules
     if (url.pathname === '/api/schedules' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListSchedules(req, res, url)
     }
 
@@ -910,6 +918,7 @@ export async function startWebServer(options: {
       return handlePlansList(req, res, url)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleListWorkspaces(req, res, url)
     }
     if (url.pathname === '/api/workspaces' && req.method === 'POST') {
@@ -926,6 +935,7 @@ export async function startWebServer(options: {
       return handleDeleteWorkspace(req, res, workspaceIdMatch[1])
     }
     if (url.pathname === '/api/metrics' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleMetrics(req, res, url)
     }
     if (url.pathname === '/api/audit' && req.method === 'GET') {
@@ -984,13 +994,16 @@ export async function startWebServer(options: {
     // GET /api/viewer/:id    — raw JSON of one paste.
     // DELETE /api/viewer/:id — remove a paste (operator can clean up).
     if (url.pathname === '/api/viewer' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleViewerList(req, res, url)
     }
     if (url.pathname === '/api/viewer/tunnel' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleViewerTunnelStatus(req, res)
     }
     const viewerIdMatch = url.pathname.match(/^\/api\/viewer\/([0-9a-f-]{8,})$/i)
     if (viewerIdMatch && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleViewerGet(req, res, viewerIdMatch[1])
     }
     if (viewerIdMatch && req.method === 'DELETE') {
@@ -1004,15 +1017,18 @@ export async function startWebServer(options: {
     // PR-B: agent health snapshot (circuit breaker + rate-limiter remaining
     // + latency p50/95/99) consumed by the Health tab in /tasks.
     if (url.pathname === '/api/agent-health' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleAgentHealth(req, res)
     }
     // v1.3 — Cost & Health: aggregated metrics from the audit-log used by
     // the new Cost & Health tab. summary returns daily totals + KPI cards;
     // topn returns ranked groups by user / agent / platform / intent.
     if (url.pathname === '/api/health/summary' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleHealthSummary(req, res, url)
     }
     if (url.pathname === '/api/health/topn' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
       return handleHealthTopN(req, res, url)
     }
     // v1.5 — Memory admin: enumerate users, list / delete facts, view /
@@ -1197,6 +1213,8 @@ export async function startWebServer(options: {
       return handleWechatQrStart(res)
     }
     if (url.pathname === '/api/messengers/wechat/qr-status' && req.method === 'GET') {
+      // Writes config.messengers on confirm — must match qr-start admin gate.
+      if (!requireAdmin(req, res)) return
       return handleWechatQrStatus(res, url)
     }
 
@@ -1560,11 +1578,7 @@ export async function startWebServer(options: {
               // R9: keep the ownership map aligned with the live id so
               // a subsequent rekey from another connection (same token,
               // e.g. a second tab) succeeds with the new threadId.
-              const owner = threadOwners.get(oldId)
-              if (owner !== undefined) {
-                threadOwners.delete(oldId)
-                threadOwners.set(newId, owner)
-              }
+              threadOwners.rekey(oldId, newId)
             },
             tokenId,
             threadOwners,
@@ -2985,7 +2999,7 @@ const ENV_EDITABLE_KEYS = [
   // Safety card toggle — drives the Claude --dangerously-skip-permissions
   // branch in plugins/agents/claude-code/index.ts. Not a secret, plain '1'/'0'.
   'AGIM_DANGEROUSLY_SKIP_PERMISSIONS',
-  // Approval Policy card. AGIM_AUTO_APPROVE defaults ON; AGIM_APPROVAL_ON_TIMEOUT
+  // Approval Policy card. AGIM_AUTO_APPROVE defaults OFF; AGIM_APPROVAL_ON_TIMEOUT
   // (legacy AGIM_TIMEOUT_DEFAULT) defaults allow and only matters when
   // auto-approve is off. Timeout-default hot-reloads because approval-bus
   // reads process.env on timer fire; the timeout duration itself is captured
@@ -5281,10 +5295,42 @@ async function handleSttWhisperModelInit(
   }
 }
 
+/** Per-actor STT rate limit (token id or peer IP). Env: AGIM_STT_MAX_PER_MIN (default 20). */
+const sttRateWindow = new Map<string, { count: number; resetAt: number }>()
+let sttInFlight = 0
+const STT_MAX_IN_FLIGHT = (() => {
+  const n = Number(process.env.AGIM_STT_MAX_IN_FLIGHT)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 4
+})()
+
+function consumeSttRateLimit(key: string): { ok: true } | { ok: false; retryAfterSec: number } {
+  const max = (() => {
+    const n = Number(process.env.AGIM_STT_MAX_PER_MIN)
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20
+  })()
+  const now = Date.now()
+  let slot = sttRateWindow.get(key)
+  if (!slot || slot.resetAt <= now) {
+    slot = { count: 0, resetAt: now + 60_000 }
+    sttRateWindow.set(key, slot)
+  }
+  if (slot.count >= max) {
+    return { ok: false, retryAfterSec: Math.max(1, Math.ceil((slot.resetAt - now) / 1000)) }
+  }
+  slot.count++
+  // Opportunistic prune of stale windows
+  if (sttRateWindow.size > 2000) {
+    for (const [k, v] of sttRateWindow) {
+      if (v.resetAt <= now) sttRateWindow.delete(k)
+    }
+  }
+  return { ok: true }
+}
+
 async function handleChatTranscribe(
   req: IncomingMessage,
   res: ServerResponse,
-  _url: URL,
+  url: URL,
 ): Promise<void> {
   const {
     CHAT_TRANSCRIBE_MAX_BYTES,
@@ -5298,6 +5344,23 @@ async function handleChatTranscribe(
     })
     return
   }
+  const tok = extractToken(req, url)
+  const actor = (tok && verifyTokenSync(tok)) || req.socket.remoteAddress || 'anon'
+  const rate = consumeSttRateLimit(actor)
+  if (!rate.ok) {
+    res.setHeader('Retry-After', String(rate.retryAfterSec))
+    sendError(res, 429, 'STT_RATE_LIMIT', {
+      message: `Too many transcription requests; retry in ${rate.retryAfterSec}s`,
+    })
+    return
+  }
+  if (sttInFlight >= STT_MAX_IN_FLIGHT) {
+    sendError(res, 429, 'STT_BUSY', {
+      message: 'Transcription server busy; retry shortly',
+    })
+    return
+  }
+  sttInFlight++
   const filenameHeader = req.headers['x-agim-filename']
   const mimeHeader = req.headers['x-agim-mime']
   const langHeader = req.headers['x-agim-language']
@@ -5359,6 +5422,8 @@ async function handleChatTranscribe(
     }
     webLog.warn({ err: e }, 'chat transcribe failed')
     sendError(res, 500, 'STT_FAILED', { message: e.message || 'transcription failed' })
+  } finally {
+    sttInFlight = Math.max(0, sttInFlight - 1)
   }
 }
 
@@ -5414,7 +5479,7 @@ async function handleChatMediaUpload(
 }
 
 async function handleChatMediaFile(
-  _req: IncomingMessage,
+  req: IncomingMessage,
   res: ServerResponse,
   url: URL,
 ): Promise<void> {
@@ -5423,7 +5488,30 @@ async function handleChatMediaFile(
     resolveSafeWebMediaPath,
   } = await import('../core/web-media-upload.js')
   const raw = url.searchParams.get('path') || ''
-  const abs = resolveSafeWebMediaPath(raw)
+  // role=user must scope media to their thread; admins may read any
+  // path under the media root (realpath-checked).
+  const threadId = (url.searchParams.get('threadId') || '').trim()
+  if (!isRequestAdmin(req)) {
+    if (!threadId) {
+      sendError(res, 400, 'MEDIA_PATH_INVALID', { message: 'threadId query param required' })
+      return
+    }
+    const tok = extractToken(req, url)
+    const tokenId = tok ? verifyTokenSync(tok) : null
+    if (!tokenId) {
+      sendError(res, 401, 'AUTH_REQUIRED', { message: 'authentication required' })
+      return
+    }
+    const { webThreadOwners } = await import('../core/web-thread-owners.js')
+    const owner = webThreadOwners.get(threadId)
+    if (owner !== undefined && owner !== tokenId) {
+      sendError(res, 403, 'MEDIA_FORBIDDEN', { message: 'thread not owned by this session' })
+      return
+    }
+  }
+  const abs = isRequestAdmin(req)
+    ? resolveSafeWebMediaPath(raw)
+    : resolveSafeWebMediaPath(raw, { threadId })
   if (!abs) {
     sendError(res, 400, 'MEDIA_PATH_INVALID', { message: 'invalid media path' })
     return
@@ -5869,9 +5957,14 @@ async function handleClientMessage(
   /** R9: token id of the connecting peer (or 'anon' on loopback /
    *  auth-off). Used to enforce thread ownership on get-history rekey. */
   tokenId?: string,
-  /** R9: shared threadId → tokenId map. The handler validates
-   *  ownership before adopting a client-supplied threadId. */
-  threadOwners?: Map<string, string>,
+  /** R9: shared threadId → tokenId store (persisted). The handler
+   *  validates ownership before adopting a client-supplied threadId. */
+  threadOwners?: {
+    get(threadId: string): string | undefined
+    set(threadId: string, tokenId: string): void
+    delete(threadId: string): void
+    rekey?(oldId: string, newId: string): void
+  },
   /** Live client registry — used to retarget chunk/activity frames after
    *  a reconnect (the closure `ws` may already be CLOSED). */
   clients?: Map<string, ClientConnection>,

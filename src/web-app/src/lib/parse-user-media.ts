@@ -90,8 +90,10 @@ export function parseUserMediaContent(content: string): UserContentSegment[] {
   return out.filter((s) => s.kind !== 'text' || s.text.trim().length > 0)
 }
 
-export function mediaFileApiUrl(absPath: string): string {
-  return `/api/chat/media/file?path=${encodeURIComponent(absPath)}`
+export function mediaFileApiUrl(absPath: string, threadId?: string): string {
+  const q = new URLSearchParams({ path: absPath })
+  if (threadId) q.set('threadId', threadId)
+  return `/api/chat/media/file?${q.toString()}`
 }
 
 export function isPreviewableTextMime(mime: string): boolean {

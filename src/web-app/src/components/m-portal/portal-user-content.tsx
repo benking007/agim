@@ -29,11 +29,14 @@ const COLLAPSE_LINE_PX = 26
 const COLLAPSE_LINES = 3.5
 const COLLAPSE_MAX_PX = Math.round(COLLAPSE_LINE_PX * COLLAPSE_LINES)
 
-async function fetchMediaBlob(path: string): Promise<{ blob: Blob; mime: string } | null> {
+async function fetchMediaBlob(
+  path: string,
+  threadId?: string,
+): Promise<{ blob: Blob; mime: string } | null> {
   const tok = useAuth.getState().token
   const headers: Record<string, string> = {}
   if (tok) headers.Authorization = `Bearer ${tok}`
-  const res = await fetch(mediaFileApiUrl(path), {
+  const res = await fetch(mediaFileApiUrl(path, threadId), {
     headers,
     credentials: 'same-origin',
   })
@@ -43,7 +46,7 @@ async function fetchMediaBlob(path: string): Promise<{ blob: Blob; mime: string 
   return { blob, mime }
 }
 
-function useAuthedObjectUrl(path: string | null): {
+function useAuthedObjectUrl(path: string | null, threadId?: string): {
   url: string | null
   mime: string | null
   error: boolean
@@ -67,7 +70,7 @@ function useAuthedObjectUrl(path: string | null): {
     setLoading(true)
     setError(false)
     setUrl(null)
-    void fetchMediaBlob(path).then((got) => {
+    void fetchMediaBlob(path, threadId).then((got) => {
       if (cancelled) return
       if (!got) {
         setError(true)
@@ -88,7 +91,7 @@ function useAuthedObjectUrl(path: string | null): {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [path])
+  }, [path, threadId])
 
   return { url, mime, error, loading }
 }
@@ -101,10 +104,12 @@ interface FileModalState {
 function FilePreviewModal({
   dark,
   state,
+  threadId,
   onClose,
 }: {
   dark: boolean
   state: FileModalState
+  threadId?: string
   onClose: () => void
 }): JSX.Element {
   const { t } = useTranslation()
@@ -122,7 +127,7 @@ function FilePreviewModal({
     setUrl(null)
     setMime(null)
     setText(null)
-    void fetchMediaBlob(state.path).then(async (got) => {
+    void fetchMediaBlob(state.path, threadId).then(async (got) => {
       if (cancelled) return
       if (!got) {
         setUnreadable(true)
@@ -158,7 +163,7 @@ function FilePreviewModal({
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [state.path])
+  }, [state.path, threadId])
 
   const title = state.name
   const cannotRead = unreadable || (!loading && !url && text == null)
@@ -235,14 +240,16 @@ function FilePreviewModal({
 function ImageThumb({
   dark,
   path,
+  threadId,
   onOpen,
 }: {
   dark: boolean
   path: string
+  threadId?: string
   onOpen: (url: string, name: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
-  const { url, error, loading } = useAuthedObjectUrl(path)
+  const { url, error, loading } = useAuthedObjectUrl(path, threadId)
   const name = path.split(/[/\\]/).pop() || 'image'
 
   const shell = cn(
@@ -445,12 +452,15 @@ export function PortalUserContent({
   dark,
   content,
   messageId,
+  threadId,
   className,
 }: {
   dark: boolean
   content: string
   /** Stable id so expand state survives list remounts. */
   messageId?: string
+  /** Required for role=user media reads (scoped under media/web/<threadId>/). */
+  threadId?: string
   className?: string
 }): JSX.Element {
   const { t } = useTranslation()
@@ -483,6 +493,7 @@ export function PortalUserContent({
                 key={path}
                 dark={dark}
                 path={path}
+                threadId={threadId}
                 onOpen={(url, name) => setImagePreview({ url, name })}
               />
             ))}
@@ -504,6 +515,7 @@ export function PortalUserContent({
         <FilePreviewModal
           dark={dark}
           state={fileModal}
+          threadId={threadId}
           onClose={() => setFileModal(null)}
         />
       )}

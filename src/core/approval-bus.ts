@@ -14,12 +14,15 @@
 // 单实例 export approvalBus；测试可 new ApprovalBus({approvalTimeoutMs}) 调小超时。
 
 import { createServer, type Server, type Socket } from 'node:net'
+import { readFileSync } from 'node:fs'
 import { unlink, stat as fsStat, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { logger as rootLogger } from './logger.js'
 import { eventBus } from './event-bus.js'
+import { CONFIG_FILE } from './config-store.js'
+import { isSenderAllowlistStrict } from './sender-allowlist.js'
 
 const log = rootLogger.child({ component: 'approval-bus' })
 
@@ -44,18 +47,42 @@ const MAX_PENDING_APPROVALS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000
 })()
 
-// AGIM_AUTO_APPROVE — first-class auto-approve switch (default ON).
-// Tool calls are approved immediately after safety checks (sensitive-path
-// hard-deny + self-protect), without sending an IM approval card or
-// waiting for any timeout. The approval bus still runs so audit trail,
-// metrics, and safety checks all remain active. Set '0'/'off'/'false'
-// to disable and fall back to the IM-card + timeout flow.
+// AGIM_AUTO_APPROVE — first-class auto-approve switch (default OFF).
+// When enabled, tool calls are approved immediately after safety checks
+// (sensitive-path hard-deny + self-protect), without sending an IM
+// approval card or waiting for any timeout. The approval bus still runs
+// so audit trail, metrics, and safety checks all remain active.
+//
+// Safe default is OFF: open IM + auto-approve is a remote command surface.
+// Opt in with AGIM_AUTO_APPROVE=1. When IM messengers are configured and
+// AGIM_ALLOWED_USERS is not a strict platform:userId list, auto-approve
+// is suppressed unless AGIM_AUTO_APPROVE_OPEN_IM=1 (explicit ack).
 //
 // Read per call (not cached at module load) so the Web Settings panel
 // can hot-toggle it via handlePutEnv.
 export function isAutoApproveEnabled(): boolean {
-  const raw = (process.env.AGIM_AUTO_APPROVE ?? '1').toLowerCase().trim()
-  return raw !== '0' && raw !== 'off' && raw !== 'false' && raw !== 'no'
+  const raw = (process.env.AGIM_AUTO_APPROVE ?? '0').toLowerCase().trim()
+  return raw !== '0' && raw !== 'off' && raw !== 'false' && raw !== 'no' && raw !== ''
+}
+
+/** True when auto-approve may actually fire (env on AND open-IM gate OK). */
+export function isAutoApproveEffective(): boolean {
+  if (!isAutoApproveEnabled()) return false
+  if ((process.env.AGIM_AUTO_APPROVE_OPEN_IM || '').trim() === '1') return true
+  if (isSenderAllowlistStrict()) return true
+  // Web-console-only (no IM messengers) may keep auto-approve without
+  // a sender allowlist — tokens already gate the control plane.
+  if (!hasConfiguredImMessengersSync()) return true
+  return false
+}
+
+function hasConfiguredImMessengersSync(): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as { messengers?: unknown }
+    return Array.isArray(parsed.messengers) && parsed.messengers.length > 0
+  } catch {
+    return false
+  }
 }
 
 // AGIM_APPROVAL_ON_TIMEOUT=allow | deny (default allow). Legacy alias:
@@ -86,11 +113,41 @@ export function isTimeoutDefaultAllow(): boolean {
 let _timeoutAllowHourlyTimer: ReturnType<typeof setInterval> | null = null
 
 export function announceTimeoutDefaultIfAllow(): void {
-  // Log auto-approve status at startup.
+  // Log auto-approve status at startup. Enabled is now opt-in and gets a
+  // loud banner — especially when IM is open without a strict allowlist.
   if (isAutoApproveEnabled()) {
-    log.info({
-      event: 'approval.bus.auto_approve_enabled',
-    }, 'AGIM_AUTO_APPROVE=on — tool calls auto-approved after safety checks')
+    const effective = isAutoApproveEffective()
+    const banner = [
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      effective
+        ? '⚠️  AGIM_AUTO_APPROVE=1 — tool calls auto-approved after safety checks'
+        : '⚠️  AGIM_AUTO_APPROVE=1 but SUPPRESSED (open IM without strict allowlist)',
+      '',
+      effective
+        ? '   Mutating tools skip IM approval cards. For untrusted IM set AGIM_AUTO_APPROVE=0.'
+        : '   IM messengers are configured and AGIM_ALLOWED_USERS is not a strict',
+      effective
+        ? '   Or lock senders: AGIM_ALLOWED_USERS=platform:userId,...'
+        : '   platform:userId list — auto-approve will not fire. Fix with either:',
+      ...(effective
+        ? []
+        : [
+          '     • AGIM_ALLOWED_USERS=telegram:123,...   (recommended)',
+          '     • AGIM_AUTO_APPROVE_OPEN_IM=1           (explicit open-IM ack)',
+        ]),
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '',
+    ].join('\n')
+    process.stdout.write(banner)
+    log.warn({
+      event: effective
+        ? 'approval.bus.auto_approve_enabled'
+        : 'approval.bus.auto_approve_suppressed_open_im',
+      effective,
+    }, effective
+      ? 'AGIM_AUTO_APPROVE=on — tool calls auto-approved after safety checks'
+      : 'AGIM_AUTO_APPROVE=on but suppressed — open IM without strict allowlist')
     if (_timeoutAllowHourlyTimer) {
       clearInterval(_timeoutAllowHourlyTimer)
       _timeoutAllowHourlyTimer = null
@@ -112,8 +169,8 @@ export function announceTimeoutDefaultIfAllow(): void {
     '',
     '   AGIM_APPROVAL_ON_TIMEOUT=allow → unresolved approvals auto-approve.',
     '   Human-in-the-loop oversight on Bash / Edit / Write is weakened.',
-    '   Revert with: AGIM_APPROVAL_ON_TIMEOUT=deny (or unset).',
-    '   Prefer: AGIM_AUTO_APPROVE=1 for immediate auto-approve.',
+    '   Revert with: AGIM_APPROVAL_ON_TIMEOUT=deny.',
+    '   Or set AGIM_AUTO_APPROVE=1 only after locking AGIM_ALLOWED_USERS.',
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     '',
   ].join('\n')
@@ -1692,7 +1749,8 @@ export class ApprovalBus {
     // Fires after sensitive-path hard-deny (above) and self-protect
     // (inline below). Skips the notifier entirely so we must run
     // self-protect here rather than relying on approval-router.
-    if (!args.requiresExplicitDecision && isAutoApproveEnabled()) {
+    // isAutoApproveEffective() also gates open-IM + empty allowlist.
+    if (!args.requiresExplicitDecision && isAutoApproveEffective()) {
       try {
         const { checkToolUse } = await import('./self-protect.js')
         const selfGuard = checkToolUse(args.toolName, args.input)

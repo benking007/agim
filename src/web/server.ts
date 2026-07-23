@@ -5223,8 +5223,14 @@ async function handleSttProviders(
   _req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const { listTranscribeProviders } = await import('../core/transcribe.js')
-  sendJson(res, 200, listTranscribeProviders())
+  try {
+    const { listTranscribeProviders } = await import('../core/transcribe.js')
+    sendJson(res, 200, listTranscribeProviders())
+  } catch (err) {
+    sendError(res, 500, 'STT_PROVIDERS_FAILED', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 async function handleChatTranscribe(

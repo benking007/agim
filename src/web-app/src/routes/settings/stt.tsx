@@ -151,10 +151,144 @@ const FIELD_META_EN: Record<string, { title: string; hint: string; placeholder?:
   },
 }
 
+/**
+ * Built-in catalog — always render cards even if /api/stt/providers fails
+ * (404 on stale process, 403 non-admin, network blip). Live configured /
+ * active flags are merged from the API when available.
+ */
+const STT_PROVIDER_CATALOG: SttProviderInfo[] = [
+  {
+    id: 'iflytek',
+    label: '讯飞语音听写',
+    envKeys: ['AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET'],
+    configured: false,
+  },
+  {
+    id: 'tencent',
+    label: '腾讯云一句话识别',
+    envKeys: ['AGIM_TENCENT_SECRET_ID', 'AGIM_TENCENT_SECRET_KEY', 'AGIM_TENCENT_ASR_ENGINE'],
+    configured: false,
+  },
+  {
+    id: 'baidu',
+    label: '百度短语音识别',
+    envKeys: ['AGIM_BAIDU_SPEECH_API_KEY', 'AGIM_BAIDU_SPEECH_SECRET_KEY'],
+    configured: false,
+  },
+  {
+    id: 'stepfun',
+    label: '阶跃 StepAudio-ASR',
+    envKeys: ['AGIM_STEPFUN_API_KEY', 'AGIM_STEPFUN_BASE_URL', 'AGIM_STEPFUN_TRANSCRIBE_MODEL'],
+    configured: false,
+  },
+  {
+    id: 'mimo',
+    label: '小米 MiMo-ASR',
+    envKeys: ['AGIM_MIMO_API_KEY', 'AGIM_MIMO_BASE_URL', 'AGIM_MIMO_TRANSCRIBE_MODEL'],
+    configured: false,
+  },
+  {
+    id: 'glm',
+    label: '智谱 GLM-ASR',
+    envKeys: ['AGIM_ZHIPU_API_KEY', 'AGIM_ZHIPU_BASE_URL', 'AGIM_ZHIPU_TRANSCRIBE_MODEL'],
+    configured: false,
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI Whisper',
+    envKeys: ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'AGIM_OPENAI_TRANSCRIBE_MODEL'],
+    configured: false,
+  },
+  {
+    id: 'whispercpp',
+    label: 'whisper.cpp（本地兜底）',
+    envKeys: [],
+    configured: false,
+    fallback: true,
+  },
+]
+
+/** Best-effort configured flags from masked /api/env (truthy = key present). */
+function configuredFromEnv(id: string, env: Record<string, string>): boolean {
+  const has = (...keys: string[]) => keys.every((k) => !!(env[k] && String(env[k]).trim()))
+  switch (id) {
+    case 'openai': return has('OPENAI_API_KEY')
+    case 'baidu': return has('AGIM_BAIDU_SPEECH_API_KEY', 'AGIM_BAIDU_SPEECH_SECRET_KEY')
+    case 'tencent': return has('AGIM_TENCENT_SECRET_ID', 'AGIM_TENCENT_SECRET_KEY')
+    case 'iflytek': return has('AGIM_IFLYTEK_APP_ID', 'AGIM_IFLYTEK_API_KEY', 'AGIM_IFLYTEK_API_SECRET')
+    case 'glm': return has('AGIM_ZHIPU_API_KEY')
+    case 'mimo': return has('AGIM_MIMO_API_KEY')
+    case 'stepfun': return has('AGIM_STEPFUN_API_KEY')
+    case 'whispercpp': return false // host-only paths — SPA cannot see them
+    default: return false
+  }
+}
+
+function mergeProviders(
+  live: SttProviderInfo[] | undefined,
+  active: string,
+  env: Record<string, string>,
+): SttProviderInfo[] {
+  const byId = new Map((live ?? []).map((p) => [p.id, p]))
+  const merged = STT_PROVIDER_CATALOG.map((base) => {
+    const hit = byId.get(base.id)
+    if (!hit) {
+      return { ...base, configured: configuredFromEnv(base.id, env) }
+    }
+    return {
+      ...base,
+      ...hit,
+      label: hit.label || base.label,
+      envKeys: Array.isArray(hit.envKeys) ? hit.envKeys : base.envKeys,
+      configured: !!hit.configured || configuredFromEnv(base.id, env),
+      currentValues: hit.currentValues,
+      fallback: hit.fallback ?? base.fallback,
+    }
+  })
+  // Keep any unexpected API-only providers at the end.
+  for (const p of live ?? []) {
+    if (!merged.some((m) => m.id === p.id)) merged.push(p)
+  }
+  // Sort: active → configured → rest, preserving catalog order within groups.
+  const rank = new Map(STT_PROVIDER_CATALOG.map((p, i) => [p.id, i]))
+  return [...merged].sort((a, b) => {
+    const aActive = a.id === active ? 0 : 1
+    const bActive = b.id === active ? 0 : 1
+    if (aActive !== bActive) return aActive - bActive
+    const aCfg = a.configured ? 0 : 1
+    const bCfg = b.configured ? 0 : 1
+    if (aCfg !== bCfg) return aCfg - bCfg
+    return (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)
+  })
+}
+
+async function fetchSttProviders(): Promise<SttProvidersResponse> {
+  try {
+    return await client.get<SttProvidersResponse>('/api/stt/providers')
+  } catch (err) {
+    // Fallback: any authenticated user can read /api/chat/transcribe status,
+    // which carries the same provider list (useful when admin gate / stale
+    // process makes /api/stt/providers unavailable).
+    try {
+      const status = await client.get<SttProvidersResponse & { provider?: string }>(
+        '/api/chat/transcribe',
+      )
+      return {
+        providers: status.providers ?? [],
+        active: status.active ?? status.provider ?? 'none',
+        explicit: status.explicit ?? null,
+      }
+    } catch {
+      throw err
+    }
+  }
+}
+
 function useSttProviders() {
   return useQuery<SttProvidersResponse>({
     queryKey: ['settings', 'stt', 'providers'],
-    queryFn: () => client.get<SttProvidersResponse>('/api/stt/providers'),
+    queryFn: fetchSttProviders,
+    retry: 1,
   })
 }
 
@@ -166,8 +300,14 @@ export default function SettingsSttRoute(): JSX.Element {
   const updateEnv = useUpdateEnv()
 
   const envData = envQuery.data?.env ?? {}
-  const providers = providersQuery.data?.providers ?? []
   const active = providersQuery.data?.active ?? 'none'
+  const providers = useMemo(
+    () => mergeProviders(providersQuery.data?.providers, active, envData),
+    [providersQuery.data?.providers, active, envData],
+  )
+  const loadError = providersQuery.isError
+    ? ((providersQuery.error as Error)?.message || (zh ? '加载失败' : 'Load failed'))
+    : null
 
   const initial = useMemo<Draft>(() => ({
     provider: (envData.AGIM_TRANSCRIBE_PROVIDER ?? '').trim(),
@@ -299,7 +439,15 @@ export default function SettingsSttRoute(): JSX.Element {
         </p>
       </section>
 
-      {envQuery.isLoading || providersQuery.isLoading ? (
+      {loadError && (
+        <section className="rounded-md border border-warning/40 bg-warning-bg/40 px-4 py-3 text-sm text-warning">
+          {zh
+            ? `无法从服务器刷新转写状态（${loadError}）。仍可编辑下方配置；保存后请点「刷新」或重启 agim。`
+            : `Could not refresh STT status (${loadError}). You can still edit keys below; save, then Refresh or restart agim.`}
+        </section>
+      )}
+
+      {envQuery.isLoading && providersQuery.isLoading ? (
         <div className="h-64 rounded-md bg-surface-2 animate-pulse" />
       ) : (
         <section className="flex flex-col gap-3">
@@ -379,9 +527,9 @@ function ProviderCard(props: {
             : 'Local offline fallback. Binary/model paths are host-managed (AGIM_WHISPERCPP_BIN / MODEL) and not editable here.'}
         </p>
       )}
-      {info.envKeys.length > 0 && (
+      {(info.envKeys?.length ?? 0) > 0 && (
       <div className="grid gap-3 sm:grid-cols-2">
-        {info.envKeys.map((envKey) => {
+        {(info.envKeys ?? []).map((envKey) => {
           const secret = SECRETISH.has(envKey)
           const touched = !!keysTouched[envKey]
           const meta = fieldMeta[envKey]

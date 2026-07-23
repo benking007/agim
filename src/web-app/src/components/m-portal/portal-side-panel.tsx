@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { type Lang } from '@/stores/prefs'
+import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
 
 type Tab = 'chat' | 'explore'

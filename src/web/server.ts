@@ -1501,6 +1501,20 @@ export async function startWebServer(options: {
         void handleButtonAction(msg as { data?: unknown; messageId?: unknown })
         return
       }
+      if (msgType === 'stop') {
+        // Same class of bug as approval-action (v1.2.114): the chat
+        // handler awaits the full agent run, so a queued `stop` never
+        // reaches webRunAborts.abort() until the run already ended.
+        // Abort must fire immediately while the run is in flight.
+        const liveId = client.id
+        const ac = webRunAborts.get(liveId)
+        if (!ac) {
+          sendToClient(ws, { type: 'error', message: '当前没有正在执行的任务' })
+          return
+        }
+        ac.abort()
+        return
+      }
       enqueueInbound(async () => {
         try {
           // Pass an onRekey callback so handleClientMessage can keep

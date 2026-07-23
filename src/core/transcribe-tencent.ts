@@ -2,10 +2,10 @@
  * Tencent Cloud SentenceRecognition (≤60s).
  * Docs: https://cloud.tencent.com/document/api/1093/35646
  *
- * Env:
- *   AGIM_TENCENT_SECRET_ID
- *   AGIM_TENCENT_SECRET_KEY
- *   AGIM_TENCENT_ASR_ENGINE (optional, default 16k_zh)
+ * Env (STT-prefixed):
+ *   AGIM_STT_TENCENT_SECRET_ID
+ *   AGIM_STT_TENCENT_SECRET_KEY
+ *   AGIM_STT_TENCENT_ENGINE (optional, default 16k_zh)
  */
 
 import { createHash, createHmac } from 'node:crypto'
@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { convertToWav } from './transcribe-audio.js'
+import { sttEnv, STT_ENV } from './transcribe-env.js'
 import { TranscribeError } from './transcribe-types.js'
 
 const HOST = 'asr.tencentcloudapi.com'
@@ -23,7 +24,7 @@ const VERSION = '2019-06-14'
 const TIMEOUT_MS = 60_000
 
 export function isTencentSpeechConfigured(): boolean {
-  return !!(process.env.AGIM_TENCENT_SECRET_ID && process.env.AGIM_TENCENT_SECRET_KEY)
+  return !!(sttEnv('tencentSecretId') && sttEnv('tencentSecretKey'))
 }
 
 function sha256Hex(data: string | Buffer): string {
@@ -62,13 +63,13 @@ function tc3Authorization(secretId: string, secretKey: string, payload: string, 
 }
 
 export async function transcribeWithTencent(filePath: string, opts?: { language?: string }): Promise<string> {
-  const secretId = process.env.AGIM_TENCENT_SECRET_ID
-  const secretKey = process.env.AGIM_TENCENT_SECRET_KEY
+  const secretId = sttEnv('tencentSecretId')
+  const secretKey = sttEnv('tencentSecretKey')
   if (!secretId || !secretKey) {
-    throw new TranscribeError('AGIM_TENCENT_SECRET_ID / SECRET_KEY not set', 'tencent')
+    throw new TranscribeError(`${STT_ENV.tencentSecretId} / ${STT_ENV.tencentSecretKey} not set`, 'tencent')
   }
   const lang = (opts?.language || 'zh').toLowerCase()
-  const engine = process.env.AGIM_TENCENT_ASR_ENGINE
+  const engine = sttEnv('tencentEngine')
     || (lang.startsWith('en') ? '16k_en' : '16k_zh')
 
   const wavPath = join(tmpdir(), `agim-tencent-${randomBytes(6).toString('hex')}.wav`)

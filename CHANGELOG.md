@@ -19,8 +19,12 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Portal hold-to-talk: recognized text fills the composer for review/edit instead of sending immediately.
-- STT Auto mode fails over to the next configured vendor when the active cloud call errors (explicit `AGIM_TRANSCRIBE_PROVIDER` still pins one vendor).
-- StepFun STT only reads `AGIM_STEPFUN_API_KEY` (no longer treats LLM `STEPFUN_API_KEY` / `STEP_API_KEY` as ASR-configured).
+- **STT env keys use `AGIM_STT_*` prefix** so speech credentials never collide with LLM / other vendor envs:
+  - Provider: `AGIM_STT_PROVIDER` (legacy read: `AGIM_TRANSCRIBE_PROVIDER`)
+  - OpenAI / Baidu / Tencent / iFlytek / StepFun / MiMo / Zhipu / whisper.cpp: `AGIM_STT_<VENDOR>_*`
+  - No longer falls back to LLM shared keys (`OPENAI_API_KEY`, `STEPFUN_API_KEY`, `MIMO_API_KEY`, `AGIM_ZHIPU_API_KEY`, …)
+  - Short legacy STT-only names still read where they existed (`AGIM_IFLYTEK_*`, `AGIM_TENCENT_*`, `AGIM_BAIDU_SPEECH_*`, `AGIM_STEPFUN_API_KEY`, `AGIM_MIMO_API_KEY`, `AGIM_WHISPERCPP_*`, …)
+- STT Auto mode fails over to the next configured vendor when the active cloud call errors (explicit `AGIM_STT_PROVIDER` still pins one vendor).
 - Portal voice unsupported toast distinguishes insecure context vs missing `mediaDevices` vs missing `MediaRecorder` (HTTPS alone is not enough on old iOS).
 - Agim Agent stuck-loop guards prefer **soft-steer** over an immediate hard stop: identical tool failures get one ephemeral “change approach” nudge (then hard-stop only if ignored). Semantic stuck-loop also requires recent failures (≥2 of last 3), so successful multi-tool debugging of the same URL/path is no longer treated as a dead loop.
 - Approval wait defaults **15 → 30 minutes** (`AGIM_APPROVAL_TIMEOUT_MS` + matching `AGIM_NATIVE_TURN_TIMEOUT_MS`) so human review of tool cards is less likely to race the turn watchdog.

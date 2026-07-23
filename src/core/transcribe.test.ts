@@ -40,27 +40,52 @@ const {
 } = await import('./transcribe.js')
 
 const ENV_KEYS = [
+  'AGIM_STT_PROVIDER',
   'AGIM_TRANSCRIBE_PROVIDER',
+  'AGIM_STT_OPENAI_API_KEY',
+  'AGIM_STT_OPENAI_BASE_URL',
+  'AGIM_STT_OPENAI_MODEL',
   'OPENAI_API_KEY',
   'OPENAI_BASE_URL',
   'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_STT_WHISPERCPP_BIN',
+  'AGIM_STT_WHISPERCPP_MODEL',
+  'AGIM_STT_WHISPERCPP_ARGS',
   'AGIM_WHISPERCPP_BIN',
   'AGIM_WHISPERCPP_MODEL',
   'AGIM_WHISPERCPP_ARGS',
+  'AGIM_STT_BAIDU_API_KEY',
+  'AGIM_STT_BAIDU_SECRET_KEY',
   'AGIM_BAIDU_SPEECH_API_KEY',
   'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_STT_TENCENT_SECRET_ID',
+  'AGIM_STT_TENCENT_SECRET_KEY',
+  'AGIM_STT_TENCENT_ENGINE',
   'AGIM_TENCENT_SECRET_ID',
   'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_TENCENT_ASR_ENGINE',
+  'AGIM_STT_IFLYTEK_APP_ID',
+  'AGIM_STT_IFLYTEK_API_KEY',
+  'AGIM_STT_IFLYTEK_API_SECRET',
   'AGIM_IFLYTEK_APP_ID',
   'AGIM_IFLYTEK_API_KEY',
   'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_STT_ZHIPU_API_KEY',
+  'AGIM_STT_ZHIPU_BASE_URL',
+  'AGIM_STT_ZHIPU_MODEL',
   'AGIM_ZHIPU_API_KEY',
   'AGIM_ZHIPU_BASE_URL',
   'AGIM_ZHIPU_TRANSCRIBE_MODEL',
+  'AGIM_STT_MIMO_API_KEY',
+  'AGIM_STT_MIMO_BASE_URL',
+  'AGIM_STT_MIMO_MODEL',
   'AGIM_MIMO_API_KEY',
   'MIMO_API_KEY',
   'AGIM_MIMO_BASE_URL',
   'AGIM_MIMO_TRANSCRIBE_MODEL',
+  'AGIM_STT_STEPFUN_API_KEY',
+  'AGIM_STT_STEPFUN_BASE_URL',
+  'AGIM_STT_STEPFUN_MODEL',
   'AGIM_STEPFUN_API_KEY',
   'STEPFUN_API_KEY',
   'STEP_API_KEY',
@@ -91,100 +116,107 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('none')
   })
 
-  it('honors explicit AGIM_TRANSCRIBE_PROVIDER', () => {
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'openai'
+  it('honors explicit AGIM_STT_PROVIDER', () => {
+    process.env.AGIM_STT_PROVIDER = 'openai'
     expect(detectProvider()).toBe('openai')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'whispercpp'
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'none'
+    process.env.AGIM_STT_PROVIDER = 'none'
     expect(detectProvider()).toBe('none')
   })
 
-  it('falls back to openai when OPENAI_API_KEY is set', () => {
-    process.env.OPENAI_API_KEY = 'sk-test'
+  it('falls back to openai when AGIM_STT_OPENAI_API_KEY is set', () => {
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     expect(detectProvider()).toBe('openai')
   })
 
   it('falls back to whispercpp when bin + model are set', () => {
-    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     expect(detectProvider()).toBe('whispercpp')
   })
 
   it('honors explicit baidu / tencent / iflytek / glm / mimo / stepfun', () => {
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'baidu'
+    process.env.AGIM_STT_PROVIDER = 'baidu'
     expect(detectProvider()).toBe('baidu')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'tencent'
+    process.env.AGIM_STT_PROVIDER = 'tencent'
     expect(detectProvider()).toBe('tencent')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'iflytek'
+    process.env.AGIM_STT_PROVIDER = 'iflytek'
     expect(detectProvider()).toBe('iflytek')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'glm'
+    process.env.AGIM_STT_PROVIDER = 'glm'
     expect(detectProvider()).toBe('glm')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'mimo'
+    process.env.AGIM_STT_PROVIDER = 'mimo'
     expect(detectProvider()).toBe('mimo')
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'stepfun'
+    process.env.AGIM_STT_PROVIDER = 'stepfun'
     expect(detectProvider()).toBe('stepfun')
   })
 
   it('auto-picks any cloud provider before whispercpp fallback', () => {
-    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
-    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
-    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    process.env.AGIM_STT_BAIDU_API_KEY = 'ak'
+    process.env.AGIM_STT_BAIDU_SECRET_KEY = 'sk'
+    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     expect(detectProvider()).toBe('baidu')
   })
 
   it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > stepfun > mimo > glm > openai)', () => {
-    process.env.OPENAI_API_KEY = 'sk-test'
-    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-key'
     expect(detectProvider()).toBe('glm')
 
-    process.env.AGIM_MIMO_API_KEY = 'mimo-key'
+    process.env.AGIM_STT_MIMO_API_KEY = 'mimo-key'
     expect(detectProvider()).toBe('mimo')
 
-    process.env.AGIM_STEPFUN_API_KEY = 'step-key'
+    process.env.AGIM_STT_STEPFUN_API_KEY = 'step-key'
     expect(detectProvider()).toBe('stepfun')
 
-    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
-    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    process.env.AGIM_STT_BAIDU_API_KEY = 'ak'
+    process.env.AGIM_STT_BAIDU_SECRET_KEY = 'sk'
     expect(detectProvider()).toBe('baidu')
 
-    process.env.AGIM_TENCENT_SECRET_ID = 'id'
-    process.env.AGIM_TENCENT_SECRET_KEY = 'key'
+    process.env.AGIM_STT_TENCENT_SECRET_ID = 'id'
+    process.env.AGIM_STT_TENCENT_SECRET_KEY = 'key'
     expect(detectProvider()).toBe('tencent')
 
-    process.env.AGIM_IFLYTEK_APP_ID = 'app'
-    process.env.AGIM_IFLYTEK_API_KEY = 'ak'
-    process.env.AGIM_IFLYTEK_API_SECRET = 'sk'
+    process.env.AGIM_STT_IFLYTEK_APP_ID = 'app'
+    process.env.AGIM_STT_IFLYTEK_API_KEY = 'ak'
+    process.env.AGIM_STT_IFLYTEK_API_SECRET = 'sk'
     expect(detectProvider()).toBe('iflytek')
   })
 
-  it('treats MIMO_API_KEY as configured for mimo', () => {
+  it('does not treat LLM MIMO_API_KEY as STT-configured', () => {
     process.env.MIMO_API_KEY = 'legacy-mimo'
+    expect(detectProvider()).toBe('none')
+    process.env.AGIM_STT_MIMO_API_KEY = 'stt-mimo'
     expect(detectProvider()).toBe('mimo')
   })
 
-  it('does not treat LLM STEPFUN_API_KEY / STEP_API_KEY as STT-configured', () => {
-    // Those vendor envs are for chat backends (llm/secrets). STT must use
-    // the dedicated AGIM_STEPFUN_API_KEY so /settings/stt does not lie.
+  it('does not treat LLM STEPFUN_API_KEY / STEP_API_KEY / AGIM_ZHIPU_API_KEY / OPENAI_API_KEY as STT-configured', () => {
     process.env.STEPFUN_API_KEY = 'llm-only-step'
-    expect(detectProvider()).toBe('none')
-    delete process.env.STEPFUN_API_KEY
     process.env.STEP_API_KEY = 'alt-llm-step'
+    process.env.AGIM_ZHIPU_API_KEY = 'llm-zhipu'
+    process.env.OPENAI_API_KEY = 'llm-openai'
+    process.env.MIMO_API_KEY = 'llm-mimo'
     expect(detectProvider()).toBe('none')
-    process.env.AGIM_STEPFUN_API_KEY = 'stt-step'
+    process.env.AGIM_STT_STEPFUN_API_KEY = 'stt-step'
     expect(detectProvider()).toBe('stepfun')
   })
 
   it('explicit override wins over auto-detection', () => {
-    process.env.OPENAI_API_KEY = 'sk-test'
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'whispercpp'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
     expect(detectProvider()).toBe('whispercpp')
   })
 
+  it('reads legacy AGIM_BAIDU_SPEECH_* as STT fallback', () => {
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    expect(detectProvider()).toBe('baidu')
+  })
+
   it('ignores unknown explicit value and falls through to auto-detect', () => {
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'garbage'
-    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_PROVIDER = 'garbage'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     expect(detectProvider()).toBe('openai')
   })
 })
@@ -213,14 +245,14 @@ describe('transcribe — settings UI provider order', () => {
   })
 
   it('puts active + other configured ahead of missing, preserving priority', () => {
-    process.env.OPENAI_API_KEY = 'sk-test'
-    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
-    process.env.AGIM_MIMO_API_KEY = 'mimo-key'
-    process.env.AGIM_STEPFUN_API_KEY = 'step-key'
-    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
-    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
-    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
-    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.AGIM_STT_MIMO_API_KEY = 'mimo-key'
+    process.env.AGIM_STT_STEPFUN_API_KEY = 'step-key'
+    process.env.AGIM_STT_BAIDU_API_KEY = 'ak'
+    process.env.AGIM_STT_BAIDU_SECRET_KEY = 'sk'
+    process.env.AGIM_STT_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_STT_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     // auto → baidu (ahead of stepfun / mimo / glm / openai / whispercpp)
     const { providers, active } = listTranscribeProviders()
     expect(active).toBe('baidu')
@@ -291,8 +323,8 @@ describe('transcribe — Auto failover across configured providers', () => {
 
   it('falls over to the next Auto provider when the first cloud call fails', async () => {
     // Auto order: glm ahead of openai when both configured.
-    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
-    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     const audioPath = join(TEST_ROOT, 'failover.wav')
     await writeMinimalWav(audioPath)
 
@@ -316,10 +348,10 @@ describe('transcribe — Auto failover across configured providers', () => {
     expect(hits.some((u) => u.includes('/audio/transcriptions'))).toBe(true)
   })
 
-  it('does not failover when AGIM_TRANSCRIBE_PROVIDER pins a vendor', async () => {
-    process.env.AGIM_TRANSCRIBE_PROVIDER = 'glm'
-    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
-    process.env.OPENAI_API_KEY = 'sk-test'
+  it('does not failover when AGIM_STT_PROVIDER pins a vendor', async () => {
+    process.env.AGIM_STT_PROVIDER = 'glm'
+    process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
     const audioPath = join(TEST_ROOT, 'pinned.wav')
     await writeMinimalWav(audioPath)
 
@@ -345,7 +377,7 @@ describe('transcribe — openai path with mocked fetch', () => {
     originalFetch = globalThis.fetch
     saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
     clearEnv()
-    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_STT_OPENAI_API_KEY = 'sk-test'
   })
 
   afterEach(() => {
@@ -382,7 +414,7 @@ describe('transcribe — openai path with mocked fetch', () => {
   it('honors OPENAI_BASE_URL for self-hosted gateways', async () => {
     const audioPath = join(TEST_ROOT, 'sample2.ogg')
     await writeFile(audioPath, Buffer.from([0]))
-    process.env.OPENAI_BASE_URL = 'https://gateway.example.com/v1'
+    process.env.AGIM_STT_OPENAI_BASE_URL = 'https://gateway.example.com/v1'
 
     let capturedUrl = ''
     globalThis.fetch = (async (input: string | URL | Request) => {
@@ -446,7 +478,7 @@ describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
     originalFetch = globalThis.fetch
     saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
     clearEnv()
-    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-test-key'
+    process.env.AGIM_STT_ZHIPU_API_KEY = 'zhipu-test-key'
   })
 
   afterEach(() => {
@@ -476,8 +508,8 @@ describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
   })
 
   it('honors AGIM_ZHIPU_BASE_URL + model', async () => {
-    process.env.AGIM_ZHIPU_BASE_URL = 'https://api.z.ai/api/paas/v4'
-    process.env.AGIM_ZHIPU_TRANSCRIBE_MODEL = 'glm-asr-2512'
+    process.env.AGIM_STT_ZHIPU_BASE_URL = 'https://api.z.ai/api/paas/v4'
+    process.env.AGIM_STT_ZHIPU_MODEL = 'glm-asr-2512'
     let capturedUrl = ''
     let capturedModel = ''
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -512,7 +544,7 @@ describe('transcribe — mimo path with mocked fetch', () => {
     originalFetch = globalThis.fetch
     saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
     clearEnv()
-    process.env.AGIM_MIMO_API_KEY = 'mimo-test-key'
+    process.env.AGIM_STT_MIMO_API_KEY = 'mimo-test-key'
   })
 
   afterEach(() => {
@@ -565,7 +597,7 @@ describe('transcribe — stepfun path with mocked fetch', () => {
     originalFetch = globalThis.fetch
     saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
     clearEnv()
-    process.env.AGIM_STEPFUN_API_KEY = 'step-test-key'
+    process.env.AGIM_STT_STEPFUN_API_KEY = 'step-test-key'
   })
 
   afterEach(() => {

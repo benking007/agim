@@ -5,10 +5,10 @@
  * Unlike Whisper-style /audio/transcriptions, MiMo exposes ASR via
  * POST /v1/chat/completions with an input_audio content part.
  *
- * Env:
- *   AGIM_MIMO_API_KEY           — preferred; falls back to MIMO_API_KEY
- *   AGIM_MIMO_BASE_URL          — optional, default https://api.xiaomimimo.com/v1
- *   AGIM_MIMO_TRANSCRIBE_MODEL  — optional, default mimo-v2.5-asr
+ * Env (STT-prefixed — never reuse LLM MIMO_API_KEY):
+ *   AGIM_STT_MIMO_API_KEY
+ *   AGIM_STT_MIMO_BASE_URL   — optional, default https://api.xiaomimimo.com/v1
+ *   AGIM_STT_MIMO_MODEL      — optional, default mimo-v2.5-asr
  *
  * Limits (vendor): wav/mp3; Base64 payload ≤ 10 MB. We convert to 16 kHz WAV.
  */
@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { convertToWav } from './transcribe-audio.js'
+import { sttEnv, STT_ENV } from './transcribe-env.js'
 import { TranscribeError } from './transcribe-types.js'
 
 const DEFAULT_BASE = 'https://api.xiaomimimo.com/v1'
@@ -26,12 +27,8 @@ const TIMEOUT_MS = 60_000
 /** Vendor cap is 10 MB on the Base64 string (~7.5 MB raw). */
 const MAX_RAW_BYTES = 7 * 1024 * 1024
 
-function resolveApiKey(): string | undefined {
-  return process.env.AGIM_MIMO_API_KEY?.trim() || process.env.MIMO_API_KEY?.trim() || undefined
-}
-
 export function isMimoSpeechConfigured(): boolean {
-  return !!resolveApiKey()
+  return !!sttEnv('mimoApiKey')
 }
 
 function resolveLanguage(opts?: { language?: string }): 'auto' | 'zh' | 'en' {
@@ -42,11 +39,11 @@ function resolveLanguage(opts?: { language?: string }): 'auto' | 'zh' | 'en' {
 }
 
 export async function transcribeWithMimo(filePath: string, opts?: { language?: string }): Promise<string> {
-  const key = resolveApiKey()
-  if (!key) throw new TranscribeError('AGIM_MIMO_API_KEY (or MIMO_API_KEY) not set', 'mimo')
+  const key = sttEnv('mimoApiKey')
+  if (!key) throw new TranscribeError(`${STT_ENV.mimoApiKey} not set`, 'mimo')
 
-  const baseURL = (process.env.AGIM_MIMO_BASE_URL?.trim() || DEFAULT_BASE).replace(/\/$/, '')
-  const model = process.env.AGIM_MIMO_TRANSCRIBE_MODEL?.trim() || DEFAULT_MODEL
+  const baseURL = (sttEnv('mimoBaseUrl') || DEFAULT_BASE).replace(/\/$/, '')
+  const model = sttEnv('mimoModel') || DEFAULT_MODEL
 
   const wavPath = join(tmpdir(), `agim-mimo-${randomBytes(6).toString('hex')}.wav`)
   try {

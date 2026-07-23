@@ -2,10 +2,10 @@
  * iFlytek (讯飞) streaming IAT — short dictation via WebSocket.
  * Docs: https://www.xfyun.cn/doc/asr/voicedictation/API.html
  *
- * Env:
- *   AGIM_IFLYTEK_APP_ID
- *   AGIM_IFLYTEK_API_KEY
- *   AGIM_IFLYTEK_API_SECRET
+ * Env (STT-prefixed):
+ *   AGIM_STT_IFLYTEK_APP_ID
+ *   AGIM_STT_IFLYTEK_API_KEY
+ *   AGIM_STT_IFLYTEK_API_SECRET
  */
 
 import { createHmac, randomBytes } from 'node:crypto'
@@ -13,6 +13,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { convertToWav } from './transcribe-audio.js'
+import { sttEnv, STT_ENV } from './transcribe-env.js'
 import { TranscribeError } from './transcribe-types.js'
 
 const HOST = 'iat-api.xfyun.cn'
@@ -21,11 +22,7 @@ const TIMEOUT_MS = 60_000
 const FRAME_SIZE = 1280 // 40ms @ 16kHz 16bit mono
 
 export function isIflytekSpeechConfigured(): boolean {
-  return !!(
-    process.env.AGIM_IFLYTEK_APP_ID
-    && process.env.AGIM_IFLYTEK_API_KEY
-    && process.env.AGIM_IFLYTEK_API_SECRET
-  )
+  return !!(sttEnv('iflytekAppId') && sttEnv('iflytekApiKey') && sttEnv('iflytekApiSecret'))
 }
 
 function buildAuthUrl(apiKey: string, apiSecret: string): string {
@@ -44,11 +41,14 @@ function buildAuthUrl(apiKey: string, apiSecret: string): string {
 }
 
 export async function transcribeWithIflytek(filePath: string, opts?: { language?: string }): Promise<string> {
-  const appId = process.env.AGIM_IFLYTEK_APP_ID
-  const apiKey = process.env.AGIM_IFLYTEK_API_KEY
-  const apiSecret = process.env.AGIM_IFLYTEK_API_SECRET
+  const appId = sttEnv('iflytekAppId')
+  const apiKey = sttEnv('iflytekApiKey')
+  const apiSecret = sttEnv('iflytekApiSecret')
   if (!appId || !apiKey || !apiSecret) {
-    throw new TranscribeError('AGIM_IFLYTEK_APP_ID / API_KEY / API_SECRET not set', 'iflytek')
+    throw new TranscribeError(
+      `${STT_ENV.iflytekAppId} / ${STT_ENV.iflytekApiKey} / ${STT_ENV.iflytekApiSecret} not set`,
+      'iflytek',
+    )
   }
 
   const wavPath = join(tmpdir(), `agim-iflytek-${randomBytes(6).toString('hex')}.wav`)

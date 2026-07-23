@@ -232,9 +232,9 @@ describe('WeChat iLink adapter — media integration', () => {
     await processMessage(adapter, msg)
 
     expect(captured).toHaveLength(1)
-    // Without OPENAI_API_KEY or AGIM_WHISPERCPP_BIN, should show "未转写"
+    // Without AGIM_STT_* / whisper.cpp, should show "未转写" + settings hint
     expect(captured[0].message.text).toContain('语音附件未转写')
-    expect(captured[0].message.text).toContain('OPENAI_API_KEY')
+    expect(captured[0].message.text).toContain('/settings/stt')
   })
 
   it('handles voice with no CDN and no text', async () => {

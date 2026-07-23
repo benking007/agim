@@ -33,6 +33,7 @@
 ## 运维
 
 - [`runbook.md`](./runbook.md)：高频运维操作
+- [`desktop-regression.md`](./desktop-regression.md)：合入后桌面全功能回归（mock LLM）
 - [`release.md`](./release.md)：npm 发版（Auto Version Bump → `workflow_call` / 手动 `workflow_dispatch`）
 - [`messenger-capability-matrix.md`](./messenger-capability-matrix.md)：各 IM 的 HITL / 附件 / 网关能力差异
 - [`discord-setup.md`](./discord-setup.md)：Discord 接入（需 `AGIM_ENABLE_GLOBAL_IM=1`）

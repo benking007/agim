@@ -476,6 +476,14 @@ program
     const { startSweepTimer: startMemoSweep } = await import('./core/memos.js')
     startMemoSweep()
 
+    // Built-in whisper.cpp: silently prefetch ggml-base.bin in the background
+    // when local STT is likely (pin / CLI present). Never blocks boot; first
+    // transcription still ensures the model if warmup has not finished.
+    try {
+      const { startWhisperModelWarmup } = await import('./core/transcribe-whispercpp-resolve.js')
+      startWhisperModelWarmup()
+    } catch { /* best-effort */ }
+
     // Startup diagnostic: IM admin registry summary (admins + known IM users).
     // The registry is now file-based and managed from Web Settings → Admins.
     try {

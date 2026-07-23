@@ -427,7 +427,9 @@ export default function SettingsSttRoute(): JSX.Element {
                 ? (zh ? ' · 使用中' : ' · in use')
                 : info.configured
                   ? (zh ? ' · 已配置' : ' · configured')
-                  : ''}
+                  : info.id === 'whispercpp'
+                    ? (zh ? ' · 内置本地（PATH / ~/.agim/whisper）' : ' · built-in local')
+                    : (zh ? ' · 未配置' : ' · not configured')}
             </option>
           ))}
           <option value="none">{zh ? '禁用转写' : 'Disable STT'}</option>
@@ -523,8 +525,8 @@ function ProviderCard(props: {
       {info.fallback && (
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '本地离线兜底。路径由主机环境配置（AGIM_STT_WHISPERCPP_BIN / MODEL），控制台不开放修改。'
-            : 'Local offline fallback. Paths are host-managed (AGIM_STT_WHISPERCPP_BIN / MODEL) and not editable here.'}
+            ? '内置开源本地转写（whisper.cpp）。默认查找 PATH / ~/.agim/whisper/bin/whisper-cli；模型首次使用自动下载到 ~/.agim/whisper/models/。也可设 AGIM_STT_WHISPERCPP_BIN / MODEL。'
+            : 'Built-in open-source local STT (whisper.cpp). Looks up PATH / ~/.agim/whisper/bin/whisper-cli; model auto-downloads to ~/.agim/whisper/models/ on first use. Optional AGIM_STT_WHISPERCPP_BIN / MODEL.'}
         </p>
       )}
       {(info.envKeys?.length ?? 0) > 0 && (

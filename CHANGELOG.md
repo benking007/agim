@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **whisper.cpp is the built-in local STT**: resolves `AGIM_STT_WHISPERCPP_*` / `AGIM_WHISPERCPP_*`, `~/.agim/whisper/bin/whisper-cli`, and PATH; `agim start` silently prefetches `ggml-base.bin` into `~/.agim/whisper/models/` when local STT is likely (pin / CLI present), with first transcription as fallback. An explicit whisper.cpp pin no longer silently falls through to Auto; missing CLI gets an install hint instead of raw `AGIM_STT_WHISPERCPP_BIN not set`.
 - STT “not configured” errors (Portal / IM) now point at `/settings/stt` instead of only mentioning `OPENAI_API_KEY` / whisper.cpp.
 - Successful turn end auto-completes a sticky Plan last item: when the checklist is `N-1` completed with exactly one `in_progress` and zero `pending`, store + activity + SPA `DONE`/`RUN_FINISH` mark it completed so the UI shows `N/N` instead of hanging on an empty circle.
 - Chat lists (Portal `/m/chat` and web console `/`): scrolling up to read history no longer gets yanked back to the bottom when the live turn streams or tool-activity steps grow. Follow resumes when the user returns near the bottom or sends a message.

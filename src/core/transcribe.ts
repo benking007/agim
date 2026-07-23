@@ -1,8 +1,8 @@
 // transcribe — speech-to-text with provider abstraction.
 //
-// Providers (credentials: AGIM_STT_* only — never LLM shared keys):
+// Providers (cloud credentials: AGIM_STT_* only — never LLM shared keys):
 //   - openai      — OpenAI Whisper API
-//   - whispercpp  — local whisper.cpp binary
+//   - whispercpp  — built-in open-source local STT (whisper.cpp)
 //   - baidu       — 百度短语音识别
 //   - tencent     — 腾讯云一句话识别
 //   - iflytek     — 讯飞语音听写 (WebSocket IAT)
@@ -16,7 +16,8 @@
 //        iflytek → tencent → baidu → stepfun → mimo → glm → openai → whispercpp
 //   3. else → 'none'
 //
-// All vendor credentials use AGIM_STT_* so they never collide with LLM envs.
+// whisper.cpp is the built-in offline engine: resolves ~/.agim/whisper/,
+// PATH, and AGIM_STT_WHISPERCPP_* / AGIM_WHISPERCPP_*; model auto-downloads.
 
 import { spawn } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
@@ -36,6 +37,11 @@ import {
   STT_ENV,
   sttEnv,
 } from './transcribe-env.js'
+import {
+  isWhisperCppReady,
+  resolveWhisperCppForTranscribe,
+  whisperCppInstallHintEn,
+} from './transcribe-whispercpp-resolve.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
   TranscribeError,
@@ -73,8 +79,8 @@ const PROVIDER_META: Record<
 > = {
   whispercpp: {
     id: 'whispercpp',
-    label: 'whisper.cpp（本地兜底）',
-    // Paths are host/ops-only (process env / ~/.agim/env). Not exposed in SPA.
+    label: 'whisper.cpp（内置本地）',
+    // Paths are host-managed; defaults live under ~/.agim/whisper/.
     envKeys: [],
     fallback: true,
   },
@@ -120,7 +126,7 @@ export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none
     case 'openai':
       return !!sttEnv('openaiApiKey')
     case 'whispercpp':
-      return !!(sttEnv('whisperBin') && sttEnv('whisperModel'))
+      return isWhisperCppReady()
     case 'baidu':
       return isBaiduSpeechConfigured()
     case 'tencent':
@@ -186,17 +192,11 @@ export function listTranscribeProviders(): {
 /** Resolve which provider to use given current env. Pure / sync. */
 export function detectProvider(): TranscribeProvider {
   const explicit = sttEnv('provider')?.toLowerCase()
-  if (
-    explicit === 'openai'
-    || explicit === 'whispercpp'
-    || explicit === 'baidu'
-    || explicit === 'tencent'
-    || explicit === 'iflytek'
-    || explicit === 'glm'
-    || explicit === 'mimo'
-    || explicit === 'stepfun'
-    || explicit === 'none'
-  ) {
+  if (explicit === 'none') return 'none'
+  // whisper.cpp is the built-in local engine — honor an explicit pin even
+  // before the model file is downloaded (resolved at run time).
+  if (explicit === 'whispercpp') return 'whispercpp'
+  if (isExplicitProviderName(explicit) && explicit !== 'none' && isProviderConfigured(explicit)) {
     return explicit
   }
   for (const id of ALL_TRANSCRIBE_PROVIDERS) {
@@ -274,21 +274,43 @@ async function transcribeOnce(
   return { text, provider, elapsedMs }
 }
 
+function missingProviderHint(provider: Exclude<TranscribeProvider, 'none'>): string {
+  if (provider === 'whispercpp') return whisperCppInstallHintEn()
+  const keys = PROVIDER_META[provider].envKeys.filter((k) => k.includes('KEY') || k.includes('SECRET') || k.includes('APP_ID'))
+  const keyHint = keys.length ? keys.join(' / ') : 'AGIM_STT_*'
+  return (
+    `${provider} STT is not configured (need ${keyHint}) — open Web /settings/stt`
+  )
+}
+
 /**
- * Run STT. Explicit `opts.provider` or `AGIM_STT_PROVIDER` pins one vendor.
- * Auto mode tries configured vendors in priority order and fails over on error.
+ * Run STT. Explicit `opts.provider` or `AGIM_STT_PROVIDER` pins one vendor
+ * (no failover). whisper.cpp is the built-in local engine — a pin always
+ * attempts local resolve (PATH / ~/.agim/whisper / env), never silently
+ * falls through to Auto. Auto mode fails over across configured vendors.
  */
 export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
   const explicitEnv = sttEnv('provider')?.toLowerCase()
-  const pinned = opts.provider
-    ?? (isExplicitProviderName(explicitEnv) ? explicitEnv : undefined)
+  const envPinned = isExplicitProviderName(explicitEnv) ? explicitEnv : undefined
 
-  if (pinned === 'none') {
+  if (opts.provider === 'none' || envPinned === 'none') {
     throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
   }
 
-  if (pinned) {
-    return transcribeOnce(pinned, filePath, opts)
+  // Caller-requested provider always wins (tests / admin tools).
+  if (opts.provider) {
+    if (opts.provider !== 'whispercpp' && !isProviderConfigured(opts.provider)) {
+      throw new TranscribeError(missingProviderHint(opts.provider), opts.provider)
+    }
+    return transcribeOnce(opts.provider, filePath, opts)
+  }
+
+  // Env pin: whisper.cpp always attempted (built-in); cloud pins need keys.
+  if (envPinned === 'whispercpp') {
+    return transcribeOnce('whispercpp', filePath, opts)
+  }
+  if (envPinned && isProviderConfigured(envPinned)) {
+    return transcribeOnce(envPinned, filePath, opts)
   }
 
   const chain = configuredProvidersInAutoOrder()
@@ -365,16 +387,25 @@ async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): 
 }
 
 async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOptions): Promise<string> {
-  const bin = sttEnv('whisperBin')
-  const model = sttEnv('whisperModel')
-  if (!bin) throw new TranscribeError(`${STT_ENV.whisperBin} not set`, 'whispercpp')
-  if (!model) throw new TranscribeError(`${STT_ENV.whisperModel} not set`, 'whispercpp')
+  let bin: string
+  let model: string
+  try {
+    ;({ bin, model } = await resolveWhisperCppForTranscribe())
+  } catch (err) {
+    throw new TranscribeError(
+      err instanceof Error ? err.message : whisperCppInstallHintEn(),
+      'whispercpp',
+    )
+  }
 
   const wavPath = join(tmpdir(), `agim-whisper-${randomBytes(6).toString('hex')}.wav`)
   try {
     await convertToWav(filePath, wavPath, 'whispercpp')
 
-    const extraArgs = (sttEnv('whisperArgs') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+    const extraArgs = (sttEnv('whisperArgs') ?? process.env.AGIM_WHISPERCPP_ARGS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
     const args = ['-m', model, '-f', wavPath, '--no-prints', '--no-timestamps', ...extraArgs]
     if (opts.language) args.push('-l', opts.language)
 

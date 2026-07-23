@@ -13,6 +13,8 @@ import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
 import { getDefaultAgent } from '../core/live-config.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
+import { expandInlineChannelReply, needsFullInlineDelivery } from '../core/inline-delivery.js'
+import { defaultAgentCwd, resolveAgentCwd } from '../core/agent-cwd.js'
 import { generateTraceId, createLogger, logger as rootLogger, sanitizeUserText } from '../core/logger.js'
 import { validateConfig } from '../core/config-schema.js'
 import { updateConfigObject } from '../core/config-store.js'
@@ -5937,14 +5939,26 @@ async function handleClientMessage(
 
         const finishedAt = Date.now()
         const durationMs = Math.max(0, finishedAt - runStartedAt)
-        setActiveRunPartialText(sessionThreadId, fullText)
+        // Hard constraint: Web / Portal (/m/chat, macOS·iOS shells) never
+        // deliver summary-only (envelope or 落盘+要点). SPA replaces the
+        // streamed bubble with done.text.
+        let deliveredText = fullText
+        if (needsFullInlineDelivery('web') && fullText.trim()) {
+          const cwd = resolveAgentCwd(client.agent, {
+            platform: 'web',
+            channelId: 'web',
+            threadId: sessionThreadId,
+          }) || defaultAgentCwd(client.agent)
+          deliveredText = expandInlineChannelReply(fullText, { workspaceRoot: cwd })
+        }
+        setActiveRunPartialText(sessionThreadId, deliveredText)
         finishActiveRun(sessionThreadId, {
-          status: 'success', finishedAt, durationMs, finalText: fullText,
+          status: 'success', finishedAt, durationMs, finalText: deliveredText,
         })
-        await persistFinishedActivity(fullText)
+        await persistFinishedActivity(deliveredText)
         emit({
           type: 'done',
-          text: fullText,
+          text: deliveredText,
           runId,
           messageId: await latestWebAssistantMessageId(sessionThreadId),
         })
@@ -5952,7 +5966,7 @@ async function handleClientMessage(
           type: 'usage',
           runId,
           durationMs,
-          outputChars: fullText.length,
+          outputChars: deliveredText.length,
         })
         emit({
           type: 'run-finish',

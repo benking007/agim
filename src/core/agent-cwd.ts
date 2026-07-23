@@ -88,10 +88,14 @@ export function buildAgimDialogueLogicSection(): string {
   return `## 对话逻辑
 
 用户问结论、分析、建议或「发生了什么」时，**必须在对话里给全用户需要决策的内容**（结论、关键依据、可执行动作）。
-- 长内容（**超过 8k**）需要落盘，文末再附路径（例如 \`已归档：PROJECTS/<slug>.md\`）。即便落盘，也要将完整内容回复给用户。
-- 在启用 Viewer 时，如果有落盘文件，可以附上已落盘文件的 Viewer 查看地址。
-- 在启用 Viewer 时，针对部分 IM 客户端（如 Telegram、微信、企业微信、钉钉、飞书、QQ 等）无法展示超长内容时，以及 IM 客户端 Markdown 兼容性差时，需总结为单条约 4–8 KB 的要点，将正文落盘，并在消息末尾附上 Viewer 查看地址。
-- macOS / Web / Portal 的长内容渲染好，无论是否启用 Viewer，**禁止截断**，直接输出长内容。`
+
+### Web / Portal / macOS·iOS 壳 / TUI（\`platform=web|tui\`）
+这些渠道渲染完整 Markdown。**禁止**「仅摘要 + 落盘 / Viewer 链接」代替正文；长文直接写进对话。
+（运行时也会硬展开：\`<im-summary>/<full-md>\` 取全文；检测到「报告已落盘：*.md」且文件更长时会把正文并入回复。）
+
+### IM 客户端（微信 / 企微 / 钉钉 / 飞书 / QQ / Telegram / Discord / Email 等）
+- 长内容（**超过 8k**）可落盘，文末附路径；即便落盘，也应尽量在对话里给全决策要点。
+- 启用 Viewer 时：可总结为单条约 4–8 KB 要点，正文落盘，消息末附 Viewer 地址；也可用 \`<im-summary>/<full-md>\` 信封。`
 }
 
 export function buildAgimImOpsBlock(

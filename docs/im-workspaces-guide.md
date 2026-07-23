@@ -145,7 +145,7 @@ Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
 - **说话规则**：冷静严谨、禁 emoji、不编造；先结论，决策所需内容在对话里给全
 - **任务执行规则**：直接 tool call 不预告；未收到结果不声称完成；副作用参数一次性给全；不确定用 `ask_user` / `todo`；破坏性操作先确认或走审批；收尾要把用户可见结果写进对话
 - **im-ops 托管段**（所有 IM agent 共用）：
-  - **对话逻辑**：超过 8k 落盘但仍须完整回复；Viewer 开启时 IM 可发 4–8 KB 要点 + Viewer 链接；macOS / Web / Portal **禁止截断**
+  - **对话逻辑**：Web / Portal / macOS 壳硬展开全文（禁止仅摘要）；IM 可在 Viewer 开启时发 4–8 KB 要点 + 落盘 / Viewer 链接
   - **bgjob**：估时 >10 分钟强制 `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob" start <slug> -- <cmd...>`
   - **记忆 / 路径**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
 

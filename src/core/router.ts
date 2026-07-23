@@ -31,6 +31,8 @@ import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig, isViewerEnabledForPlatform } from './viewer-config.js'
+import { expandInlineChannelReply, needsFullInlineDelivery } from './inline-delivery.js'
+import { defaultAgentCwd, resolveAgentCwd } from './agent-cwd.js'
 import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
@@ -860,12 +862,23 @@ export async function callAgentWithHistory(
       }
 
       if (!aborted && fullResponse.trim()) {
+        // Web / Portal / TUI: hard-expand summary-only shapes before persist.
+        let assistantContent = fullResponse
+        if (needsFullInlineDelivery(ctx.platform)) {
+          const cwd = resolveAgentCwd(agent.name, {
+            platform: ctx.platform,
+            channelId: ctx.channelId,
+            threadId: storageThreadId,
+          }) || defaultAgentCwd(agent.name)
+          assistantContent = expandInlineChannelReply(fullResponse, { workspaceRoot: cwd })
+        }
         await sessionManager.addMessage(ctx.platform, ctx.channelId, storageThreadId, {
           role: 'assistant',
-          content: fullResponse,
+          content: assistantContent,
           agent: agent.name,
           timestamp: new Date()
         })
+        fullResponse = assistantContent
       }
       ctx.logger.info({
         event: 'agent.invoke.end',

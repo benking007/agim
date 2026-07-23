@@ -9,6 +9,28 @@ import { join } from 'node:path'
 
 const TEST_ROOT = join(tmpdir(), `agim-transcribe-test-${process.pid}`)
 
+/** Minimal 16 kHz mono PCM WAV (~0.05s silence) — no ffmpeg required. */
+async function writeMinimalWav(path: string): Promise<void> {
+  const sampleRate = 16_000
+  const numSamples = 800 // 50 ms
+  const dataSize = numSamples * 2
+  const buf = Buffer.alloc(44 + dataSize)
+  buf.write('RIFF', 0)
+  buf.writeUInt32LE(36 + dataSize, 4)
+  buf.write('WAVE', 8)
+  buf.write('fmt ', 12)
+  buf.writeUInt32LE(16, 16) // PCM fmt chunk size
+  buf.writeUInt16LE(1, 20) // PCM
+  buf.writeUInt16LE(1, 22) // mono
+  buf.writeUInt32LE(sampleRate, 24)
+  buf.writeUInt32LE(sampleRate * 2, 28) // byte rate
+  buf.writeUInt16LE(2, 32) // block align
+  buf.writeUInt16LE(16, 34) // bits
+  buf.write('data', 36)
+  buf.writeUInt32LE(dataSize, 40)
+  await writeFile(path, buf)
+}
+
 const {
   transcribe,
   detectProvider,
@@ -347,13 +369,7 @@ describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
   beforeAll(async () => {
     await mkdir(TEST_ROOT, { recursive: true })
     silenceWav = join(TEST_ROOT, 'silence.wav')
-    // 0.2s of silence — ffmpeg input for convertToWav in the glm path.
-    const { spawnSync } = await import('node:child_process')
-    const r = spawnSync('ffmpeg', [
-      '-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.2',
-      '-c:a', 'pcm_s16le', silenceWav,
-    ], { encoding: 'utf8' })
-    if (r.status !== 0) throw new Error(`ffmpeg fixture failed: ${r.stderr}`)
+    await writeMinimalWav(silenceWav)
   })
   afterAll(async () => {
     await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
@@ -419,12 +435,7 @@ describe('transcribe — mimo path with mocked fetch', () => {
   beforeAll(async () => {
     await mkdir(TEST_ROOT, { recursive: true })
     silenceWav = join(TEST_ROOT, 'mimo-silence.wav')
-    const { spawnSync } = await import('node:child_process')
-    const r = spawnSync('ffmpeg', [
-      '-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.2',
-      '-c:a', 'pcm_s16le', silenceWav,
-    ], { encoding: 'utf8' })
-    if (r.status !== 0) throw new Error(`ffmpeg fixture failed: ${r.stderr}`)
+    await writeMinimalWav(silenceWav)
   })
   afterAll(async () => {
     await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})
@@ -477,12 +488,7 @@ describe('transcribe — stepfun path with mocked fetch', () => {
   beforeAll(async () => {
     await mkdir(TEST_ROOT, { recursive: true })
     silenceWav = join(TEST_ROOT, 'step-silence.wav')
-    const { spawnSync } = await import('node:child_process')
-    const r = spawnSync('ffmpeg', [
-      '-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.2',
-      '-c:a', 'pcm_s16le', silenceWav,
-    ], { encoding: 'utf8' })
-    if (r.status !== 0) throw new Error(`ffmpeg fixture failed: ${r.stderr}`)
+    await writeMinimalWav(silenceWav)
   })
   afterAll(async () => {
     await rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {})

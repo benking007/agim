@@ -3,14 +3,24 @@
  */
 
 import { spawn } from 'node:child_process'
+import { copyFile } from 'node:fs/promises'
 import { TranscribeError, type TranscribeProvider } from './transcribe-types.js'
 
-/** Convert any ffmpeg-readable file to 16 kHz mono PCM WAV. */
+/**
+ * Convert any ffmpeg-readable file to 16 kHz mono PCM WAV.
+ * Already-WAV inputs are copied through (no re-encode) so unit tests and
+ * hosts without ffmpeg can still exercise cloud STT HTTP paths.
+ */
 export async function convertToWav(
   inputPath: string,
   outputPath: string,
   provider: TranscribeProvider = 'whispercpp',
 ): Promise<void> {
+  if (inputPath.toLowerCase().endsWith('.wav')) {
+    if (inputPath !== outputPath) await copyFile(inputPath, outputPath)
+    return
+  }
+
   const args = [
     '-y', '-loglevel', 'error',
     '-i', inputPath,

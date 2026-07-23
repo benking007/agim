@@ -127,3 +127,55 @@ describe('web serial queue — approval-action bypass (v1.2.114)', () => {
     expect(d.events).toEqual(['chat:start', 'chat:end', 'chat:start', 'chat:end'])
   })
 })
+
+// Portal Stop — `{ type: 'stop' }` must abort while chat is in flight.
+// Same deadlock class as approval-action: stop used to sit behind
+// handleClientMessage until the agent finished, then replied
+// "当前没有正在执行的任务".
+describe('web serial queue — stop bypass', () => {
+  function makeDispatcher() {
+    const enqueue = createSerialQueue()
+    const events: string[] = []
+    let chatRunning = false
+    let abortedWhileChatRunning = false
+
+    async function handleChatMessage(): Promise<void> {
+      chatRunning = true
+      events.push('chat:start')
+      await new Promise((r) => setTimeout(r, 80))
+      events.push('chat:end')
+      chatRunning = false
+    }
+
+    function handleStop(): void {
+      abortedWhileChatRunning = chatRunning
+      events.push('stop')
+    }
+
+    function dispatch(msg: { type: string }): void {
+      if (msg.type === 'stop') {
+        handleStop()
+        return
+      }
+      enqueue(async () => { await handleChatMessage() })
+    }
+
+    return { dispatch, events, get abortedWhileChatRunning() { return abortedWhileChatRunning } }
+  }
+
+  it('stop runs while a slow chat handler is still in the queue', async () => {
+    const d = makeDispatcher()
+    d.dispatch({ type: 'message' })
+    await new Promise((r) => setTimeout(r, 1))
+    expect(d.events).toEqual(['chat:start'])
+
+    d.dispatch({ type: 'stop' })
+    await new Promise((r) => setTimeout(r, 1))
+    expect(d.events).toContain('stop')
+    expect(d.events).not.toContain('chat:end')
+    expect(d.abortedWhileChatRunning).toBe(true)
+
+    await new Promise((r) => setTimeout(r, 120))
+    expect(d.events).toContain('chat:end')
+  })
+})

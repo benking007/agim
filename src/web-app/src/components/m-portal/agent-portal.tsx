@@ -14,10 +14,9 @@ import {
   type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { LucideIcon } from 'lucide-react'
 import {
-  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Languages, Menu, MessageSquare,
-  Mic, Moon, Plus, Search, Sparkles, Square, Sun, User, X,
+  ArrowUp, Bot, ChevronDown, ChevronRight, Compass, Menu,
+  Mic, Moon, Search, Square, Sun, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -38,7 +37,7 @@ import { MarkdownView } from '@/components/chat/markdown-view'
 import { MessageActions } from '@/components/chat/message-actions'
 import { usePrefs, type Lang, type ThemeMode } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
-import { agentVisual, displayAgentName, type AgentVisual } from './agent-visuals'
+import { agentVisual, displayAgentName } from './agent-visuals'
 import {
   AttachmentStrip,
   PortalComposerPlus,
@@ -60,6 +59,14 @@ import {
   PortalSlashPopup,
 } from './portal-composer-menus'
 import { mentionLabel } from './portal-mention-chip'
+import {
+  collapseDemoMessages,
+  mediaDemoMessages,
+  petDemoMessages,
+  todoDemoMessages,
+  widthDemoMessages,
+} from './portal-demo-fixtures'
+import { PortalSidePanel } from './portal-side-panel'
 import { useBgjobs } from '@/hooks/use-bgjobs'
 import type { BgjobSummary } from '@/types/api'
 import { PortalPet, type PetAnnounce, type PetTaskItem } from './portal-pet'
@@ -118,174 +125,6 @@ function resolveTheme(mode: ThemeMode): Theme {
     return 'dark'
   }
   return 'light'
-}
-
-/** Local visual QA only (`/m/chat?demo=width`) — seeds a wide markdown
- *  table so AI reply column width can be screenshotted without a live agent. */
-function widthDemoMessages(): ChatMessage[] {
-  const now = Date.now()
-  return [
-    {
-      id: 'demo-width-user',
-      role: 'user',
-      content: '请帮我详细对比一下中证A50和中证A500这两个指数，我打算配置养老金，不知道选哪个更合适？',
-      timestamp: now - 60_000,
-    },
-    {
-      id: 'demo-width-assistant',
-      role: 'assistant',
-      agent: 'agim',
-      timestamp: now - 1_000,
-      activity: {
-        runId: 'demo-width-run',
-        status: 'success',
-        startedAt: now - 59_000,
-        finishedAt: now - 1_000,
-        durationMs: 58_000,
-        steps: [
-          { id: 't1', kind: 'tool', label: 'web_search', status: 'success', startedAt: now - 58_000, finishedAt: now - 50_000 },
-          { id: 't2', kind: 'tool', label: 'fetch', status: 'success', startedAt: now - 50_000, finishedAt: now - 40_000 },
-          { id: 't3', kind: 'tool', label: 'analyze', status: 'success', startedAt: now - 40_000, finishedAt: now - 30_000 },
-          { id: 't4', kind: 'tool', label: 'compare', status: 'success', startedAt: now - 30_000, finishedAt: now - 20_000 },
-          { id: 't5', kind: 'tool', label: 'summarize', status: 'success', startedAt: now - 20_000, finishedAt: now - 10_000 },
-          { id: 's1', kind: 'skill', label: 'market', status: 'success', startedAt: now - 45_000, finishedAt: now - 35_000 },
-          { id: 's2', kind: 'skill', label: 'pension', status: 'success', startedAt: now - 35_000, finishedAt: now - 25_000 },
-          { id: 's3', kind: 'skill', label: 'index', status: 'success', startedAt: now - 25_000, finishedAt: now - 15_000 },
-        ],
-      },
-      content: [
-        '## 中证 A50 vs 中证 A500（养老金配置向）',
-        '',
-        '| 维度 | 中证 A50 | 中证 A500 |',
-        '| --- | --- | --- |',
-        '| 样本空间 | 沪深市场超大盘龙头 | 剔除超大盘后的中大盘 |',
-        '| 行业结构 | 金融/消费权重更高 | 制造/科技更均衡 |',
-        '| 波动特征 | 相对更稳、弹性略低 | 弹性更大、回撤也更大 |',
-        '| 适合谁 | 求稳、核心底仓 | 增强收益、卫星仓 |',
-        '',
-        '简要建议：养老金核心仓可偏 A50，卫星仓再用 A500 做增强；具体比例按风险承受能力调整。',
-      ].join('\n'),
-    },
-  ]
-}
-
-/** Local visual QA (`/m/chat?demo=pet`) — running activity for the pet panel. */
-function petDemoMessages(): ChatMessage[] {
-  const now = Date.now()
-  return [
-    {
-      id: 'demo-pet-user',
-      role: 'user',
-      content: '帮我查一下今天大盘，并整理成三条要点。',
-      timestamp: now - 20_000,
-    },
-    {
-      id: 'demo-pet-assistant',
-      role: 'assistant',
-      agent: 'agim',
-      timestamp: now - 5_000,
-      activity: {
-        runId: 'demo-pet-run',
-        status: 'running',
-        startedAt: now - 18_000,
-        steps: [
-          { id: 't1', kind: 'tool', label: 'web_search', status: 'success', startedAt: now - 17_000, finishedAt: now - 12_000 },
-          { id: 't2', kind: 'tool', label: 'summarize', status: 'running', startedAt: now - 11_000 },
-        ],
-      },
-      content: '正在整理要点…',
-    },
-  ]
-}
-
-/** Local visual QA (`/m/chat?demo=todo`) — Cursor-style plan checklist card. */
-function todoDemoMessages(): ChatMessage[] {
-  const now = Date.now()
-  return [
-    {
-      id: 'demo-todo-user',
-      role: 'user',
-      content: '帮我评估一下科技板块仓位，给出结论和操作建议。',
-      timestamp: now - 40_000,
-    },
-    {
-      id: 'demo-todo-assistant',
-      role: 'assistant',
-      agent: 'agim',
-      timestamp: now - 5_000,
-      activity: {
-        runId: 'demo-todo-run',
-        status: 'running',
-        startedAt: now - 38_000,
-        steps: [
-          {
-            id: 't-quote',
-            kind: 'tool',
-            label: 'agim_exec',
-            status: 'running',
-            startedAt: now - 20_000,
-            preview: 'curl -s "http://localhost:8000/api/v1/tushare/hk/quote/daily"',
-          },
-          {
-            id: 'agim-plan-checklist',
-            kind: 'tool',
-            label: 'agim_todo_write',
-            status: 'success',
-            startedAt: now - 37_000,
-            finishedAt: now - 36_000,
-            todoItems: [
-              { content: '获取科技板块相关指数近期走势（科创50、恒生科技、纳斯达克、创业板50）', status: 'completed' },
-              { content: '获取科技子板块行情（半导体、软件、通信、动漫游戏）', status: 'completed' },
-              { content: '获取腾讯及港股科技龙头最新行情与估值', status: 'in_progress' },
-              { content: '获取全球科技宏观事件与快讯', status: 'pending' },
-              { content: '逐仓位评估持有逻辑是否成立，给出结论与操作建议', status: 'pending' },
-              { content: '输出完整分析报告并落盘', status: 'pending' },
-            ],
-          },
-        ],
-      },
-      content: '正在拉取腾讯及港股科技龙头行情…',
-    },
-  ]
-}
-
-/** Local visual QA (`/m/chat?demo=media`) — 8 image thumbs (5+3 wrap) + @file. */
-function mediaDemoMessages(imagePaths: string[], filePath: string, fileName: string): ChatMessage[] {
-  const now = Date.now()
-  const markers = [
-    ...imagePaths.map((p) => `[图片附件：${p}]`),
-    `[文件附件：${filePath} (${fileName}, 12 B)]`,
-  ]
-  return [
-    {
-      id: 'demo-media-user',
-      role: 'user',
-      content: [...markers, 'see the photo'].join('\n'),
-      timestamp: now - 10_000,
-    },
-  ]
-}
-
-/** Local visual QA (`/m/chat?demo=collapse`) — long user body for fold/mask. */
-const COLLAPSE_DEMO_MESSAGES: ChatMessage[] = [
-  {
-    id: 'demo-collapse-user',
-    role: 'user',
-    content: [
-      '1、老问题，这个输入款高度太高了',
-      '2、/memo 应该自动填充 /memo here',
-      '3、输入 / 或 @ 后，如果用的是键盘上下键选择，无法选择列表的选项。',
-      '4、左侧的加号菜单，也加上 models、skills、remember',
-      '5、消息体过长时需要默认折叠，点击后再展开',
-      '6、选择文件夹/文件/skill 后，backspace 要能删掉 chip',
-      '7、小精灵位置往上调，把脚挡住就行',
-    ].join('\n'),
-    timestamp: 0,
-  },
-]
-
-function collapseDemoMessages(): ChatMessage[] {
-  return COLLAPSE_DEMO_MESSAGES
 }
 
 export function AgentPortal(): JSX.Element {
@@ -1718,145 +1557,3 @@ export function AgentPortal(): JSX.Element {
   )
 }
 
-function PortalSidePanel(props: {
-  dark: boolean
-  agentId: string
-  visual: AgentVisual
-  AgentIcon: LucideIcon
-  activeTab: Tab
-  status: string
-  lang: Lang
-  showClose: boolean
-  onClose: () => void
-  onChat: () => void
-  onExplore: () => void
-  onNew: () => void
-  onToggleLang: () => void
-}): JSX.Element {
-  const { t } = useTranslation()
-  const {
-    dark, agentId, visual, AgentIcon, activeTab, status, lang, showClose,
-    onClose, onChat, onExplore, onNew, onToggleLang,
-  } = props
-  return (
-    <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-teal-500">
-            <Sparkles className="h-5 w-5" />
-            <span className="text-sm">{t('chat.portal.brand')}</span>
-          </div>
-          {showClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
-          <div className={cn(
-            'flex items-center gap-3 rounded-xl border p-3',
-            dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
-          )}>
-            <div className={cn('rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
-              <AgentIcon className="h-4 w-4" />
-            </div>
-            <div className="truncate">
-              <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
-                {displayAgentName(agentId)}
-              </h4>
-              <p className="truncate text-[10px] text-zinc-400">{visual.tagline}</p>
-            </div>
-          </div>
-        </div>
-
-        <nav className="space-y-1">
-          <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
-          <SideNavButton
-            active={activeTab === 'chat'}
-            dark={dark}
-            icon={<MessageSquare className="h-4 w-4" />}
-            label={t('chat.portal.chat')}
-            onClick={onChat}
-          />
-          <SideNavButton
-            active={activeTab === 'explore'}
-            dark={dark}
-            icon={<Compass className="h-4 w-4" />}
-            label={t('chat.portal.explore')}
-            onClick={onExplore}
-          />
-          <SideNavButton
-            active={false}
-            dark={dark}
-            icon={<Plus className="h-4 w-4" />}
-            label={t('chat.portal.newConversation')}
-            onClick={onNew}
-          />
-        </nav>
-      </div>
-
-      <div className="space-y-3">
-        <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
-          <button
-            type="button"
-            onClick={onToggleLang}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-              dark ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100',
-            )}
-            aria-label={t('chat.portal.language')}
-          >
-            <Languages className="h-3.5 w-3.5" />
-            {lang === 'zh' ? t('lang.zh') : t('lang.en')}
-          </button>
-        </div>
-        <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-          <div className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-full',
-            dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
-          )}>
-            <User className="h-4 w-4" />
-          </div>
-          <div>
-            <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
-              {status === 'open' ? t('chat.portal.connected') : status}
-            </p>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
-function SideNavButton(props: {
-  active: boolean
-  dark: boolean
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-}): JSX.Element {
-  const { active, dark, icon, label, onClick } = props
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-xl p-2.5 text-xs font-semibold transition-all',
-        active
-          ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
-          : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
-      )}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  )
-}

@@ -42,6 +42,7 @@ import {
   resolveTodoItems,
   type TodoItem,
 } from '../../../core/llm/todo-items.js'
+import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
@@ -1520,6 +1521,20 @@ export class NativeAgentAdapter implements AgentAdapter {
     } else if (stopReason) {
       emitOutcome({ status: 'partial', providerFailure: false, error: stopReason, stopReason })
     } else {
+      // Models often leave the last Plan item in_progress; close it so the
+      // chat checklist matches a finished turn (store + activity step).
+      const reconciled = reconcileTodoOnSuccessfulTurn(todoThreadKey)
+      if (reconciled) {
+        emitToolActivity({
+          id: PLAN_CHECKLIST_STEP_ID,
+          label: 'agim_todo_write',
+          status: 'success',
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+          preview: renderMarkdownChecklist(reconciled),
+          todoItems: reconciled,
+        })
+      }
       emitOutcome({ status: 'success', providerFailure: false })
     }
     yield out

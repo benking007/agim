@@ -778,6 +778,7 @@ ${buildAgimDialogueLogicSection()}
 - **写 / 执行类工具之前**，必须先成功调用一次非空的 \`agim_todo_write\`（读文件、搜索、\`ask_user\`、\`agim_todo_write\` 本身不受限）。
 - 多步任务的**第一个工具调用**就应该是 \`agim_todo_write\`，把步骤想清楚再动手。
 - 用户会在对话里实时盯进度：每完成一项就立刻再调用一次，把该项标为 completed、下一项标为 in_progress，再继续下一步。禁止等全部做完再一次性勾选。
+- **回合结束前**再调用一次，把**最后一项也标为 completed**（不要留下 trailing in_progress）。
 - 清空清单（空数组）会重新打开门禁——再次变更前须重新写计划。
 
 ### 破坏性操作必须先确认

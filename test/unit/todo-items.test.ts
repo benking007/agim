@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  completeStickyInProgressItems,
   extractTodoItemsFromInput,
   isTodoActivityLabel,
   parseTodoItemsFromMarkdown,
@@ -43,5 +44,30 @@ describe('todo-items helpers', () => {
       input: { items: [{ content: 'from-input', status: 'pending' }] },
       resultText: '1. ☑ from-result',
     })).toEqual([{ content: 'from-input', status: 'pending' }])
+  })
+
+  it('completeStickyInProgressItems closes a trailing in_progress row', () => {
+    const items = [
+      { content: 'a', status: 'completed' as const },
+      { content: 'b', status: 'completed' as const },
+      { content: 'c', status: 'in_progress' as const },
+    ]
+    expect(completeStickyInProgressItems(items)).toEqual([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'completed' },
+      { content: 'c', status: 'completed' },
+    ])
+  })
+
+  it('completeStickyInProgressItems leaves intentional pending work alone', () => {
+    expect(completeStickyInProgressItems([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'in_progress' },
+      { content: 'c', status: 'pending' },
+    ])).toBeNull()
+    expect(completeStickyInProgressItems([
+      { content: 'a', status: 'in_progress' },
+      { content: 'b', status: 'in_progress' },
+    ])).toBeNull()
   })
 })

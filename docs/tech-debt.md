@@ -6,6 +6,10 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 
 | Item | Action |
 |------|--------|
+| Default `AGIM_AUTO_APPROVE` off + open-IM suppress | CR 2026-07-21 P0b → security harden (#218/#219) |
+| Persist WS `threadOwners` across restart | CR 2026-07-21 P1b → `web-thread-owners.ts` |
+| Shrink `agent-loop.ts` god file | Split to `agent-loop-{types,config,stream,stuck,helpers,run}` + thin facade |
+| Decompose `server.ts` / `cli.ts` / approval / Portal | Domain modules + `check:file-budget` |
 | SPA Native Agent Save silently dropping policy/heartbeat keys | Allowlist + SPA PUT key pin |
 | Misclassified critic / semantic-stuck / compaction envs | Reclassified + allowlisted |
 | `auto-compact.ts`, `SUBTASK_AGENT_SESSION`, `runAgentLoop` barrel | Removed |
@@ -42,17 +46,18 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 |------|-------|
 | Drop `native` / `native_*` / `workspaces` read aliases | After compat window |
 | Rename SPA `/api/workspaces` → `/api/tenants` | Optional; keep redirect |
-| Shrink `agent-loop.ts` | Extract shared helpers; delete retired loop body |
+| Further peel `approval-bus.ts` (~1070, still thick facade) | Pending lifecycle / policy pipeline / socket RPC |
+| Soft file-budget offenders (>800 lines) | Peel when touching; adapters OK |
 | Full activity-lease before hard-delete | Quarantine uses sessionLocks wait; richer lease is milestone B |
 | Agim Agent metadata index | After retention stable (milestone H) |
 | Unify TUI `/new` id with sessionManager | TUI still mints independent ids |
 | LLM/MCP URL SSRF guard (reuse ACP `url-guard`) | CR 2026-07-21 P1a |
-| Persist WS `threadOwners` across restart | CR 2026-07-21 P1b |
 | MCP GET redact auth headers | CR 2026-07-21 P2a |
 | Atomic / locked `tokens.json` writes | CR 2026-07-21 P2b |
 | Mobile QR: short-TTL exchange code (no raw token in query) | CR 2026-07-21 P2c |
 | SPA consume `GET /api/llm/presets` (drop mirror drift) | CR 2026-07-21 M1 |
 | Atomic LLM group delete API | CR 2026-07-21 M2 |
+| Default FS non-restrict product stance | CR 2026-07-21 P1c — keep opt-in `AGIM_NATIVE_FS_RESTRICT` |
 
 ## Docs debt (living)
 

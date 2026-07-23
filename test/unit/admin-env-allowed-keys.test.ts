@@ -1,14 +1,13 @@
 // v1.2.127 — regression pins for the ENV_EDITABLE_KEYS allowlist in
-// src/web/server.ts. The PUT /api/env handler refuses any key that
+// src/web/env-api.ts. The PUT /api/env handler refuses any key that
 // isn't listed here, so a typo in this list silently breaks the
 // admin UI's Save button without any compile-time signal. This test
 // is the only thing that catches that — it parses the source and
 // asserts every key the SPA tries to write is present.
 //
-// We don't import server.ts directly (its boot-time side effects
-// touch sqlite + admin allowlist seeding). Reading the source as
-// text and matching the array literal is both faster and avoids
-// having to teardown those side effects.
+// We don't import env-api.ts as a module (keeps the pin free of
+// transitive web/auth boot). Reading the source as text and matching
+// the array literal is both faster and side-effect free.
 
 import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -16,15 +15,16 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SERVER_TS = join(HERE, '..', '..', 'src', 'web', 'server.ts')
+const ENV_API_TS = join(HERE, '..', '..', 'src', 'web', 'env-api.ts')
 const NATIVE_AGENT_TSX = join(
   HERE, '..', '..', 'src', 'web-app', 'src', 'routes', 'settings', 'native-agent.tsx',
 )
 
 function readAllowedKeys(): Set<string> {
-  const src = readFileSync(SERVER_TS, 'utf8')
-  const match = src.match(/const ENV_EDITABLE_KEYS\s*=\s*\[([\s\S]*?)\]\s*as const/)
-  if (!match) throw new Error('ENV_EDITABLE_KEYS array literal not found in server.ts')
+  const src = readFileSync(ENV_API_TS, 'utf8')
+  // Prefer `as const`; fall back to bare `]` if the export drops the assertion.
+  const match = src.match(/export const ENV_EDITABLE_KEYS\s*=\s*\[([\s\S]*?)\](?:\s*as const)?/)
+  if (!match) throw new Error('ENV_EDITABLE_KEYS array literal not found in env-api.ts')
   const keys = new Set<string>()
   // Walk line by line; a real entry is a line whose first non-space
   // char is a quote. This skips //-comments AND skips comment-only

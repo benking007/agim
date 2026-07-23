@@ -804,9 +804,9 @@ export function AgentPortal(): JSX.Element {
       toast.error(
         /Permission|NotAllowed|denied/i.test(msg)
           ? t('chat.portal.voiceDenied', { defaultValue: '需要麦克风权限才能语音输入' })
-          : /Invalid constraint|Overconstrained/i.test(msg)
+          : /Invalid constraint|Overconstrained|constraint/i.test(msg)
             ? t('chat.portal.voiceConstraint', {
-              defaultValue: '麦克风约束不被当前浏览器支持。请换 Chrome/Edge，或检查系统麦克风设置',
+              defaultValue: '无法打开麦克风（未弹出权限框）。请：① 硬刷新页面或重启 Agim；② 系统设置 → 隐私 → 麦克风，允许浏览器/Agim；③ 地址栏站点权限里麦克风选「允许」',
             })
             : msg,
       )

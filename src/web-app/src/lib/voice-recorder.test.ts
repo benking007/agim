@@ -69,6 +69,8 @@ describe('getUserMediaAudio constraint fallback', () => {
     expect(got).toBe(stream)
     expect(calls.length).toBeGreaterThanOrEqual(2)
     expect(calls[0]).toMatchObject({ audio: { channelCount: 1 } })
+    // Never force video:false — some WKWebViews reject it without a mic prompt.
+    expect(calls.every((c) => !('video' in (c as object)))).toBe(true)
   })
 
   it('falls through to audio:true when all advanced constraints fail', async () => {
@@ -77,14 +79,14 @@ describe('getUserMediaAudio constraint fallback', () => {
     const getUserMedia = vi.fn(async (c: MediaStreamConstraints) => {
       n += 1
       if (c.audio !== true) {
-        throw Object.assign(new Error('Invalid constraint'), { name: 'OverconstrainedError' })
+        throw Object.assign(new Error('Invalid constraint'), { name: 'TypeError' })
       }
       return stream
     })
     const got = await getUserMediaAudio(getUserMedia)
     expect(got).toBe(stream)
     expect(n).toBe(4)
-    expect(getUserMedia.mock.calls.at(-1)?.[0]).toEqual({ audio: true, video: false })
+    expect(getUserMedia.mock.calls.at(-1)?.[0]).toEqual({ audio: true })
   })
 
   it('does not retry permission denials', async () => {

@@ -66,22 +66,34 @@ export function isVoiceRecordingSupported(): boolean {
 
 /**
  * Ideal constraints first; some Safari / WKWebView / Firefox builds reject
- * `channelCount` / `noiseSuppression` with DOMException "Invalid constraint".
- * Fall back to progressively looser audio constraints.
+ * `channelCount` / `noiseSuppression` / even `video: false` with
+ * DOMException "Invalid constraint" — and never show the mic permission
+ * prompt. Fall back to progressively looser constraints, ending at bare
+ * `{ audio: true }` (no video key).
  */
+export const VOICE_MEDIA_CONSTRAINT_CANDIDATES: MediaStreamConstraints[] = [
+  {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      channelCount: 1,
+    },
+  },
+  {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+    },
+  },
+  { audio: { echoCancellation: true } },
+  { audio: true },
+]
+
+/** @deprecated use VOICE_MEDIA_CONSTRAINT_CANDIDATES */
 export const VOICE_AUDIO_CONSTRAINT_CANDIDATES: MediaTrackConstraints[] = [
-  {
-    echoCancellation: true,
-    noiseSuppression: true,
-    channelCount: 1,
-  },
-  {
-    echoCancellation: true,
-    noiseSuppression: true,
-  },
-  {
-    echoCancellation: true,
-  },
+  { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+  { echoCancellation: true, noiseSuppression: true },
+  { echoCancellation: true },
   {},
 ]
 
@@ -95,18 +107,21 @@ function isInvalidConstraintError(err: unknown): boolean {
     || name === 'ConstraintNotSatisfiedError'
     || /invalid constraint/i.test(message)
     || /overconstrained/i.test(message)
+    || /not a valid.*constraint/i.test(message)
+    // Chromium often throws TypeError with this message (no permission prompt).
+    || (name === 'TypeError' && /constraint/i.test(message))
   )
 }
 
 /** Exported for unit tests — tries constraint candidates until one works. */
 export async function getUserMediaAudio(
   getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream>,
-  candidates: MediaTrackConstraints[] = VOICE_AUDIO_CONSTRAINT_CANDIDATES,
+  candidates: MediaStreamConstraints[] = VOICE_MEDIA_CONSTRAINT_CANDIDATES,
 ): Promise<MediaStream> {
   let lastErr: unknown
-  for (const audio of candidates) {
+  for (const constraints of candidates) {
     try {
-      return await getUserMedia({ audio: Object.keys(audio).length ? audio : true, video: false })
+      return await getUserMedia(constraints)
     } catch (err) {
       lastErr = err
       if (!isInvalidConstraintError(err)) throw err

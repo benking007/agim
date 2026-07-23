@@ -9,7 +9,10 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { WorkbenchFrame } from '@/components/shell/workbench-frame'
+import { AdminRequiredBanner } from '@/components/common/admin-required-banner'
 import { Badge } from '@/components/ui/badge'
+import { useConfig } from '@/hooks/use-settings'
+import { isAdminRequiredError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
 
 interface SubTab {
@@ -77,6 +80,12 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
 
 export default function SettingsLayout(): JSX.Element {
   const { t } = useTranslation('settings')
+  // Shared with child routes via react-query. When the session is a
+  // Mobile QR / role=user token, GET /api/config returns 403 and IM /
+  // Agents pages used to look blank — surface the gate once at the shell.
+  const cfgQuery = useConfig()
+  const needsAdmin = isAdminRequiredError(cfgQuery.error)
+
   return (
     <WorkbenchFrame contentClassName="space-y-4">
       <div className="grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
@@ -103,7 +112,8 @@ export default function SettingsLayout(): JSX.Element {
           </nav>
         </aside>
 
-        <section className="min-w-0 pb-safe">
+        <section className="min-w-0 space-y-4 pb-safe">
+          {needsAdmin ? <AdminRequiredBanner /> : null}
           <Outlet />
         </section>
       </div>

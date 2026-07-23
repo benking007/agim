@@ -248,35 +248,38 @@ export default function SettingsMessengersRoute(): JSX.Element {
         />
       ) : null}
 
-      {/* Save bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        {isDirty ? (
-          <>
-            <Badge variant="info">{t('messengers.dirtyHint')}</Badge>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={onDiscard}
-              disabled={updateCfg.isPending}
-            >
-              <X className="h-4 w-4" />
-              {t('messengers.discardAll')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void onSave()}
-              disabled={updateCfg.isPending}
-            >
-              {updateCfg.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {updateCfg.isPending ? t('messengers.saving') : t('messengers.saveAll')}
-            </Button>
-          </>
-        ) : (
-          <span className="text-xs text-text-muted">{t('env.noChanges')}</span>
-        )}
-      </div>
+      {/* Save bar — hide the misleading "no changes" label when config
+          failed to load (e.g. AUTH_ADMIN_REQUIRED); the shell banner explains. */}
+      {cfg ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {isDirty ? (
+            <>
+              <Badge variant="info">{t('messengers.dirtyHint')}</Badge>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onDiscard}
+                disabled={updateCfg.isPending}
+              >
+                <X className="h-4 w-4" />
+                {t('messengers.discardAll')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void onSave()}
+                disabled={updateCfg.isPending}
+              >
+                {updateCfg.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {updateCfg.isPending ? t('messengers.saving') : t('messengers.saveAll')}
+              </Button>
+            </>
+          ) : (
+            <span className="text-xs text-text-muted">{t('env.noChanges')}</span>
+          )}
+        </div>
+      ) : null}
 
       {needsApply ? (
         <ApplyChangesCard

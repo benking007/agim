@@ -1,6 +1,10 @@
 {
   "pageTitle": "设置",
   "subtitle": "运维配置：环境变量与服务生命周期。",
+  "adminGate": {
+    "hint": "手机扫码登录的 token 是 role=user，读不到 IM / Agents 配置。请用 `agim token bootstrap` 或 `agim token create` 生成管理员 token 后重新登录。",
+    "relogin": "使用管理员 token 登录"
+  },
   "navigation": {
     "recommended": "优先",
     "groups": {

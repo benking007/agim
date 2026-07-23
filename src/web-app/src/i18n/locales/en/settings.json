@@ -1,6 +1,10 @@
 {
   "pageTitle": "Settings",
   "subtitle": "Operational configuration: environment variables and service lifecycle.",
+  "adminGate": {
+    "hint": "Mobile QR tokens are role=user and cannot load IM / Agents settings. Use `agim token bootstrap` or `agim token create` for an admin token, then sign in again.",
+    "relogin": "Sign in as admin"
+  },
   "navigation": {
     "recommended": "first",
     "groups": {

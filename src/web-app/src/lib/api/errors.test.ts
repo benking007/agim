@@ -1,17 +1,18 @@
 /**
- * describeError + isAuthError — verifies:
+ * describeError + isAuthError + isAdminRequiredError — verifies:
  *   * ApiClientError with a known code → routes through t('errors:X')
  *   * ApiClientError with an unknown code → falls back to UNKNOWN +
  *     surfaces the original message via {{detail}}
  *   * Generic Error → UNKNOWN code, name as detail
  *   * Non-Error throws (strings, objects) → UNKNOWN code, String(value)
- *   * isAuthError true for AUTH_INVALID / AUTH_ADMIN_REQUIRED or HTTP 401
- *   * isAuthError false for generic codes / non-Error values
+ *   * isAuthError true for AUTH_INVALID or HTTP 401
+ *   * isAuthError false for AUTH_ADMIN_REQUIRED / generic codes
+ *   * isAdminRequiredError true for AUTH_ADMIN_REQUIRED / legacy message
  */
 
 import { describe, expect, it } from 'vitest'
 import { ApiClientError } from './client'
-import { describeError, isAuthError } from './errors'
+import { describeError, isAdminRequiredError, isAuthError } from './errors'
 
 /** Tiny t() stand-in for the tests. Mirrors i18next's signature
  *  enough to exercise the defaultValue fallback path. Returns the
@@ -107,5 +108,25 @@ describe('isAuthError', () => {
   it('false for non-Error values', () => {
     expect(isAuthError('string')).toBe(false)
     expect(isAuthError(null)).toBe(false)
+  })
+})
+
+describe('isAdminRequiredError', () => {
+  it('true for AUTH_ADMIN_REQUIRED code', () => {
+    expect(
+      isAdminRequiredError(new ApiClientError({ message: 'admin role required', code: 'AUTH_ADMIN_REQUIRED', status: 403 })),
+    ).toBe(true)
+  })
+
+  it('true for legacy 403 message without code', () => {
+    expect(
+      isAdminRequiredError(new ApiClientError({ message: 'admin role required', code: 'FORBIDDEN', status: 403 })),
+    ).toBe(true)
+  })
+
+  it('false for other 403s', () => {
+    expect(
+      isAdminRequiredError(new ApiClientError({ message: 'nope', code: 'FORBIDDEN', status: 403 })),
+    ).toBe(false)
   })
 })

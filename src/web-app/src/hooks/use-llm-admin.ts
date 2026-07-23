@@ -89,15 +89,46 @@ export interface LlmPingResponse {
   error?: string
 }
 
+export type LlmPresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'mimo' | 'custom'
+
+/** Wire shape from GET /api/llm/presets (backend SSOT). */
+export interface LlmPresetRow {
+  key: LlmPresetKey
+  label?: string
+  provider: 'openai-compat' | 'anthropic'
+  baseUrl: string
+  model: string
+  cheapModel?: string
+  models?: string[]
+  baseName: string
+  apiKeyDoc?: string
+  defaultThinking?: 'off' | 'high' | 'max'
+}
+
+export interface LlmPresetsResponse {
+  defaultPreset: LlmPresetKey
+  presets: LlmPresetRow[]
+}
+
 const llmKeys = {
   all:  ['llm'] as const,
   list: ['llm', 'list'] as const,
+  presets: ['llm', 'presets'] as const,
 }
 
 export function useLlmList() {
   return useQuery<LlmListResponse>({
     queryKey: llmKeys.list,
     queryFn: () => client.get<LlmListResponse>('/api/llm'),
+  })
+}
+
+/** CR M1 — runtime SSOT for vendor presets (fallback handled by callers). */
+export function useLlmPresets() {
+  return useQuery<LlmPresetsResponse>({
+    queryKey: llmKeys.presets,
+    queryFn: () => client.get<LlmPresetsResponse>('/api/llm/presets'),
+    staleTime: 60_000,
   })
 }
 
@@ -121,6 +152,29 @@ export function useLlmRemoveBackend() {
   const qc = useQueryClient()
   return useMutation<{ removedRoles: number }, Error, string>({
     mutationFn: (name) => client.delete(`/api/llm/backends/${encodeURIComponent(name)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
+  })
+}
+
+export type LlmRemoveGroupBody =
+  | { label: string; names?: undefined }
+  | { names: string[]; label?: undefined }
+
+/** CR M2 — one-shot atomic group / multi delete. */
+export function useLlmRemoveBackendGroup() {
+  const qc = useQueryClient()
+  return useMutation<
+    { removed: string[]; removedRoles: number },
+    Error,
+    LlmRemoveGroupBody
+  >({
+    mutationFn: (body) => {
+      if ('label' in body && body.label) {
+        return client.delete(`/api/llm/backends?label=${encodeURIComponent(body.label)}`)
+      }
+      const names = body.names ?? []
+      return client.delete(`/api/llm/backends?names=${encodeURIComponent(names.join(','))}`)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
   })
 }

@@ -1,6 +1,6 @@
 # 代码审查报告（2026-07-21）
 
-> 状态：**本轮 CR 主清单已收口**。H1–H8 见 §4；P0b/P1b 见 [#219](https://github.com/benking007/agim/pull/219)；P1a / P2a–P2c / M1 / M2 见 [#220](https://github.com/benking007/agim/pull/220)。残留：P1c（FS 非 restrict 产品默认）、L1、runtime `redirect:manual` → `tech-debt.md`。  
+> 状态：**本轮 CR 主清单已收口**。H1–H8 见 §4；P0b/P1b 见 [#219](https://github.com/benking007/agim/pull/219)（已合）；P1a / P2a–P2c / M1 / M2 见 [#220](https://github.com/benking007/agim/pull/220)。残留：P1c（FS 非 restrict 产品默认）、L1、runtime `redirect:manual` → `tech-debt.md`。  
 > 入口：`docs/README.md` · 规范：`docs/coding-standards.md` · 安全基线：`docs/security-hardening.md`
 
 审查范围：全仓高风险面（鉴权 / 密钥 / LLM / Agent 执行 / WebSocket / 发布），并复核近日 LLM 预设与自定义高级参数改动。

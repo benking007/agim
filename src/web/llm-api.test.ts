@@ -273,6 +273,53 @@ describe('handleLlmApi — remove backend', () => {
   })
 })
 
+describe('handleLlmApi — atomic group remove', () => {
+  it('DELETE ?label= removes every backend with that label in one shot', async () => {
+    const qe = makeRes()
+    await handleLlmApi(makeReq('POST', { apiKey: 'sk-test', preset: 'deepseek' }),
+      qe as unknown as import('node:http').ServerResponse, url('/api/llm/quick-enable'))
+    expect(qe.statusCode).toBe(201)
+
+    const before = makeRes()
+    await handleLlmApi(makeReq('GET'), before as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    expect(JSON.parse(before.body).backends.length).toBeGreaterThanOrEqual(2)
+
+    const res = makeRes()
+    await handleLlmApi(makeReq('DELETE'), res as unknown as import('node:http').ServerResponse,
+      url('/api/llm/backends?label=deepseek'))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as { removed: string[]; removedRoles: number }
+    expect(body.removed.length).toBeGreaterThanOrEqual(2)
+    expect(body.removedRoles).toBeGreaterThanOrEqual(1)
+
+    const after = makeRes()
+    await handleLlmApi(makeReq('GET'), after as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    expect(JSON.parse(after.body).backends).toEqual([])
+  })
+
+  it('DELETE ?names= removes only the listed backends', async () => {
+    await handleLlmApi(makeReq('POST', {
+      name: 'a1', provider: 'openai-compat', baseUrl: 'https://example.com/v1', model: 'm', apiKey: 'k',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    await handleLlmApi(makeReq('POST', {
+      name: 'a2', provider: 'openai-compat', baseUrl: 'https://example.com/v1', model: 'm2', apiKey: 'k',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+
+    const res = makeRes()
+    await handleLlmApi(makeReq('DELETE'), res as unknown as import('node:http').ServerResponse,
+      url('/api/llm/backends?names=a1,a2'))
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body).removed.sort()).toEqual(['a1', 'a2'])
+  })
+
+  it('rejects missing label/names', async () => {
+    const res = makeRes()
+    await handleLlmApi(makeReq('DELETE'), res as unknown as import('node:http').ServerResponse,
+      url('/api/llm/backends'))
+    expect(res.statusCode).toBe(400)
+  })
+})
+
 describe('handleLlmApi — roles', () => {
   it('rejects role pointing at unknown backend', async () => {
     const res = makeRes()

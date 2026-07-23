@@ -15,7 +15,7 @@
 **SSOT（勿维护第二份表）：**
 
 - Agent 清单 → `docs/agents.md`
-- LLM 内置预设 → `src/core/llm/presets.ts`（SPA `lib/llm-presets.ts` 须注释对齐；优先消费 `/api/llm/presets`）
+- LLM 内置预设 → `src/core/llm/presets.ts`（SPA 运行时消费 `GET /api/llm/presets`；`lib/llm-presets.ts` 仅作 first-paint fallback，由 `llm-presets-drift` 测试对齐）
 - 发版 → `docs/release.md` + `.github/workflows/`
 
 ## 2. TypeScript / Node

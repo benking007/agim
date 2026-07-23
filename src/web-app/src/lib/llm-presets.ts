@@ -1,27 +1,21 @@
 /**
- * Web mirror of `src/core/llm/presets.ts`.
+ * Offline / first-paint fallback for LLM vendor presets.
  *
- * Keep keys / defaults aligned with the backend — Web can also fetch
- * `/api/llm/presets` at runtime; these constants power first paint and
- * offline form defaults (DeepSeek is the Agim Agent recommended preset).
+ * Runtime SSOT is `GET /api/llm/presets` (see `useLlmPresets`). Keep this
+ * mirror aligned with `src/core/llm/presets.ts` — `test/unit/llm-presets-drift.test.ts`
+ * fails the build when keys / baseUrl / models diverge.
  */
 
-export type LlmPresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'mimo' | 'custom'
+import type { LlmPresetKey, LlmPresetRow } from '@/hooks/use-llm-admin'
 
-export interface LlmPresetDef {
-  key: LlmPresetKey
-  provider: 'openai-compat' | 'anthropic'
-  baseUrl: string
-  model: string
-  cheapModel?: string
-  models?: string[]
-  baseName: string
-  defaultThinking?: 'off' | 'high' | 'max'
-}
+export type { LlmPresetKey }
+export type LlmPresetDef = LlmPresetRow
 
+/** @deprecated Prefer runtime presets from useLlmPresets(); kept as FALLBACK. */
 export const LLM_PRESETS: LlmPresetDef[] = [
   {
     key: 'deepseek',
+    label: 'DeepSeek (recommended)',
     provider: 'openai-compat',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
@@ -32,6 +26,7 @@ export const LLM_PRESETS: LlmPresetDef[] = [
   },
   {
     key: 'moonshot',
+    label: 'Kimi',
     provider: 'openai-compat',
     baseUrl: 'https://api.moonshot.cn/v1',
     model: 'kimi-k3',
@@ -42,6 +37,7 @@ export const LLM_PRESETS: LlmPresetDef[] = [
   },
   {
     key: 'zhipu',
+    label: 'GLM',
     provider: 'openai-compat',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-5.2',
@@ -52,6 +48,7 @@ export const LLM_PRESETS: LlmPresetDef[] = [
   },
   {
     key: 'mimo',
+    label: 'MiMo',
     provider: 'openai-compat',
     baseUrl: 'https://api.xiaomimimo.com/v1',
     model: 'mimo-v2.5-pro',
@@ -62,6 +59,7 @@ export const LLM_PRESETS: LlmPresetDef[] = [
   },
   {
     key: 'custom',
+    label: 'Custom / other openai-compatible',
     provider: 'openai-compat',
     baseUrl: '',
     model: '',
@@ -94,7 +92,7 @@ export function suggestLlmBackendName(base: string, existing: string[]): string 
  * Mirror of server `builtinPresetKeyForBaseUrl` (src/core/llm/presets.ts).
  * Keep host-family rules in sync when adding vendors.
  */
-function builtinPresetKeyForBaseUrl(baseUrl: string | undefined | null): Exclude<LlmPresetKey, 'custom'> | null {
+export function builtinPresetKeyForBaseUrl(baseUrl: string | undefined | null): Exclude<LlmPresetKey, 'custom'> | null {
   if (!baseUrl?.trim()) return null
   let host = ''
   try {
@@ -131,9 +129,10 @@ function builtinPresetKeyForBaseUrl(baseUrl: string | undefined | null): Exclude
  */
 export function installedBuiltinPresetKeys(
   backends: Array<{ label?: string; baseUrl?: string }>,
+  catalog: readonly LlmPresetDef[] = LLM_PRESETS,
 ): Set<LlmPresetKey> {
   const installed = new Set<LlmPresetKey>()
-  const builtin = LLM_PRESETS.filter((p) => p.key !== 'custom')
+  const builtin = catalog.filter((p) => p.key !== 'custom')
   for (const b of backends) {
     const label = b.label?.trim().toLowerCase() as LlmPresetKey | undefined
     if (label && label !== 'custom' && builtin.some((p) => p.key === label)) {
@@ -147,7 +146,22 @@ export function installedBuiltinPresetKeys(
 }
 
 /** First preset that is still available (custom always ok). */
-export function firstAvailablePreset(installed: Set<LlmPresetKey>): LlmPresetKey {
-  const next = LLM_PRESETS.find((p) => p.key === 'custom' || !installed.has(p.key))
+export function firstAvailablePreset(
+  installed: Set<LlmPresetKey>,
+  catalog: readonly LlmPresetDef[] = LLM_PRESETS,
+): LlmPresetKey {
+  const next = catalog.find((p) => p.key === 'custom' || !installed.has(p.key))
   return next?.key ?? 'custom'
+}
+
+/** Resolve runtime catalog or fall back to the offline mirror. */
+export function resolvePresetCatalog(
+  remote: { presets?: LlmPresetRow[]; defaultPreset?: string } | undefined,
+): { presets: LlmPresetDef[]; defaultPreset: LlmPresetDef } {
+  const presets = remote?.presets?.length
+    ? remote.presets.map((p) => ({ ...p, key: p.key as LlmPresetKey }))
+    : LLM_PRESETS
+  const defaultKey = (remote?.defaultPreset as LlmPresetKey | undefined) ?? DEFAULT_LLM_PRESET.key
+  const defaultPreset = presets.find((p) => p.key === defaultKey) ?? presets[0] ?? DEFAULT_LLM_PRESET
+  return { presets, defaultPreset }
 }

@@ -197,7 +197,10 @@ export function getTodoTools(): ToolDef[] {
       name: 'agim_todo_write',
       description:
         'Overwrite this conversation\'s plan checklist with a fresh array of items. ' +
-        'Use this at the start of any multi-step task (≥ 3 steps) to externalise the plan. ' +
+        'REQUIRED before mutating tools when AGIM_TODO_GATE is on (default): call this with a '
+        + 'non-empty list before agim_exec / agim_write_file / edit / memo writes / push / '
+        + 'call_agent / complete_goal / etc. Read tools and ask_user stay allowed without a plan. '
+        + 'Use this at the start of any multi-step task (≥ 3 steps) to externalise the plan. ' +
         'The user watches this checklist live in chat (like a progress board) — so you MUST ' +
         'call it again immediately after finishing each item to mark that item completed and ' +
         'set the next one to in_progress, BEFORE starting the next tool work. ' +

@@ -4,12 +4,16 @@
 import { JsonlSessionRepo } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import { fauxAssistantMessage, fauxToolCall, type Model, registerFauxProvider } from '@earendil-works/pi-ai'
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
+import {
+  buildTodoDispatcher,
+  clearTodoForThread,
+} from '../../../core/llm/todo-dispatcher.js'
 import { composeDeliveredAssistantText, type NativeModelBinding, NativeAgentAdapter } from './index.js'
 
 const regs: Array<{ unregister(): void }> = []
@@ -62,6 +66,15 @@ describe('composeDeliveredAssistantText', () => {
 })
 
 describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
+  // Existing contract tests predate the todo-first gate; keep them focused
+  // on harness behaviour and cover the gate in a dedicated suite below.
+  const prevTodoGate = process.env.AGIM_TODO_GATE
+  beforeEach(() => { process.env.AGIM_TODO_GATE = 'off' })
+  afterEach(() => {
+    if (prevTodoGate === undefined) delete process.env.AGIM_TODO_GATE
+    else process.env.AGIM_TODO_GATE = prevTodoGate
+  })
+
   it('yields final assistant text', async () => {
     const reg = faux()
     reg.setResponses([fauxAssistantMessage('hi from pi engine')])
@@ -234,6 +247,117 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     const out = await collect(adapter.sendPrompt('s3', 'write', undefined, { planMode: true }))
     expect(sink).toEqual([])
     expect(out).toContain('blocked')
+  })
+
+  // Session-scoped thread keys (agim:<sessionId>) — avoid platform/threadId
+  // opts so Bun tests do not trip the goals-DB fail-closed path
+  // (better-sqlite3 unavailable → resolveGoalEvidence throws).
+  it('todo-gate blocks mutating tools until a non-empty checklist exists', async () => {
+    process.env.AGIM_TODO_GATE = 'on'
+    const sessionId = 'todo-gate-sess'
+    clearTodoForThread(`agim:${sessionId}`)
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('agim_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('need a plan first'),
+    ])
+    const sink: string[] = []
+    const tool: ToolDef = {
+      name: 'agim_write_file',
+      description: 'write',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, content: { type: 'string' } },
+        required: ['path', 'content'],
+      },
+    }
+    const dispatch: ToolDispatcher = async (call) => {
+      sink.push(String(call.arguments.path))
+      return { text: 'wrote', isError: false }
+    }
+    const denied: string[] = []
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-todo-gate-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    const out = await collect(adapter.sendPrompt(sessionId, 'write', undefined, {
+      onToolActivity: (step) => {
+        if (step.status === 'denied') denied.push(step.preview ?? '')
+      },
+    }))
+    expect(sink).toEqual([])
+    expect(denied.some((p) => p.includes('todo-gate'))).toBe(true)
+    expect(out).toContain('need a plan first')
+  })
+
+  it('todo-gate allows mutations after agim_todo_write seeds a checklist', async () => {
+    process.env.AGIM_TODO_GATE = 'on'
+    const sessionId = 'todo-gate-sess-2'
+    const threadKey = `agim:${sessionId}`
+    clearTodoForThread(threadKey)
+    const todo = buildTodoDispatcher(threadKey)
+    await todo({
+      id: 't0',
+      name: 'agim_todo_write',
+      arguments: { items: [{ content: 'write file', status: 'in_progress' }] },
+    }, new AbortController().signal)
+
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('agim_write_file', { path: '/ok', content: 'x' }, { id: 'w2' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('wrote after plan'),
+    ])
+    const sink: string[] = []
+    const tool: ToolDef = {
+      name: 'agim_write_file',
+      description: 'write',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, content: { type: 'string' } },
+        required: ['path', 'content'],
+      },
+    }
+    const dispatch: ToolDispatcher = async (call) => {
+      sink.push(String(call.arguments.path))
+      return { text: 'wrote', isError: false }
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-todo-gate-ok-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    const out = await collect(adapter.sendPrompt(sessionId, 'write'))
+    expect(sink).toEqual(['/ok'])
+    expect(out).toContain('wrote after plan')
+  })
+
+  it('todo-gate allows read tools without a checklist', async () => {
+    process.env.AGIM_TODO_GATE = 'on'
+    const sessionId = 'todo-gate-read'
+    clearTodoForThread(`agim:${sessionId}`)
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('agim_read_file', { path: '/r' }, { id: 'r1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('read ok'),
+    ])
+    const sink: string[] = []
+    const tool: ToolDef = {
+      name: 'agim_read_file',
+      description: 'read',
+      parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    }
+    const dispatch: ToolDispatcher = async (call) => {
+      sink.push(String(call.arguments.path))
+      return { text: 'content', isError: false }
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-todo-gate-read-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    await collect(adapter.sendPrompt(sessionId, 'read'))
+    expect(sink).toEqual(['/r'])
   })
 
   it('fails closed for unknown external tools in Plan Mode', async () => {

@@ -21,6 +21,7 @@ import {
 import type { ToolCallRequest } from '../../../core/llm/provider-base.js'
 import { effectivePlanModeOn } from '../../../core/plan-mode-state.js'
 import { expandToolNameList } from '../../../core/llm/tool-names.js'
+import { isTodoGateOn, TODO_FIRST_PROMPT } from '../../../core/llm/todo-gate.js'
 import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/prompt-injection-guard.js'
 import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { logger as rootLogger } from '../../../core/logger.js'
@@ -62,6 +63,10 @@ export function buildSystemPrompt(
     lines.push('[agim framework rule — tool-call discipline]')
     lines.push(TOOL_CALL_DISCIPLINE_PROMPT)
     lines.push('[/agim framework rule]')
+    lines.push('')
+  }
+  if (isTodoGateOn()) {
+    lines.push(TODO_FIRST_PROMPT)
     lines.push('')
   }
 

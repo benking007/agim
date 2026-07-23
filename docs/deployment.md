@@ -118,7 +118,7 @@ sudo systemctl status agim
 1. 优先通过反向代理暴露 HTTPS（nginx/caddy/tailscale）。
 2. 只对白名单来源开放。
 3. 不需要时不要开放 ACP 端口。
-4. 需要人工审批时设 `AGIM_AUTO_APPROVE=0`；超时策略用 `AGIM_TIMEOUT_DEFAULT=deny`。
+4. 审批默认已是人工确认（`AGIM_AUTO_APPROVE=0`）；单人自用可显式 `AGIM_AUTO_APPROVE=1`。超时策略用 `AGIM_APPROVAL_ON_TIMEOUT=deny`（旧名 `AGIM_TIMEOUT_DEFAULT` 仍可读）。
 
 ## 6. 常用运维命令
 
@@ -143,6 +143,7 @@ agim token create ops-admin
 - `config.json`
 - `llm-secrets.json`
 - `tokens.json`
+- `web-thread-owners.json`
 - `*.db`
 - `sessions/`
 
@@ -195,6 +196,7 @@ curl -fsS http://127.0.0.1:3000/api/health
 - [ ] Web 对话可用（`messengers: []` 的 web-console-only 也算通过）
 - [ ] 若启用 IM：至少一个 IM 通道可收发
 - [ ] token 鉴权已启用（或已确认 loopback / `AGIM_WEB_AUTH=off` 的部署边界）
-- [ ] 审批策略已确认（默认自动放行；需人工审批设 `AGIM_AUTO_APPROVE=0`）
-- [ ] 已配置备份
+- [ ] 审批策略已确认（默认人工审批 / `AGIM_AUTO_APPROVE=0`；单人自用才显式 `=1`）
+- [ ] 若配置本机 / 私网 LLM（如 Ollama）：已设 `AGIM_URL_ALLOW_PRIVATE=1`
+- [ ] 已配置备份（含 `web-thread-owners.json`）
 - [ ] 已记录升级回滚流程

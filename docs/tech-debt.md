@@ -66,11 +66,11 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | Item | Notes |
 |------|-------|
 | Keep `agents.md` as sole agent inventory | Architecture docs link out; don't fork tables |
-| Archived snapshots stay stamped | `pi-agent-loop-optimization-analysis`, `task-recovery-testing`, `design-dream-distillation` |
+| Archive lives under `docs/archive/` | Index: `docs/archive/README.md`; don't leave one-shots in living sections |
 | Web Chat restore documented | `session-model.md` §十 |
-| Root `CODE_REVIEW_*.md` | Indexed under docs/README 归档 |
+| Historical CR stubs | Under `docs/archive/`; living backlog only in tech-debt + latest closed CR |
 
-When adding a one-shot analysis or greyscale note: **stamp archive + add to docs/README 归档**, do not leave it under 「运维与稳定性」.
+When adding a one-shot analysis or greyscale note: **move into `docs/archive/` + update `docs/archive/README.md`**, do not leave it under living sections.
 
 ## Dead env knobs (must stay off SPA allowlist)
 

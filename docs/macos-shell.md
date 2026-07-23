@@ -40,11 +40,21 @@ cd apps/macos
 ## 配对与加载
 
 1. 在 Web 控制台 **Settings → Mobile** 生成 QR / 登录链接  
-2. 在 Mac 应用中粘贴 `https://host/m/login?t=…&next=/m/chat`，或分别填写主机 + Token  
+2. 在 Mac 应用中粘贴登录链接，或分别填写主机 + Token  
 3. 凭证写入 Keychain（`host.iclaw.agim.mac.credentials`）  
-4. WebView 打开 `{host}/m/login?t=…&next=/m/chat` → cookie / localStorage → `/m/chat`
+4. WebView 打开登录桥 → cookie / localStorage → `/m/chat`
 
-也支持深链：`agim://pair?t=<token>&host=<urlencoded origin>`。
+**现行主路径**（#220）：QR / 链接使用短 TTL 一次性兑换码：
+
+```text
+https://host/m/login?c=<exchange-code>&next=/m/chat
+```
+
+页面会 `POST /api/auth/exchange-mobile` 兑换真正的 access token（码用一次即失效）。
+
+兼容旧链接仍可用：`/m/login?t=<raw-token>&next=/m/chat`（不推荐新配对继续发 raw token）。
+
+深链：`agim://pair?c=<code>&host=<urlencoded origin>`（旧 `?t=` 仍兼容）。
 
 ## 菜单
 
@@ -98,7 +108,8 @@ Web：`src/web-app/src/lib/share-content.ts`。长文在系统面板内会截断
 
 ## 依赖的主机公共路径
 
-- `/m/login`（公开登录桥）
+- `/m/login`（公开登录桥；优先 `?c=`，兼容 `?t=`）
 - `/m/chat`（Portal SPA）
 - `/fonts/`（CJK 字体，不可 302 到登录页）
+- `POST /api/auth/exchange-mobile`（兑换 QR 短码；公开）
 - `/api/auth/login`、`/ws`（由 WebUI 使用）

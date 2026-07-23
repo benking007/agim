@@ -1,7 +1,7 @@
 # Agent CWD 与长期项目记忆设计（agim v2 Phase B + C）
 
 > 状态：**已实施（2026-05-02）**
-> 关联：历史计划 [`im-gateway-v2-plan.md`](../im-gateway-v2-plan.md)（已归档）· [`adr/0004-sticky-agent-and-split-ttl.md`](../adr/0004-sticky-agent-and-split-ttl.md) · [`adr/0005-agent-cwd-isolation.md`](../adr/0005-agent-cwd-isolation.md) · 现行指南 [`im-workspaces-guide.md`](../im-workspaces-guide.md)
+> 关联：历史计划 [`im-gateway-v2-plan.md`](../archive/im-gateway-v2-plan.md)（已归档）· [`adr/0004-sticky-agent-and-split-ttl.md`](../adr/0004-sticky-agent-and-split-ttl.md) · [`adr/0005-agent-cwd-isolation.md`](../adr/0005-agent-cwd-isolation.md) · 现行指南 [`im-workspaces-guide.md`](../im-workspaces-guide.md)
 > 日期：2026-05-02
 >
 > **实施版本**：本文是落地后的设计 + 决策合订本。代码 = `core/agent-cwd.ts` + 两 adapter

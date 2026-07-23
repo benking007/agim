@@ -72,7 +72,8 @@ describe('config API concurrency', () => {
         request('POST', {
           name: 'concurrent-llm',
           provider: 'openai-compat',
-          baseUrl: 'https://llm.example.test/v1',
+          // example.com resolves publicly; llm.example.test hits dns_failed in url-guard.
+          baseUrl: 'https://example.com/v1',
           model: 'demo-model',
           apiKey: 'test-secret',
         }),

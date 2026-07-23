@@ -1,7 +1,7 @@
 # 当前架构总览
 
 本文描述 Agim **拆解后**的运行形态与代码布局，不包含历史阶段叙事。  
-产品立场（桥接 vs Agim Agent）见 [`../architecture-bridge-and-native.md`](../architecture-bridge-and-native.md)。
+产品立场（桥接 vs Agim Agent）见 [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md)。
 
 ## 1. 系统定位
 
@@ -282,7 +282,7 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 ## 13. 推荐阅读顺序
 
 1. [`../../README.md`](../../README.md) / [`../../README.zh-CN.md`](../../README.zh-CN.md)  
-2. [`../architecture-bridge-and-native.md`](../architecture-bridge-and-native.md)  
+2. [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md)  
 3. 本文（模块地图与数据流）  
 4. [`../endpoint-contracts.md`](../endpoint-contracts.md)  
 5. [`../security-hardening.md`](../security-hardening.md)  

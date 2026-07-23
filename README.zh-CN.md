@@ -146,7 +146,7 @@ IM 可选——`messengers` 留空即为纯 Web 控制台；之后再在设置�
 
 - 部署：`docs/deployment.md`
 - 运维手册：`docs/runbook.md`
-- 架构立场：`docs/architecture-bridge-and-native.md`
+- 架构立场：`docs/architecture-bridge-and-agim-agent.md`
 - 版本记录：`CHANGELOG.md`
 
 ## 文档导航

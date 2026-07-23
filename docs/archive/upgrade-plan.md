@@ -11,5 +11,5 @@
 ## 建议阅读路径
 
 1. `docs/README.md`（文档导航）
-2. `docs/architecture-bridge-and-native.md`（当前架构立场）
+2. `docs/architecture-bridge-and-agim-agent.md`（当前架构立场）
 3. `CHANGELOG.md`（按版本追踪落地细节）

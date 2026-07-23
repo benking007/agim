@@ -6,7 +6,7 @@
 ## 当前架构基准
 
 - 当前实现：`docs/architecture/current.md`
-- 架构立场：`docs/architecture-bridge-and-native.md`
+- 架构立场：`docs/architecture-bridge-and-agim-agent.md`
 - 决策记录：`docs/adr/`
 
 ## 说明

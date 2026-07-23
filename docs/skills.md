@@ -1,7 +1,7 @@
 # agim skills engine
 
 Drop a `SKILL.md` into `~/.agim/skills/<name>/` and every CLI agent
-(Claude Code / Codex / OpenCode) plus the native agent can use it.
+(Claude Code / Codex / OpenCode) plus **Agim Agent** (`agim`, alias `native`) can use it.
 
 ## What a skill is
 

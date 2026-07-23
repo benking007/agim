@@ -209,32 +209,42 @@ describe('WeChat iLink adapter — media integration', () => {
   })
 
   it('handles voice without transcription text — falls back to download', async () => {
-    adapter = createTestAdapter(async () => Buffer.from('fake-silk-audio'))
-    adapter.onMessage(async (ctx) => { captured.push(ctx) })
+    // Pin STT off: on linux/x64 whisper.cpp is "configured" via auto-install
+    // (and may already exist under ~/.agim/whisper/), so detectProvider() would
+    // otherwise call real resolveWhisperCppForTranscribe() and hang on HF download.
+    const prevProvider = process.env.AGIM_STT_PROVIDER
+    process.env.AGIM_STT_PROVIDER = 'none'
+    try {
+      adapter = createTestAdapter(async () => Buffer.from('fake-silk-audio'))
+      adapter.onMessage(async (ctx) => { captured.push(ctx) })
 
-    const msg: WeixinMessage = {
-      message_id: 302,
-      message_type: 1,
-      from_user_id: 'user-c',
-      context_token: 'ct-3',
-      item_list: [
-        {
-          type: ITEM_TYPE.VOICE,
-          voice_item: {
-            media: { full_url: 'https://cdn.weixin/voice2', aes_key: 'a2V5' },
-            encode_type: 6,
-            playtime: 3000,
+      const msg: WeixinMessage = {
+        message_id: 302,
+        message_type: 1,
+        from_user_id: 'user-c',
+        context_token: 'ct-3',
+        item_list: [
+          {
+            type: ITEM_TYPE.VOICE,
+            voice_item: {
+              media: { full_url: 'https://cdn.weixin/voice2', aes_key: 'a2V5' },
+              encode_type: 6,
+              playtime: 3000,
+            },
           },
-        },
-      ],
+        ],
+      }
+
+      await processMessage(adapter, msg)
+
+      expect(captured).toHaveLength(1)
+      // With AGIM_STT_PROVIDER=none, should show "未转写" + settings hint
+      expect(captured[0].message.text).toContain('语音附件未转写')
+      expect(captured[0].message.text).toContain('/settings/stt')
+    } finally {
+      if (prevProvider === undefined) delete process.env.AGIM_STT_PROVIDER
+      else process.env.AGIM_STT_PROVIDER = prevProvider
     }
-
-    await processMessage(adapter, msg)
-
-    expect(captured).toHaveLength(1)
-    // Without AGIM_STT_* / whisper.cpp, should show "未转写" + settings hint
-    expect(captured[0].message.text).toContain('语音附件未转写')
-    expect(captured[0].message.text).toContain('/settings/stt')
   })
 
   it('handles voice with no CDN and no text', async () => {

@@ -397,7 +397,7 @@ ExecStart=/usr/local/bin/agim start
 - [ ] 一次性引导令牌首次提升后 `shred -u`
 - [ ] `LOG_LEVEL=warn`（防消息正文进日志）
 - [ ] `AGIM_AUDIT_RETENTION_DAYS=180`（满足等保三级）
-- [ ] `AGIM_AUTO_APPROVE=0`（关闭自动审批；默认开启）
+- [ ] 确认未设 `AGIM_AUTO_APPROVE=1`（默认已关；接开放 IM 时勿设 `AGIM_AUTO_APPROVE_OPEN_IM=1`）
 - [ ] `AGIM_TIMEOUT_DEFAULT=deny`（严格交互模式；默认 allow）
 - [ ] 用 `user` 角色 token 给非管理员账号（`createToken(label, { role: 'user' })`）
 

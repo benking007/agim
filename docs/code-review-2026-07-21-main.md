@@ -1,6 +1,6 @@
 # 代码审查报告（2026-07-21）
 
-> 状态：本轮已落地一批高优先级修复（见 §4）；其余项记入 `tech-debt.md` / 本文 backlog。  
+> 状态：本轮已落地一批高优先级修复（见 §4）；P0b / P1b 已在后续安全加固中关闭；其余项记入 `tech-debt.md` / 本文 backlog。  
 > 入口：`docs/README.md` · 规范：`docs/coding-standards.md` · 安全基线：`docs/security-hardening.md`
 
 审查范围：全仓高风险面（鉴权 / 密钥 / LLM / Agent 执行 / WebSocket / 发布），并复核近日 LLM 预设与自定义高级参数改动。

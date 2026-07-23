@@ -724,8 +724,23 @@ export function AgentPortal(): JSX.Element {
         setVoicePhase(null)
         return
       }
+      // Fill the composer so the user can edit before sending (WeChat-style).
+      setInputMessage((prev) => {
+        const { chips, text: plain } = chipsFromValue(prev)
+        const nextPlain = plain.trim() ? `${plain.trim()} ${trimmed}` : trimmed
+        return serializeComposer(chips, nextPlain)
+      })
       setVoicePhase(null)
-      send(trimmed)
+      requestAnimationFrame(() => {
+        const ta = composerInputRef.current
+        if (!ta) return
+        ta.focus()
+        const end = ta.value.length
+        ta.setSelectionRange(end, end)
+      })
+      toast.success(t('chat.portal.voiceFilled', {
+        defaultValue: '已填入输入框，确认后发送',
+      }))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('chat.portal.voiceFailed', {
         defaultValue: '语音识别失败',
@@ -734,7 +749,7 @@ export function AgentPortal(): JSX.Element {
     } finally {
       setVoiceLevel(0.3)
     }
-  }, [prefs.lang, send, state.status, t])
+  }, [prefs.lang, state.status, t])
 
   const onVoicePointerDown = useCallback(async (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (canStop || uploading || voicePhase === 'transcribing') return

@@ -400,6 +400,7 @@
       "voiceTooShort": "说话时间太短",
       "voiceEmpty": "没有识别到语音",
       "voiceFailed": "语音识别失败",
+      "voiceFilled": "已填入输入框，确认后发送",
       "voiceDenied": "需要麦克风权限才能语音输入",
       "voiceUnsupported": "当前环境不支持录音（需要 HTTPS 或本地安全上下文）",
       "plusMenu": "更多",

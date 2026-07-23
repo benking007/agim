@@ -5246,7 +5246,7 @@ async function handleChatTranscribe(
   const { TranscribeError } = await import('../core/transcribe.js')
   if (!isTranscribeConfigured()) {
     sendError(res, 503, 'STT_NOT_CONFIGURED', {
-      message: 'Speech-to-text is not configured. Set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN.',
+      message: 'Speech-to-text is not configured. Open /settings/stt (or set AGIM_* speech keys / OPENAI_API_KEY / whisper.cpp).',
     })
     return
   }

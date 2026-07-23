@@ -259,7 +259,70 @@ describe('transcribe — none provider raises clear error', () => {
   })
 
   it('throws TranscribeError with helpful message', async () => {
-    await expect(transcribe('/no/such/file')).rejects.toThrow(/no provider configured/)
+    await expect(transcribe('/no/such/file')).rejects.toThrow(/no STT provider configured|\/settings\/stt/)
+  })
+})
+
+describe('transcribe — Auto failover across configured providers', () => {
+  let originalFetch: typeof fetch
+  let saved: Record<string, string | undefined>
+
+  beforeAll(async () => {
+    await mkdir(TEST_ROOT, { recursive: true })
+  })
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('falls over to the next Auto provider when the first cloud call fails', async () => {
+    // Auto order: glm ahead of openai when both configured.
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.OPENAI_API_KEY = 'sk-test'
+    const audioPath = join(TEST_ROOT, 'failover.wav')
+    await writeMinimalWav(audioPath)
+
+    const hits: string[] = []
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input)
+      hits.push(url)
+      if (url.includes('bigmodel.cn')) {
+        return new Response('upstream down', { status: 503, statusText: 'Unavailable' })
+      }
+      return new Response(JSON.stringify({ text: 'failover ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const result = await transcribe(audioPath, { language: 'zh' })
+    expect(result.provider).toBe('openai')
+    expect(result.text).toBe('failover ok')
+    expect(hits.some((u) => u.includes('bigmodel.cn'))).toBe(true)
+    expect(hits.some((u) => u.includes('/audio/transcriptions'))).toBe(true)
+  })
+
+  it('does not failover when AGIM_TRANSCRIBE_PROVIDER pins a vendor', async () => {
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'glm'
+    process.env.AGIM_ZHIPU_API_KEY = 'zhipu-key'
+    process.env.OPENAI_API_KEY = 'sk-test'
+    const audioPath = join(TEST_ROOT, 'pinned.wav')
+    await writeMinimalWav(audioPath)
+
+    globalThis.fetch = (async () =>
+      new Response('boom', { status: 500, statusText: 'Error' })) as unknown as typeof fetch
+
+    await expect(transcribe(audioPath)).rejects.toThrow(/HTTP 500/)
   })
 })
 

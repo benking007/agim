@@ -400,6 +400,7 @@
       "voiceTooShort": "Recording too short",
       "voiceEmpty": "No speech detected",
       "voiceFailed": "Speech recognition failed",
+      "voiceFilled": "Added to the composer — review and send",
       "voiceDenied": "Microphone permission is required for voice input",
       "voiceUnsupported": "Recording is not supported here (needs HTTPS or a secure context)",
       "plusMenu": "More",

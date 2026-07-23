@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import {
   detectProvider,
+  STT_NOT_CONFIGURED_HINT,
   transcribe,
   TranscribeError,
   type TranscribeProvider,
@@ -57,12 +58,8 @@ export async function transcribeChatAudio(opts: {
       { code: 'TOO_LARGE' as const },
     )
   }
-  const provider = detectProvider()
-  if (provider === 'none') {
-    throw new TranscribeError(
-      'no provider configured (set OPENAI_API_KEY or AGIM_WHISPERCPP_BIN)',
-      'none',
-    )
+  if (detectProvider() === 'none') {
+    throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
   }
 
   const dir = await mkdtemp(join(tmpdir(), 'agim-chat-stt-'))
@@ -70,9 +67,9 @@ export async function transcribeChatAudio(opts: {
   const path = join(dir, `clip-${randomBytes(6).toString('hex')}${ext}`)
   try {
     await writeFile(path, opts.body)
+    // Omit provider so Auto mode can fail over across configured vendors.
     return await transcribe(path, {
       language: opts.language || 'zh',
-      provider,
     })
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {})

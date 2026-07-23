@@ -632,7 +632,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     }
 
     if (detectProvider() === 'none') {
-      return `[语音附件未转写（未配置 OPENAI_API_KEY 或 AGIM_WHISPERCPP_BIN）：${savedPath}]`
+      return `[语音附件未转写（未配置语音转写，请在 Web /settings/stt 配置厂商密钥）：${savedPath}]`
     }
 
     try {

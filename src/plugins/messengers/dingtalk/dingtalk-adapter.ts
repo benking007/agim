@@ -622,7 +622,7 @@ export class DingTalkAdapter implements MessengerAdapter {
    *  Surfaces failures inline so the user gets feedback:
    *    - no downloadCode      → `[语音附件无下载凭据]`
    *    - download failed      → `[语音附件下载失败：…]`
-   *    - no provider set      → `[语音附件未转写（未配置 OPENAI_API_KEY 或 AGIM_WHISPERCPP_BIN）：path]`
+   *    - no provider set      → `[语音附件未转写（未配置 /settings/stt）：path]`
    *    - transcribe threw     → `[语音转写失败（provider: reason）\n源文件：path]` */
   private async handleVoiceInbound(
     msg: DingTalkInboundMessage,
@@ -677,7 +677,7 @@ export class DingTalkAdapter implements MessengerAdapter {
     } else if (!savedPath) {
       voiceLine = `[语音附件下载失败：${downloadErr ?? '钉钉未提供 downloadCode'}]`
     } else if (detectProvider() === 'none') {
-      voiceLine = `[语音附件未转写（钉钉未返回 recognition，且本地未配置 OPENAI_API_KEY 或 AGIM_WHISPERCPP_BIN）：${savedPath}]`
+      voiceLine = `[语音附件未转写（钉钉未返回 recognition，且未配置语音转写 /settings/stt）：${savedPath}]`
     } else {
       try {
         const result = await transcribe(savedPath, { language: 'zh' })

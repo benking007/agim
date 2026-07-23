@@ -214,14 +214,38 @@ export function detectProvider(): TranscribeProvider {
 
 const TRANSCRIBE_TIMEOUT_MS = 120 * 1000
 
-export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
-  const provider = opts.provider ?? detectProvider()
-  if (provider === 'none') {
-    throw new TranscribeError(
-      'no provider configured (set AGIM_TRANSCRIBE_PROVIDER + vendor keys, or OPENAI_API_KEY / AGIM_WHISPERCPP_BIN)',
-      'none',
-    )
-  }
+/** Operator-facing hint when no STT vendor is configured. */
+export const STT_NOT_CONFIGURED_HINT =
+  'no STT provider configured — open Web /settings/stt (or set AGIM_* speech keys / OPENAI_API_KEY / whisper.cpp)'
+
+/** Chinese hint for IM voice placeholders. */
+export const STT_NOT_CONFIGURED_HINT_ZH =
+  '未配置语音转写（请在 Web /settings/stt 配置厂商密钥，或设置 OPENAI_API_KEY / whisper.cpp）'
+
+function isExplicitProviderName(value: string | undefined): value is Exclude<TranscribeProvider, 'none'> | 'none' {
+  return (
+    value === 'openai'
+    || value === 'whispercpp'
+    || value === 'baidu'
+    || value === 'tencent'
+    || value === 'iflytek'
+    || value === 'glm'
+    || value === 'mimo'
+    || value === 'stepfun'
+    || value === 'none'
+  )
+}
+
+/** Configured providers in Auto priority order (for failover). */
+export function configuredProvidersInAutoOrder(): Exclude<TranscribeProvider, 'none'>[] {
+  return ALL_TRANSCRIBE_PROVIDERS.filter((id) => isProviderConfigured(id))
+}
+
+async function transcribeOnce(
+  provider: Exclude<TranscribeProvider, 'none'>,
+  filePath: string,
+  opts: TranscribeOptions,
+): Promise<TranscribeResult> {
   const start = Date.now()
   let text: string
   switch (provider) {
@@ -255,6 +279,53 @@ export async function transcribe(filePath: string, opts: TranscribeOptions = {})
   const elapsedMs = Date.now() - start
   log.info({ event: 'transcribe.ok', provider, elapsedMs, chars: text.length, file: basename(filePath) })
   return { text, provider, elapsedMs }
+}
+
+/**
+ * Run STT. Explicit `opts.provider` or `AGIM_TRANSCRIBE_PROVIDER` pins one vendor.
+ * Auto mode tries configured vendors in priority order and fails over on error.
+ */
+export async function transcribe(filePath: string, opts: TranscribeOptions = {}): Promise<TranscribeResult> {
+  const explicitEnv = process.env.AGIM_TRANSCRIBE_PROVIDER?.toLowerCase()
+  const pinned = opts.provider
+    ?? (isExplicitProviderName(explicitEnv) ? explicitEnv : undefined)
+
+  if (pinned === 'none') {
+    throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
+  }
+
+  if (pinned) {
+    return transcribeOnce(pinned, filePath, opts)
+  }
+
+  const chain = configuredProvidersInAutoOrder()
+  if (chain.length === 0) {
+    throw new TranscribeError(STT_NOT_CONFIGURED_HINT, 'none')
+  }
+
+  let lastErr: unknown
+  for (let i = 0; i < chain.length; i++) {
+    const provider = chain[i]!
+    try {
+      return await transcribeOnce(provider, filePath, opts)
+    } catch (err) {
+      lastErr = err
+      const next = chain[i + 1]
+      log.warn({
+        event: 'transcribe.failover',
+        provider,
+        next: next ?? null,
+        error: err instanceof Error ? err.message : String(err),
+        file: basename(filePath),
+      })
+      if (!next) break
+    }
+  }
+  if (lastErr instanceof TranscribeError) throw lastErr
+  throw new TranscribeError(
+    lastErr instanceof Error ? lastErr.message : String(lastErr),
+    chain[chain.length - 1] ?? 'none',
+  )
 }
 
 async function transcribeWithOpenAI(filePath: string, opts: TranscribeOptions): Promise<string> {

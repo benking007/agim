@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Settings `/settings/stt`: provider config cards no longer disappear when `GET /api/stt/providers` fails (stale process 404, non-admin 403, etc.). SPA keeps a built-in catalog, falls back to `GET /api/chat/transcribe`, and shows a warning so keys can still be edited via `/api/env`.
 - Active goal + missing bwrap: `agim_exec` escalates to an explicit approval card that still bypasses global auto-approve, but now offers **本类自动放行** (session pin by command family) alongside Allow / Deny. Detached/`nohup`/`&` still hard-blocked.
 - Chat composer Enter semantics: **desktop browser / Agim macOS shell** — Enter sends, Ctrl/⌘+Enter newlines; **Agim iOS shell / mobile browser** — Enter newlines, Send button submits. Shells inject `window.__AGIM_SHELL__` (`ios`|`macos`) for precise detection (no viewport heuristics).
 - Portal `/m/chat` (macOS / iOS shells): opening LLM dialog → **Advanced settings** no longer kicks to `/login`. Root cause: `role=user` tokens hit admin-only `GET /api/env`; the API client treated `AUTH_ADMIN_REQUIRED` as a session failure. Client now only re-logins on HTTP 401; chat modal skips the admin env panel.

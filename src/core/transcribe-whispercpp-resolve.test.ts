@@ -11,22 +11,23 @@ describe('whisper.cpp built-in resolve', () => {
   let savedBin: string | undefined
   let savedModel: string | undefined
   let savedLegacyBin: string | undefined
+  let savedProvider: string | undefined
 
   beforeEach(async () => {
     savedHome = process.env.AGIM_HOME
     savedBin = process.env.AGIM_STT_WHISPERCPP_BIN
     savedModel = process.env.AGIM_STT_WHISPERCPP_MODEL
     savedLegacyBin = process.env.AGIM_WHISPERCPP_BIN
+    savedProvider = process.env.AGIM_STT_PROVIDER
     process.env.AGIM_HOME = ROOT
     delete process.env.AGIM_STT_WHISPERCPP_BIN
     delete process.env.AGIM_STT_WHISPERCPP_MODEL
     delete process.env.AGIM_WHISPERCPP_BIN
     delete process.env.AGIM_WHISPERCPP_MODEL
+    delete process.env.AGIM_STT_PROVIDER
+    delete process.env.AGIM_TRANSCRIBE_PROVIDER
     await rm(ROOT, { recursive: true, force: true })
     await mkdir(ROOT, { recursive: true })
-    // Re-import after AGIM_HOME is set — module caches AGIM_HOME at load.
-    // Tests call helpers that read process.env + join(AGIM_HOME); we mock via
-    // rewriting paths by setting env overrides instead of reloading AGIM_HOME.
   })
 
   afterEach(async () => {
@@ -38,6 +39,8 @@ describe('whisper.cpp built-in resolve', () => {
     else process.env.AGIM_STT_WHISPERCPP_MODEL = savedModel
     if (savedLegacyBin === undefined) delete process.env.AGIM_WHISPERCPP_BIN
     else process.env.AGIM_WHISPERCPP_BIN = savedLegacyBin
+    if (savedProvider === undefined) delete process.env.AGIM_STT_PROVIDER
+    else process.env.AGIM_STT_PROVIDER = savedProvider
     await rm(ROOT, { recursive: true, force: true })
   })
 
@@ -57,5 +60,20 @@ describe('whisper.cpp built-in resolve', () => {
     process.env.AGIM_WHISPERCPP_BIN = bin
     const { resolveWhisperBin } = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 1}`)
     expect(resolveWhisperBin()).toBe(bin)
+  })
+
+  it('shouldWarmupWhisperModel when provider is pinned to whispercpp', async () => {
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    const { shouldWarmupWhisperModel } = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 2}`)
+    expect(shouldWarmupWhisperModel()).toBe(true)
+  })
+
+  it('shouldWarmupWhisperModel is false when model already exists', async () => {
+    process.env.AGIM_STT_PROVIDER = 'whispercpp'
+    const modelDir = join(ROOT, 'whisper', 'models')
+    await mkdir(modelDir, { recursive: true })
+    await writeFile(join(modelDir, 'ggml-base.bin'), 'x'.repeat(100))
+    const { shouldWarmupWhisperModel } = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 3}`)
+    expect(shouldWarmupWhisperModel()).toBe(false)
   })
 })

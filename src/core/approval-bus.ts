@@ -1740,9 +1740,16 @@ export class ApprovalBus {
       !args.requiresExplicitDecision
       || allowSessionPin
     ) && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
-    const timeoutMs = typeof args.timeoutMs === 'number' && args.timeoutMs > 0
-      ? args.timeoutMs
-      : (isAutoAllow ? this.autoAllowGraceMs : this.approvalTimeoutMs)
+    // Grace mode must use autoAllowGraceMs even when the caller passed a
+    // long first-ask budget (e.g. confirmUnconfinedGoalExec /
+    // complete_goal via timeoutMs). Otherwise the SPA countdown hits
+    // "Auto-allowing now…" at graceSeconds while the bus timer still
+    // waits minutes — the dock never receives approval-card-edit.
+    const timeoutMs = isAutoAllow
+      ? this.autoAllowGraceMs
+      : (typeof args.timeoutMs === 'number' && args.timeoutMs > 0
+          ? args.timeoutMs
+          : this.approvalTimeoutMs)
 
     const transport = args.transport
     const pending: PendingApproval = {

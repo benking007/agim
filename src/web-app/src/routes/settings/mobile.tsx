@@ -4,9 +4,9 @@
  *
  * Flow:
  *   1. Click "Generate QR" → POST /api/mobile/qr → fresh role=user
- *      token + QR PNG (data URL).
+ *      token + short-TTL exchange code embedded in QR URL (`?c=`).
  *   2. Render QR, the embedded URL, and the token id.
- *   3. Phone scans → /m/login auto-submits the token cookie → /m/chat.
+ *   3. Phone scans → /m/login exchanges code → sets cookie → /m/chat.
  *
  * Revoke: the link points the admin at /settings/security/tokens
  * where every token can be killed (the same UI works for the QR

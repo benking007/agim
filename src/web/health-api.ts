@@ -289,7 +289,10 @@ async function handleMobileQR(req: IncomingMessage, res: ServerResponse): Promis
       role: 'user',
       actor: 'mobile-qr',
     })
-    const loginUrl = `${base}/m/login?t=${encodeURIComponent(created.raw)}&next=%2Fm%2Fchat`
+    // CR P2c — QR carries a short-TTL one-shot exchange code, not the raw token.
+    const { issueMobileQrExchange } = await import('../core/mobile-qr-exchange.js')
+    const { code, expiresAt } = issueMobileQrExchange(created.raw, created.id)
+    const loginUrl = `${base}/m/login?c=${encodeURIComponent(code)}&next=%2Fm%2Fchat`
     const QRCode = (await import('qrcode')).default
     const qrDataUrl = await QRCode.toDataURL(loginUrl, {
       errorCorrectionLevel: 'M',
@@ -306,6 +309,7 @@ async function handleMobileQR(req: IncomingMessage, res: ServerResponse): Promis
       label: `mobile-via-qr-${stamp}`,
       loginUrl,
       qrDataUrl,
+      exchangeExpiresAt: expiresAt,
       revokeHint: '/settings/security/tokens',
     }))
   } catch (err) {

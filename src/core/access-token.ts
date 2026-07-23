@@ -30,8 +30,10 @@
 //   AGIM_WEB_AUTH=off disables the gate entirely (for operators who do auth
 //   at the reverse proxy layer and don't want a second factor).
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import {
+  existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync, renameSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
@@ -82,8 +84,20 @@ function readFile(): TokenFile {
 
 function writeFile(data: TokenFile): void {
   const path = tokensFile()
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify(data, null, 2), 'utf-8')
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  // CR P2b — atomic replace (tmp + rename), same pattern as llm-secrets.
+  // Prevents a crash mid-write from truncating tokens.json. In-process
+  // RMW stays sync (single-threaded); last_used throttle already shrinks
+  // concurrent update pressure from verifyToken.
+  const payload = `${JSON.stringify(data, null, 2)}\n`
+  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(tmpPath, payload, { encoding: 'utf-8', mode: 0o600 })
+    renameSync(tmpPath, path)
+  } catch (err) {
+    try { unlinkSync(tmpPath) } catch { /* ignore */ }
+    throw err
+  }
   try { chmodSync(path, 0o600) } catch { /* ignore non-POSIX */ }
 }
 

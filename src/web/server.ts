@@ -39,6 +39,7 @@ import {
   bindTokenModule,
   isEnvOff,
   handleAuthLogin,
+  handleAuthExchangeMobile,
   handleAuthLogout,
 } from './auth.js'
 import {
@@ -253,6 +254,9 @@ export async function startWebServer(options: {
     // above lets it through. These do the actual validation + cookie set.
     if (url.pathname === '/api/auth/login' && req.method === 'POST') {
       return handleAuthLogin(req, res)
+    }
+    if (url.pathname === '/api/auth/exchange-mobile' && req.method === 'POST') {
+      return handleAuthExchangeMobile(req, res)
     }
     if (url.pathname === '/api/auth/logout' && req.method === 'POST') {
       return handleAuthLogout(req, res)

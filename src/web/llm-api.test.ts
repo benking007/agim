@@ -93,6 +93,19 @@ describe('handleLlmApi — add backend', () => {
     }
   })
 
+  it('rejects private / loopback baseUrl (SSRF guard)', async () => {
+    const res = makeRes()
+    await handleLlmApi(makeReq('POST', {
+      name: 'local',
+      provider: 'openai-compat',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      model: 'llama',
+      apiKey: 'k',
+    }), res as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body).reason).toBe('private_address')
+  })
+
   it('happy-path persists backend + secret to disk and re-reads via list', async () => {
     const add = { name: 'deepseek', provider: 'openai-compat',
       baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-test-123' }
@@ -142,7 +155,7 @@ describe('handleLlmApi — add backend', () => {
     const add = {
       name: 'proxy-1',
       provider: 'openai-compat',
-      baseUrl: 'https://llm.internal/v1',
+      baseUrl: 'https://example.com/v1',
       model: 'proxy-model',
       apiKey: 'sk-proxy',
       temperature: 0.2,
@@ -184,7 +197,7 @@ describe('handleLlmApi — add backend', () => {
     const add = {
       name: 'proxy-auth',
       provider: 'openai-compat',
-      baseUrl: 'https://llm.internal/v1',
+      baseUrl: 'https://example.com/v1',
       model: 'm',
       apiKey: 'sk',
       extraHeaders: { Authorization: 'Bearer leaked' },
@@ -199,7 +212,7 @@ describe('handleLlmApi — add backend', () => {
     const add = {
       name: 'proxy-off',
       provider: 'openai-compat',
-      baseUrl: 'https://llm.internal/v1',
+      baseUrl: 'https://example.com/v1',
       model: 'proxy-model',
       apiKey: 'sk-off',
       thinkingFormat: 'off',

@@ -20,17 +20,20 @@
  *     (192.168.1.1) and a name that resolves to one
  *     (metadata.internal → 169.254.169.254).
  *
- * Escape hatch: AGIM_ACP_ALLOW_LOOPBACK=1 disables the private-address
- * block. Intended for development against `localhost:<port>` ACP
- * services; never set this in shared deployments.
+ * Escape hatch (either env disables the private-address block):
+ *   - AGIM_ACP_ALLOW_LOOPBACK=1 — historical ACP-specific name
+ *   - AGIM_URL_ALLOW_PRIVATE=1  — shared name for LLM/MCP/ACP local URLs
+ * Intended for development against `localhost:<port>` / LAN Ollama etc.;
+ * never set these in shared deployments.
  *
- * Callers should also pass `redirect: 'manual'` to fetch() so an
- * allowed origin can't 302 the request into a blocked address.
+ * Callers that `fetch()` the URL should also pass `redirect: 'manual'`
+ * so an allowed origin can't 302 the request into a blocked address.
  */
 
 import { lookup } from 'node:dns/promises'
 
 const ALLOW_LOOPBACK_ENV = 'AGIM_ACP_ALLOW_LOOPBACK'
+const ALLOW_PRIVATE_ENV = 'AGIM_URL_ALLOW_PRIVATE'
 
 export interface AssertSafeOptions {
   /** When true, only https URLs are accepted (the request will carry a
@@ -95,10 +98,13 @@ export async function assertSafeAcpUrl(
     )
   }
 
-  const allowLoopback = process.env[ALLOW_LOOPBACK_ENV] === '1'
-  if (isPrivateAddr(address, family) && !allowLoopback) {
+  const allowPrivate =
+    process.env[ALLOW_LOOPBACK_ENV] === '1'
+    || process.env[ALLOW_PRIVATE_ENV] === '1'
+  if (isPrivateAddr(address, family) && !allowPrivate) {
     throw new UnsafeAcpUrlError(
-      `Address ${address} (${u.hostname}) not allowed — set ${ALLOW_LOOPBACK_ENV}=1 if intentional`,
+      `Address ${address} (${u.hostname}) not allowed — set ${ALLOW_PRIVATE_ENV}=1 `
+      + `(or ${ALLOW_LOOPBACK_ENV}=1) if intentional`,
       'private_address',
     )
   }

@@ -328,6 +328,21 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     send(res, 400, { error: 'baseUrl must be an http(s) URL' })
     return
   }
+  // CR P1a — same SSRF posture as ACP discover/test. API keys are stored
+  // separately, so we don't force https here (local Ollama often uses http);
+  // private / link-local / metadata addresses still require AGIM_URL_ALLOW_PRIVATE=1.
+  {
+    const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+    try {
+      await assertSafeAcpUrl(baseUrl, { forwardsCredentials: false })
+    } catch (err) {
+      if (err instanceof UnsafeAcpUrlError) {
+        send(res, 400, { error: `baseUrl blocked: ${err.message}`, reason: err.reason })
+        return
+      }
+      throw err
+    }
+  }
   if (!model) {
     send(res, 400, { error: 'model is required' })
     return

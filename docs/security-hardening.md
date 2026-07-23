@@ -81,6 +81,7 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | (已有) `AGIM_TIMEOUT_DEFAULT` | `allow` | 审批超时策略（仅 AUTO_APPROVE 关闭时生效）；设 `deny` 启用严格交互模式 | R13 G5 C1 |
 | `AGIM_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `AGIM_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
 | `AGIM_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
+| `AGIM_URL_ALLOW_PRIVATE` | 未设 = 关 | `=1` 放行 LLM `baseUrl` / MCP HTTP `url` / ACP 配置中的私网与回环地址（本地 Ollama 等）；亦接受历史名 `AGIM_ACP_ALLOW_LOOPBACK=1` | CR follow-up |
 
 > **重要**：`AGIM_ENABLE_GLOBAL_IM` 和 `AGIM_ENABLE_REMOTE_AGENT` 的设计目的是合规分发 —— **不会出现在首次安装向导 / `agim go` 主路径里**。运维通过 SSH 编辑 `~/.agim/env`、systemd `Environment=`，或进程启动前 export 启用。Web UI **不能**反向打开这两个门。README / runbook / naming 会提到「存在此门控」，但不把开启步骤塞进 Quick start。
 

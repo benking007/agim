@@ -53,24 +53,24 @@
 <main>
   <div class="card">
     <h1 id="title">登录手机版 agim chat…</h1>
-    <p class="sub" id="sub">正在验证扫码 token，请稍候</p>
+    <p class="sub" id="sub">正在验证扫码凭证，请稍候</p>
     <div id="state"><span class="spinner"></span></div>
     <div id="msg" class="msg"></div>
-    <div class="hint" id="hint">扫码生成的链接只能用一次性进入；如需重新进入，请回到桌面 admin 重新生成二维码。</div>
+    <div class="hint" id="hint">扫码链接含一次性兑换码（短时有效）；如需重新进入，请回到桌面 admin 重新生成二维码。</div>
   </div>
 </main>
 <script>
 (function(){
   var L = (navigator.language || 'zh').toLowerCase().slice(0,2) === 'en' ? 'en' : 'zh';
   var T = {
-    zh: { title: '登录手机版 agim chat…', sub: '正在验证扫码 token，请稍候',
-          bad: 'Token 已失效或被撤销。请回到桌面 admin 重新扫码。',
-          missing: '链接里没有 token。请通过 admin 后台「Mobile / 手机端」生成二维码后扫码。',
+    zh: { title: '登录手机版 agim chat…', sub: '正在验证扫码凭证，请稍候',
+          bad: '凭证已失效、用过或被撤销。请回到桌面 admin 重新扫码。',
+          missing: '链接里没有兑换码。请通过 admin 后台「Mobile / 手机端」生成二维码后扫码。',
           neterr: '网络错误：', ok: '验证通过，正在跳转聊天界面…',
           retry: '回到登录页' },
-    en: { title: 'Signing in to mobile agim chat…', sub: 'Verifying the QR token, please wait',
-          bad: 'Token expired or revoked. Re-generate the QR from the desktop admin.',
-          missing: 'No token in the URL. Generate a QR from admin → Mobile.',
+    en: { title: 'Signing in to mobile agim chat…', sub: 'Verifying the QR credential, please wait',
+          bad: 'Code expired, already used, or token revoked. Re-generate the QR from the desktop admin.',
+          missing: 'No exchange code in the URL. Generate a QR from admin → Mobile.',
           neterr: 'Network error: ', ok: 'Verified, opening chat…',
           retry: 'Back to login' },
   };
@@ -97,27 +97,52 @@
       return u.pathname + u.search;
     } catch (e) { return '/m/chat'; }
   }
-  var raw = new URLSearchParams(location.search).get('t');
-  if (!raw) { fail(t.missing); return; }
-  fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: raw }),
-  }).then(function(r){
-    if (r.status === 401) { fail(t.bad); return; }
-    if (!r.ok) {
-      return r.text().then(function(b){ fail(t.neterr + r.status + ' ' + b.slice(0,200)); });
-    }
-    // localStorage mirror so the legacy fallback code paths keep working
-    // in case some component reads it instead of the cookie.
-    try { localStorage.setItem('agim_token', raw); } catch (e) {}
-    state.innerHTML = '';
-    msg.className = 'msg ok';
-    msg.textContent = t.ok;
-    setTimeout(function(){ location.replace(next()); }, 300);
-  }).catch(function(err){
-    fail(t.neterr + (err && err.message || String(err)));
-  });
+  function finishWithRaw(raw){
+    return fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: raw }),
+    }).then(function(r){
+      if (r.status === 401) { fail(t.bad); return; }
+      if (!r.ok) {
+        return r.text().then(function(b){ fail(t.neterr + r.status + ' ' + b.slice(0,200)); });
+      }
+      try { localStorage.setItem('agim_token', raw); } catch (e) {}
+      state.innerHTML = '';
+      msg.className = 'msg ok';
+      msg.textContent = t.ok;
+      setTimeout(function(){ location.replace(next()); }, 300);
+    });
+  }
+  var params = new URLSearchParams(location.search);
+  var code = params.get('c');
+  var legacyRaw = params.get('t');
+  if (code) {
+    fetch('/api/auth/exchange-mobile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code }),
+    }).then(function(r){
+      if (r.status === 401) { fail(t.bad); return; }
+      if (!r.ok) {
+        return r.text().then(function(b){ fail(t.neterr + r.status + ' ' + b.slice(0,200)); });
+      }
+      return r.json().then(function(body){
+        if (!body || !body.token) { fail(t.bad); return; }
+        return finishWithRaw(body.token);
+      });
+    }).catch(function(err){
+      fail(t.neterr + (err && err.message || String(err)));
+    });
+    return;
+  }
+  if (legacyRaw) {
+    finishWithRaw(legacyRaw).catch(function(err){
+      fail(t.neterr + (err && err.message || String(err)));
+    });
+    return;
+  }
+  fail(t.missing);
 })();
 </script>
 </body>

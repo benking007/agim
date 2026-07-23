@@ -10,16 +10,16 @@ import { sendError, sendJson, readBody } from './http-utils.js'
 export const PUBLIC_EXACT_PATHS = new Set<string>([
   '/login', '/login.html',
   '/api/auth/login',
+  // CR P2c — one-shot exchange of mobile QR code → raw token (no auth yet).
+  '/api/auth/exchange-mobile',
   '/api/health',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use
   // location token in the request body, NOT by the web access token.
   '/api/loc',
-  // v1.2.129 — mobile QR landing. The static page reads `?t=<raw>` and
-  // POSTs to /api/auth/login to set the cookie, then redirects to
-  // /m/chat. Public on purpose: the raw token IS the auth credential
-  // for that single redirect (same model as /login + ?token= fallback).
+  // Mobile QR landing. Prefers short-TTL `?c=<code>` (exchanged server-side);
+  // legacy `?t=<raw>` still accepted for old QR images.
   '/m/login', '/m/login.html',
   '/favicon.ico', '/favicon.svg',
 ])
@@ -321,4 +321,41 @@ export function handleAuthLogout(req: IncomingMessage, res: ServerResponse): voi
     'Set-Cookie': buildAuthCookie(req, null, 0),
   })
   res.end(JSON.stringify({ ok: true }))
+}
+
+/** POST /api/auth/exchange-mobile — redeem a short-TTL QR exchange code
+ *  for the underlying raw access token. Public (code is the capability).
+ *  One-shot: second redeem → 401. */
+export async function handleAuthExchangeMobile(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    const parsed = JSON.parse(body || '{}') as { code?: string }
+    const code = (parsed.code || '').trim()
+    if (!code) {
+      sendError(res, 400, 'AUTH_CODE_REQUIRED', { message: 'code required' })
+      return
+    }
+    const { consumeMobileQrExchange } = await import('../core/mobile-qr-exchange.js')
+    const exchanged = consumeMobileQrExchange(code)
+    if (!exchanged) {
+      sendError(res, 401, 'AUTH_INVALID', { message: 'invalid or expired code' })
+      return
+    }
+    if (!_tokenModule) {
+      sendError(res, 503, 'AUTH_NOT_READY', { message: 'auth module not ready' })
+      return
+    }
+    const id = _tokenModule.verifyToken(exchanged.raw)
+    if (!id) {
+      sendError(res, 401, 'AUTH_INVALID', { message: 'token revoked' })
+      return
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    res.end(JSON.stringify({ ok: true, token: exchanged.raw, tokenId: id }))
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
 }

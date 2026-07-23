@@ -32,7 +32,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 120,
+  "count": 121,
   "endpoints": [
     {
       "method": "DELETE",
@@ -43,6 +43,12 @@
     {
       "method": "DELETE",
       "path": "/api/agim-skills/injection",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/llm/backends",
       "source": "exact",
       "authRequired": true
     },

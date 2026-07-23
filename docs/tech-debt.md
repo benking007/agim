@@ -24,6 +24,12 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `pi-sessions` → `agim-sessions` | Boot rename when target absent |
 | Config `workspaces[]` → `tenants[]` | Prefer `tenants`; dual-write on SPA save |
 | Agim Agent JSONL orphaned on `/new` / TTL | Quarantine + grace purge (`agim-agent-session-lifecycle`) |
+| LLM/MCP URL SSRF guard | CR P1a → `assertSafeAcpUrl` on add; hatch `AGIM_URL_ALLOW_PRIVATE=1` (#220) |
+| MCP GET redact auth headers | CR P2a → list masks Authorization / api-key (#220) |
+| Atomic `tokens.json` writes | CR P2b → tmp+rename like `llm-secrets.json` (#220) |
+| Mobile QR short-TTL exchange | CR P2c → `?c=` + `POST /api/auth/exchange-mobile` (#220) |
+| SPA consume `GET /api/llm/presets` | CR M1 → `useLlmPresets` + fallback + drift test (#220) |
+| Atomic LLM group delete | CR M2 → `DELETE /api/llm/backends?label=` / `?names=` (#220) |
 
 ## Intentionally keep (ops / compat)
 
@@ -39,19 +45,6 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `/setup`, `/schedule`, `?token=` | Soft deprecation |
 | `autonomous-loops` skill shim | Until advertised v1.8 window |
 | SQLite table `native_todos` | On-disk schema; unrelated to tool rename |
-
-## Done recently (CR follow-ups)
-
-| Item | Action |
-|------|--------|
-| LLM/MCP URL SSRF guard | `assertSafeAcpUrl` on add; hatch `AGIM_URL_ALLOW_PRIVATE=1` |
-| MCP GET redact auth headers | `sanitizeServer` masks Authorization / api-key headers |
-| Atomic `tokens.json` writes | tmp+rename like `llm-secrets.json` |
-| Mobile QR short-TTL exchange | `?c=` + `POST /api/auth/exchange-mobile` (legacy `?t=` kept) |
-| SPA consume `GET /api/llm/presets` | Runtime `useLlmPresets` + offline fallback + drift test |
-| Atomic LLM group delete | `DELETE /api/llm/backends?label=` / `?names=` |
-| SPA consume `GET /api/llm/presets` | Runtime `useLlmPresets` + offline fallback + drift test |
-| Atomic LLM group delete | `DELETE /api/llm/backends?label=` / `?names=` |
 
 ## Follow-up
 

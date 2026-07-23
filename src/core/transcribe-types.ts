@@ -30,6 +30,9 @@ export class TranscribeError extends Error {
  * Tuned for Chinese short-command dictation by:
  *   1) Chinese ASR quality  2) cloud stability  3) free-tier / cost
  * Any configured cloud provider beats local whisper.cpp (fallback).
+ *
+ * Settings UI cards / select options reuse this order within each group:
+ *   active → other configured → unconfigured.
  */
 export const ALL_TRANSCRIBE_PROVIDERS: Exclude<TranscribeProvider, 'none'>[] = [
   'iflytek',    // strongest Chinese oral / dictation
@@ -37,13 +40,4 @@ export const ALL_TRANSCRIBE_PROVIDERS: Exclude<TranscribeProvider, 'none'>[] = [
   'baidu',      // mature Mandarin short ASR
   'openai',     // multilingual; weaker Chinese CER; paid
   'whispercpp', // local offline fallback only
-]
-
-/** Settings UI order — whisper.cpp pinned first as the local fallback card. */
-export const STT_UI_PROVIDER_ORDER: Exclude<TranscribeProvider, 'none'>[] = [
-  'whispercpp',
-  'iflytek',
-  'tencent',
-  'baidu',
-  'openai',
 ]

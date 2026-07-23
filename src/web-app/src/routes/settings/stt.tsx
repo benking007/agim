@@ -195,17 +195,22 @@ export default function SettingsSttRoute(): JSX.Element {
           onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value }))}
         >
           <option value="">{zh ? '自动（云优先，本地兜底）' : 'Auto (cloud first, local fallback)'}</option>
-          <option value="iflytek">{zh ? '讯飞语音听写' : 'iFlytek dictation'}</option>
-          <option value="tencent">{zh ? '腾讯云一句话识别' : 'Tencent SentenceRecognition'}</option>
-          <option value="baidu">{zh ? '百度短语音识别' : 'Baidu short ASR'}</option>
-          <option value="openai">OpenAI Whisper</option>
-          <option value="whispercpp">{zh ? 'whisper.cpp（本地兜底）' : 'whisper.cpp (local fallback)'}</option>
+          {providers.map((info) => (
+            <option key={info.id} value={info.id}>
+              {info.label}
+              {info.id === active
+                ? (zh ? ' · 使用中' : ' · in use')
+                : info.configured
+                  ? (zh ? ' · 已配置' : ' · configured')
+                  : ''}
+            </option>
+          ))}
           <option value="none">{zh ? '禁用转写' : 'Disable STT'}</option>
         </select>
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '自动排序依据：中文识别能力 → 稳定性 → 性价比；非兜底服务始终优先于本地 whisper.cpp。'
-            : 'Auto order: Chinese ASR quality → stability → cost; any cloud provider beats local whisper.cpp.'}
+            ? '列表与下拉均按「当前生效 → 已配置 → 未配置」分组，组内按自动优先级（中文能力 → 稳定性 → 性价比）。'
+            : 'List and dropdown: in-use → configured → missing; within each group by auto priority (Chinese quality → stability → cost).'}
         </p>
       </section>
 

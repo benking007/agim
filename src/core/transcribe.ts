@@ -25,7 +25,6 @@ import { isTencentSpeechConfigured, transcribeWithTencent } from './transcribe-t
 import { isIflytekSpeechConfigured, transcribeWithIflytek } from './transcribe-iflytek.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
-  STT_UI_PROVIDER_ORDER,
   TranscribeError,
   type TranscribeOptions,
   type TranscribeProvider,
@@ -35,7 +34,6 @@ import {
 export {
   TranscribeError,
   ALL_TRANSCRIBE_PROVIDERS,
-  STT_UI_PROVIDER_ORDER,
   type TranscribeOptions,
   type TranscribeProvider,
   type TranscribeResult,
@@ -58,7 +56,7 @@ export interface TranscribeProviderInfo {
   envKeys: string[]
   /** True when credentials / binary look present. */
   configured: boolean
-  /** Local fallback shown first in the settings UI. */
+  /** Local offline fallback (whisper.cpp). */
   fallback?: boolean
   /** Current non-secret values from process.env (for path/model fields). */
   currentValues?: Record<string, string>
@@ -114,28 +112,47 @@ export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none
   }
 }
 
+/** Settings list order: currently active → other configured → rest, each by auto priority. */
+export function sortProvidersForUi(
+  providers: TranscribeProviderInfo[],
+  active: TranscribeProvider,
+): TranscribeProviderInfo[] {
+  const priority = new Map(ALL_TRANSCRIBE_PROVIDERS.map((id, i) => [id, i]))
+  return [...providers].sort((a, b) => {
+    const aActive = a.id === active ? 0 : 1
+    const bActive = b.id === active ? 0 : 1
+    if (aActive !== bActive) return aActive - bActive
+    const aCfg = a.configured ? 0 : 1
+    const bCfg = b.configured ? 0 : 1
+    if (aCfg !== bCfg) return aCfg - bCfg
+    return (priority.get(a.id) ?? 99) - (priority.get(b.id) ?? 99)
+  })
+}
+
 export function listTranscribeProviders(): {
   providers: TranscribeProviderInfo[]
   active: TranscribeProvider
   explicit: string | null
 } {
   const explicit = process.env.AGIM_TRANSCRIBE_PROVIDER?.trim() || null
+  const active = detectProvider()
+  const providers = ALL_TRANSCRIBE_PROVIDERS.map((id) => {
+    const meta = PROVIDER_META[id]
+    const currentValues: Record<string, string> = {}
+    for (const key of meta.envKeys) {
+      if (!ECHOABLE_ENV_KEYS.has(key)) continue
+      const v = process.env[key]
+      if (v) currentValues[key] = v
+    }
+    return {
+      ...meta,
+      configured: isProviderConfigured(id),
+      currentValues: Object.keys(currentValues).length ? currentValues : undefined,
+    }
+  })
   return {
-    providers: STT_UI_PROVIDER_ORDER.map((id) => {
-      const meta = PROVIDER_META[id]
-      const currentValues: Record<string, string> = {}
-      for (const key of meta.envKeys) {
-        if (!ECHOABLE_ENV_KEYS.has(key)) continue
-        const v = process.env[key]
-        if (v) currentValues[key] = v
-      }
-      return {
-        ...meta,
-        configured: isProviderConfigured(id),
-        currentValues: Object.keys(currentValues).length ? currentValues : undefined,
-      }
-    }),
-    active: detectProvider(),
+    providers: sortProvidersForUi(providers, active),
+    active,
     explicit,
   }
 }

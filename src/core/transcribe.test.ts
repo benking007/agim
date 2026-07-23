@@ -9,7 +9,13 @@ import { join } from 'node:path'
 
 const TEST_ROOT = join(tmpdir(), `agim-transcribe-test-${process.pid}`)
 
-const { transcribe, detectProvider, TranscribeError } = await import('./transcribe.js')
+const {
+  transcribe,
+  detectProvider,
+  listTranscribeProviders,
+  sortProvidersForUi,
+  TranscribeError,
+} = await import('./transcribe.js')
 
 const ENV_KEYS = [
   'AGIM_TRANSCRIBE_PROVIDER',
@@ -114,6 +120,60 @@ describe('transcribe — detectProvider', () => {
     process.env.AGIM_TRANSCRIBE_PROVIDER = 'garbage'
     process.env.OPENAI_API_KEY = 'sk-test'
     expect(detectProvider()).toBe('openai')
+  })
+})
+
+describe('transcribe — settings UI provider order', () => {
+  let saved: Record<string, string | undefined>
+
+  beforeEach(() => {
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
+    clearEnv()
+  })
+
+  afterEach(() => {
+    clearEnv()
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v
+    }
+  })
+
+  it('lists by auto priority when nothing is configured', () => {
+    const { providers, active } = listTranscribeProviders()
+    expect(active).toBe('none')
+    expect(providers.map((p) => p.id)).toEqual([
+      'iflytek', 'tencent', 'baidu', 'openai', 'whispercpp',
+    ])
+  })
+
+  it('puts active + other configured ahead of missing, preserving priority', () => {
+    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    // auto → baidu (ahead of openai / whispercpp)
+    const { providers, active } = listTranscribeProviders()
+    expect(active).toBe('baidu')
+    expect(providers.map((p) => p.id)).toEqual([
+      'baidu',      // active
+      'openai',     // configured, higher priority than whisper
+      'whispercpp', // configured fallback
+      'iflytek',    // missing
+      'tencent',    // missing
+    ])
+  })
+
+  it('sortProvidersForUi keeps active first even when unconfigured flag flips', () => {
+    const sorted = sortProvidersForUi(
+      [
+        { id: 'openai', label: 'o', envKeys: [], configured: true },
+        { id: 'baidu', label: 'b', envKeys: [], configured: false },
+        { id: 'iflytek', label: 'i', envKeys: [], configured: true },
+      ],
+      'baidu',
+    )
+    expect(sorted.map((p) => p.id)).toEqual(['baidu', 'iflytek', 'openai'])
   })
 })
 

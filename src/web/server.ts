@@ -861,6 +861,15 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleSttProviders(req, res)
     }
+    // whisper.cpp model status / explicit init download (admin settings).
+    if (url.pathname === '/api/stt/whispercpp/model' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleSttWhisperModelGet(req, res)
+    }
+    if (url.pathname === '/api/stt/whispercpp/model' && req.method === 'POST') {
+      if (!requireAdmin(req, res)) return
+      return handleSttWhisperModelInit(req, res)
+    }
     // v1.2.129 — mobile QR. Admin generates a fresh role=user token with
     // a date-stamped label and gets back a QR data URL + the raw login
     // URL. The token persists until the admin revokes it via the regular
@@ -5228,6 +5237,45 @@ async function handleSttProviders(
     sendJson(res, 200, listTranscribeProviders())
   } catch (err) {
     sendError(res, 500, 'STT_PROVIDERS_FAILED', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+async function handleSttWhisperModelGet(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const { getWhisperModelStatus } = await import('../core/transcribe-whispercpp-resolve.js')
+    sendJson(res, 200, getWhisperModelStatus())
+  } catch (err) {
+    sendError(res, 500, 'STT_WHISPER_MODEL_STATUS_FAILED', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+/** POST /api/stt/whispercpp/model — kick off ggml-base.bin download (or no-op if ready). */
+async function handleSttWhisperModelInit(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const {
+      getWhisperModelStatus,
+      startWhisperModelDownload,
+    } = await import('../core/transcribe-whispercpp-resolve.js')
+    const result = startWhisperModelDownload()
+    const status = getWhisperModelStatus()
+    if (result.alreadyReady) {
+      sendJson(res, 200, { ok: true, ...result, ...status })
+      return
+    }
+    // 202 — download running in background; SPA polls GET / status via providers.
+    sendJson(res, 202, { ok: true, ...result, ...status })
+  } catch (err) {
+    sendError(res, 500, 'STT_WHISPER_MODEL_INIT_FAILED', {
       message: err instanceof Error ? err.message : String(err),
     })
   }

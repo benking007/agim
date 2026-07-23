@@ -1,7 +1,7 @@
 {
   "generatedFrom": "src/web/server.ts",
   "scope": "REST routes dispatched directly by startWebServer",
-  "count": 98,
+  "count": 100,
   "endpoints": [
     {
       "method": "DELETE",
@@ -323,6 +323,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/stt/whispercpp/model",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/subtasks",
       "source": "exact",
       "authRequired": true
@@ -552,6 +558,12 @@
     {
       "method": "POST",
       "path": "/api/service/stop",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/stt/whispercpp/model",
       "source": "exact",
       "authRequired": true
     },

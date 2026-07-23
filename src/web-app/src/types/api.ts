@@ -961,10 +961,32 @@ export interface SttProviderInfo {
   currentValues?: Record<string, string>
 }
 
+/** Built-in whisper.cpp model status (settings + init download). */
+export interface WhisperModelStatus {
+  ready: boolean
+  path: string | null
+  defaultPath: string
+  downloading: boolean
+  lastError: string | null
+  bin: string | null
+  defaultBinPath: string
+  binDownloading: boolean
+  binLastError: string | null
+  canAutoInstallBin: boolean
+}
+
 export interface SttProvidersResponse {
   providers: SttProviderInfo[]
   active: string
   explicit: string | null
+  whisperModel?: WhisperModelStatus
+}
+
+export interface SttWhisperModelInitResponse extends WhisperModelStatus {
+  ok: boolean
+  alreadyReady?: boolean
+  alreadyRunning?: boolean
+  started?: boolean
 }
 
 export interface SearchTestBody {

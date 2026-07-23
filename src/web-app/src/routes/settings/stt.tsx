@@ -7,19 +7,22 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  CheckCircle2, Key, Loader2, Mic, RefreshCcw, Save, X, XCircle,
+  CheckCircle2, Download, Key, Loader2, Mic, RefreshCcw, Save, X, XCircle,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { api } from '@/lib/api/endpoints'
 import { client } from '@/lib/api/client'
 import { useEnv, useUpdateEnv } from '@/hooks/use-settings'
-import type { SttProviderInfo, SttProvidersResponse } from '@/types/api'
+import type {
+  SttProviderInfo, SttProvidersResponse, WhisperModelStatus,
+} from '@/types/api'
 
 interface Draft {
   provider: string
@@ -289,6 +292,8 @@ function useSttProviders() {
     queryKey: ['settings', 'stt', 'providers'],
     queryFn: fetchSttProviders,
     retry: 1,
+    // Poll while the model is downloading so the card flips to "ready".
+    refetchInterval: (q) => (q.state.data?.whisperModel?.downloading ? 2000 : false),
   })
 }
 
@@ -463,6 +468,8 @@ export default function SettingsSttRoute(): JSX.Element {
               keysTouched={draft.keysTouched}
               onSetKey={setKey}
               onClearKey={clearKey}
+              whisperModel={info.id === 'whispercpp' ? providersQuery.data?.whisperModel : undefined}
+              onWhisperModelChanged={() => { void providersQuery.refetch() }}
             />
           ))}
         </section>
@@ -500,9 +507,47 @@ function ProviderCard(props: {
   keysTouched: Record<string, boolean>
   onSetKey: (envKey: string, value: string) => void
   onClearKey: (envKey: string) => void
+  whisperModel?: WhisperModelStatus
+  onWhisperModelChanged?: () => void
 }): JSX.Element {
-  const { info, active, zh, draftKeys, keysTouched, onSetKey, onClearKey } = props
+  const {
+    info, active, zh, draftKeys, keysTouched, onSetKey, onClearKey,
+    whisperModel, onWhisperModelChanged,
+  } = props
   const fieldMeta = zh ? FIELD_META_ZH : FIELD_META_EN
+  const initModel = useMutation({
+    mutationFn: () => api.initSttWhisperModel(),
+    onSuccess: (r) => {
+      onWhisperModelChanged?.()
+      if (r.alreadyReady) {
+        toast.success(zh ? '模型已就绪' : 'Model already ready')
+      } else if (r.alreadyRunning || r.started || r.downloading) {
+        toast.message(zh ? '正在下载模型…' : 'Downloading model…')
+      }
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+
+  // Toast once when a download we were watching finishes (or fails).
+  const [wasDownloading, setWasDownloading] = useState(false)
+  useEffect(() => {
+    if (whisperModel?.downloading) {
+      setWasDownloading(true)
+      return
+    }
+    if (!wasDownloading || !whisperModel) return
+    setWasDownloading(false)
+    if (whisperModel.ready) {
+      toast.success(zh ? '模型下载完成' : 'Model download complete')
+    } else if (whisperModel.lastError) {
+      toast.error(
+        zh
+          ? `模型下载失败：${whisperModel.lastError}`
+          : `Model download failed: ${whisperModel.lastError}`,
+      )
+    }
+  }, [whisperModel, wasDownloading, zh])
+
   return (
     <div className="rounded-md border border-border bg-surface p-4 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -525,9 +570,60 @@ function ProviderCard(props: {
       {info.fallback && (
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '内置开源本地转写（whisper.cpp）。默认查找 PATH / ~/.agim/whisper/bin/whisper-cli；模型首次使用自动下载到 ~/.agim/whisper/models/。也可设 AGIM_STT_WHISPERCPP_BIN / MODEL。'
-            : 'Built-in open-source local STT (whisper.cpp). Looks up PATH / ~/.agim/whisper/bin/whisper-cli; model auto-downloads to ~/.agim/whisper/models/ on first use. Optional AGIM_STT_WHISPERCPP_BIN / MODEL.'}
+            ? '内置开源本地转写（whisper.cpp）。默认查找 PATH / ~/.agim/whisper/bin/whisper-cli；模型可静默预热或点下方「初始化模型」下载到 ~/.agim/whisper/models/。也可设 AGIM_STT_WHISPERCPP_BIN / MODEL。'
+            : 'Built-in open-source local STT (whisper.cpp). Looks up PATH / ~/.agim/whisper/bin/whisper-cli; model can prefetch silently or via Initialize below into ~/.agim/whisper/models/. Optional AGIM_STT_WHISPERCPP_BIN / MODEL.'}
         </p>
+      )}
+      {info.id === 'whispercpp' && (
+        <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2 text-[12px]">
+              <span className="text-text-dim">{zh ? '模型：' : 'Model:'}</span>
+              {whisperModel?.downloading || initModel.isPending ? (
+                <Badge variant="info" className="gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {zh ? '下载中' : 'Downloading'}
+                </Badge>
+              ) : whisperModel?.ready ? (
+                <Badge variant="success" className="gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  {zh ? '已就绪' : 'Ready'}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 text-text-dim">
+                  <XCircle className="h-3 w-3" />
+                  {zh ? '未下载' : 'Not downloaded'}
+                </Badge>
+              )}
+            </div>
+            <p className="truncate font-mono text-[10px] text-text-dim" title={whisperModel?.path || whisperModel?.defaultPath}>
+              {whisperModel?.path || whisperModel?.defaultPath || '~/.agim/whisper/models/ggml-base.bin'}
+            </p>
+            {whisperModel?.lastError && !whisperModel.ready && !whisperModel.downloading && (
+              <p className="text-[11px] text-warning break-all">{whisperModel.lastError}</p>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={
+              initModel.isPending
+              || !!whisperModel?.downloading
+              || !!whisperModel?.ready
+            }
+            onClick={() => initModel.mutate()}
+          >
+            {initModel.isPending || whisperModel?.downloading
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Download className="h-4 w-4" />}
+            {whisperModel?.ready
+              ? (zh ? '模型已就绪' : 'Model ready')
+              : whisperModel?.downloading || initModel.isPending
+                ? (zh ? '下载中…' : 'Downloading…')
+                : (zh ? '初始化模型' : 'Initialize model')}
+          </Button>
+        </div>
       )}
       {(info.envKeys?.length ?? 0) > 0 && (
       <div className="grid gap-3 sm:grid-cols-2">

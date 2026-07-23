@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - **Portal `/m/chat` pet task slot**: running bgjobs for the current thread appear alongside approvals / asks / runs (grouped: 需要你 → 本轮 → 后台; badge = total; progress bar when `progress.json` present). `agim start` watches `~/.agim/bgjobs` and **L1-pushes** exit status to the origin thread; set `AGIM_BGJOB_AUTOSUMMARY=on` for an L2 log-tail digest.
 - **IM/bgjob SOP baseline for all agents**: managed `<!-- agim:im-ops -->` upserts into every IM workspace role file (not only Agim). Paths use portable `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"` — no host-absolute `/home/<user>/...` baked into AGENTS.md.
 - Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` ships IM reply norms + **bgjob SOP** (>10 min → absolute `~/.agim/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block upserts on bootstrap. Framework system prompt carries a condensed safety-net copy. See `docs/im-workspaces-guide.md`.
+- Settings `/settings/stt` whisper.cpp card: **初始化模型** button (`POST /api/stt/whispercpp/model`) to download `ggml-base.bin` on demand (alongside silent `agim start` prefetch).
 
 ### Changed
 

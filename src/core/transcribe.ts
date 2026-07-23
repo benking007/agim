@@ -38,9 +38,11 @@ import {
   sttEnv,
 } from './transcribe-env.js'
 import {
+  getWhisperModelStatus,
   isWhisperCppReady,
   resolveWhisperCppForTranscribe,
   whisperCppInstallHintEn,
+  type WhisperModelStatus,
 } from './transcribe-whispercpp-resolve.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
@@ -165,6 +167,7 @@ export function listTranscribeProviders(): {
   providers: TranscribeProviderInfo[]
   active: TranscribeProvider
   explicit: string | null
+  whisperModel: WhisperModelStatus
 } {
   const explicit = sttEnv('provider') || null
   const active = detectProvider()
@@ -186,6 +189,7 @@ export function listTranscribeProviders(): {
     providers: sortProvidersForUi(providers, active),
     active,
     explicit,
+    whisperModel: getWhisperModelStatus(),
   }
 }
 

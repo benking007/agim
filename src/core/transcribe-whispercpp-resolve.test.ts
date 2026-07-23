@@ -76,4 +76,36 @@ describe('whisper.cpp built-in resolve', () => {
     const { shouldWarmupWhisperModel } = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 3}`)
     expect(shouldWarmupWhisperModel()).toBe(false)
   })
+
+  it('getWhisperModelStatus + startWhisperModelDownload report ready when model exists', async () => {
+    const modelDir = join(ROOT, 'whisper', 'models')
+    await mkdir(modelDir, { recursive: true })
+    const modelPath = join(modelDir, 'ggml-base.bin')
+    await writeFile(modelPath, 'x'.repeat(100))
+    const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 4}`)
+    const status = mod.getWhisperModelStatus()
+    expect(status.ready).toBe(true)
+    expect(status.path).toBe(modelPath)
+    expect(status.downloading).toBe(false)
+    const start = mod.startWhisperModelDownload()
+    expect(start.alreadyReady).toBe(true)
+    expect(start.started).toBe(false)
+  })
+
+  it('startWhisperModelDownload starts when model is missing', async () => {
+    const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 5}`)
+    // Stub fetch so we don't hit the network in unit tests.
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () => new Response(Buffer.alloc(1_500_000), { status: 200 })) as typeof fetch
+    try {
+      const start = mod.startWhisperModelDownload()
+      expect(start.alreadyReady).toBe(false)
+      expect(start.started || start.alreadyRunning).toBe(true)
+      expect(mod.getWhisperModelStatus().downloading).toBe(true)
+      await mod.ensureWhisperModel()
+      expect(mod.getWhisperModelStatus().ready).toBe(true)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

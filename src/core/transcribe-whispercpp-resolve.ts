@@ -150,7 +150,33 @@ export function whisperCppInstallHintEn(): string {
   )
 }
 
-let warmupInFlight: Promise<string | null> | null = null
+/** Shared in-flight download (warmup + first transcribe + settings button). */
+let modelEnsureInFlight: Promise<string> | null = null
+let lastModelDownloadError: string | null = null
+
+export interface WhisperModelStatus {
+  ready: boolean
+  path: string | null
+  defaultPath: string
+  downloading: boolean
+  lastError: string | null
+  /** Resolved CLI path when the file exists; else null. */
+  bin: string | null
+}
+
+export function getWhisperModelStatus(): WhisperModelStatus {
+  const existing = resolveWhisperModelExisting()
+  const ready = !!(existing && existsSync(existing))
+  const bin = resolveWhisperBin()
+  return {
+    ready,
+    path: ready ? existing! : null,
+    defaultPath: defaultWhisperModelPath(),
+    downloading: modelEnsureInFlight !== null,
+    lastError: ready ? null : lastModelDownloadError,
+    bin: bin && existsSync(bin) ? bin : null,
+  }
+}
 
 /** True when local whisper STT is likely to be used soon. */
 export function shouldWarmupWhisperModel(): boolean {
@@ -180,11 +206,7 @@ export function shouldWarmupWhisperModel(): boolean {
   return false
 }
 
-/** Ensure model file exists; download ggml-base.bin on first use / warmup. */
-export async function ensureWhisperModel(): Promise<string> {
-  const existing = resolveWhisperModelExisting()
-  if (existing && existsSync(existing)) return existing
-
+async function downloadWhisperModelToDefault(): Promise<string> {
   const dest = defaultWhisperModelPath()
   await mkdir(dirname(dest), { recursive: true })
   const tmp = `${dest}.partial`
@@ -213,34 +235,73 @@ export async function ensureWhisperModel(): Promise<string> {
   }
 }
 
+/** Ensure model file exists; download ggml-base.bin on first use / warmup / UI init. */
+export async function ensureWhisperModel(): Promise<string> {
+  const existing = resolveWhisperModelExisting()
+  if (existing && existsSync(existing)) return existing
+  if (modelEnsureInFlight) return modelEnsureInFlight
+
+  lastModelDownloadError = null
+  modelEnsureInFlight = (async () => {
+    try {
+      const path = await downloadWhisperModelToDefault()
+      lastModelDownloadError = null
+      return path
+    } catch (err) {
+      lastModelDownloadError = err instanceof Error ? err.message : String(err)
+      throw err
+    } finally {
+      modelEnsureInFlight = null
+    }
+  })()
+  return modelEnsureInFlight
+}
+
+export interface WhisperModelDownloadStart {
+  alreadyReady: boolean
+  alreadyRunning: boolean
+  started: boolean
+  path?: string
+}
+
+/**
+ * Explicit operator-triggered download (settings "初始化模型"). Always
+ * attempts ensure — unlike silent warmup which may skip.
+ */
+export function startWhisperModelDownload(): WhisperModelDownloadStart {
+  const existing = resolveWhisperModelExisting()
+  if (existing && existsSync(existing)) {
+    return { alreadyReady: true, alreadyRunning: false, started: false, path: existing }
+  }
+  const wasRunning = modelEnsureInFlight !== null
+  void ensureWhisperModel().catch(() => {
+    // Error recorded in lastModelDownloadError; UI polls status.
+  })
+  return {
+    alreadyReady: false,
+    alreadyRunning: wasRunning,
+    started: !wasRunning,
+  }
+}
+
 /**
  * Fire-and-forget model download at `agim start`. Never throws; never blocks
  * the boot path. Skips when the model is already present or local STT is
  * unlikely to be used.
  */
 export function startWhisperModelWarmup(): void {
-  if (warmupInFlight) return
   if (!shouldWarmupWhisperModel()) {
     log.debug({ event: 'whisper.model.warmup_skip' })
     return
   }
-  warmupInFlight = (async () => {
-    try {
-      const path = await ensureWhisperModel()
-      log.info({ event: 'whisper.model.warmup_ok', path })
-      return path
-    } catch (err) {
-      log.warn({
-        event: 'whisper.model.warmup_failed',
-        err: err instanceof Error ? err.message : String(err),
-      })
-      return null
-    } finally {
-      warmupInFlight = null
-    }
-  })()
-  // Detach: unhandled rejection already caught above.
-  void warmupInFlight
+  void ensureWhisperModel().then((path) => {
+    log.info({ event: 'whisper.model.warmup_ok', path })
+  }).catch((err) => {
+    log.warn({
+      event: 'whisper.model.warmup_failed',
+      err: err instanceof Error ? err.message : String(err),
+    })
+  })
 }
 
 /** Resolve bin + model for a transcription call (may download model). */

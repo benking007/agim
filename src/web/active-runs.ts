@@ -99,6 +99,30 @@ export function setActiveRunPartialText(threadId: string, text: string): void {
   snap.partialText = text
 }
 
+function completeStickyTodoItemsOnStep<T extends {
+  todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+  preview?: string
+}>(st: T): T {
+  const items = st.todoItems
+  if (!items || items.length === 0) return st
+  let completed = 0
+  let inProgress = 0
+  let pending = 0
+  for (const it of items) {
+    if (it.status === 'completed') completed += 1
+    else if (it.status === 'in_progress') inProgress += 1
+    else if (it.status === 'pending') pending += 1
+  }
+  if (pending > 0 || inProgress !== 1 || completed !== items.length - 1) return st
+  const next = items.map((it) => (
+    it.status === 'in_progress'
+      ? { content: it.content, status: 'completed' as const }
+      : it
+  ))
+  const preview = next.map((it, i) => `${i + 1}. ☑ ${it.content}`).join('\n')
+  return { ...st, todoItems: next, preview }
+}
+
 export function finishActiveRun(
   threadId: string,
   outcome: {
@@ -117,12 +141,21 @@ export function finishActiveRun(
   if (outcome.finalText !== undefined) snap.partialText = outcome.finalText
   if (outcome.error) snap.error = outcome.error
   // Close any still-open steps so the accordion doesn't look stuck.
+  // On success, also flip a sticky trailing in_progress Plan item so the
+  // persisted activity matches a finished turn (N/N, not N-1/N).
   const finishedAt = outcome.finishedAt
-  snap.steps = snap.steps.map((st) => (
-    st.status === 'pending' || st.status === 'running'
-      ? { ...st, status: outcome.status === 'error' ? 'error' : 'success', finishedAt }
-      : st
-  ))
+  snap.steps = snap.steps.map((st) => {
+    let next = st
+    if (outcome.status === 'success') next = completeStickyTodoItemsOnStep(next)
+    if (next.status === 'pending' || next.status === 'running') {
+      return {
+        ...next,
+        status: outcome.status === 'error' ? 'error' : 'success',
+        finishedAt,
+      }
+    }
+    return next
+  })
   clearFinishTimer(threadId)
   finishTimers.set(
     threadId,

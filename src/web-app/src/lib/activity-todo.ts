@@ -114,3 +114,45 @@ export function summarizeTodoItems(items: ChatTodoItem[]): {
     allDone: items.length > 0 && completed === items.length,
   }
 }
+
+/**
+ * Turn-end: if every item is done except exactly one `in_progress` (no
+ * pending), mark that last row completed. Mirrors backend
+ * `completeStickyInProgressItems` so DONE / RUN_FINISH still closes Plan
+ * when the model skipped a final todo_write.
+ */
+export function completeStickyInProgressItems(
+  items: readonly ChatTodoItem[],
+): ChatTodoItem[] | null {
+  if (items.length === 0) return null
+  const summary = summarizeTodoItems([...items])
+  if (
+    summary.pending > 0
+    || summary.inProgress !== 1
+    || summary.completed !== items.length - 1
+  ) {
+    return null
+  }
+  return items.map((it) => (
+    it.status === 'in_progress'
+      ? { content: it.content, status: 'completed' as const }
+      : { ...it }
+  ))
+}
+
+/** Apply sticky reconcile to every step that carries todoItems. */
+export function reconcileActivityTodoItemsOnSuccess<T extends {
+  todoItems?: ChatTodoItem[]
+  preview?: string
+}>(steps: readonly T[]): T[] {
+  return steps.map((st) => {
+    if (!st.todoItems?.length) return st
+    const next = completeStickyInProgressItems(st.todoItems)
+    if (!next) return st
+    return {
+      ...st,
+      todoItems: next,
+      preview: next.map((it, i) => `${i + 1}. ☑ ${it.content}`).join('\n'),
+    }
+  })
+}

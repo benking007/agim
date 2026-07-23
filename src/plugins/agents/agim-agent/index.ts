@@ -42,6 +42,7 @@ import {
   resolveTodoItems,
   type TodoItem,
 } from '../../../core/llm/todo-items.js'
+import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
@@ -872,6 +873,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     let lastCriticAtToolCalls = 0
     let offTrackSoftSteerUsed = false
     let offTrackDetail = ''
+    let mechanicalStuckSoftSteerUsed = false
     let semanticStuckSoftSteerUsed = false
     let compactionCalls = 0
     /** At most one mid-turn transcript compact per user message. */
@@ -1117,6 +1119,19 @@ export class NativeAgentAdapter implements AgentAdapter {
       recentSigs.push(sig)
       if (recentSigs.length > 3) recentSigs.shift()
       if (recentSigs.length === 3 && recentSigs.every((item) => item === sig)) {
+        // Soft-steer first: tell the model to change approach. Hard-stop only
+        // if the same failure signature lands again after that warning.
+        if (!mechanicalStuckSoftSteerUsed) {
+          mechanicalStuckSoftSteerUsed = true
+          recentSigs.length = 0
+          ephemeralSteer = [
+            ephemeralSteer,
+            '[loop steer — repeated failure]',
+            `Tool \`${toolName}\` failed 3× with the same arguments.`,
+            'Do NOT retry that exact call. Change the command/args, inspect the error, try a different tool, or stop and summarize the blocker for the user.',
+          ].filter(Boolean).join('\n')
+          return false
+        }
         stopReason = 'stuck_loop'
         requestLoopStop()
         return true
@@ -1194,21 +1209,25 @@ export class NativeAgentAdapter implements AgentAdapter {
           }
         }
         // Cross-tool semantic stuck loop: different tools, same long arg.
+        // Only fire when the recent window is actually failing — successful
+        // multi-tool debugging of one URL/path must not be treated as stuck.
         if (
           !stopReason
           && resolveSemanticStuckLoopOn()
           && toolRuns.length >= 3
         ) {
+          const recentRuns = toolRuns.slice(-3)
+          const recentFailures = recentRuns.filter((run) => run.isError).length
           const reports = toolRuns.flatMap((run) =>
             run.argsKey ? [{ name: run.name, argsKey: run.argsKey }] : [])
-          if (isSemanticStuckLoop(reports)) {
+          if (recentFailures >= 2 && isSemanticStuckLoop(reports)) {
             if (!semanticStuckSoftSteerUsed) {
               semanticStuckSoftSteerUsed = true
               ephemeralSteer = [
                 ephemeralSteer,
                 '[loop steer — semantic stuck]',
-                'Recent tools repeated the same long argument while failing.',
-                'Change approach: new query/path, or stop and summarize blockers.',
+                'Recent tools reused the same long argument (URL/path/query) and keep failing.',
+                'Change approach: new query/path/command, a different tool, or stop and summarize blockers for the user. Do not reshuffle the same intent across tools.',
               ].filter(Boolean).join('\n')
             } else {
               stopReason = 'stuck_loop'
@@ -1520,6 +1539,20 @@ export class NativeAgentAdapter implements AgentAdapter {
     } else if (stopReason) {
       emitOutcome({ status: 'partial', providerFailure: false, error: stopReason, stopReason })
     } else {
+      // Models often leave the last Plan item in_progress; close it so the
+      // chat checklist matches a finished turn (store + activity step).
+      const reconciled = reconcileTodoOnSuccessfulTurn(todoThreadKey)
+      if (reconciled) {
+        emitToolActivity({
+          id: PLAN_CHECKLIST_STEP_ID,
+          label: 'agim_todo_write',
+          status: 'success',
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+          preview: renderMarkdownChecklist(reconciled),
+          todoItems: reconciled,
+        })
+      }
       emitOutcome({ status: 'success', providerFailure: false })
     }
     yield out

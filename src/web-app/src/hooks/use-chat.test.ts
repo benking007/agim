@@ -634,6 +634,41 @@ describe('chatReducer', () => {
     expect(after.activeRunId).toBeNull()
   })
 
+  it('RUN_FINISH completes a sticky trailing in_progress Plan item', () => {
+    const after = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-1',
+        step: {
+          id: 'agim-plan-checklist',
+          kind: 'tool',
+          label: 'agim_todo_write',
+          status: 'success',
+          startedAt: 1_100,
+          finishedAt: 1_200,
+          todoItems: [
+            { content: 'research', status: 'completed' },
+            { content: 'write report', status: 'in_progress' },
+          ],
+        },
+      },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 5_000,
+        durationMs: 4_000,
+      },
+    )
+    expect(after.messages[1]?.activity?.steps[0]?.todoItems).toEqual([
+      { content: 'research', status: 'completed' },
+      { content: 'write report', status: 'completed' },
+    ])
+  })
+
   it('ACTIVITY_STEP upserts live tool steps onto the bound reply', () => {
     const after = reduce(
       initialChatState,

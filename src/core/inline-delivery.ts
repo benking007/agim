@@ -72,10 +72,12 @@ export interface ExpandInlineOpts {
  * 2. 「报告已落盘：path.md」+ short chat → append file contents when longer
  */
 export function expandInlineChannelReply(text: string, opts: ExpandInlineOpts = {}): string {
-  const raw = (text ?? '').trim()
-  if (!raw) return text ?? ''
+  // Preserve the original string when we do not expand — trim() would
+  // silently drop trailing spaces and break identity checks in delivery tests.
+  if (typeof text !== 'string') return text
+  if (!text.trim()) return text
 
-  const envelope = SUMMARY_ENVELOPE_RE.exec(raw)
+  const envelope = SUMMARY_ENVELOPE_RE.exec(text)
   if (envelope) {
     const fullMd = stripStrayEnvelopeTags(envelope[2] ?? '')
     if (fullMd.length > 0) {
@@ -85,27 +87,29 @@ export function expandInlineChannelReply(text: string, opts: ExpandInlineOpts = 
     }
   }
 
-  let out = stripStrayEnvelopeTags(raw)
-  const pathMatch = ARCHIVE_PATH_RE.exec(out)
+  const pathMatch = ARCHIVE_PATH_RE.exec(text)
   const root = opts.workspaceRoot?.trim()
-  if (!pathMatch || !root) return out
+  if (pathMatch && root) {
+    const abs = resolveArchivedMarkdownPath(root, pathMatch[1] ?? '')
+    if (abs) {
+      const reader = opts.readFile ?? defaultReadFile
+      const fileBody = (reader(abs) ?? '').trim()
+      if (fileBody) {
+        const probe = fileBody.slice(0, Math.min(160, fileBody.length))
+        const alreadyInlined = probe.length >= 40 && text.includes(probe)
+        const looksLikeDigest = fileBody.length > text.length + 200
+        if (!alreadyInlined && looksLikeDigest) {
+          const merged = `${text.trimEnd()}\n\n---\n\n${fileBody}`
+          return merged.length > INLINE_DELIVERY_MAX_CHARS
+            ? merged.slice(0, INLINE_DELIVERY_MAX_CHARS)
+            : merged
+        }
+      }
+    }
+  }
 
-  const abs = resolveArchivedMarkdownPath(root, pathMatch[1] ?? '')
-  if (!abs) return out
-
-  const reader = opts.readFile ?? defaultReadFile
-  const fileBody = (reader(abs) ?? '').trim()
-  if (!fileBody) return out
-
-  // Already pasted the archive — do not duplicate.
-  const probe = fileBody.slice(0, Math.min(160, fileBody.length))
-  if (probe.length >= 40 && out.includes(probe)) return out
-
-  // Only expand when the chat looks like a digest (shorter than the file).
-  if (fileBody.length <= out.length + 200) return out
-
-  const merged = `${out}\n\n---\n\n${fileBody}`
-  return merged.length > INLINE_DELIVERY_MAX_CHARS
-    ? merged.slice(0, INLINE_DELIVERY_MAX_CHARS)
-    : merged
+  // Only scrub stray envelope tags when present; otherwise return as-is.
+  STRAY_ENVELOPE_TAG_RE.lastIndex = 0
+  if (!STRAY_ENVELOPE_TAG_RE.test(text)) return text
+  return stripStrayEnvelopeTags(text)
 }

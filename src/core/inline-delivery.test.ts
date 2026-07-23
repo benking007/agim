@@ -67,4 +67,9 @@ describe('expandInlineChannelReply', () => {
     expect(resolveArchivedMarkdownPath('/tmp/ws', '../etc/passwd.md')).toBeNull()
     expect(resolveArchivedMarkdownPath('/tmp/ws', '/etc/passwd.md')).toBeNull()
   })
+
+  it('preserves ordinary long replies byte-for-byte (no trim side effects)', () => {
+    const long = `# Report\n\n${'paragraph '.repeat(80)}`
+    expect(expandInlineChannelReply(long, { workspaceRoot: '/tmp/ws' })).toBe(long)
+  })
 })

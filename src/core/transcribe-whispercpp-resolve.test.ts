@@ -87,9 +87,25 @@ describe('whisper.cpp built-in resolve', () => {
     expect(status.ready).toBe(true)
     expect(status.path).toBe(modelPath)
     expect(status.downloading).toBe(false)
+    expect(status.bin).toBe(null)
+    expect(status.defaultBinPath).toContain('whisper-cli')
     const start = mod.startWhisperModelDownload()
     expect(start.alreadyReady).toBe(true)
     expect(start.started).toBe(false)
+  })
+
+  it('install hint stresses missing CLI when model already exists', async () => {
+    const modelDir = join(ROOT, 'whisper', 'models')
+    await mkdir(modelDir, { recursive: true })
+    await writeFile(join(modelDir, 'ggml-base.bin'), 'x'.repeat(100))
+    const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 6}`)
+    const zh = mod.whisperCppInstallHintZh()
+    const en = mod.whisperCppInstallHintEn()
+    expect(zh).toMatch(/缺少 whisper-cli/)
+    expect(zh).toMatch(/模型已就绪/)
+    expect(en).toMatch(/Missing whisper-cli/)
+    expect(en).toMatch(/model is already ready/)
+    expect(zh).not.toMatch(/模型会自动下载/)
   })
 
   it('startWhisperModelDownload starts when model is missing', async () => {

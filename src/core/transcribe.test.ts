@@ -403,7 +403,7 @@ describe('transcribe — Auto failover across configured providers', () => {
     const audioPath = join(TEST_ROOT, 'unpin.wav')
     await writeMinimalWav(audioPath)
 
-    await expect(transcribe(audioPath)).rejects.toThrow(/whisper|Local whisper|whisper-cli|\.agim\/whisper/i)
+    await expect(transcribe(audioPath)).rejects.toThrow(/whisper-cli|缺少 whisper-cli|\.agim\/whisper/i)
   })
 
   it('does not failover when AGIM_STT_PROVIDER pins a configured vendor', async () => {

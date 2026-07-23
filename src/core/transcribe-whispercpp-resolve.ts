@@ -134,19 +134,49 @@ export function isWhisperCppReady(): boolean {
   return true
 }
 
+function whisperModelPresent(): { ready: boolean; path: string | null } {
+  const existing = resolveWhisperModelExisting()
+  if (existing && existsSync(existing)) return { ready: true, path: existing }
+  return { ready: false, path: null }
+}
+
+/**
+ * Operator-facing hint when local STT cannot run. Emphasizes missing CLI
+ * when the model file is already present (common confusion after prefetch).
+ */
 export function whisperCppInstallHintZh(): string {
+  const binPath = defaultWhisperBinPath()
+  const model = whisperModelPresent()
+  if (model.ready) {
+    return (
+      `缺少 whisper-cli 可执行文件（模型已就绪：${model.path}）。`
+      + `请安装 CLI 到 ${binPath}（或 brew install whisper-cpp / 放入 PATH）。`
+      + '也可在 /settings/stt 改用云厂商。'
+    )
+  }
   return (
-    '本地 whisper.cpp 未就绪。请安装 CLI 到 '
-    + `${defaultWhisperBinPath()}（或 brew install whisper-cpp / 放入 PATH），`
-    + `模型会自动下载到 ${defaultWhisperModelPath()}；也可在 /settings/stt 改用云厂商。`
+    `缺少 whisper-cli 可执行文件。请安装到 ${binPath}`
+    + '（或 brew install whisper-cpp / 放入 PATH）；'
+    + `模型可点「初始化模型」或等首次转写下载到 ${defaultWhisperModelPath()}。`
+    + '也可在 /settings/stt 改用云厂商。'
   )
 }
 
 export function whisperCppInstallHintEn(): string {
+  const binPath = defaultWhisperBinPath()
+  const model = whisperModelPresent()
+  if (model.ready) {
+    return (
+      `Missing whisper-cli binary (model is already ready at ${model.path}). `
+      + `Install the CLI at ${binPath} (or brew install whisper-cpp / put it on PATH). `
+      + 'Or pick a cloud vendor in /settings/stt.'
+    )
+  }
   return (
-    'Local whisper.cpp is not ready. Install whisper-cli at '
-    + `${defaultWhisperBinPath()} (or brew install whisper-cpp / put it on PATH). `
-    + `The model auto-downloads to ${defaultWhisperModelPath()}. Or pick a cloud vendor in /settings/stt.`
+    `Missing whisper-cli binary. Install it at ${binPath} `
+    + '(or brew install whisper-cpp / put it on PATH). '
+    + `Model can be downloaded via Settings → Initialize model (or on first use) to ${defaultWhisperModelPath()}. `
+    + 'Or pick a cloud vendor in /settings/stt.'
   )
 }
 
@@ -162,6 +192,8 @@ export interface WhisperModelStatus {
   lastError: string | null
   /** Resolved CLI path when the file exists; else null. */
   bin: string | null
+  /** Default install path for whisper-cli (may not exist yet). */
+  defaultBinPath: string
 }
 
 export function getWhisperModelStatus(): WhisperModelStatus {
@@ -175,6 +207,7 @@ export function getWhisperModelStatus(): WhisperModelStatus {
     downloading: modelEnsureInFlight !== null,
     lastError: ready ? null : lastModelDownloadError,
     bin: bin && existsSync(bin) ? bin : null,
+    defaultBinPath: defaultWhisperBinPath(),
   }
 }
 
@@ -308,14 +341,14 @@ export function startWhisperModelWarmup(): void {
 export async function resolveWhisperCppForTranscribe(): Promise<{ bin: string; model: string }> {
   const bin = resolveWhisperBin()
   if (!bin || !existsSync(bin)) {
-    throw new Error(whisperCppInstallHintEn())
+    throw new Error(whisperCppInstallHintZh())
   }
   // Cheap executable check (optional — Windows may lack X_OK semantics).
   try {
     await access(bin, fsConstants.X_OK)
   } catch {
     if (!isExecutable(bin)) {
-      throw new Error(`${bin} is not executable — ${whisperCppInstallHintEn()}`)
+      throw new Error(`${bin} 不可执行 — ${whisperCppInstallHintZh()}`)
     }
   }
   const model = await ensureWhisperModel()

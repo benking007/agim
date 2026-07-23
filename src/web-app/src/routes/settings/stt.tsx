@@ -575,54 +575,87 @@ function ProviderCard(props: {
         </p>
       )}
       {info.id === 'whispercpp' && (
-        <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-2 rounded-md border border-border/60 bg-background/40 px-3 py-2.5">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2 text-[12px]">
-              <span className="text-text-dim">{zh ? '模型：' : 'Model:'}</span>
-              {whisperModel?.downloading || initModel.isPending ? (
-                <Badge variant="info" className="gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {zh ? '下载中' : 'Downloading'}
-                </Badge>
-              ) : whisperModel?.ready ? (
+              <span className="text-text-dim">{zh ? 'CLI：' : 'CLI:'}</span>
+              {whisperModel?.bin ? (
                 <Badge variant="success" className="gap-1">
                   <CheckCircle2 className="h-3 w-3" />
-                  {zh ? '已就绪' : 'Ready'}
+                  {zh ? '已安装' : 'Installed'}
                 </Badge>
               ) : (
-                <Badge variant="outline" className="gap-1 text-text-dim">
+                <Badge variant="outline" className="gap-1 text-warning">
                   <XCircle className="h-3 w-3" />
-                  {zh ? '未下载' : 'Not downloaded'}
+                  {zh ? '未安装（转写需要）' : 'Missing (required)'}
                 </Badge>
               )}
             </div>
-            <p className="truncate font-mono text-[10px] text-text-dim" title={whisperModel?.path || whisperModel?.defaultPath}>
-              {whisperModel?.path || whisperModel?.defaultPath || '~/.agim/whisper/models/ggml-base.bin'}
+            <p
+              className="truncate font-mono text-[10px] text-text-dim"
+              title={whisperModel?.bin || whisperModel?.defaultBinPath}
+            >
+              {whisperModel?.bin
+                || whisperModel?.defaultBinPath
+                || '~/.agim/whisper/bin/whisper-cli'}
             </p>
-            {whisperModel?.lastError && !whisperModel.ready && !whisperModel.downloading && (
-              <p className="text-[11px] text-warning break-all">{whisperModel.lastError}</p>
+            {!whisperModel?.bin && (
+              <p className="text-[11px] text-warning">
+                {zh
+                  ? '模型就绪也不够：请安装 whisper-cli 到上述路径，或 brew install whisper-cpp / 放入 PATH。'
+                  : 'Model alone is not enough — install whisper-cli at the path above (or brew install whisper-cpp / PATH).'}
+              </p>
             )}
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={
-              initModel.isPending
-              || !!whisperModel?.downloading
-              || !!whisperModel?.ready
-            }
-            onClick={() => initModel.mutate()}
-          >
-            {initModel.isPending || whisperModel?.downloading
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Download className="h-4 w-4" />}
-            {whisperModel?.ready
-              ? (zh ? '模型已就绪' : 'Model ready')
-              : whisperModel?.downloading || initModel.isPending
-                ? (zh ? '下载中…' : 'Downloading…')
-                : (zh ? '初始化模型' : 'Initialize model')}
-          </Button>
+          <div className="flex flex-col gap-2 border-t border-border/50 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                <span className="text-text-dim">{zh ? '模型：' : 'Model:'}</span>
+                {whisperModel?.downloading || initModel.isPending ? (
+                  <Badge variant="info" className="gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {zh ? '下载中' : 'Downloading'}
+                  </Badge>
+                ) : whisperModel?.ready ? (
+                  <Badge variant="success" className="gap-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {zh ? '已就绪' : 'Ready'}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1 text-text-dim">
+                    <XCircle className="h-3 w-3" />
+                    {zh ? '未下载' : 'Not downloaded'}
+                  </Badge>
+                )}
+              </div>
+              <p className="truncate font-mono text-[10px] text-text-dim" title={whisperModel?.path || whisperModel?.defaultPath}>
+                {whisperModel?.path || whisperModel?.defaultPath || '~/.agim/whisper/models/ggml-base.bin'}
+              </p>
+              {whisperModel?.lastError && !whisperModel.ready && !whisperModel.downloading && (
+                <p className="text-[11px] text-warning break-all">{whisperModel.lastError}</p>
+              )}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={
+                initModel.isPending
+                || !!whisperModel?.downloading
+                || !!whisperModel?.ready
+              }
+              onClick={() => initModel.mutate()}
+            >
+              {initModel.isPending || whisperModel?.downloading
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Download className="h-4 w-4" />}
+              {whisperModel?.ready
+                ? (zh ? '模型已就绪' : 'Model ready')
+                : whisperModel?.downloading || initModel.isPending
+                  ? (zh ? '下载中…' : 'Downloading…')
+                  : (zh ? '初始化模型' : 'Initialize model')}
+            </Button>
+          </div>
         </div>
       )}
       {(info.envKeys?.length ?? 0) > 0 && (

@@ -42,6 +42,7 @@ import {
   isWhisperCppReady,
   resolveWhisperCppForTranscribe,
   whisperCppInstallHintEn,
+  whisperCppInstallHintZh,
   type WhisperModelStatus,
 } from './transcribe-whispercpp-resolve.js'
 import {
@@ -279,7 +280,8 @@ async function transcribeOnce(
 }
 
 function missingProviderHint(provider: Exclude<TranscribeProvider, 'none'>): string {
-  if (provider === 'whispercpp') return whisperCppInstallHintEn()
+  // Chinese-first product surface (Portal / IM toasts). EN helpers remain for docs/tests.
+  if (provider === 'whispercpp') return whisperCppInstallHintZh()
   const keys = PROVIDER_META[provider].envKeys.filter((k) => k.includes('KEY') || k.includes('SECRET') || k.includes('APP_ID'))
   const keyHint = keys.length ? keys.join(' / ') : 'AGIM_STT_*'
   return (
@@ -395,11 +397,8 @@ async function transcribeWithWhisperCpp(filePath: string, opts: TranscribeOption
   let model: string
   try {
     ;({ bin, model } = await resolveWhisperCppForTranscribe())
-  } catch (err) {
-    throw new TranscribeError(
-      err instanceof Error ? err.message : whisperCppInstallHintEn(),
-      'whispercpp',
-    )
+  } catch {
+    throw new TranscribeError(whisperCppInstallHintZh(), 'whispercpp')
   }
 
   const wavPath = join(tmpdir(), `agim-whisper-${randomBytes(6).toString('hex')}.wav`)

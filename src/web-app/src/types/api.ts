@@ -969,6 +969,7 @@ export interface WhisperModelStatus {
   downloading: boolean
   lastError: string | null
   bin: string | null
+  defaultBinPath: string
 }
 
 export interface SttProvidersResponse {

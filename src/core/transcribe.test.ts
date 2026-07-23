@@ -299,9 +299,9 @@ describe('transcribe — settings UI provider order', () => {
       // Silent CLI install makes whisper.cpp Auto-available on Linux/Windows.
       expect(active).toBe('whispercpp')
       expect(providers[0]?.id).toBe('whispercpp')
-      expect(providers.map((p) => p.id).sort()).toEqual([
+      expect(providers.map((p) => p.id).sort()).toEqual(([
         'baidu', 'glm', 'iflytek', 'mimo', 'openai', 'stepfun', 'tencent', 'whispercpp',
-      ].sort())
+      ] as const).slice().sort())
     } else {
       expect(active).toBe('none')
       expect(providers.map((p) => p.id)).toEqual([

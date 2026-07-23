@@ -46,10 +46,14 @@ const ChatTodoList = lazy(async () => {
   const module = await import('@/components/chat/chat-todo-list')
   return { default: module.ChatTodoList }
 })
+/** Native setup pulls llm-presets + select-heavy form UI — keep out of entry. */
+const NativeSetupDialog = lazy(async () => {
+  const module = await import('@/components/chat/native-setup-dialog')
+  return { default: module.NativeSetupDialog }
+})
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
-import { NativeSetupDialog } from '@/components/chat/native-setup-dialog'
 import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
 import { Topbar } from '@/components/shell/topbar'
 import { agentDisplayName } from '@/lib/agent-label'
@@ -190,12 +194,16 @@ export default function ChatRoute(): JSX.Element {
         open={llmSettingsOpen}
         onOpenChange={setLlmSettingsOpen}
       />
-      <NativeSetupDialog
-        open={nativeSetupDialogOpen}
-        reason={nativeSetupReason}
-        onOpenChange={setNativeSetupDialogOpen}
-        onConfigured={() => switchAgent('agim')}
-      />
+      {nativeSetupDialogOpen ? (
+        <Suspense fallback={null}>
+          <NativeSetupDialog
+            open={nativeSetupDialogOpen}
+            reason={nativeSetupReason}
+            onOpenChange={setNativeSetupDialogOpen}
+            onConfigured={() => switchAgent('agim')}
+          />
+        </Suspense>
+      ) : null}
 
       {/* Message list */}
       <div

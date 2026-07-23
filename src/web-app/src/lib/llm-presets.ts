@@ -6,10 +6,22 @@
  * fails the build when keys / baseUrl / models diverge.
  */
 
-import type { LlmPresetKey, LlmPresetRow } from '@/hooks/use-llm-admin'
+/** Keep types local so backend drift tests can import this file without SPA path aliases. */
+export type LlmPresetKey = 'deepseek' | 'moonshot' | 'zhipu' | 'mimo' | 'custom'
 
-export type { LlmPresetKey }
-export type LlmPresetDef = LlmPresetRow
+export interface LlmPresetDef {
+  key: LlmPresetKey
+  label?: string
+  provider: 'openai-compat' | 'anthropic'
+  baseUrl: string
+  model: string
+  cheapModel?: string
+  models?: string[]
+  baseName: string
+  apiKeyDoc?: string
+  /** Offline mirror may use richer effort labels; wire API uses off|high|max. */
+  defaultThinking?: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+}
 
 /** @deprecated Prefer runtime presets from useLlmPresets(); kept as FALLBACK. */
 export const LLM_PRESETS: LlmPresetDef[] = [
@@ -156,10 +168,21 @@ export function firstAvailablePreset(
 
 /** Resolve runtime catalog or fall back to the offline mirror. */
 export function resolvePresetCatalog(
-  remote: { presets?: LlmPresetRow[]; defaultPreset?: string } | undefined,
+  remote: { presets?: Array<Partial<LlmPresetDef> & { key: string }>; defaultPreset?: string } | undefined,
 ): { presets: LlmPresetDef[]; defaultPreset: LlmPresetDef } {
-  const presets = remote?.presets?.length
-    ? remote.presets.map((p) => ({ ...p, key: p.key as LlmPresetKey }))
+  const presets: LlmPresetDef[] = remote?.presets?.length
+    ? remote.presets.map((p) => ({
+        key: p.key as LlmPresetKey,
+        label: p.label,
+        provider: (p.provider ?? 'openai-compat') as LlmPresetDef['provider'],
+        baseUrl: p.baseUrl ?? '',
+        model: p.model ?? '',
+        cheapModel: p.cheapModel,
+        models: p.models,
+        baseName: p.baseName ?? 'agim-api',
+        apiKeyDoc: p.apiKeyDoc,
+        defaultThinking: p.defaultThinking,
+      }))
     : LLM_PRESETS
   const defaultKey = (remote?.defaultPreset as LlmPresetKey | undefined) ?? DEFAULT_LLM_PRESET.key
   const defaultPreset = presets.find((p) => p.key === defaultKey) ?? presets[0] ?? DEFAULT_LLM_PRESET

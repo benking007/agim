@@ -1,7 +1,7 @@
 {
   "generatedFrom": "src/web/server.ts",
   "scope": "REST routes dispatched directly by startWebServer",
-  "count": 95,
+  "count": 98,
   "endpoints": [
     {
       "method": "DELETE",
@@ -126,6 +126,12 @@
     {
       "method": "GET",
       "path": "/api/chat/media/file",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/transcribe",
       "source": "exact",
       "authRequired": true
     },
@@ -311,6 +317,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/stt/providers",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/subtasks",
       "source": "exact",
       "authRequired": true
@@ -390,6 +402,12 @@
     {
       "method": "POST",
       "path": "/api/chat/media",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/transcribe",
       "source": "exact",
       "authRequired": true
     },

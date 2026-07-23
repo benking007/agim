@@ -64,6 +64,57 @@ export function isVoiceRecordingSupported(): boolean {
   return getVoiceRecordingBlockReason() === null
 }
 
+/**
+ * Ideal constraints first; some Safari / WKWebView / Firefox builds reject
+ * `channelCount` / `noiseSuppression` with DOMException "Invalid constraint".
+ * Fall back to progressively looser audio constraints.
+ */
+export const VOICE_AUDIO_CONSTRAINT_CANDIDATES: MediaTrackConstraints[] = [
+  {
+    echoCancellation: true,
+    noiseSuppression: true,
+    channelCount: 1,
+  },
+  {
+    echoCancellation: true,
+    noiseSuppression: true,
+  },
+  {
+    echoCancellation: true,
+  },
+  {},
+]
+
+function isInvalidConstraintError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { name?: string; message?: string }
+  const name = e.name || ''
+  const message = e.message || ''
+  return (
+    name === 'OverconstrainedError'
+    || name === 'ConstraintNotSatisfiedError'
+    || /invalid constraint/i.test(message)
+    || /overconstrained/i.test(message)
+  )
+}
+
+/** Exported for unit tests — tries constraint candidates until one works. */
+export async function getUserMediaAudio(
+  getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream>,
+  candidates: MediaTrackConstraints[] = VOICE_AUDIO_CONSTRAINT_CANDIDATES,
+): Promise<MediaStream> {
+  let lastErr: unknown
+  for (const audio of candidates) {
+    try {
+      return await getUserMedia({ audio: Object.keys(audio).length ? audio : true, video: false })
+    } catch (err) {
+      lastErr = err
+      if (!isInvalidConstraintError(err)) throw err
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+}
+
 export class VoiceRecorder {
   private stream: MediaStream | null = null
   private recorder: MediaRecorder | null = null
@@ -87,14 +138,9 @@ export class VoiceRecorder {
     this.stopped = false
     this.chunks = []
     this.mime = pickMimeType()
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        channelCount: 1,
-      },
-      video: false,
-    })
+    this.stream = await getUserMediaAudio(
+      (c) => navigator.mediaDevices.getUserMedia(c),
+    )
     // User may have released / cancelled while the permission prompt was open.
     if (this.stopped) {
       this.cleanup()

@@ -42,6 +42,8 @@ import {
   resolveTodoItems,
   type TodoItem,
 } from '../../../core/llm/todo-items.js'
+import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
+import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
@@ -847,6 +849,12 @@ export class NativeAgentAdapter implements AgentAdapter {
     const planAllowed = expandToolNameList(
       this.deps.planModeAllowedTools ?? AGIM_PLAN_MODE_ALLOWED_TOOLS,
     )
+    // Same key as assembleToolsForPi / buildTodoDispatcher so the gate
+    // sees the checklist the model writes via agim_todo_write.
+    const todoThreadKey =
+      opts?.platform && opts?.threadId
+        ? makeThreadKey(opts.platform, opts.channelId ?? '', opts.threadId)
+        : `agim:${sessionId}`
 
     // Runaway guards. Declared early so tool_call preflight can share them.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
@@ -1042,6 +1050,20 @@ export class NativeAgentAdapter implements AgentAdapter {
             preview: 'plan-mode: tool is not in the read/approval allowlist',
           })
           return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
+        }
+        // Todo-first gate: block mutations until a non-empty checklist exists
+        // (before approval cards — "write a plan" is cheaper than pinging IM).
+        const todoGate = evaluateTodoMutationGate(todoThreadKey, ev.toolName)
+        if (!todoGate.ok) {
+          emitToolActivity({
+            id: ev.toolCallId,
+            label: ev.toolName,
+            status: 'denied',
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+            preview: todoGate.reason,
+          })
+          return { block: true, reason: todoGate.reason }
         }
         // agim policy gate: read-only / allow-list / deny-all, escalating to
         // an IM approval card when configured. Resolve per call so a

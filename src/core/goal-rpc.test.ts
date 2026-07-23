@@ -9,7 +9,7 @@ import { join } from 'node:path'
 const _TMP = mkdtempSync(join(tmpdir(), 'agim-goal-rpc-'))
 process.env.AGIM_GOALS_DB = join(_TMP, 'goals.db')
 
-import { describe, it, expect, afterAll, beforeEach } from 'bun:test'
+import { describe, it, expect, afterAll, afterEach, beforeEach } from 'bun:test'
 import { handleGoalOp, _activeGoalSnapshot, __resetCompletionCacheForTesting } from './goal-rpc.js'
 import { beginGoalToolOperation, finishGoalToolOperation } from './goal-evidence.js'
 import { appendProgress } from './goals.js'
@@ -86,12 +86,19 @@ async function dbAvailable(): Promise<boolean> {
 }
 
 describe('goal-rpc', () => {
+  const prevTodoGate = process.env.AGIM_TODO_GATE
   beforeEach(async () => {
+    // Most fixtures predate AGIM_TODO_GATE; keep them focused on goal RPC.
+    process.env.AGIM_TODO_GATE = 'off'
     // Clean: complete any active goal between tests so each starts fresh
     const a = _activeGoalSnapshot(CTX)
     if (a) await handleGoalOp('complete_goal', completionPayload('test cleanup', 'cancelled'), CTX)
     __resetCompletionCacheForTesting()  // F9 idempotency cache must not leak across tests
     clearTodoForThread(`${CTX.platform}:${CTX.channelId}:${CTX.threadId}`)
+  })
+  afterEach(() => {
+    if (prevTodoGate === undefined) delete process.env.AGIM_TODO_GATE
+    else process.env.AGIM_TODO_GATE = prevTodoGate
   })
 
   // ── Shape tests (db-independent) ─────────────────────────────────
@@ -307,6 +314,17 @@ describe('goal-rpc', () => {
     const refused = await handleGoalOp('complete_goal', payload, CTX)
     expect(refused.ok).toBe(false)
     if (!refused.ok) expect(refused.error).toContain('TODO_INCOMPLETE')
+  })
+
+  it('native completion refuses when AGIM_TODO_GATE is on and no checklist exists', async () => {
+    if (!(await dbAvailable())) return
+    process.env.AGIM_TODO_GATE = 'on'
+    await handleGoalOp('long_task', { goal: 'Must plan first' }, CTX)
+    clearTodoForThread(`${CTX.platform}:${CTX.channelId}:${CTX.threadId}`)
+    const payload = completionPayload('forgot to write a plan')
+    const refused = await handleGoalOp('complete_goal', payload, CTX)
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error).toContain('TODO_REQUIRED')
   })
 
   it('cannot bypass native evidence requirements by delegating completion', async () => {

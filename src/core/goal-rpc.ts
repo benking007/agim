@@ -25,6 +25,7 @@ import {
 } from './goals.js'
 import { completeGoalCas, getGoalEvidenceReview } from './goal-evidence.js'
 import { evaluateTodoCompletionGate } from './llm/todo-dispatcher.js'
+import { evaluateTodoPresenceGate } from './llm/todo-gate.js'
 import { runGoalCompletionCritic } from './llm/goal-critic.js'
 import type { CompletionCriticInput, CompletionCriticVerdict } from './llm/goal-critic.js'
 import { eventBus } from './event-bus.js'
@@ -293,9 +294,10 @@ async function handleCompleteGoal(p: CompleteGoalPayload, ctx: GoalRpcCtx): Prom
     ? p.evidenceIds.filter((value): value is string => typeof value === 'string').slice(0, 16)
     : []
   if (status === 'completed' && isAgimAgentId(ctx.callerAgent)) {
-    const todoGate = evaluateTodoCompletionGate(
-      `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`,
-    )
+    const threadKey = `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
+    const presence = evaluateTodoPresenceGate(threadKey)
+    if (!presence.ok) return { ok: false, error: presence.reason }
+    const todoGate = evaluateTodoCompletionGate(threadKey)
     if (!todoGate.ok) return todoGate
   }
   const tokenGoalState = getGoalByIdState(goalId)

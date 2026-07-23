@@ -268,18 +268,48 @@ function findRunningActivityIndex(messages: ChatMessage[]): number {
   return -1
 }
 
+/** Close a sticky trailing in_progress Plan item (N-1 completed + 1 in_progress). */
+function reconcileStickyTodoSteps(steps: ChatActivityStep[]): ChatActivityStep[] {
+  return steps.map((st) => {
+    const items = st.todoItems
+    if (!items?.length) return st
+    let completed = 0
+    let inProgress = 0
+    let pending = 0
+    for (const it of items) {
+      if (it.status === 'completed') completed += 1
+      else if (it.status === 'in_progress') inProgress += 1
+      else pending += 1
+    }
+    if (pending > 0 || inProgress !== 1 || completed !== items.length - 1) return st
+    const todoItems = items.map((it) => (
+      it.status === 'in_progress'
+        ? { content: it.content, status: 'completed' as const }
+        : it
+    ))
+    return {
+      ...st,
+      todoItems,
+      preview: todoItems.map((it, i) => `${i + 1}. ☑ ${it.content}`).join('\n'),
+    }
+  })
+}
+
 function finalizeRunningActivity(
   activity: ChatActivity,
   opts: { status: 'success' | 'error'; error?: string; finishedAt?: number },
 ): ChatActivity {
   const finishedAt = opts.finishedAt ?? Date.now()
+  const steps = opts.status === 'success'
+    ? reconcileStickyTodoSteps(activity.steps)
+    : activity.steps
   return {
     ...activity,
     status: opts.status,
     finishedAt,
     durationMs: Math.max(0, finishedAt - activity.startedAt),
     error: opts.error ?? activity.error,
-    steps: activity.steps.map((st) => (
+    steps: steps.map((st) => (
       st.status === 'pending' || st.status === 'running'
         ? { ...st, status: opts.status === 'error' ? 'error' : 'success', finishedAt }
         : st
@@ -772,18 +802,15 @@ function reducer(s: ChatState, a: Action): ChatState {
       if (msgIdx >= 0) {
         const msg = messages[msgIdx]
         if (msg?.activity) {
-          messages = withActivityAt(messages, msgIdx, {
-            ...msg.activity,
-            status: a.status,
-            finishedAt: a.finishedAt,
-            durationMs: a.durationMs,
-            error: a.error,
-            steps: msg.activity.steps.map((st) => (
-              st.status === 'pending' || st.status === 'running'
-                ? { ...st, status: a.status === 'success' ? 'success' : 'error', finishedAt: a.finishedAt }
-                : st
-            )),
-          })
+          messages = withActivityAt(
+            messages,
+            msgIdx,
+            finalizeRunningActivity(msg.activity, {
+              status: a.status,
+              finishedAt: a.finishedAt,
+              error: a.error,
+            }),
+          )
         }
       }
       return {

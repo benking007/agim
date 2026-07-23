@@ -239,6 +239,13 @@ export function useSearchProviders() {
   })
 }
 
+export function useSttProviders() {
+  return useQuery<import('@/types/api').SttProvidersResponse>({
+    queryKey: ['settings', 'stt', 'providers'],
+    queryFn: () => api.getSttProviders(),
+  })
+}
+
 /** Ping one provider. Always resolves (no throw on provider error —
  *  the response carries `{ ok, error }`); throws only on transport
  *  error. The page renders the result inline beside the row. */

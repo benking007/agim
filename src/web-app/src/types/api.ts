@@ -952,6 +952,19 @@ export interface SearchProvidersResponse {
   chain: string[]
 }
 
+export interface SttProviderInfo {
+  id: string
+  label: string
+  envKeys: string[]
+  configured: boolean
+}
+
+export interface SttProvidersResponse {
+  providers: SttProviderInfo[]
+  active: string
+  explicit: string | null
+}
+
 export interface SearchTestBody {
   provider: string
   query: string

@@ -20,6 +20,7 @@
     "mcp": "MCP Servers",
     "nativeAgent": "Agim Agent",
     "search": "Web search",
+    "stt": "Speech-to-text",
     "mobile": "Mobile",
     "agimSkills": "agim Skills",
     "policy": "Policy",
@@ -993,6 +994,34 @@
     "compactReserveTokensHint": "AGIM_CTX_COMPACT_RESERVE_TOKENS. Headroom for the reply and tools; smaller means later compaction. ~48000 recommended on 1M.",
     "compactKeepRecentTokens": "Keep recent tokens",
     "compactKeepRecentTokensHint": "AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS. Raw tail kept after compaction. ~32000 recommended on 1M."
+  },
+  "stt": {
+    "title": "Speech-to-text",
+    "subtitle": "Shared by Portal hold-to-talk and IM voice messages. Configure OpenAI, Baidu, Tencent, iFlytek, or local whisper.cpp, and pick a default. Secrets are stored in ~/.agim/env and apply immediately.",
+    "refresh": "Refresh",
+    "save": "Save",
+    "discard": "Discard",
+    "unsaved": "Unsaved changes",
+    "savedToast": "Saved. The next transcription will use the new settings.",
+    "activeLabel": "Active:",
+    "activeOk": "Ready",
+    "activeNone": "Not configured",
+    "activeHint": "Controlled by AGIM_TRANSCRIBE_PROVIDER. Leave empty to auto-pick the first configured among openai → baidu → tencent → iflytek → whisper.cpp.",
+    "defaultLabel": "Default STT provider",
+    "defaultAuto": "Auto (first configured)",
+    "defaultNone": "Disable STT",
+    "defaultHint": "Writes AGIM_TRANSCRIBE_PROVIDER. “Auto” clears that variable.",
+    "providers": {
+      "baidu": "Baidu short ASR",
+      "tencent": "Tencent SentenceRecognition",
+      "iflytek": "iFlytek dictation"
+    },
+    "configured": "Configured",
+    "missing": "Missing",
+    "inUse": "In use",
+    "keyPlaceholder": "New secret (leave blank to keep)",
+    "valuePlaceholder": "Value",
+    "clearKey": "Clear saved value"
   },
   "search": {
     "title": "Web search providers",

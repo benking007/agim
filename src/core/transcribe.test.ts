@@ -19,6 +19,13 @@ const ENV_KEYS = [
   'AGIM_WHISPERCPP_BIN',
   'AGIM_WHISPERCPP_MODEL',
   'AGIM_WHISPERCPP_ARGS',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_IFLYTEK_APP_ID',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
 ]
 
 function clearEnv(): void {
@@ -58,9 +65,27 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('openai')
   })
 
-  it('falls back to whispercpp when only the bin is set', () => {
+  it('falls back to whispercpp when bin + model are set', () => {
     process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     expect(detectProvider()).toBe('whispercpp')
+  })
+
+  it('honors explicit baidu / tencent / iflytek', () => {
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'baidu'
+    expect(detectProvider()).toBe('baidu')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'tencent'
+    expect(detectProvider()).toBe('tencent')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'iflytek'
+    expect(detectProvider()).toBe('iflytek')
+  })
+
+  it('auto-picks baidu before whispercpp when keys are present', () => {
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
+    expect(detectProvider()).toBe('baidu')
   })
 
   it('explicit override wins over auto-detection', () => {

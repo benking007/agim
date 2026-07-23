@@ -63,6 +63,24 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
     'AGIM_NATIVE_TOOL_TIMEOUT_MS',
   ]
 
+  const STT_KEYS = [
+    'AGIM_TRANSCRIBE_PROVIDER',
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+    'AGIM_OPENAI_TRANSCRIBE_MODEL',
+    'AGIM_BAIDU_SPEECH_API_KEY',
+    'AGIM_BAIDU_SPEECH_SECRET_KEY',
+    'AGIM_TENCENT_SECRET_ID',
+    'AGIM_TENCENT_SECRET_KEY',
+    'AGIM_TENCENT_ASR_ENGINE',
+    'AGIM_IFLYTEK_APP_ID',
+    'AGIM_IFLYTEK_API_KEY',
+    'AGIM_IFLYTEK_API_SECRET',
+    'AGIM_WHISPERCPP_BIN',
+    'AGIM_WHISPERCPP_MODEL',
+    'AGIM_WHISPERCPP_ARGS',
+  ]
+
   // Keys that stay editable: A2A, plan mode, iteration, policy, critic.
   const LIVE_NATIVE_KEYS = [
     // A2A
@@ -127,6 +145,12 @@ describe('v1.2.127 — ENV_EDITABLE_KEYS allowlist', () => {
 
   it('keeps every v1.2.126 key', () => {
     for (const k of V126_KEYS) {
+      expect(keys.has(k)).toBe(true)
+    }
+  })
+
+  it('keeps speech-to-text provider keys', () => {
+    for (const k of STT_KEYS) {
       expect(keys.has(k)).toBe(true)
     }
   })

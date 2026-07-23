@@ -856,6 +856,11 @@ export async function startWebServer(options: {
       if (!requireAdmin(req, res)) return
       return handleSearchTest(req, res)
     }
+    // Speech-to-text provider list (admin settings).
+    if (url.pathname === '/api/stt/providers' && req.method === 'GET') {
+      if (!requireAdmin(req, res)) return
+      return handleSttProviders(req, res)
+    }
     // v1.2.129 — mobile QR. Admin generates a fresh role=user token with
     // a date-stamped label and gets back a QR data URL + the raw login
     // URL. The token persists until the admin revokes it via the regular
@@ -3049,6 +3054,22 @@ const ENV_EDITABLE_KEYS = [
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
+  // Speech-to-text: default provider + OpenAI / CN cloud / local whisper.
+  'AGIM_TRANSCRIBE_PROVIDER',
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_TENCENT_ASR_ENGINE',
+  'AGIM_IFLYTEK_APP_ID',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_WHISPERCPP_BIN',
+  'AGIM_WHISPERCPP_MODEL',
+  'AGIM_WHISPERCPP_ARGS',
   // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
   // enforced in the pi tool bridge for the native path. Re-read per
   // call, so editing takes effect without a restart.
@@ -3119,6 +3140,13 @@ const SECRET_KEYS = new Set<string>([
   'SERPER_API_KEY',
   'EXA_API_KEY',
   'METASO_API_KEY',
+  'OPENAI_API_KEY',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
 ])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file
@@ -5170,11 +5198,23 @@ async function handleChatTranscribeStatus(
   res: ServerResponse,
 ): Promise<void> {
   const { isTranscribeConfigured } = await import('../core/chat-transcribe.js')
-  const { detectProvider } = await import('../core/transcribe.js')
+  const { detectProvider, listTranscribeProviders } = await import('../core/transcribe.js')
+  const listed = listTranscribeProviders()
   sendJson(res, 200, {
     configured: isTranscribeConfigured(),
     provider: detectProvider(),
+    active: listed.active,
+    explicit: listed.explicit,
+    providers: listed.providers,
   })
+}
+
+async function handleSttProviders(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { listTranscribeProviders } = await import('../core/transcribe.js')
+  sendJson(res, 200, listTranscribeProviders())
 }
 
 async function handleChatTranscribe(

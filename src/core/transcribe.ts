@@ -8,11 +8,12 @@
 //   - iflytek     — 讯飞语音听写 (WebSocket IAT)
 //   - glm         — 智谱 GLM-ASR (AGIM_ZHIPU_API_KEY)
 //   - mimo        — 小米 MiMo-V2.5-ASR (AGIM_MIMO_API_KEY / MIMO_API_KEY)
+//   - stepfun     — 阶跃 StepAudio 2.5 ASR (AGIM_STEPFUN_API_KEY)
 //
 // Selection order (first hit wins):
 //   1. AGIM_TRANSCRIBE_PROVIDER=<name>|none — explicit default
 //   2. Auto (Chinese quality / stability / cost):
-//        iflytek → tencent → baidu → mimo → glm → openai → whispercpp(fallback)
+//        iflytek → tencent → baidu → stepfun → mimo → glm → openai → whispercpp
 //   3. else → 'none'
 
 import { spawn } from 'node:child_process'
@@ -27,6 +28,7 @@ import { isTencentSpeechConfigured, transcribeWithTencent } from './transcribe-t
 import { isIflytekSpeechConfigured, transcribeWithIflytek } from './transcribe-iflytek.js'
 import { isGlmSpeechConfigured, transcribeWithGlm } from './transcribe-glm.js'
 import { isMimoSpeechConfigured, transcribeWithMimo } from './transcribe-mimo.js'
+import { isStepfunSpeechConfigured, transcribeWithStepfun } from './transcribe-stepfun.js'
 import {
   ALL_TRANSCRIBE_PROVIDERS,
   TranscribeError,
@@ -55,6 +57,8 @@ const ECHOABLE_ENV_KEYS = new Set([
   'AGIM_ZHIPU_TRANSCRIBE_MODEL',
   'AGIM_MIMO_BASE_URL',
   'AGIM_MIMO_TRANSCRIBE_MODEL',
+  'AGIM_STEPFUN_BASE_URL',
+  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
 ])
 
 export interface TranscribeProviderInfo {
@@ -111,6 +115,11 @@ const PROVIDER_META: Record<
     label: '小米 MiMo-ASR',
     envKeys: ['AGIM_MIMO_API_KEY', 'AGIM_MIMO_BASE_URL', 'AGIM_MIMO_TRANSCRIBE_MODEL'],
   },
+  stepfun: {
+    id: 'stepfun',
+    label: '阶跃 StepAudio-ASR',
+    envKeys: ['AGIM_STEPFUN_API_KEY', 'AGIM_STEPFUN_BASE_URL', 'AGIM_STEPFUN_TRANSCRIBE_MODEL'],
+  },
 }
 
 export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none'>): boolean {
@@ -129,6 +138,8 @@ export function isProviderConfigured(provider: Exclude<TranscribeProvider, 'none
       return isGlmSpeechConfigured()
     case 'mimo':
       return isMimoSpeechConfigured()
+    case 'stepfun':
+      return isStepfunSpeechConfigured()
     default:
       return false
   }
@@ -190,6 +201,7 @@ export function detectProvider(): TranscribeProvider {
     || explicit === 'iflytek'
     || explicit === 'glm'
     || explicit === 'mimo'
+    || explicit === 'stepfun'
     || explicit === 'none'
   ) {
     return explicit
@@ -233,6 +245,9 @@ export async function transcribe(filePath: string, opts: TranscribeOptions = {})
       break
     case 'mimo':
       text = await transcribeWithMimo(filePath, opts)
+      break
+    case 'stepfun':
+      text = await transcribeWithStepfun(filePath, opts)
       break
     default:
       throw new TranscribeError(`unknown provider: ${provider as string}`, 'none')

@@ -3073,6 +3073,9 @@ const ENV_EDITABLE_KEYS = [
   'AGIM_MIMO_API_KEY',
   'AGIM_MIMO_BASE_URL',
   'AGIM_MIMO_TRANSCRIBE_MODEL',
+  'AGIM_STEPFUN_API_KEY',
+  'AGIM_STEPFUN_BASE_URL',
+  'AGIM_STEPFUN_TRANSCRIBE_MODEL',
   // whisper.cpp BIN/MODEL/ARGS are host/ops-only — not SPA-editable.
   // v1.2.126 — per-tool runtime caps (result chars / wall timeout),
   // enforced in the pi tool bridge for the native path. Re-read per
@@ -3153,6 +3156,7 @@ const SECRET_KEYS = new Set<string>([
   'AGIM_IFLYTEK_API_SECRET',
   'AGIM_ZHIPU_API_KEY',
   'AGIM_MIMO_API_KEY',
+  'AGIM_STEPFUN_API_KEY',
 ])
 
 // maskSecret moved to ./env-mask.ts (imported at the top of this file

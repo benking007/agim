@@ -161,6 +161,23 @@ describe('whisper.cpp built-in resolve', () => {
     }
   })
 
+  it('startWhisperModelDownload installs CLI when model exists but bin is missing', async () => {
+    if (process.platform !== 'linux' || process.arch !== 'x64') return
+    const modelDir = join(ROOT, 'whisper', 'models')
+    await mkdir(modelDir, { recursive: true })
+    await writeFile(join(modelDir, 'ggml-base.bin'), 'x'.repeat(100))
+    const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 10}`)
+    expect(mod.getWhisperModelStatus().ready).toBe(true)
+    expect(mod.getWhisperModelStatus().bin).toBe(null)
+    // Settings button path — must install CLI even when model is already present.
+    const start = mod.startWhisperModelDownload()
+    expect(start.alreadyReady).toBe(false)
+    expect(start.started || start.alreadyRunning).toBe(true)
+    const bin = await mod.ensureWhisperBin()
+    expect(bin).toBe(mod.defaultWhisperBinPath())
+    expect(mod.getWhisperModelStatus().bin).toBe(bin)
+  }, 120_000)
+
   it('ensureWhisperBin installs official linux prebuild into ~/.agim/whisper/bin', async () => {
     if (process.platform !== 'linux' || process.arch !== 'x64') return
     const mod = await import(`./transcribe-whispercpp-resolve.js?t=${Date.now() + 9}`)
@@ -176,12 +193,17 @@ describe('whisper.cpp built-in resolve', () => {
     const bin = await mod.ensureWhisperBin()
     expect(bin).toBe(mod.defaultWhisperBinPath())
     expect(mod.resolveWhisperBin()).toBe(bin)
-    // Smoke: binary starts (may print usage).
+    // Shared libs must be relative ($ORIGIN) — absolute staging links break after install.
+    const { readlinkSync } = await import('node:fs')
+    const link = join(mod.whisperHomeDir(), 'bin', 'libwhisper.so.1')
+    expect(readlinkSync(link)).not.toMatch(/^\/tmp\//)
+    // Smoke: binary starts and prints usage (exit may be non-zero).
     try {
-      execFileSync(bin, ['--help'], { stdio: 'ignore', timeout: 15_000 })
-    } catch {
-      // Some builds exit non-zero on --help; file presence is enough.
-      expect(true).toBe(true)
+      execFileSync(bin, ['--help'], { encoding: 'utf8', timeout: 15_000 })
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string }
+      const out = `${e.stdout || ''}${e.stderr || ''}`
+      expect(out).toMatch(/usage:|whisper-cli|--help/)
     }
   }, 120_000)
 })

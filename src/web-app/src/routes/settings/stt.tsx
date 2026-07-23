@@ -17,11 +17,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { api } from '@/lib/api/endpoints'
 import { client } from '@/lib/api/client'
 import { useEnv, useUpdateEnv } from '@/hooks/use-settings'
 import type {
-  SttProviderInfo, SttProvidersResponse, WhisperModelStatus,
+  SttProviderInfo, SttProvidersResponse, SttWhisperModelInitResponse,
+  WhisperModelStatus,
 } from '@/types/api'
 
 interface Draft {
@@ -519,7 +519,9 @@ function ProviderCard(props: {
   } = props
   const fieldMeta = zh ? FIELD_META_ZH : FIELD_META_EN
   const initModel = useMutation({
-    mutationFn: () => api.initSttWhisperModel(),
+    // Keep this call in the lazy STT chunk (not endpoints.ts) so the SPA
+    // entry bundle stays under the 350 KiB budget.
+    mutationFn: () => client.post<SttWhisperModelInitResponse>('/api/stt/whispercpp/model'),
     onSuccess: (r) => {
       onWhisperModelChanged?.()
       if (r.alreadyReady) {

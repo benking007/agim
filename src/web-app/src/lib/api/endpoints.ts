@@ -47,8 +47,6 @@ import type {
   SearchProvidersResponse,
   SearchTestBody,
   SearchTestResponse,
-  SttWhisperModelInitResponse,
-  WhisperModelStatus,
   CancelReminderResponse,
   ConsolidateMemoryResponse,
   ConsolidateStatusResponse,
@@ -151,14 +149,6 @@ export const api = {
    *  query and report latency / hit count / error. */
   testSearchProvider: (body: SearchTestBody) =>
     client.post<SearchTestResponse>('/api/search/test', { body }),
-
-  /** GET /api/stt/whispercpp/model — local whisper.cpp model readiness. */
-  getSttWhisperModel: () =>
-    client.get<WhisperModelStatus>('/api/stt/whispercpp/model'),
-
-  /** POST /api/stt/whispercpp/model — start ggml-base.bin download (admin). */
-  initSttWhisperModel: () =>
-    client.post<SttWhisperModelInitResponse>('/api/stt/whispercpp/model'),
 
   /** POST /api/mobile/qr — admin generates a fresh role=user token +
    *  QR PNG (data URL) pointing the scanner at /m/login. v1.2.129. */

@@ -402,8 +402,16 @@ async function downloadWhisperBinToDefault(): Promise<string> {
     }
     const srcDir = dirname(cliPath)
     await mkdir(binDir, { recursive: true })
-    for (const name of await readdir(srcDir)) {
-      await cp(join(srcDir, name), join(binDir, name), { recursive: true, force: true })
+    // Preserve relative shared-lib symlinks ($ORIGIN). Node fs.cp rewrites
+    // them to absolute staging paths that vanish after cleanup.
+    if (process.platform === 'win32') {
+      for (const name of await readdir(srcDir)) {
+        await cp(join(srcDir, name), join(binDir, name), {
+          recursive: true, force: true, dereference: true,
+        })
+      }
+    } else {
+      await execFileAsync('cp', ['-a', `${srcDir}/.`, binDir])
     }
     if (process.platform !== 'win32') {
       await chmod(dest, 0o755)

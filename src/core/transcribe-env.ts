@@ -3,9 +3,7 @@
  * collide with LLM vendor envs (OPENAI_API_KEY, STEPFUN_API_KEY,
  * AGIM_ZHIPU_API_KEY, MIMO_API_KEY, …).
  *
- * Resolution: prefer the new `AGIM_STT_*` name, then fall back to the
- * previous STT-dedicated alias when listed. Shared LLM keys are NOT
- * accepted as fallbacks.
+ * No legacy short-name fallbacks: STT has not shipped publicly yet.
  */
 
 /** Prefix for all speech-to-text env keys (avoids colliding with LLM vendor envs). */
@@ -47,33 +45,6 @@ export const STT_ENV = {
   whisperModel: k('WHISPERCPP_MODEL'),
   whisperArgs: k('WHISPERCPP_ARGS'),
 } as const
-
-/** Legacy STT-only aliases accepted as read fallback (not LLM shared keys). */
-const LEGACY: Partial<Record<keyof typeof STT_ENV, readonly string[]>> = {
-  provider: ['AGIM_TRANSCRIBE_PROVIDER'],
-  openaiBaseUrl: ['OPENAI_BASE_URL'],
-  openaiModel: ['AGIM_OPENAI_TRANSCRIBE_MODEL'],
-  iflytekAppId: ['AGIM_IFLYTEK_APP_ID'],
-  iflytekApiKey: ['AGIM_IFLYTEK_API_KEY'],
-  iflytekApiSecret: ['AGIM_IFLYTEK_API_SECRET'],
-  tencentSecretId: ['AGIM_TENCENT_SECRET_ID'],
-  tencentSecretKey: ['AGIM_TENCENT_SECRET_KEY'],
-  tencentEngine: ['AGIM_TENCENT_ASR_ENGINE'],
-  baiduApiKey: ['AGIM_BAIDU_SPEECH_API_KEY'],
-  baiduSecretKey: ['AGIM_BAIDU_SPEECH_SECRET_KEY'],
-  stepfunApiKey: ['AGIM_STEPFUN_API_KEY'],
-  stepfunBaseUrl: ['AGIM_STEPFUN_BASE_URL'],
-  stepfunModel: ['AGIM_STEPFUN_TRANSCRIBE_MODEL'],
-  mimoApiKey: ['AGIM_MIMO_API_KEY'],
-  mimoBaseUrl: ['AGIM_MIMO_BASE_URL'],
-  mimoModel: ['AGIM_MIMO_TRANSCRIBE_MODEL'],
-  // Intentionally omit AGIM_ZHIPU_API_KEY — that is the LLM key.
-  zhipuBaseUrl: ['AGIM_ZHIPU_BASE_URL'],
-  zhipuModel: ['AGIM_ZHIPU_TRANSCRIBE_MODEL'],
-  whisperBin: ['AGIM_WHISPERCPP_BIN'],
-  whisperModel: ['AGIM_WHISPERCPP_MODEL'],
-  whisperArgs: ['AGIM_WHISPERCPP_ARGS'],
-}
 
 /** SPA-editable STT keys (canonical AGIM_STT_* only — no LLM shared names). */
 export const STT_EDITABLE_ENV_KEYS: readonly string[] = [
@@ -129,13 +100,8 @@ export const STT_ECHOABLE_ENV_KEYS: ReadonlySet<string> = new Set([
 ])
 
 export function sttEnv(name: keyof typeof STT_ENV): string | undefined {
-  const primary = process.env[STT_ENV[name]]?.trim()
-  if (primary) return primary
-  for (const legacy of LEGACY[name] ?? []) {
-    const v = process.env[legacy]?.trim()
-    if (v) return v
-  }
-  return undefined
+  const v = process.env[STT_ENV[name]]?.trim()
+  return v || undefined
 }
 
 export function sttEnvPrimary(name: keyof typeof STT_ENV): string {

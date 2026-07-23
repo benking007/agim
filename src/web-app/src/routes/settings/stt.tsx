@@ -523,8 +523,8 @@ function ProviderCard(props: {
       {info.fallback && (
         <p className="text-[11px] text-text-dim">
           {zh
-            ? '本地离线兜底。路径由主机环境配置（AGIM_STT_WHISPERCPP_BIN / MODEL；兼容旧 AGIM_WHISPERCPP_*），控制台不开放修改。'
-            : 'Local offline fallback. Paths are host-managed (AGIM_STT_WHISPERCPP_BIN / MODEL; legacy AGIM_WHISPERCPP_* still read) and not editable here.'}
+            ? '本地离线兜底。路径由主机环境配置（AGIM_STT_WHISPERCPP_BIN / MODEL），控制台不开放修改。'
+            : 'Local offline fallback. Paths are host-managed (AGIM_STT_WHISPERCPP_BIN / MODEL) and not editable here.'}
         </p>
       )}
       {(info.envKeys?.length ?? 0) > 0 && (

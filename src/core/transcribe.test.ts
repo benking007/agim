@@ -40,52 +40,54 @@ const {
 } = await import('./transcribe.js')
 
 const ENV_KEYS = [
+  // Canonical STT keys
   'AGIM_STT_PROVIDER',
-  'AGIM_TRANSCRIBE_PROVIDER',
   'AGIM_STT_OPENAI_API_KEY',
   'AGIM_STT_OPENAI_BASE_URL',
   'AGIM_STT_OPENAI_MODEL',
-  'OPENAI_API_KEY',
-  'OPENAI_BASE_URL',
-  'AGIM_OPENAI_TRANSCRIBE_MODEL',
   'AGIM_STT_WHISPERCPP_BIN',
   'AGIM_STT_WHISPERCPP_MODEL',
   'AGIM_STT_WHISPERCPP_ARGS',
-  'AGIM_WHISPERCPP_BIN',
-  'AGIM_WHISPERCPP_MODEL',
-  'AGIM_WHISPERCPP_ARGS',
   'AGIM_STT_BAIDU_API_KEY',
   'AGIM_STT_BAIDU_SECRET_KEY',
-  'AGIM_BAIDU_SPEECH_API_KEY',
-  'AGIM_BAIDU_SPEECH_SECRET_KEY',
   'AGIM_STT_TENCENT_SECRET_ID',
   'AGIM_STT_TENCENT_SECRET_KEY',
   'AGIM_STT_TENCENT_ENGINE',
-  'AGIM_TENCENT_SECRET_ID',
-  'AGIM_TENCENT_SECRET_KEY',
-  'AGIM_TENCENT_ASR_ENGINE',
   'AGIM_STT_IFLYTEK_APP_ID',
   'AGIM_STT_IFLYTEK_API_KEY',
   'AGIM_STT_IFLYTEK_API_SECRET',
-  'AGIM_IFLYTEK_APP_ID',
-  'AGIM_IFLYTEK_API_KEY',
-  'AGIM_IFLYTEK_API_SECRET',
   'AGIM_STT_ZHIPU_API_KEY',
   'AGIM_STT_ZHIPU_BASE_URL',
   'AGIM_STT_ZHIPU_MODEL',
-  'AGIM_ZHIPU_API_KEY',
-  'AGIM_ZHIPU_BASE_URL',
-  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
   'AGIM_STT_MIMO_API_KEY',
   'AGIM_STT_MIMO_BASE_URL',
   'AGIM_STT_MIMO_MODEL',
+  'AGIM_STT_STEPFUN_API_KEY',
+  'AGIM_STT_STEPFUN_BASE_URL',
+  'AGIM_STT_STEPFUN_MODEL',
+  // LLM / pre-release short names — cleared so isolation tests stay honest
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'AGIM_TRANSCRIBE_PROVIDER',
+  'AGIM_OPENAI_TRANSCRIBE_MODEL',
+  'AGIM_WHISPERCPP_BIN',
+  'AGIM_WHISPERCPP_MODEL',
+  'AGIM_WHISPERCPP_ARGS',
+  'AGIM_BAIDU_SPEECH_API_KEY',
+  'AGIM_BAIDU_SPEECH_SECRET_KEY',
+  'AGIM_TENCENT_SECRET_ID',
+  'AGIM_TENCENT_SECRET_KEY',
+  'AGIM_TENCENT_ASR_ENGINE',
+  'AGIM_IFLYTEK_APP_ID',
+  'AGIM_IFLYTEK_API_KEY',
+  'AGIM_IFLYTEK_API_SECRET',
+  'AGIM_ZHIPU_API_KEY',
+  'AGIM_ZHIPU_BASE_URL',
+  'AGIM_ZHIPU_TRANSCRIBE_MODEL',
   'AGIM_MIMO_API_KEY',
   'MIMO_API_KEY',
   'AGIM_MIMO_BASE_URL',
   'AGIM_MIMO_TRANSCRIBE_MODEL',
-  'AGIM_STT_STEPFUN_API_KEY',
-  'AGIM_STT_STEPFUN_BASE_URL',
-  'AGIM_STT_STEPFUN_MODEL',
   'AGIM_STEPFUN_API_KEY',
   'STEPFUN_API_KEY',
   'STEP_API_KEY',
@@ -208,10 +210,15 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('whispercpp')
   })
 
-  it('reads legacy AGIM_BAIDU_SPEECH_* as STT fallback', () => {
+  it('ignores pre-release short STT names (no legacy fallback)', () => {
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
-    expect(detectProvider()).toBe('baidu')
+    process.env.AGIM_TRANSCRIBE_PROVIDER = 'openai'
+    process.env.AGIM_STEPFUN_API_KEY = 'step'
+    process.env.AGIM_MIMO_API_KEY = 'mimo'
+    process.env.AGIM_WHISPERCPP_BIN = '/bin/whisper'
+    process.env.AGIM_WHISPERCPP_MODEL = '/models/m.bin'
+    expect(detectProvider()).toBe('none')
   })
 
   it('ignores unknown explicit value and falls through to auto-detect', () => {
@@ -411,7 +418,7 @@ describe('transcribe — openai path with mocked fetch', () => {
     expect(capturedReq!.headers.get('authorization')).toBe('Bearer sk-test')
   })
 
-  it('honors OPENAI_BASE_URL for self-hosted gateways', async () => {
+  it('honors AGIM_STT_OPENAI_BASE_URL for self-hosted gateways', async () => {
     const audioPath = join(TEST_ROOT, 'sample2.ogg')
     await writeFile(audioPath, Buffer.from([0]))
     process.env.AGIM_STT_OPENAI_BASE_URL = 'https://gateway.example.com/v1'
@@ -507,7 +514,7 @@ describe('transcribe — glm (Zhipu) path with mocked fetch', () => {
     expect(capturedReq!.method).toBe('POST')
   })
 
-  it('honors AGIM_ZHIPU_BASE_URL + model', async () => {
+  it('honors AGIM_STT_ZHIPU_BASE_URL + model', async () => {
     process.env.AGIM_STT_ZHIPU_BASE_URL = 'https://api.z.ai/api/paas/v4'
     process.env.AGIM_STT_ZHIPU_MODEL = 'glm-asr-2512'
     let capturedUrl = ''

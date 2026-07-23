@@ -7,7 +7,9 @@ import SettingsLayout from './layout'
 import '@/i18n'
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  localStorage.clear()
 })
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -66,7 +68,16 @@ describe('/settings layout', () => {
     expect(screen.getByRole('link', { name: /Messengers/i }).className).not.toContain('text-brand-600')
   })
 
-  it('surfaces AUTH_ADMIN_REQUIRED instead of a blank messengers/agents shell', async () => {
+  it('on AUTH_ADMIN_REQUIRED from /settings → client redirects to login?reason=admin', async () => {
+    const setHref = vi.fn()
+    let href = 'http://localhost:3000/settings/messengers'
+    vi.stubGlobal('location', {
+      pathname: '/settings/messengers',
+      search: '',
+      get href() { return href },
+      set href(v: string) { href = v; setHref(v) },
+    } as unknown as Location)
+    localStorage.setItem('agim_token', 'user-qr')
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       if (String(input) === '/api/config') {
         return new Response(JSON.stringify({ code: 'AUTH_ADMIN_REQUIRED', error: 'admin role required' }), {
@@ -91,11 +102,10 @@ describe('/settings layout', () => {
       </QueryClientProvider>,
     )
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/admin permission|管理权限/i)
-    expect(screen.getByRole('link', { name: /Sign in as admin|管理员 token 登录/i })).toHaveAttribute(
-      'href',
-      expect.stringContaining('/login?reason=admin'),
-    )
+    await vi.waitFor(() => {
+      expect(setHref).toHaveBeenCalled()
+    })
+    expect(setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*reason=admin/)
+    expect(localStorage.getItem('agim_token')).toBeNull()
   })
 })

@@ -109,7 +109,7 @@ describe('client', () => {
     expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=/)
   })
 
-  it('on AUTH_ADMIN_REQUIRED 403 → keeps token and does NOT redirect', async () => {
+  it('on AUTH_ADMIN_REQUIRED in Portal → keeps token and does NOT redirect', async () => {
     localStorage.setItem(TOKEN_KEY, 'keep-me')
     const loc = mockLocation('/m/chat')
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
@@ -126,8 +126,26 @@ describe('client', () => {
     expect(loc.setHref).not.toHaveBeenCalled()
   })
 
-  it('on legacy 403 "admin role required" → keeps session (not a re-login)', async () => {
-    localStorage.setItem(TOKEN_KEY, 'keep-me')
+  it('on AUTH_ADMIN_REQUIRED in /settings → clears token + /login?reason=admin', async () => {
+    localStorage.setItem(TOKEN_KEY, 'user-qr-token')
+    const loc = mockLocation('/settings/messengers')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'AUTH_ADMIN_REQUIRED', error: 'admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    await expect(client.get('/api/config')).rejects.toMatchObject({
+      code: 'AUTH_ADMIN_REQUIRED',
+      status: 403,
+    })
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(loc.setHref).toHaveBeenCalledTimes(1)
+    expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*reason=admin/)
+  })
+
+  it('on legacy 403 "admin role required" in /settings → same re-login', async () => {
+    localStorage.setItem(TOKEN_KEY, 'user-qr-token')
     const loc = mockLocation('/settings/service')
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'admin role required' }), {
@@ -139,8 +157,9 @@ describe('client', () => {
       code: 'FORBIDDEN',
       status: 403,
     })
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('keep-me')
-    expect(loc.setHref).not.toHaveBeenCalled()
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(loc.setHref).toHaveBeenCalledTimes(1)
+    expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*reason=admin/)
   })
 
   it('does NOT redirect when /api/auth/* itself returns 401', async () => {

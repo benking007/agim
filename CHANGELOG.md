@@ -17,11 +17,14 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Agim Agent stuck-loop guards prefer **soft-steer** over an immediate hard stop: identical tool failures get one ephemeral “change approach” nudge (then hard-stop only if ignored). Semantic stuck-loop also requires recent failures (≥2 of last 3), so successful multi-tool debugging of the same URL/path is no longer treated as a dead loop.
 - Approval wait defaults **15 → 30 minutes** (`AGIM_APPROVAL_TIMEOUT_MS` + matching `AGIM_NATIVE_TURN_TIMEOUT_MS`) so human review of tool cards is less likely to race the turn watchdog.
 - Agim `AGENTS.md` seed + managed `<!-- agim:im-ops -->` baseline: 对话逻辑（>8k 落盘仍须完整回复；Viewer + IM 要点；Web/Portal/macOS 禁止截断）、说话/任务执行规则收紧为「对话给全」，去掉旧「一两句收尾 / 写文件代替回复」口径。
 
 ### Fixed
 
+- Successful turn end auto-completes a sticky Plan last item: when the checklist is `N-1` completed with exactly one `in_progress` and zero `pending`, store + activity + SPA `DONE`/`RUN_FINISH` mark it completed so the UI shows `N/N` instead of hanging on an empty circle.
+- Chat lists (Portal `/m/chat` and web console `/`): scrolling up to read history no longer gets yanked back to the bottom when the live turn streams or tool-activity steps grow. Follow resumes when the user returns near the bottom or sends a message.
 - Settings `/settings/stt`: provider config cards no longer disappear when `GET /api/stt/providers` fails (stale process 404, non-admin 403, etc.). SPA keeps a built-in catalog, falls back to `GET /api/chat/transcribe`, and shows a warning so keys can still be edited via `/api/env`.
 - Active goal + missing bwrap: `agim_exec` escalates to an explicit approval card that still bypasses global auto-approve, but now offers **本类自动放行** (session pin by command family) alongside Allow / Deny. Detached/`nohup`/`&` still hard-blocked.
 - Chat composer Enter semantics: **desktop browser / Agim macOS shell** — Enter sends, Ctrl/⌘+Enter newlines; **Agim iOS shell / mobile browser** — Enter newlines, Send button submits. Shells inject `window.__AGIM_SHELL__` (`ios`|`macos`) for precise detection (no viewport heuristics).

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatActivity } from '@/hooks/use-chat'
 import {
+  completeStickyInProgressItems,
   extractLatestTodoItems,
   parseTodoItemsFromPreview,
   summarizeTodoItems,
@@ -109,5 +110,25 @@ describe('summarizeTodoItems', () => {
       pending: 1,
       allDone: false,
     })
+  })
+})
+
+describe('completeStickyInProgressItems', () => {
+  it('marks the last in_progress item completed', () => {
+    expect(completeStickyInProgressItems([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'in_progress' },
+    ])).toEqual([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'completed' },
+    ])
+  })
+
+  it('returns null when pending remains', () => {
+    expect(completeStickyInProgressItems([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'in_progress' },
+      { content: 'c', status: 'pending' },
+    ])).toBeNull()
   })
 })

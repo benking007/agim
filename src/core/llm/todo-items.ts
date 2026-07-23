@@ -99,3 +99,29 @@ export function renderMarkdownChecklist(items: TodoItem[]): string {
     return `${i + 1}. ${icon} ${it.content}`
   }).join('\n')
 }
+
+/**
+ * Turn-end reconcile: models often leave the last item `in_progress`
+ * (prompt says "mark done → set next in_progress") and never write a
+ * final all-completed checklist. When every item is completed except
+ * exactly one `in_progress` and there are no `pending` items, flip the
+ * trailing in-progress row to completed.
+ *
+ * Returns a new array, or null when the pattern does not match (so
+ * intentional multi-turn leftovers are left alone).
+ */
+export function completeStickyInProgressItems(items: readonly TodoItem[]): TodoItem[] | null {
+  if (items.length === 0) return null
+  let completed = 0
+  let inProgress = 0
+  let pending = 0
+  for (const it of items) {
+    if (it.status === 'completed') completed += 1
+    else if (it.status === 'in_progress') inProgress += 1
+    else if (it.status === 'pending') pending += 1
+  }
+  if (pending > 0 || inProgress !== 1 || completed !== items.length - 1) return null
+  return items.map((it) => (
+    it.status === 'in_progress' ? { content: it.content, status: 'completed' as const } : { ...it }
+  ))
+}

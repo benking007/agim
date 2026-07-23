@@ -1002,9 +1002,9 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).toContain('最大迭代步数 2')
   })
 
-  it('stops repeated schema-invalid calls with the exact failure guard', async () => {
+  it('soft-steers then hard-stops repeated schema-invalid calls', async () => {
     const reg = faux()
-    reg.setResponses(Array.from({ length: 8 }, (_v, i) =>
+    reg.setResponses(Array.from({ length: 10 }, (_v, i) =>
       fauxAssistantMessage(fauxToolCall('needs_arg', {}, { id: `invalid${i}` }), { stopReason: 'toolUse' })))
     const tool: ToolDef = {
       name: 'needs_arg',
@@ -1027,7 +1027,8 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     })
 
     const out = await collect(adapter.sendPrompt('invalid-stuck', 'repeat invalid'))
-    expect(reg.state.callCount).toBe(3)
+    // 3 identical failures → soft steer; next 3 → hard stop.
+    expect(reg.state.callCount).toBe(6)
     expect(out).toContain('死循环')
   })
 
@@ -1055,16 +1056,9 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(out).not.toContain('本轮没有产出文本回复')
   })
 
-  it('stops on a stuck loop (same tool + args erroring 3x) before max_iter', async () => {
+  it('soft-steers then hard-stops a stuck loop (same tool + args erroring)', async () => {
     const reg = faux()
-    reg.setResponses(
-      Array.from({ length: 8 }, (_v, i) =>
-        fauxAssistantMessage(
-          fauxToolCall('flaky', i % 2 === 0 ? { a: 1, b: 2 } : { b: 2, a: 1 }, { id: `s${i}` }),
-          { stopReason: 'toolUse' },
-        ),
-      ),
-    )
+    let sawSteer = false
     let calls = 0
     const tool: ToolDef = {
       name: 'flaky',
@@ -1085,16 +1079,44 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveTools: () => ({ tools: [tool], dispatch }),
       maxIterations: 50, // high — stuck-loop must fire first
     })
+    // 3 identical failures → soft steer (continue); next 3 → hard stop.
+    reg.setResponses([
+      ...Array.from({ length: 3 }, (_v, i) =>
+        fauxAssistantMessage(
+          fauxToolCall('flaky', i % 2 === 0 ? { a: 1, b: 2 } : { b: 2, a: 1 }, { id: `s${i}` }),
+          { stopReason: 'toolUse' },
+        ),
+      ),
+      (ctx) => {
+        const user = [...ctx.messages].reverse().find((message) => message.role === 'user')
+        const text = typeof user?.content === 'string'
+          ? user.content
+          : (user?.content ?? []).map((block) => block.type === 'text' ? block.text : '').join('')
+        if (text.includes('repeated failure')) sawSteer = true
+        return fauxAssistantMessage(
+          fauxToolCall('flaky', { a: 1, b: 2 }, { id: 's3' }),
+          { stopReason: 'toolUse' },
+        )
+      },
+      ...Array.from({ length: 2 }, (_v, i) =>
+        fauxAssistantMessage(
+          fauxToolCall('flaky', { a: 1, b: 2 }, { id: `s${i + 4}` }),
+          { stopReason: 'toolUse' },
+        ),
+      ),
+      fauxAssistantMessage('unreachable after hard stop'),
+    ])
     let outcome: import('../../../core/types.js').AgentTurnOutcome | undefined
     const out = await collect(adapter.sendPrompt('s7', 'do the flaky thing', undefined, {
       onOutcome: (value) => { outcome = value },
     }))
-    expect(calls).toBe(3) // exact stuck-loop window
+    expect(sawSteer).toBe(true)
+    expect(calls).toBe(6) // soft-steer window + hard-stop window
     expect(out).toContain('死循环')
     expect(outcome?.status).toBe('partial')
     expect(outcome?.stopReason).toBe('stuck_loop')
-    expect(outcome?.toolCalls).toBe(3)
-    expect((outcome?.modelTurns ?? 0)).toBeGreaterThanOrEqual(1)
+    expect(outcome?.toolCalls).toBe(6)
+    expect((outcome?.modelTurns ?? 0)).toBeGreaterThanOrEqual(2)
   })
 
   it('soft-steers then hard-stops a cross-tool semantic stuck loop', async () => {
@@ -1146,6 +1168,65 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(sawSteer).toBe(true)
     expect(calls).toBe(6)
     expect(out).toContain('死循环')
+  })
+
+  it('does not treat successful same-URL exploration as a semantic stuck loop', async () => {
+    const sharedUrl = 'http://localhost:8000/api/v1/composite/fund-overlap?codes=012729,160424'
+    const reg = faux()
+    const batch = (offset: number) => fauxAssistantMessage(
+      [
+        fauxToolCall('agim_exec', { command: `curl -sS '${sharedUrl}'` }, { id: `e${offset}` }),
+        fauxToolCall('agim_web_fetch', { url: sharedUrl, format: 'raw' }, { id: `f${offset}` }),
+        fauxToolCall('agim_exec', { command: `curl -sS '${sharedUrl}' | head` }, { id: `e${offset + 1}` }),
+      ],
+      { stopReason: 'toolUse' },
+    )
+    let calls = 0
+    const tools: ToolDef[] = [
+      {
+        name: 'agim_exec',
+        description: 'exec',
+        parameters: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+      },
+      {
+        name: 'agim_web_fetch',
+        description: 'fetch',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string' },
+            format: { type: 'string' },
+          },
+          required: ['url'],
+        },
+      },
+    ]
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-semantic-ok-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({
+        tools,
+        dispatch: async () => {
+          calls += 1
+          return { text: '{"ok":true}', isError: false }
+        },
+      }),
+      maxIterations: 10,
+      maxToolCalls: 20,
+    })
+    reg.setResponses([
+      batch(0),
+      batch(10),
+      fauxAssistantMessage('done exploring the endpoint'),
+    ])
+    const out = await collect(adapter.sendPrompt('semantic-ok', 'probe fund-overlap'))
+    expect(calls).toBe(6)
+    expect(out).toContain('done exploring the endpoint')
+    expect(out).not.toContain('死循环')
   })
 
   it('forwards provider stream options (retries / timeout / cache) to the provider', async () => {

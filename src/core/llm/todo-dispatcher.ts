@@ -28,6 +28,7 @@ import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { canonicalizeToolName } from './tool-names.js'
 import {
+  completeStickyInProgressItems,
   renderMarkdownChecklist,
   type TodoItem,
 } from './todo-items.js'
@@ -172,6 +173,26 @@ export function clearTodoForThread(threadKey: string): void {
   }, false)
 }
 
+/**
+ * On a successful agent turn, close a sticky last `in_progress` item so
+ * Plan UI / complete_goal see an all-completed checklist. No-op when the
+ * pattern does not match or the store is unavailable.
+ */
+export function reconcileTodoOnSuccessfulTurn(threadKey: string): TodoItem[] | null {
+  if (!threadKey) return null
+  const snap = getTodoSnapshot(threadKey)
+  if (snap.status !== 'present') return null
+  const next = completeStickyInProgressItems(snap.items)
+  if (!next) return null
+  if (!persistTodo(threadKey, next)) return null
+  log.info({
+    event: 'todo.reconcile_turn_end',
+    threadKey,
+    count: next.length,
+  }, 'completed sticky in_progress checklist item on successful turn end')
+  return next
+}
+
 function persistTodo(threadKey: string, items: TodoItem[]): boolean {
   MEMORY.set(threadKey, cloneItems(items))
   if (!dbAvailable()) {
@@ -205,6 +226,8 @@ export function getTodoTools(): ToolDef[] {
         'call it again immediately after finishing each item to mark that item completed and ' +
         'set the next one to in_progress, BEFORE starting the next tool work. ' +
         'Do NOT wait until the whole task finishes to batch all status changes. ' +
+        'Before ending the turn, call once more with EVERY item status=completed ' +
+        '(including the last one — do not leave a trailing in_progress). ' +
         'The tool result returns the rendered markdown checklist. ' +
         '\n\n' +
         'Status legend: pending (not started) · in_progress (working on it now) · completed (done). ' +

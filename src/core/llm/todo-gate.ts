@@ -119,6 +119,7 @@ export const TODO_FIRST_PROMPT = [
   '- Before any mutating tool (agim_exec / agim_write_file / edit / memo write / push / call_agent / complete_goal / …), you MUST call agim_todo_write with a non-empty checklist.',
   '- Read tools, ask_user, and agim_todo_write itself are allowed without a checklist.',
   '- For multi-step work, the first tool call should be agim_todo_write. Update the checklist after each completed item.',
+  '- Before ending the turn, call agim_todo_write once with every item completed (no trailing in_progress).',
   '- Clearing the list (empty items) re-arms the gate — write a new plan before mutating again.',
   '[/agim framework rule]',
 ].join('\n')

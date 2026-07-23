@@ -804,7 +804,11 @@ export function AgentPortal(): JSX.Element {
       toast.error(
         /Permission|NotAllowed|denied/i.test(msg)
           ? t('chat.portal.voiceDenied', { defaultValue: '需要麦克风权限才能语音输入' })
-          : msg,
+          : /Invalid constraint|Overconstrained/i.test(msg)
+            ? t('chat.portal.voiceConstraint', {
+              defaultValue: '麦克风约束不被当前浏览器支持。请换 Chrome/Edge，或检查系统麦克风设置',
+            })
+            : msg,
       )
     }
   }, [canStop, t, uploading, voicePhase])

@@ -181,8 +181,8 @@ export default function SettingsSttRoute(): JSX.Element {
         </div>
         <p className="mt-1 text-[11px] text-text-dim">
           {zh
-            ? '由「默认转写服务」决定。选「自动」时按优先级选用已配置服务：云厂商优先，本地 whisper.cpp 兜底。'
-            : 'Set by the default below. “Auto” picks the first configured cloud provider, then local whisper.cpp as fallback.'}
+            ? '由「默认转写服务」决定。选「自动」时：只要配置了任一云厂商，就优先用云服务（讯飞 → 腾讯 → 百度 → OpenAI）；都没有才用本地 whisper.cpp 兜底。'
+            : 'Set by the default below. Auto prefers any configured cloud STT (iFlytek → Tencent → Baidu → OpenAI) over local whisper.cpp.'}
         </p>
       </section>
 
@@ -194,14 +194,19 @@ export default function SettingsSttRoute(): JSX.Element {
           value={draft.provider}
           onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value }))}
         >
-          <option value="">{zh ? '自动（按优先级选用已配置服务）' : 'Auto (priority among configured)'}</option>
-          <option value="whispercpp">{zh ? 'whisper.cpp（本地兜底）' : 'whisper.cpp (local fallback)'}</option>
-          <option value="openai">OpenAI Whisper</option>
-          <option value="baidu">{zh ? '百度短语音识别' : 'Baidu short ASR'}</option>
-          <option value="tencent">{zh ? '腾讯云一句话识别' : 'Tencent SentenceRecognition'}</option>
+          <option value="">{zh ? '自动（云优先，本地兜底）' : 'Auto (cloud first, local fallback)'}</option>
           <option value="iflytek">{zh ? '讯飞语音听写' : 'iFlytek dictation'}</option>
+          <option value="tencent">{zh ? '腾讯云一句话识别' : 'Tencent SentenceRecognition'}</option>
+          <option value="baidu">{zh ? '百度短语音识别' : 'Baidu short ASR'}</option>
+          <option value="openai">OpenAI Whisper</option>
+          <option value="whispercpp">{zh ? 'whisper.cpp（本地兜底）' : 'whisper.cpp (local fallback)'}</option>
           <option value="none">{zh ? '禁用转写' : 'Disable STT'}</option>
         </select>
+        <p className="text-[11px] text-text-dim">
+          {zh
+            ? '自动排序依据：中文识别能力 → 稳定性 → 性价比；非兜底服务始终优先于本地 whisper.cpp。'
+            : 'Auto order: Chinese ASR quality → stability → cost; any cloud provider beats local whisper.cpp.'}
+        </p>
       </section>
 
       {envQuery.isLoading || providersQuery.isLoading ? (

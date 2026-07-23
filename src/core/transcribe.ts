@@ -9,7 +9,8 @@
 //
 // Selection order (first hit wins):
 //   1. AGIM_TRANSCRIBE_PROVIDER=<name>|none — explicit default
-//   2. Auto: openai → baidu → tencent → iflytek → whispercpp
+//   2. Auto (Chinese quality / stability / cost):
+//        iflytek → tencent → baidu → openai → whispercpp(fallback)
 //   3. else → 'none'
 
 import { spawn } from 'node:child_process'

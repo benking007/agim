@@ -80,12 +80,28 @@ describe('transcribe — detectProvider', () => {
     expect(detectProvider()).toBe('iflytek')
   })
 
-  it('auto-picks baidu before whispercpp when keys are present', () => {
+  it('auto-picks any cloud provider before whispercpp fallback', () => {
     process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
     process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
     process.env.AGIM_WHISPERCPP_BIN = '/usr/local/bin/whisper-cli'
     process.env.AGIM_WHISPERCPP_MODEL = '/models/ggml-base.bin'
     expect(detectProvider()).toBe('baidu')
+  })
+
+  it('auto-ranks Chinese cloud ahead of OpenAI (iflytek > tencent > baidu > openai)', () => {
+    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.AGIM_BAIDU_SPEECH_API_KEY = 'ak'
+    process.env.AGIM_BAIDU_SPEECH_SECRET_KEY = 'sk'
+    expect(detectProvider()).toBe('baidu')
+
+    process.env.AGIM_TENCENT_SECRET_ID = 'id'
+    process.env.AGIM_TENCENT_SECRET_KEY = 'key'
+    expect(detectProvider()).toBe('tencent')
+
+    process.env.AGIM_IFLYTEK_APP_ID = 'app'
+    process.env.AGIM_IFLYTEK_API_KEY = 'ak'
+    process.env.AGIM_IFLYTEK_API_SECRET = 'sk'
+    expect(detectProvider()).toBe('iflytek')
   })
 
   it('explicit override wins over auto-detection', () => {

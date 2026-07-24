@@ -3,6 +3,7 @@ import { existsSync, unlinkSync } from 'node:fs'
 import {
   formatSubagentLabel,
   isSameAgent,
+  parseCallAgentTarget,
   resolveBackendName,
   resolveSubagentSpawn,
 } from './subagent.js'
@@ -33,6 +34,13 @@ describe('subagent helpers', () => {
     expect(formatSubagentLabel('agim', { backend: 'deepseek-v4-flash' })).toBe('agim:deepseek-v4-flash')
     expect(formatSubagentLabel('claude-code')).toBe('claude-code')
   })
+
+  it('parseCallAgentTarget normalizes agim/native slash forms', () => {
+    expect(parseCallAgentTarget('agim/native')).toEqual({ agent: 'agim', isolate: true })
+    expect(parseCallAgentTarget('agim/cheap')).toEqual({ agent: 'agim', role: 'cheap', isolate: true })
+    expect(parseCallAgentTarget('native')).toEqual({ agent: 'agim' })
+    expect(parseCallAgentTarget('claude-code')).toEqual({ agent: 'claude-code' })
+  })
 })
 
 describe('resolveSubagentSpawn', () => {
@@ -60,6 +68,47 @@ describe('resolveSubagentSpawn', () => {
       expect(r.isolate).toBe(true)
       expect(r.model).toBeUndefined()
       expect(r.label).toBe('agim')
+    }
+  })
+
+  it('accepts legacy agent id agim/native as same-family isolate spawn', () => {
+    const r = resolveSubagentSpawn({ agent: 'agim/native', isolate: true }, 'agim')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.agent).toBe('agim')
+      expect(r.sameAgent).toBe(true)
+      expect(r.isolate).toBe(true)
+      expect(r.label).toBe('agim')
+    }
+  })
+
+  it('maps agim/cheap slash form to role=cheap', () => {
+    saveSecret('deepseek-v4-pro', 'sk-pro')
+    saveSecret('deepseek-v4-flash', 'sk-flash')
+    loadFromConfig({
+      llmBackends: [
+        {
+          name: 'deepseek-v4-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+        },
+        {
+          name: 'deepseek-v4-flash',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+        },
+      ],
+      llmRoles: { 'native-chat': 'deepseek-v4-pro', cheap: 'deepseek-v4-flash' },
+    } as never)
+    const r = resolveSubagentSpawn({ agent: 'agim/cheap' }, 'agim')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.agent).toBe('agim')
+      expect(r.role).toBe('cheap')
+      expect(r.model).toBe('deepseek-v4-flash')
+      expect(r.label).toBe('agim/cheap')
     }
   })
 

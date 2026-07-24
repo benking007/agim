@@ -44,7 +44,7 @@ import {
 } from '../../../core/llm/todo-items.js'
 import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
-import { formatSubagentLabel } from '../../../core/subagent.js'
+import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
@@ -1075,10 +1075,14 @@ export class NativeAgentAdapter implements AgentAdapter {
         if (isCallAgentTool(ev.toolName)) {
           const input = (ev.input ?? {}) as Record<string, unknown>
           const agentArg = typeof input.agent === 'string' ? input.agent : 'agent'
-          const roleArg = typeof input.role === 'string' ? input.role : undefined
+          const parsed = parseCallAgentTarget(agentArg)
+          const roleArg = (typeof input.role === 'string' ? input.role : undefined) || parsed.role
           const backendArg = typeof input.backend === 'string' ? input.backend : undefined
           const promptArg = typeof input.prompt === 'string' ? input.prompt : ''
-          callAgentPendingLabel = formatSubagentLabel(agentArg, { role: roleArg, backend: backendArg })
+          callAgentPendingLabel = formatSubagentLabel(parsed.agent || agentArg, {
+            role: roleArg,
+            backend: backendArg,
+          })
           emitToolActivity({
             id: ev.toolCallId,
             kind: 'agent',

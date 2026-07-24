@@ -16,7 +16,7 @@
 1. **Subagent 一等公民**：同 Agim（pro/flash）与跨 adapter（Claude/Codex）统一为 SubagentRun；父保留对用户回复的控制权。  
 2. **前端实时看到**每个子代理进度与结果树。  
 3. **并行 fan-out**（门控）加速独立子任务。  
-4. **Focus + Loop**：Focus 管聚焦注入；Loop（`/loop`）在 Focus on 上跑 executor↔只读 observer。
+4. **Focus + Loop Engineering**：Focus 管聚焦注入；Loop（L3）= 目标→拆解→调度子代理→验收→（未达）再规划。
 
 产品身份不变：Agim 仍是 **messenger ↔ agent 桥**。  
 **Subagent ≠ 多 sticky Agent**；见 [`subagent.md`](./subagent.md) §1。
@@ -209,31 +209,30 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 ---
 
-### Phase C — Focus + Loop（开发闭环）
+### Phase C — Focus + Loop Engineering（L3）
 
-> 目标：**Focus** 替换 `/goal` 做注意力锚点；**Loop**（`/loop`）在 Focus **on** 上跑 executor + 只读 observer（`continue|revise|stop`）。  
-> **概念 SSOT**：[`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)（文档先行；未拍板前不写运行时）。  
-> 依赖：Phase A；Phase B 可选（observer 可先串行）。  
-> 历史名：Long-engineering / Loop-engineering / EngineeringRun → 用户面统一 **Loop**。
+> 目标：**Focus** 替换 `/goal`；**Loop** = 图中 L3「自动调度层」——目标→拆解→`call_agents`→验收→（未达）反思再来→退出。  
+> **概念 SSOT**：[`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)（已按三层图重对齐）。  
+> 依赖：Phase A + B（子代理 fan-out）。  
+> 历史名：Long-engineering / EngineeringRun → 用户面 **Loop**。  
+> **注意**：现行 `/loop` 仅为 **C1 占位壳**，≠ 完整 L3。
 
-#### C0. 文档（本批）
+#### C0. 文档
 
 - [x] [`focus.md`](./focus.md) — Focus 契约；废弃 goal  
-- [x] [`loop-engineering.md`](./loop-engineering.md) — Loop 状态机 / Observer / 与 Focus 绑定  
+- [x] [`loop-engineering.md`](./loop-engineering.md) — L3 定义 / 状态机 / 与 L2 边界（2026-07-24 重写）  
 - [x] naming / README / current / goals / roadmap 交叉链接  
 
-#### C0→C5. 实现（详见 focus §7 · loop-engineering §9）
-
-摘要（细节以概念文为准，避免双源漂移）：
+#### C0→C5. 实现（详见 loop-engineering §7）
 
 | 切片 | 内容 |
 |---|---|
-| C0 运行时 | Focus 存储/注入/on/off；`/goal` 兼容废弃提示 — **已落地** |
-| C1 | `LoopRun` + `/loop` 路径 A/B + `openedFocus` + `loop_verdict` — **已落地** |
-| C2 | 自动 Observer 轮次（现为工具/提示驱动 verdict） |
-| C3 | Observer 只读强制 |
-| C4 | SPA：Focus 控件 + Loop 状态条（Portal slash 已改） |
-| C5 | 可选 pause/resume、timeline 导出 |
+| C0 运行时 | Focus 存储/注入/on/off；`/goal` 兼容 — **已落地** |
+| C1壳 | `/loop` 路径 A/B + 状态注入 + `loop_verdict` — **已落地（占位）** |
+| C2 | PLANNING + DISPATCHING 强制走 `call_agents` |
+| C3 | VERIFYING 对照 mission；未达 REFLECT |
+| C4 | SPA：Loop 状态条 / 验收摘要 |
+| C5 | 可选触发器（Heartbeat/cron 仅负责 start） |
 
 #### 验收（勾选在实现 PR 回写）
 
@@ -316,5 +315,5 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 ## 9. TL;DR
 
 > **Subagent 先于「多 Agent」：同族 pro/flash 与跨 adapter 都是子工人；A2A 是跨 adapter 的管子。**  
-> **先打通同族 + 看得见（A），再并行（B），再 Focus + Loop 观察闭环（C，文档先行）。**  
+> **先打通同族 + 看得见（A），再并行（B），再 Focus + Loop Engineering L3（C：壳已有 → C2 调度/验收）。**  
 > 拆解靠 brief/启发式 + 硬预算，不靠第二套中台。

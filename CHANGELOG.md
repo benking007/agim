@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Docs
+
+- **Loop Engineering 定义对齐三层图（L3）**: rewrite
+  `docs/architecture/loop-engineering.md` — Loop = 自动调度层
+  （目标→拆解→子代理→验收→退出），明确 ≠ L2 Agent Loop；
+  现行 `/loop` 标为 C1 占位壳。Cross-links in naming / focus / roadmap.
+
 ### Added
 
 - **Focus runtime (C0)**: `/focus` (`set` / `on` / `off` / `clear` /

@@ -12,6 +12,11 @@ import type { AgentSendOpts } from '../../../core/types.js'
 import { buildNativeAskUser, resolvePolicy } from '../agim-agent-shared/index.js'
 import { NATIVE_HITL_EXEMPT } from '../agim-agent-shared/tool-registry.js'
 
+function isCallAgentToolName(name: string): boolean {
+  const n = name.toLowerCase()
+  return n === 'call_agent' || n.endsWith('__call_agent')
+}
+
 export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: string): ApprovalGate {
   const o = opts ?? {}
   const planThreadKey =
@@ -66,6 +71,17 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
     // explicit deny-list still win.
     const canon = canonicalizeToolName(call.name)
     if (NATIVE_HITL_EXEMPT.has(canon)
+      && !denyExpanded.has(call.name)
+      && !denyExpanded.has(canon)
+      && policy.mode !== 'deny-all') {
+      return 'allow'
+    }
+    // Subagent spawn is the product surface — under allow-list, don't block
+    // mcp__agim__call_agent behind HITL or the Subagent panel never appears
+    // (activity is owned by A2A, which only runs after the tool is allowed).
+    // Depth / ACL / per-turn caps inside call_agent still apply. Deny-all and
+    // explicit deny-list still win.
+    if (isCallAgentToolName(call.name)
       && !denyExpanded.has(call.name)
       && !denyExpanded.has(canon)
       && policy.mode !== 'deny-all') {

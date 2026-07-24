@@ -190,6 +190,12 @@ export interface CallAgentOpts {
   model?: string
   /** Activity accordion label override (e.g. `agim/cheap`). */
   activityLabel?: string
+  /**
+   * Stable activity step id (usually the parent toolCallId). When set, the
+   * Subagent card updates in place from pending → running → done instead of
+   * opening a second `a2a-${jobId}` row.
+   */
+  activityStepId?: string
 }
 
 export type CallAgentResult =
@@ -391,9 +397,12 @@ export async function callAgentByName(
   const activityLabel = (typeof opts.activityLabel === 'string' && opts.activityLabel.trim())
     ? opts.activityLabel.trim()
     : target.name
+  const activityStepId = (typeof opts.activityStepId === 'string' && opts.activityStepId.trim())
+    ? opts.activityStepId.trim()
+    : `a2a-${jobId}`
   const activityStartedAt = Date.now()
   emitAgentActivity(opts, ctx, {
-    id: `a2a-${jobId}`,
+    id: activityStepId,
     kind: 'agent',
     label: activityLabel,
     status: 'running',
@@ -516,7 +525,7 @@ export async function callAgentByName(
       resultLen: result.length,
     }, `A2A → ${target.name} cancelled (${result.length} chars partial)`)
     emitAgentActivity(opts, ctx, {
-      id: `a2a-${jobId}`,
+      id: activityStepId,
       kind: 'agent',
       label: activityLabel,
       status: 'error',
@@ -546,7 +555,7 @@ export async function callAgentByName(
       event: 'a2a.invoke_end', outcome, jobId, durationMs, callee: target.name, err: errMsg,
     }, `A2A → ${target.name} ${outcome}: ${errMsg}`)
     emitAgentActivity(opts, ctx, {
-      id: `a2a-${jobId}`,
+      id: activityStepId,
       kind: 'agent',
       label: activityLabel,
       status: 'error',
@@ -587,7 +596,7 @@ export async function callAgentByName(
     resultLen: result.length, outputCount: outputs.length, warningCount: warnings.length,
   }, `A2A → ${target.name} ok (${result.length} chars, ${outputs.length} outputs, in ${durationMs}ms)`)
   emitAgentActivity(opts, ctx, {
-    id: `a2a-${jobId}`,
+    id: activityStepId,
     kind: 'agent',
     label: activityLabel,
     status: 'success',

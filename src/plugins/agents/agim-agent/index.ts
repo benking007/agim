@@ -44,6 +44,7 @@ import {
 } from '../../../core/llm/todo-items.js'
 import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
+import { formatSubagentLabel } from '../../../core/subagent.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
@@ -1067,6 +1068,26 @@ export class NativeAgentAdapter implements AgentAdapter {
           })
           return { block: true, reason: todoGate.reason }
         }
+        // Subagent: surface a pending card immediately (before HITL / A2A).
+        // A2A later updates the same toolCallId via activityStepId so the
+        // panel does not wait on approval + job creation to appear.
+        let callAgentPendingLabel: string | undefined
+        if (isCallAgentTool(ev.toolName)) {
+          const input = (ev.input ?? {}) as Record<string, unknown>
+          const agentArg = typeof input.agent === 'string' ? input.agent : 'agent'
+          const roleArg = typeof input.role === 'string' ? input.role : undefined
+          const backendArg = typeof input.backend === 'string' ? input.backend : undefined
+          const promptArg = typeof input.prompt === 'string' ? input.prompt : ''
+          callAgentPendingLabel = formatSubagentLabel(agentArg, { role: roleArg, backend: backendArg })
+          emitToolActivity({
+            id: ev.toolCallId,
+            kind: 'agent',
+            label: callAgentPendingLabel,
+            status: 'pending',
+            startedAt: Date.now(),
+            preview: promptArg.slice(0, 120).replace(/\s+/g, ' '),
+          })
+        }
         // agim policy gate: read-only / allow-list / deny-all, escalating to
         // an IM approval card when configured. Resolve per call so a
         // user-approved plan exit takes effect in the same harness turn.
@@ -1080,7 +1101,8 @@ export class NativeAgentAdapter implements AgentAdapter {
           if (decision === 'deny') {
             emitToolActivity({
               id: ev.toolCallId,
-              label: ev.toolName,
+              kind: callAgentPendingLabel ? 'agent' : undefined,
+              label: callAgentPendingLabel ?? ev.toolName,
               status: 'denied',
               startedAt: Date.now(),
               finishedAt: Date.now(),

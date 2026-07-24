@@ -99,17 +99,28 @@ Stay on this focus unless the user explicitly changes topic or turns focus off.
 ## 4. 与 Loop 的关系
 
 ```text
-Focus (on)  ──可选──►  /loop start   （Phase C）
+Focus (on)  ──门禁──►  /loop start   （Phase C）
    │                      │
-   │ 每 turn 注入         │ 检查点观察者
+   │ 每 turn 注入正文      │ 另注入 Loop 状态（round / verdict…）
    ▼                      ▼
  agent 聚焦            continue|revise|stop
 ```
 
+**「Loop 绑 Focus」= 生命周期门禁，不是两套聚焦正文抢优先级。**
+
+| 问题 | 答案 |
+|------|------|
+| Focus 正文以谁为准？ | **永远只有 thread 上那一条 Focus**（SSOT）。Loop **不**另存一份可覆盖的「聚焦文案」。 |
+| Loop 跑着时还注 Focus 吗？ | **要。** Focus on → 照常注 Focus 块。 |
+| 还注什么？ | **再注** Loop 运行态（round、最近 verdict、`nextHint` 等）——互补，不是二选一。 |
+| `focusSnapshot`？ | 仅启动时审计/展示用；运行中用户改 Focus → **下一轮以当前 Focus 为准**。 |
+
+其它规则：
+
 - `/loop` **要求**当前 thread Focus 为 **on** 且有内容。  
-- Focus **off** 时拒绝 start loop（或强制先 focus on——产品倾向：**拒绝**）。  
-- Loop **结束**不自动 `focus off`（聚焦可继续）。  
-- Focus **clear/off** 时：活跃 Loop 必须 cancel（无孤儿），规则写在 [`loop-engineering.md`](./loop-engineering.md)。
+- Focus **off** 时拒绝 start（产品倾向：**拒绝**，不隐式 on）。  
+- Loop **结束**不自动 `focus off`。  
+- Focus **clear/off** 时：活跃 Loop **cancel**（无孤儿）——见 [`loop-engineering.md`](./loop-engineering.md)。
 
 ---
 

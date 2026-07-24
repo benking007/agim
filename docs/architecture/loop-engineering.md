@@ -56,11 +56,10 @@
 ```text
 ┌─────────────────────────────────────────────────────────┐
 │  Conversation / Session                                  │
-│    Focus (on) ──注入──► 每轮 LLM 上下文                   │
-│         ▲                                                │
-│         │ 绑定（Loop 运行期间 Focus 应保持 on）             │
-│         │                                                │
-│    LoopRun                                               │
+│    Focus (on) ──注入正文──┐                               │
+│                           ├──► 每轮 LLM 上下文            │
+│    LoopRun ──注入状态─────┘   （两者叠加，非二选一）        │
+│      ├─ 门禁：启动/续跑要求 Focus 保持 on                   │
 │      ├─ Executor turn  → 改代码 / 跑测试 / 工具            │
 │      └─ Observer turn  → 只读 → continue|revise|stop      │
 └─────────────────────────────────────────────────────────┘
@@ -69,16 +68,29 @@
    Heartbeat / 子代理 / MCP …（不驱动 Loop 状态机）
 ```
 
-### 3.1 Focus 在 Loop 中的规则
+### 3.1 「绑 Focus」是什么意思
+
+**不是**「Loop 有自己的 focus，和用户 Focus 比谁大」。  
+**是**「没有 Focus on，就不许开/续 Loop」——门禁 + 取消条件。
+
+| 层 | 注入什么 | SSOT |
+|----|----------|------|
+| Focus | title/body（盯什么） | thread 唯一 Focus 记录 |
+| Loop | round、status、最近 verdict、`nextHint`、可选 start note | `LoopRun` |
+
+同时存在时：**两层都注入**（Focus 正文 + Loop 状态）。没有「Focus 以 Loop 为准」或反过来的正文优先级——正文只有 Focus 一份。
+
+### 3.2 Focus 在 Loop 中的规则
 
 | 规则 | 行为 |
 |------|------|
 | 启动 | `focus.enabled === true` 且内容非空 |
-| 运行中 Focus off | **取消 Loop**（避免无锚点空转）；或实现为 pause——**倾向取消**，简单可预期 |
-| 运行中改 Focus 文本 | 允许；下一轮 executor/observer 注入新文本；记 timeline `focus_updated` |
-| Loop 结束 | **不**自动 Focus off（用户可能还要聊） |
+| 运行中 Focus off | **取消 Loop**（避免无锚点空转）；倾向取消，简单可预期 |
+| 运行中改 Focus 文本 | 允许；下一轮以**当前 Focus**注入；记 timeline `focus_updated` |
+| `focusSnapshot` | 启动时拷贝，供 status/审计；**不覆盖**实时 Focus 注入 |
+| Loop 结束 | **不**自动 Focus off |
 
-### 3.2 为何不用 Goal 当 Loop 载体
+### 3.3 为何不用 Goal 当 Loop 载体
 
 历史上「goal ≈ 聚焦」已被占用；若把完成/验收塞回 goal，会再次混淆。  
 **Focus = 注意力；Loop = 闭环执行。** 完成判定属于 Loop（或未来独立 complete），**不属于 Focus**。
@@ -90,7 +102,7 @@
 ### 4.1 Executor
 
 - 普通 Agim Agent 能力：读改文件、跑命令、MCP、（策略允许时）子代理。
-- 每轮开始注入：**Focus（on）** + Loop 状态摘要 + 最近 observer verdict。
+- 每轮开始注入：**Focus 正文（on）** + **Loop 状态**（round / 最近 verdict / `nextHint`）——叠加注入。
 - 结束信号：本轮工具/回复收敛后 → 进入 Observer（或达步数上限）。
 
 ### 4.2 Observer（只读）
@@ -163,7 +175,7 @@ type LoopVerdict = {
 type LoopRun = {
   id: string;
   sessionId: string;
-  /** 启动时绑定的 focus 快照（全文可随 focus 更新而变） */
+  /** 启动时 Focus 正文快照（审计/status）；实时注入仍读 thread Focus */
   focusSnapshot: string;
   status: "running" | "observing" | "paused" | "ended";
   endReason?: "stop_verdict" | "user_stop" | "limit" | "focus_off" | "error";

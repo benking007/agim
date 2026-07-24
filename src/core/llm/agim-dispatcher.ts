@@ -384,6 +384,8 @@ export function getAgimTools(): ToolDef[] {
             type: 'string',
             description:
               'Self-contained Subagent brief: Objective + Output format + Boundaries + Done-when. '
+              + 'Output format MUST require key findings in the child FINAL message; '
+              + 'if files are written, require absolute path citation; forbid empty「见上文」/see above. '
               + 'Do not spawn for trivial one-step work; child does not see parent chat history.',
           },
           backend: {
@@ -439,7 +441,8 @@ export function getAgimTools(): ToolDef[] {
                 prompt: {
                   type: 'string',
                   description:
-                    'Self-contained brief: Objective + Output format + Boundaries + Done-when.',
+                    'Self-contained brief: Objective + Output format + Boundaries + Done-when. '
+                    + 'Require key findings in child FINAL message; cite absolute path if writing files; no empty see above / 见上文.',
                 },
                 backend: {
                   type: 'string',

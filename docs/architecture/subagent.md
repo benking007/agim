@@ -174,9 +174,19 @@
 每个 subagent brief **建议强制四件套**（可在工具 schema 里拆成可选字段，或写进 description）：
 
 1. **Objective** — 子任务要完成什么  
-2. **Output format** — 父期望收回什么（bullet / diff 摘要 / JSON）  
+2. **Output format** — 父期望收回什么（bullet / 紧凑表 / JSON）  
 3. **Boundaries** — 不要做什么、不要重复搜什么  
 4. **Done when** — 完成条件，避免空转  
+
+**产出契约（父须写进 Output format；子最终消息须兑现）**：
+
+| 要求 | 说明 |
+|------|------|
+| 关键发现在消息里 | Portal「执行结果」= 子代理最终 assistant 文本；表格/数字/结论须出现在正文 |
+| 落盘须引路径 | 另写文件时须给出**绝对路径**；禁止「文件已写好」而不报 path |
+| 禁止空指代 | 禁止只有「见上文输出 / see above / 详见文件」而无实质内容 |
+
+长文可**额外**落盘，但不可「只落盘、消息空壳」。SSOT：`subagent-heuristics.ts` + Agim Agent Closure/IM 指引。
 
 ### 5.2 缩放启发式（写入父指引）
 
@@ -299,6 +309,7 @@
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
 | 2026-07-24 | **loop_verdict 墙钟**：同样 `timeoutMs:0`（嵌套独立验收可 >60s）；mutation 成功后不以假超时覆盖（见 Loop §6.2） | #243 |
+| 2026-07-24 | **子代理产出契约**：最终消息须含关键发现；落盘须绝对路径；禁空「见上文」 | — |
 
 ### 落地差异（相对 §4.3）
 

@@ -34,7 +34,7 @@ export const PRIORITY_COMMAND_IDS = [
 
 /** Composer fill that steers the agent to spawn Subagent(s). */
 export const SUBAGENT_COMPOSER_FILL =
-  '请用子代理（call_agent / call_agents）完成：'
+  '请用子代理（call_agent / call_agents）完成（要求子代理最终消息含关键发现；若落盘须写明绝对路径；禁止只有「见上文」）：'
 
 export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
   {

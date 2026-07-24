@@ -10,6 +10,7 @@ import { canonicalizeToolName, expandToolNameList } from '../../../core/llm/tool
 import { approvalBus, threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { buildNativeAskUser, resolvePolicy } from '../agim-agent-shared/index.js'
+import { BUILTIN_SAFE } from '../agim-agent-shared/tool-registry.js'
 
 export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: string): ApprovalGate {
   const o = opts ?? {}
@@ -55,6 +56,17 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
     if (isTodoActivityLabel(call.name)
       && !denyExpanded.has(call.name)
       && !denyExpanded.has(canonicalizeToolName(call.name))
+      && policy.mode !== 'deny-all') {
+      return 'allow'
+    }
+    // Side-effect-free builtins (agim_now / echo / random_uuid). Models often
+    // call agim_now({}) first; under default allow-list that used to open an
+    // empty `{}` approval card. Same posture as todo_write: skip HITL unless
+    // the operator explicitly deny-lists them or sets deny-all.
+    const canon = canonicalizeToolName(call.name)
+    if (BUILTIN_SAFE.has(canon)
+      && !denyExpanded.has(call.name)
+      && !denyExpanded.has(canon)
       && policy.mode !== 'deny-all') {
       return 'allow'
     }

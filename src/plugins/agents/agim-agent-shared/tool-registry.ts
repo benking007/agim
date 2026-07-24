@@ -78,7 +78,8 @@ export interface AssembledTools {
 // Concurrency-safe names per source. These reproduce exactly the membership
 // of the former static NATIVE_PARALLEL_SAFE_TOOLS set, now scoped to the
 // source that owns each name (so adding a tool can't forget to classify it).
-const BUILTIN_SAFE = new Set(['agim_echo', 'agim_now', 'agim_random_uuid'])
+/** Zero-arg / side-effect-free builtins — also HITL-exempt under allow-list. */
+export const BUILTIN_SAFE = new Set(['agim_echo', 'agim_now', 'agim_random_uuid'])
 const FS_SAFE = new Set(['agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep'])
 const WEB_SAFE = new Set(['agim_web_fetch', 'agim_web_search'])
 const AGIM_SAFE = new Set([

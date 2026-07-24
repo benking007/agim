@@ -128,24 +128,20 @@ function findRunningActivityIndex(messages: ChatMessage[]): number {
   return -1
 }
 
-/** Close a sticky trailing in_progress Plan item (N-1 completed + 1 in_progress). */
+/** Close any open Plan items when the turn finishes successfully. */
 function reconcileStickyTodoSteps(steps: ChatActivityStep[]): ChatActivityStep[] {
   return steps.map((st) => {
     const items = st.todoItems
     if (!items?.length) return st
-    let completed = 0
-    let inProgress = 0
-    let pending = 0
+    let open = 0
     for (const it of items) {
-      if (it.status === 'completed') completed += 1
-      else if (it.status === 'in_progress') inProgress += 1
-      else pending += 1
+      if (it.status !== 'completed') open += 1
     }
-    if (pending > 0 || inProgress !== 1 || completed !== items.length - 1) return st
+    if (open === 0) return st
     const todoItems = items.map((it) => (
-      it.status === 'in_progress'
-        ? { content: it.content, status: 'completed' as const }
-        : it
+      it.status === 'completed'
+        ? it
+        : { content: it.content, status: 'completed' as const }
     ))
     return {
       ...st,

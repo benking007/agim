@@ -1568,8 +1568,8 @@ export class NativeAgentAdapter implements AgentAdapter {
     } else if (stopReason) {
       emitOutcome({ status: 'partial', providerFailure: false, error: stopReason, stopReason })
     } else {
-      // Models often leave the last Plan item in_progress; close it so the
-      // chat checklist matches a finished turn (store + activity step).
+      // Models often skip a final todo_write; close open Plan items so the
+      // chat checklist is not stuck on 0/N in progress after the answer.
       const reconciled = reconcileTodoOnSuccessfulTurn(todoThreadKey)
       if (reconciled) {
         emitToolActivity({

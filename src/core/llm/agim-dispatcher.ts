@@ -34,7 +34,7 @@
 // `source: 'unknown'` so `combineDispatchers(builtin, agim, mcp)`
 // can fall through to the next layer (external MCP servers).
 
-import { isAgimAgentId, AGIM_AGENT_ID } from '../naming-migrate.js'
+import { AGIM_AGENT_ID } from '../naming-migrate.js'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDispatcher, DispatcherResult } from './tool-dispatcher.js'
 import type { ToolDef } from './provider-base.js'
@@ -43,6 +43,7 @@ import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
+import { resolveSubagentSpawn } from '../subagent.js'
 import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
 import { hashWorkspaceScope } from '../goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../agent-cwd.js'
@@ -61,9 +62,10 @@ import type { RouteContext } from '../router.js'
 
 const log = rootLogger.child({ component: 'agim-dispatcher' })
 
-/** v1.2.121 — opt-in in-process native self-spawn. Default OFF so
- *  call_agent('native') uses callAgentByName (full A2A job/audit parity).
- *  Set AGIM_NATIVE_CALL_AGENT_IN_PROCESS=on to re-enable the latency fast path. */
+/** Legacy env for in-process same-agent spawn. As of Subagent Phase A1,
+ *  same-family calls always use `callAgentByName` (job/activity parity);
+ *  this flag is logged-and-ignored for those paths. Kept for operators /
+ *  tests that still read the knob. */
 export function isInProcessSpawnEnabled(): boolean {
   const raw = (process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS ?? '').toLowerCase().trim()
   return raw === 'on' || raw === '1' || raw === 'true' || raw === 'yes'
@@ -333,12 +335,41 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__call_agent',
       description:
-        'Hand off a prompt to another registered agent (claude-code, codex, copilot, opencode, antigravity, kimi-code, qoder, pi, mimo, native, or any remote ACP). Subject to A2A guardrails: depth limit, self-call ban, workspace ACL, per-user budget. Returns the callee\'s final text.',
+        'Spawn a Subagent (nested worker; you keep the user-facing reply). ' +
+        'Targets: (1) same-family Agim Agent — pass isolate:true to reuse the default model, ' +
+        'role:"cheap" for llmRoles.cheap (e.g. flash), or backend:"<llmBackends.name>"; ' +
+        '(2) another registered adapter (claude-code, codex, opencode, …) via A2A. ' +
+        'Write a self-contained brief (objective, output format, boundaries, done-when). ' +
+        'Do NOT spawn for trivial one-step work. Vacuous self-call without isolate/role/backend is refused. ' +
+        'Guardrails: depth limit, workspace ACL, per-turn cap. Returns the callee\'s final text.',
       parameters: {
         type: 'object',
         properties: {
-          agent: { type: 'string', description: 'Target agent name. Must not be the caller.' },
-          prompt: { type: 'string', description: 'Prompt to send.' },
+          agent: {
+            type: 'string',
+            description:
+              'Target agent id (agim/native for same-family Subagent, or claude-code/codex/…).',
+          },
+          prompt: {
+            type: 'string',
+            description:
+              'Self-contained Subagent brief (objective + output format + boundaries + done-when).',
+          },
+          role: {
+            type: 'string',
+            description:
+              'Optional llmRoles key for same-family Agim Subagent (e.g. "cheap"). Implies isolate.',
+          },
+          backend: {
+            type: 'string',
+            description:
+              'Optional explicit llmBackends name for same-family Agim Subagent. Implies isolate. Wins over role.',
+          },
+          isolate: {
+            type: 'boolean',
+            description:
+              'Allow same-agent nested Subagent with a fresh context (default model if role/backend omitted).',
+          },
         },
         required: ['agent', 'prompt'],
       },
@@ -562,7 +593,18 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
         case 'call_agent': {
           const agentName = typeof args.agent === 'string' ? args.agent : ''
           const prompt = typeof args.prompt === 'string' ? args.prompt : ''
-          if (!agentName || !prompt) return err('call_agent requires both `agent` (string) and `prompt` (string).')
+          if (!agentName || !prompt) {
+            return err('call_agent requires both `agent` (string) and `prompt` (string).')
+          }
+          const roleArg = typeof args.role === 'string' ? args.role : undefined
+          const backendArg = typeof args.backend === 'string' ? args.backend : undefined
+          const isolateArg = args.isolate === true
+          const spawn = resolveSubagentSpawn(
+            { agent: agentName, role: roleArg, backend: backendArg, isolate: isolateArg },
+            ctx.callerAgent,
+          )
+          if (!spawn.ok) return err(`call_agent refused: ${spawn.error}`)
+
           // v1.2.59 A — enforce per-turn cap. Without this, a model that
           // keeps delegating ("ask claude-code again, that wasn't enough")
           // can chain dozens of A2A calls per single user turn — observed
@@ -581,7 +623,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             log.warn({
               event: 'native.call_agent.cap_exceeded',
               callerAgent: ctx.callerAgent,
-              calleeAgent: agentName,
+              calleeAgent: spawn.agent,
               count: callAgentHistory.length,
               cap: callAgentMaxPerTurn,
               history: callAgentHistory,
@@ -599,124 +641,29 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           log.info({
             event: 'native.call_agent.delegated',
             callerAgent: ctx.callerAgent,
-            calleeAgent: agentName,
+            calleeAgent: spawn.agent,
+            subagentLabel: spawn.label,
+            model: spawn.model,
+            role: spawn.role,
+            isolate: spawn.isolate,
+            sameAgent: spawn.sameAgent,
             attempt: callAgentHistory.length + 1,
             cap: callAgentMaxPerTurn,
             callerPlanMode: ctx.callerPlanMode ?? false,
             threadId: ctx.threadId,
-          }, `delegating to ${agentName} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
+          }, `delegating to ${spawn.label} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
               `${ctx.callerPlanMode ? ', plan-mode propagated' : ''})`)
 
-          // v1.2.121 — opt-in in-process self-spawn fast path.
-          //
-          // When enabled AND the target is `native`, skip subprocess boot and
-          // run another native loop in-process. Default OFF: callAgentByName
-          // keeps A2A job/audit/notify parity (architecture-bridge §10.2).
-          // Enable with AGIM_NATIVE_CALL_AGENT_IN_PROCESS=on for latency.
-          // Depth + A2A_ENABLED checks still apply.
-          if (isAgimAgentId(agentName) && isInProcessSpawnEnabled()) {
-            const { getA2AMaxDepth, isA2AEnabled } = await import('../a2a.js')
-            if (!isA2AEnabled()) {
-              callAgentHistory.push({ agent: agentName, promptHead, ok: false })
-              return err('call_agent refused: A2A disabled (AGIM_A2A_ENABLED=0)')
-            }
-            const callerDepth = ctx.callerDepth ?? 0
-            const nextDepth = callerDepth + 1
-            const maxDepth = getA2AMaxDepth()
-            if (nextDepth > maxDepth) {
-              log.warn({
-                event: 'native.call_agent.in_process_depth_exceeded',
-                callerDepth, nextDepth, maxDepth, threadId: ctx.threadId,
-              }, `in-process self-spawn refused: depth ${nextDepth} > max ${maxDepth}`)
-              callAgentHistory.push({ agent: agentName, promptHead, ok: false })
-              return err(`call_agent refused: depth ${nextDepth} > max ${maxDepth}`)
-            }
+          // Same-family and cross-adapter Subagent both go through
+          // callAgentByName so job-board + activity stay observable.
+          // (Legacy AGIM_NATIVE_CALL_AGENT_IN_PROCESS in-process path skipped
+          // job rows; see docs/architecture/subagent.md Phase A1.)
+          if (isInProcessSpawnEnabled() && spawn.sameAgent) {
             log.info({
-              event: 'native.call_agent.in_process_spawn',
-              callerDepth, nextDepth, threadId: ctx.threadId, subTurnCallId: call.id,
-              callerPlanMode: ctx.callerPlanMode ?? false,
-            }, `in-process native self-spawn (depth ${nextDepth}); skipping subprocess boot`)
-            // v1.2.139 — one-shot transient retry on the in-process path.
-            // ADR-0002 — chain the parent turn's trace into the in-process
-            // sub-turn so its native audit rows correlate end-to-end (mirrors
-            // the `${parentTrace}/a2a-${id}` chaining the subprocess path uses
-            // below). Falls back to undefined → the sub-turn self-mints.
-            const inProcParentTrace = toolCtx?.traceId
-            const inProcA2aTrace = inProcParentTrace ? `${inProcParentTrace}/a2a-${call.id}` : undefined
-            const activityId = `a2a-inproc-${call.id}`
-            const activityStartedAt = Date.now()
-            const emitInProcActivity = (
-              status: 'running' | 'success' | 'error',
-              preview?: string,
-            ): void => {
-              if (!ctx.onToolActivity) return
-              try {
-                ctx.onToolActivity({
-                  id: activityId,
-                  kind: 'agent',
-                  label: agentName,
-                  status,
-                  startedAt: activityStartedAt,
-                  ...(status !== 'running' ? { finishedAt: Date.now() } : {}),
-                  preview,
-                })
-              } catch { /* observer must not break dispatch */ }
-            }
-            emitInProcActivity('running', promptHead)
-            const runOnce = async (): Promise<string> => {
-              // Route to the single Agim Agent registered under 'native' so
-              // in-process sub-agent runs use the same adapter as the parent.
-              const { registry } = await import('../registry.js')
-              const nativeAdapter = registry.findAgent(AGIM_AGENT_ID) ?? registry.findAgent('native')
-              if (!nativeAdapter) throw new Error('native engine not registered')
-              const subSessionId = `${ctx.threadId}-spawn-${call.id}`
-              const parts: string[] = []
-              for await (const chunk of nativeAdapter.sendPrompt(
-                subSessionId,
-                prompt,
-                [],
-                {
-                  platform: ctx.platform,
-                  channelId: ctx.channelId,
-                  threadId: ctx.threadId,
-                  userId: ctx.userId,
-                  callDepth: nextDepth,
-                  ...(inProcA2aTrace ? { traceId: inProcA2aTrace } : {}),
-                  // v1.2.139 — propagate parent's plan-mode to the child.
-                  // Without this a parent in /plan on could delegate write
-                  // work to the in-process child and bypass user intent.
-                  ...(ctx.callerPlanMode ? { planMode: true } : {}),
-                  signal,
-                },
-              )) {
-                parts.push(chunk)
-              }
-              return parts.join('')
-            }
-            try {
-              let raw: string
-              try {
-                raw = await runOnce()
-              } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e)
-                if (signal.aborted || !isTransientSubAgentError(msg)) throw e
-                log.warn({
-                  event: 'native.call_agent.in_process_retry',
-                  err: msg, threadId: ctx.threadId,
-                }, 'in-process self-spawn transient-failed; retrying once')
-                raw = await runOnce()
-              }
-              callAgentHistory.push({ agent: agentName, promptHead, ok: true })
-              emitInProcActivity('success', `${raw.length} chars`)
-              return ok(applyOutputCap(raw, agentName, null))
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e)
-              log.warn({ event: 'native.call_agent.in_process_failed', err: msg },
-                'in-process self-spawn threw; surfacing error to caller')
-              callAgentHistory.push({ agent: agentName, promptHead, ok: false })
-              emitInProcActivity('error', msg.slice(0, 180))
-              return err(`call_agent (in-process native) failed: ${msg}`)
-            }
+              event: 'native.call_agent.in_process_skipped_for_parity',
+              threadId: ctx.threadId,
+              label: spawn.label,
+            }, 'same-family Subagent uses callAgentByName (job/activity parity); ignoring AGIM_NATIVE_CALL_AGENT_IN_PROCESS')
           }
 
           // Construct a minimal RouteContext from the run context so A2A
@@ -751,6 +698,9 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             // v1.2.139 — propagate parent's plan-mode to the sub-agent.
             ...(ctx.callerPlanMode ? { planMode: true } : {}),
             ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
+            ...(spawn.isolate ? { isolate: true } : {}),
+            ...(spawn.model ? { model: spawn.model } : {}),
+            activityLabel: spawn.label,
             signal,
           }
           // v1.2.139 — one-shot transient retry. callAgentByName already
@@ -758,21 +708,21 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // whole call when the first attempt looks like a 5xx / socket
           // reset / quick timeout. Permanent failures (workspace ACL,
           // depth exceeded, model refusal) skip the retry.
-          let result = await callAgentByName(agentName, prompt, routeCtx, baseOpts)
+          let result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
           if (!signal.aborted && !result.ok && isTransientSubAgentError(result.error || '')) {
             log.warn({
               event: 'native.call_agent.retry',
-              calleeAgent: agentName,
+              calleeAgent: spawn.label,
               err: result.error,
               threadId: ctx.threadId,
             }, `call_agent transient-failed; retrying once`)
-            result = await callAgentByName(agentName, prompt, routeCtx, baseOpts)
+            result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
           }
           if (!result.ok) {
-            callAgentHistory.push({ agent: agentName, promptHead, ok: false })
+            callAgentHistory.push({ agent: spawn.label, promptHead, ok: false })
             return err(`call_agent failed: ${result.error}`)
           }
-          callAgentHistory.push({ agent: agentName, promptHead, ok: true })
+          callAgentHistory.push({ agent: spawn.label, promptHead, ok: true })
           // CallAgentResult exposes the callee's final text as `result`.
           // Outputs, jobId, durationMs etc. are returned as a JSON
           // sidecar so the model can reference produced artifacts if
@@ -782,7 +732,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // into viewer-paste (when configured) so the model can still
           // cite the link.
           const raw = typeof result.result === 'string' ? result.result : safeJson(result)
-          return ok(applyOutputCap(raw, agentName, result.jobId ?? null))
+          return ok(applyOutputCap(raw, spawn.label, result.jobId ?? null))
         }
         case 'long_task':
         case 'complete_goal': {

@@ -99,18 +99,19 @@ SubagentRun 树 → WS / Portal / /tasks
 
 #### A1. 同族 Subagent 运行时
 
-- 允许 `agent === caller` 当且仅当：显式隔离子循环（`role` / `backend` / `isolate`）。  
-- 工具增加可选 `role`、`backend`（解析序见 subagent.md §4.4）。  
-- **一律**写 inline job + `onToolActivity`（禁止「有 UI 无 job」）。  
-- 倾向引入 `spawn_subagent` 或扩展 `call_agent`（subagent.md §4.3；定稿写 naming）。  
-- 只配 pro 时：同族 spawn 仍可用 pro；无 flash 时 `role=cheap` 明确报错。  
+- [x] 允许同 agent 当且仅当：`isolate` / `role` / `backend`（`agim`↔`native` 算同一 agent）。  
+- [x] 扩展 `mcp__agim__call_agent`：`role` / `backend` / `isolate`（先扩展现有工具，未另开 `spawn_subagent`）。  
+- [x] 同族一律走 `callAgentByName`（inline job + activity）；忽略 `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` 快路径以免丢 job。  
+- [x] 解析序：`backend` > `role` → `llmRoles` > 默认（不传 model）。  
+- [x] 无 flash 时 `role=cheap` 明确报错。  
 
 **验收**
 
-- [ ] agim + 仅 pro：可派同族子循环，job/activity 可见。  
-- [ ] 另配 flash 且 `llmRoles.cheap`：`role=cheap` 走 flash。  
-- [ ] `call_agent('claude-code', …)` 行为不回归。  
-- [ ] 无差异的纯自调用仍拒绝（防空转递归）。  
+- [x] 单元：`resolveSubagentSpawn` / A2A self-call gate / dispatcher 参数与拒绝路径。  
+- [ ] 手工：agim + 仅 pro，`isolate:true` 派同族子循环，job/activity 可见。  
+- [ ] 手工：另配 flash 且 `llmRoles.cheap`，`role=cheap` 走 flash。  
+- [x] `call_agent('claude-code', …)` 仍走跨 adapter（单测不回归）。  
+- [x] 无差异的纯自调用仍拒绝。  
 
 #### A2. 事件与前端
 
@@ -257,9 +258,11 @@ EngineeringRun
 ## 5. 实施顺序与 PR 策略
 
 ```text
-Phase A  可观测 subagent     ──►  单独 PR，合入后再开 B
-Phase B  并行 fan-out        ──►  单独 PR（可拆 runtime / UI）
-Phase C  long-engineering    ──►  可先 RFC PR（仅文档+类型）再实现 PR
+Phase A0 概念文档（本批）     ──►  #223
+Phase A1 同族 spawn 运行时   ──►  实现 PR（可含 A3）
+Phase A2 多 Subagent UI      ──►  可随 A1 或紧随
+Phase B  并行 fan-out        ──►  A 合入后再开
+Phase C  long-engineering    ──►  可先 RFC 再实现
 ```
 
 每个实现 PR 必须：
@@ -293,7 +296,8 @@ Phase C  long-engineering    ──►  可先 RFC PR（仅文档+类型）再�
 | approval-bus 在并行下变厚 / 竞态 | Phase B 先隔离 runId；必要时先 peel `approval-bus`（见 tech-debt）再开并行默认 |
 | 费用与超时叠加 | hard cap + 单子超时 + 父级 ceiling；UI 显示累计 |
 | 观察者与执行者抢写 | 观察者默认只读工具集（planMode 或 tool allowlist） |
-| 文档/实现双源 | 本文为计划 SSOT；合入后 `current.md` 只加短链，不复制大段 |
+| 文档/实现双源 | 概念以 `subagent.md` 为准，计划以本文为准；`current.md` 只加短链 |
+| 同族自调用变递归炸弹 | 无 role/backend/isolate 差异仍拒绝；深度与每 turn cap 保留 |
 
 ---
 
@@ -310,7 +314,8 @@ Phase C  long-engineering    ──►  可先 RFC PR（仅文档+类型）再�
 | 日期 | 阶段 | PR | 备注 |
 |---|---|---|---|
 | 2026-07-24 | A0 文档 | #223 | subagent.md + roadmap 对齐 |
-| （待填） | A1–A3 | | |
+| 2026-07-24 | A1 运行时 | #223 | `subagent.ts` + call_agent role/backend/isolate |
+| （待填） | A2–A3 | | |
 | （待填） | B | | |
 | （待填） | C | | |
 

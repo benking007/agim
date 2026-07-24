@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Same-family Subagent spawn (Phase A1)**: `mcp__agim__call_agent` accepts optional `role` / `backend` / `isolate` so Agim Agent can nest a Subagent on itself (e.g. reuse pro via `isolate:true`, or `role:"cheap"` → `llmRoles.cheap` / flash) while keeping job-board + activity parity. Cross-adapter A2A unchanged. Vacuous self-call without isolate/role/backend still refused. See `docs/architecture/subagent.md`.
 - **Portal hold-to-talk + multi-vendor STT**: `/m/chat` microphone hold-to-talk posts audio to `POST /api/chat/transcribe`. Providers: iFlytek / Tencent / Baidu / StepFun / MiMo / Zhipu GLM / OpenAI Whisper / whisper.cpp. Settings at `/settings/stt`; Auto order prefers Chinese quality → stability → cost. Secrets in `~/.agim/env` (`AGIM_STT_*` only).
 - **iOS / macOS App Icon**: ship Agim brand icons into both shell `AppIcon.appiconset`s (plus `assets/app-icon/` source + rounded preview). macOS assets use ~10% transparent margin so Dock size matches peers (full-bleed squircles look oversized).
 - **Chat Todo checklist UI**: `agim_todo_write` plans surface as a Cursor-style collapsible checklist above the tool accordion (desktop + Portal). Items update live with ☐ / ▶ / ☑ as the agent rewrites the list; activity steps keep a short “Plan updated” row without dumping the full checklist into the tool queue.

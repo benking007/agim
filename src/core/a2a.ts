@@ -55,6 +55,7 @@ import {
   notifyA2AFailed,
   startHeartbeat,
 } from './a2a-notify.js'
+import { isSameAgent } from './subagent.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
@@ -179,6 +180,13 @@ export interface CallAgentOpts {
   /** Web chat activity accordion — live "Waiting for subagent" steps.
    *  Prefer this over RouteContext.onToolActivity when both are set. */
   onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
+  /** Allow same-agent nested Subagent (isolated context). Vacuous self-call
+   *  without isolate/model is still rejected. See docs/architecture/subagent.md. */
+  isolate?: boolean
+  /** Agim Agent backend name → `AgentSendOpts.model` (role already resolved). */
+  model?: string
+  /** Activity accordion label override (e.g. `agim/cheap`). */
+  activityLabel?: string
 }
 
 export type CallAgentResult =
@@ -228,15 +236,25 @@ export async function callAgentByName(
     return { ok: false, error: `call depth exceeded (max=${maxDepth})` }
   }
 
-  // self-call: would be vacuous recursion. Caller agent name comes through
-  // opts.callerAgent (bus knows it from the runId → RunContext lookup).
-  // When unset (non-bus entry points) we skip the check; the depth ceiling
-  // still prevents runaway chains.
-  if (opts.callerAgent && opts.callerAgent === agentName) {
+  // Same-agent nested call is vacuous recursion unless this is an explicit
+  // Subagent spawn (isolate and/or a concrete model/backend override).
+  // Treat agim/native aliases (and registry aliases) as the same agent.
+  // When callerAgent is unset we skip the check; depth still caps chains.
+  if (
+    opts.callerAgent
+    && isSameAgent(opts.callerAgent, agentName)
+    && !opts.isolate
+    && !(typeof opts.model === 'string' && opts.model.trim())
+  ) {
     log.warn({
-      event: 'a2a.self_call_rejected', agentName, threadId: ctx.threadId,
-    }, 'call_agent rejected: agent cannot call itself')
-    return { ok: false, error: `cannot call self (${agentName})` }
+      event: 'a2a.self_call_rejected', agentName, callerAgent: opts.callerAgent, threadId: ctx.threadId,
+    }, 'call_agent rejected: agent cannot call itself without isolate/model')
+    return {
+      ok: false,
+      error:
+        `cannot call self (${agentName}) without isolate/role/backend. ` +
+        `Pass isolate:true or a role/backend for a same-family Subagent.`,
+    }
   }
 
   const target = registry.findAgent(agentName)
@@ -350,11 +368,14 @@ export async function callAgentByName(
     callerAgent: opts.callerAgent,
   })
   const heartbeat = startHeartbeat(ctx, nextDepth, jobId, target.name)
+  const activityLabel = (typeof opts.activityLabel === 'string' && opts.activityLabel.trim())
+    ? opts.activityLabel.trim()
+    : target.name
   const activityStartedAt = Date.now()
   emitAgentActivity(opts, ctx, {
     id: `a2a-${jobId}`,
     kind: 'agent',
-    label: target.name,
+    label: activityLabel,
     status: 'running',
     startedAt: activityStartedAt,
     preview: prompt.slice(0, 120).replace(/\s+/g, ' '),
@@ -369,6 +390,9 @@ export async function callAgentByName(
   // (codex / claude / opencode) keeps running and writes "orphan" files
   // into _agim-output/ long after agim has given up.
   try {
+    const modelOverride = typeof opts.model === 'string' && opts.model.trim()
+      ? opts.model.trim()
+      : undefined
     const gen = target.sendPrompt(`a2a-${jobId}`, promptWithEnvelope, [], {
       threadId: ctx.threadId,
       platform: ctx.platform,
@@ -382,6 +406,8 @@ export async function callAgentByName(
       // parent_id = jobId (our callee row).
       parentJobId: jobId,
       callDepth: nextDepth,
+      // Same-family Subagent: pin Agim Agent to role/backend via model name.
+      ...(modelOverride ? { model: modelOverride } : {}),
       // v1.2.139 — propagate parent's plan-mode state so the callee runs
       // read-only too. Without this, a parent under /plan on could delegate
       // a write task to claude-code and the child would launch with full
@@ -445,7 +471,7 @@ export async function callAgentByName(
     emitAgentActivity(opts, ctx, {
       id: `a2a-${jobId}`,
       kind: 'agent',
-      label: target.name,
+      label: activityLabel,
       status: 'error',
       startedAt: activityStartedAt,
       finishedAt: Date.now(),
@@ -485,7 +511,7 @@ export async function callAgentByName(
   emitAgentActivity(opts, ctx, {
     id: `a2a-${jobId}`,
     kind: 'agent',
-    label: target.name,
+    label: activityLabel,
     status: 'success',
     startedAt: activityStartedAt,
     finishedAt: Date.now(),

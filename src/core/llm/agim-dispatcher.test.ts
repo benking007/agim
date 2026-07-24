@@ -120,8 +120,8 @@ describe('buildAgimDispatcher', () => {
     }
   })
 
-  // v1.2.121 — in-process native self-spawn fast path.
-  describe('call_agent in-process native self-spawn (v1.2.121)', () => {
+  // Subagent Phase A1 — same-family spawn via callAgentByName (job/activity).
+  describe('call_agent same-family Subagent (Phase A1)', () => {
     const SAVED = {
       depth: process.env.AGIM_A2A_MAX_DEPTH,
       inProc: process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS,
@@ -140,32 +140,50 @@ describe('buildAgimDispatcher', () => {
       }
     }
 
-    it('depth exceed: in-process branch rejects when nextDepth > maxDepth', async () => {
-      process.env.AGIM_A2A_MAX_DEPTH = '1'
-      process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
+    it('refuses vacuous self-call without isolate/role/backend', async () => {
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
-      // Already-deep caller (depth=1) → nextDepth=2 > max=1 → reject.
-      const d = buildAgimDispatcher({ ...CTX, callerDepth: 1 })
+      const d = buildAgimDispatcher(CTX)
       try {
         const r = await d(
-          { id: 'spawn-1', name: 'mcp__agim__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
+          { id: 'spawn-0', name: 'mcp__agim__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
           NOOP_SIGNAL,
         )
         expect(r.isError).toBe(true)
-        // The in-process branch rejects with explicit depth message,
-        // not the cap-exceeded path.
-        expect(r.text).toMatch(/depth 2 > max 1/)
+        expect(r.text).toMatch(/isolate\/role\/backend/)
       } finally { restoreEnv() }
     })
 
-    it('A2A disabled: in-process branch refuses', async () => {
+    it('depth exceed: isolate same-family rejects when nextDepth > maxDepth', async () => {
+      process.env.AGIM_A2A_MAX_DEPTH = '1'
+      process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      const d = buildAgimDispatcher({ ...CTX, callerDepth: 1 })
+      try {
+        const r = await d(
+          {
+            id: 'spawn-1',
+            name: 'mcp__agim__call_agent',
+            arguments: { agent: 'native', prompt: 'hi', isolate: true },
+          },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/depth|call depth exceeded/i)
+      } finally { restoreEnv() }
+    })
+
+    it('A2A disabled: isolate same-family refuses', async () => {
       process.env.AGIM_A2A_ENABLED = '0'
       process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       const d = buildAgimDispatcher(CTX)
       try {
         const r = await d(
-          { id: 'spawn-2', name: 'mcp__agim__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
+          {
+            id: 'spawn-2',
+            name: 'mcp__agim__call_agent',
+            arguments: { agent: 'native', prompt: 'hi', isolate: true },
+          },
           NOOP_SIGNAL,
         )
         expect(r.isError).toBe(true)
@@ -173,11 +191,7 @@ describe('buildAgimDispatcher', () => {
       } finally { restoreEnv() }
     })
 
-    it('non-native target skips the in-process branch (falls through to subprocess A2A)', async () => {
-      // We can't easily mount a real agent here, but we can verify the
-      // failure path: callAgentByName for an unknown agent returns an
-      // A2A-layer error string, distinct from the in-process branch's
-      // "depth N > max" or "A2A disabled" messages.
+    it('cross-adapter unknown agent falls through to A2A error', async () => {
       process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       const d = buildAgimDispatcher(CTX)
@@ -187,24 +201,18 @@ describe('buildAgimDispatcher', () => {
           NOOP_SIGNAL,
         )
         expect(r.isError).toBe(true)
-        // Must NOT match the in-process branch's reject messages.
-        expect(r.text).not.toMatch(/in-process native/i)
-        expect(r.text).not.toMatch(/depth \d+ > max/)
+        expect(r.text).toMatch(/agent not found|not found/i)
       } finally { restoreEnv() }
     })
 
-    it('default (unset) uses subprocess A2A path for native', async () => {
-      delete process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS
-      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
-      const d = buildAgimDispatcher(CTX)
-      try {
-        const r = await d(
-          { id: 'spawn-4', name: 'mcp__agim__call_agent', arguments: { agent: 'native', prompt: 'hi' } },
-          NOOP_SIGNAL,
-        )
-        expect(r.isError).toBe(true)
-        expect(r.text).not.toMatch(/in-process/i)
-      } finally { restoreEnv() }
+    it('getAgimTools advertises role/backend/isolate on call_agent', () => {
+      const tools = getAgimTools()
+      const callAgent = tools.find((t) => t.name === 'mcp__agim__call_agent')
+      expect(callAgent).toBeTruthy()
+      const props = (callAgent?.parameters as { properties?: Record<string, unknown> })?.properties ?? {}
+      expect(props).toHaveProperty('role')
+      expect(props).toHaveProperty('backend')
+      expect(props).toHaveProperty('isolate')
     })
   })
 })

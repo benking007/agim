@@ -24,7 +24,7 @@ interface PortalMessageListProps {
   portalThreadId: string | null
   listRef: RefObject<HTMLDivElement>
   onFillComposer: (text: string) => void
-  onStopSubagent?: (jobId: number) => boolean | void
+  onStopSubagent?: (jobId: number) => boolean | undefined
   emptySlot?: React.ReactNode
 }
 

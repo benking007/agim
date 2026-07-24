@@ -30,7 +30,7 @@ export interface ChatSubagentCardProps {
   dark?: boolean
   className?: string
   /** Cancel one live Subagent job (WS `stop-subagent`). */
-  onStopSubagent?: (jobId: number) => boolean | void
+  onStopSubagent?: (jobId: number) => boolean | undefined
 }
 
 function StatusIcon({

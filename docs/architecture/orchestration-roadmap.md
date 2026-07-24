@@ -130,7 +130,11 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 - Core：`ToolActivityStep.jobId`；`listWaitingAgentSteps` / `formatWaitingSubagentLabels`。  
 - A2A `emitAgentActivity` 带上 `jobId` + `activityLabel`。  
 - 桌面 accordion / Portal run-status / TUI：≥2 个 running agent 时显示「等待 N 个子代理」+ 分行列表。  
-- i18n：`activityWaitingSubagents` / `activityRunningSubagents` / `activitySubagentBadge`。
+- i18n：`activityWaitingSubagents` / `activityRunningSubagents` / `activitySubagentBadge`。  
+- **消息流卡片 + 半浮层**：`chat-subagent-card` / `subagent-detail-dialog`；portal 到 composer sheet root，与内容列居中；长内容半高滚动。  
+- **Plan 并存**：`activityFollowSignal` 驱动中途 Todo 刷新；Plan 叠在 Subagent 上方。  
+- **Stop**：WS `stop-subagent` → `cancelJob`；`formatSubagentStoppedResult` 以 `ok:true, cancelled:true` 交回父 turn。  
+- **审批**：主/子共用 ApprovalBus + `AGIM_AUTO_APPROVE`；原生默认放行 `agim_todo_write`。
 
 #### A3. 拆解启发式（prompt）
 
@@ -328,7 +332,7 @@ Phase C  long-engineering    ──►  可先 RFC 再实现
 |---|---|---|---|
 | 2026-07-24 | A0 文档 | #223 | subagent.md + roadmap 对齐 |
 | 2026-07-24 | A1 运行时 | #223 | `subagent.ts` + call_agent role/backend/isolate |
-| （待填） | A2–A3 | | |
+| 2026-07-24 | A2–A3 | #223 | 多 Subagent UI / 消息流卡片 / Stop / 启发式；`phase-a-acceptance` 27/27 |
 | （待填） | B | | |
 | （待填） | C | | |
 

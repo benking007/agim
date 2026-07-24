@@ -43,7 +43,7 @@ export interface PortalRunStatusProps {
   streaming?: boolean
   className?: string
   /** Cancel one live Subagent job from the inline card. */
-  onStopSubagent?: (jobId: number) => boolean | void
+  onStopSubagent?: (jobId: number) => boolean | undefined
 }
 
 function formatDuration(ms: number | undefined): string | null {

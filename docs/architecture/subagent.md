@@ -248,6 +248,18 @@
 3. 与 `jobId` / tree API 一致，便于 `/tasks` 深链。  
 4. 同族与跨 adapter **同一组件**，仅 badge 不同。
 
+### 7.1 消息流卡片与半浮层（已落地）
+
+| 能力 | 行为 |
+|---|---|
+| **消息流卡片** | 父 turn 下按 `jobId` 渲染 Subagent 卡片（状态 / 标签 / Todo 级联） |
+| **半浮层详情** | 点击卡片 → 半浮层（portal 到 `[data-agim-composer-sheet-root]`，与内容列居中对齐）；展示父 brief + 子结果（`GET /api/jobs/:id`） |
+| **长内容** | 默认半高 + 内部滚动；expand / collapse（mock：`PHASE_A_LONG_SHEET_TEST`） |
+| **Plan 叠放** | Todo/Plan 在 Subagent 卡片**上方**；`activityFollowSignal` 驱动中途刷新（不只看 `steps.length`） |
+| **Stop** | 运行中卡片右侧 Stop → WS `{ type: 'stop-subagent', jobId }` → `cancelJob`；保留 partial，格式化为 `formatSubagentStoppedResult`，以 **`ok: true, cancelled: true`** 交回父 turn，父继续 summarize / 推进 |
+
+审批与主 turn 共用 **同一套 ApprovalBus**（`AGIM_AUTO_APPROVE`）；子代理审批卡可标 origin（`callDepth` / `callerAgent`）。原生 gate 默认放行 `agim_todo_write`，避免 Plan 中途被审批卡卡住。
+
 ---
 
 ## 8. 分阶段（只列 Subagent 相关；细节在 roadmap）
@@ -280,14 +292,18 @@
 | 2026-07-24 | **A2**：多 Subagent UI — activity `jobId`；桌面/Portal/TUI 多等待行；标签区分同族 (`agim/cheap`) 与跨 adapter | #223 |
 | 2026-07-24 | **A3**：拆解启发式写入 `call_agent` description + 父 system（`subagent-heuristics.ts` SSOT） | #223 |
 | 2026-07-24 | **Phase A 测试环境正式验收**：`tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs`（27/27） | #223 |
-| 2026-07-24 | **Subagent 消息流卡片**：Todo 级联可见；点击模态查看父提示词 + 结果（`GET /api/jobs/:id`） | #223 |
+| 2026-07-24 | **Subagent 消息流卡片**：Todo 级联可见；点击半浮层查看父提示词 + 结果（`GET /api/jobs/:id`） | #223 |
+| 2026-07-24 | **半浮层对齐 / 长内容滚动**；Plan 中途可见（`activityFollowSignal` + todo status 归一）；Plan 叠在 Subagent 上方 | #223 |
+| 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
+| 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 
 ### 落地差异（相对 §4.3）
 
 - 采用扩展 `mcp__agim__call_agent`，暂未新增 `spawn_subagent` 工具名。  
 - `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` 对同族 Subagent **不再走无 job 快路径**（打日志后仍走 A2A）。  
-- A2 UI 用既有 activity step 列表 + `jobId` 字段，未另开独立「Subagent 面板」组件树。  
-- A3 不引入独立分解 Agent；启发式仅以 prompt / tool description 形式注入父侧。
+- A2 UI：消息流卡片 + 半浮层详情（`chat-subagent-card` / `subagent-detail-dialog`），activity 仍带 `jobId`；未另开独立「Subagent 面板」路由树。  
+- A3 不引入独立分解 Agent；启发式仅以 prompt / tool description 形式注入父侧。  
+- 用户 Stop 子代理时返回 **cancelled + ok**（非硬失败），以便父 turn 用阶段性内容继续。
 
 ---
 

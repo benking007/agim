@@ -13,6 +13,11 @@ import { join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
 import {
+  cancelActiveChildJobsByThread,
+  countActiveChildJobsByThread,
+  jobThreadKey,
+} from './job-board.js'
+import {
   focusOff,
   getFocusOn,
   setFocus,
@@ -478,9 +483,30 @@ export type LoopExitEnforceResult = {
   reason?: NonNullable<LoopRun['endReason']>
 }
 
+/** Test-only override for exit-gate unit tests (null = use job board). */
+let _testLiveSubagents: boolean | null = null
+
+/** @internal */
+export function _setTestLiveSubagents(value: boolean | null): void {
+  _testLiveSubagents = value
+}
+
+/** True while A2A Subagent jobs are still pending/running on this thread. */
+export function threadHasLiveSubagents(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): boolean {
+  if (_testLiveSubagents != null) return _testLiveSubagents
+  return countActiveChildJobsByThread(jobThreadKey(platform, channelId, threadId)) > 0
+}
+
 /**
  * Active exit truncation that does NOT wait for loop_verdict.
- * Currently: wall clock. Call at turn start / after dispatch / status poll.
+ * Currently: wall clock. Call at turn start / after dispatch join / status poll.
+ *
+ * Defers while Subagents are still live — ending the Loop mid-dispatch left
+ * UI cards in「等待子代理」after the Loop already showed ended.
  */
 export function maybeEnforceLoopExit(
   platform: string,
@@ -491,6 +517,14 @@ export function maybeEnforceLoopExit(
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return { ended: false, run: null }
   if (isLoopWallExceeded(run, now)) {
+    if (threadHasLiveSubagents(platform, channelId, threadId)) {
+      log.info({
+        event: 'loop.exit_deferred_live_subagents',
+        reason: 'wall_limit',
+        threadId,
+      }, 'defer wall_limit while Subagents still running')
+      return { ended: false, run }
+    }
     const ended = endLoopInternal(
       run,
       'wall_limit',
@@ -504,6 +538,7 @@ export function maybeEnforceLoopExit(
 /**
  * When VERIFY follow-up still did not produce loop_verdict, force-end the Loop
  * so it cannot hang forever in「待验收」with a delivered report.
+ * Also defers while Subagents are still live.
  */
 export function forceLoopExitSkippedVerify(
   platform: string,
@@ -516,6 +551,15 @@ export function forceLoopExitSkippedVerify(
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return { ended: false, run: null }
   if ((run.dispatchesThisRound || 0) < 1) return { ended: false, run }
+
+  if (threadHasLiveSubagents(platform, channelId, threadId)) {
+    log.info({
+      event: 'loop.exit_deferred_live_subagents',
+      reason: 'verify_skipped',
+      threadId,
+    }, 'defer verify_skipped while Subagents still running')
+    return { ended: false, run }
+  }
 
   // Round already at cap and work was dispatched → count as limit.
   if (run.round >= run.maxRounds) {
@@ -922,9 +966,9 @@ export function noteLoopDispatch(
   run.updatedAt = Date.now()
   pushTimeline(run, 'system', `dispatch +${n} (round total ${run.dispatchesThisRound})`)
   writeRun(run)
-  // Active wall truncate — do not wait for loop_verdict.
-  const enforced = maybeEnforceLoopExit(platform, channelId, threadId)
-  if (enforced.ended && enforced.run) return enforced.run
+  // Do NOT wall-enforce here: children are not registered as jobs yet.
+  // Wall / verify exits run after call_agents join (dispatcher) and on poll /
+  // turn boundaries — and defer while Subagents are still live.
   return run
 }
 
@@ -982,6 +1026,20 @@ export function stopLoop(
 ): LoopRun | null {
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return null
+  // Explicit user/stop path: end Loop and abort in-flight Subagents.
+  if (reason === 'user_stop') {
+    const cancelled = cancelActiveChildJobsByThread(
+      jobThreadKey(platform, channelId, threadId),
+      'cancelled: Loop stopped by user',
+    )
+    if (cancelled > 0) {
+      log.info({
+        event: 'loop.stop_cancelled_subagents',
+        threadId,
+        cancelled,
+      }, `cancelled ${cancelled} live Subagent job(s) on /loop stop`)
+    }
+  }
   return endLoopInternal(run, reason, `loop stopped (${reason})`)
 }
 
@@ -1018,6 +1076,11 @@ export function applyLoopVerdict(
       && run.status !== 'planning' && run.status !== 'dispatching'
       && run.status !== 'verifying' && run.status !== 'reflecting') {
     return { ok: false, error: 'not_ready' }
+  }
+
+  // Do not close / advance the Loop while Subagents are still running.
+  if (threadHasLiveSubagents(platform, channelId, threadId)) {
+    return { ok: false, error: 'live_subagents' }
   }
 
   // Exit truncation: wall clock (R4)

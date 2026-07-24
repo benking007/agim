@@ -239,7 +239,8 @@ type LoopRun = {
 VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。  
 `continue|revise` 要求本轮已派工 + `met=false` + `nextDirection`。
 
-**重要**：墙钟 / 轮次截断 **不等待** `loop_verdict`（`maybeEnforceLoopExit`）；避免报告已写出却永远停在「待验收」。
+**重要**：墙钟 / 轮次截断 **不等待** `loop_verdict`（`maybeEnforceLoopExit`）；避免报告已写出却永远停在「待验收」。  
+但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）会 **推迟** 到子代理结束后再执行；`/loop stop` 则会立刻结束 Loop **并取消** 未完成子代理。
 
 ### 6.2 硬门禁（运行时）
 

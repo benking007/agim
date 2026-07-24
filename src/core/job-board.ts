@@ -882,6 +882,69 @@ export function findActiveJobByThread(threadKey: string): Job | null {
   ).get(threadKey) as Job | null
 }
 
+/** A2A / inline job thread key — `platform:channelId:threadId` (colon form). */
+export function jobThreadKey(platform: string, channelId: string, threadId: string): string {
+  return `${platform}:${channelId}:${threadId}`
+}
+
+/**
+ * Count in-flight Subagent (A2A child) jobs on a thread.
+ * Children have call_depth > 0 or parent_id set — user-originated parent rows
+ * (depth 0) are excluded so a live parent turn does not block Loop auto-exit.
+ */
+export function countActiveChildJobsByThread(threadKey: string): number {
+  const d = getDb()
+  if (!d || !threadKey) return 0
+  try {
+    const row = d.prepare(
+      `SELECT COUNT(*) AS n FROM jobs
+         WHERE thread_key = ?
+           AND status IN ('running', 'pending')
+           AND (call_depth > 0 OR parent_id IS NOT NULL)`,
+    ).get(threadKey) as { n: number } | undefined
+    return Number(row?.n) || 0
+  } catch (err) {
+    rootLogger.debug({
+      component: 'job-board',
+      event: 'countActiveChildJobs_failed',
+      threadKey,
+      err: String(err),
+    })
+    return 0
+  }
+}
+
+/** Cancel all in-flight Subagent jobs on a thread. Returns how many were cancelled. */
+export function cancelActiveChildJobsByThread(
+  threadKey: string,
+  result = 'cancelled: parent Loop stopped',
+): number {
+  const d = getDb()
+  if (!d || !threadKey) return 0
+  let ids: Array<{ id: number }> = []
+  try {
+    ids = d.prepare(
+      `SELECT id FROM jobs
+         WHERE thread_key = ?
+           AND status IN ('running', 'pending')
+           AND (call_depth > 0 OR parent_id IS NOT NULL)`,
+    ).all(threadKey) as Array<{ id: number }>
+  } catch (err) {
+    rootLogger.debug({
+      component: 'job-board',
+      event: 'listActiveChildJobs_failed',
+      threadKey,
+      err: String(err),
+    })
+    return 0
+  }
+  let n = 0
+  for (const row of ids) {
+    if (cancelJob(row.id, { result })) n += 1
+  }
+  return n
+}
+
 export function cancelJob(id: number, opts: OwnerOpts & { result?: string | null } = {}): boolean {
   const job = getJob(id, opts)
   if (!job || (job.status !== 'pending' && job.status !== 'running')) return false

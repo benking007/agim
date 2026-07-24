@@ -899,6 +899,11 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             toolCtx,
             callId: call.id,
           })
+          {
+            // After join: wall may apply now that the child job is terminal.
+            const { maybeEnforceLoopExit } = await import('../loop-run.js')
+            maybeEnforceLoopExit(ctx.platform, ctx.channelId, ctx.threadId)
+          }
           if (!one.ok) {
             callAgentHistory.push({ agent: spawn.label, promptHead, ok: false })
             return err(`call_agent failed: ${one.error}`)
@@ -1123,6 +1128,11 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                   }
             )),
           }
+          {
+            // After allSettled join: wall / deferred exits can apply safely.
+            const { maybeEnforceLoopExit } = await import('../loop-run.js')
+            maybeEnforceLoopExit(ctx.platform, ctx.channelId, ctx.threadId)
+          }
           // Always ok:true at tool level (allSettled) so the parent can synthesize
           // partial successes; per-lane ok flags carry individual outcomes.
           return ok(
@@ -1245,6 +1255,12 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 + 'mcp__agim__call_agents (or call_agent) before continue/revise. '
                 + 'Decompose the objective, dispatch, then retry the verdict. '
                 + 'Use decision=stop to end without further dispatch.',
+              )
+            }
+            if (r.error === 'live_subagents') {
+              return err(
+                'loop_verdict failed: live_subagents — wait for in-flight Subagents '
+                + 'to finish (or Stop them) before calling loop_verdict.',
               )
             }
             if (r.error === 'need_verification') {

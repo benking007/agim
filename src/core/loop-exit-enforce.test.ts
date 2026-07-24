@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  _setTestLiveSubagents,
   forceLoopExitSkippedVerify,
   getActiveLoop,
   maybeEnforceLoopExit,
@@ -53,9 +54,11 @@ describe('loop exit enforce (no verdict required)', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'loop-exit-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    _setTestLiveSubagents(null)
   })
 
   afterEach(() => {
+    _setTestLiveSubagents(null)
     if (prev === undefined) delete process.env.AGIM_LOOPS_DIR
     else process.env.AGIM_LOOPS_DIR = prev
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
@@ -69,6 +72,14 @@ describe('loop exit enforce (no verdict required)', () => {
     expect(getActiveLoop(a.platform, a.channelId, a.threadId)).toBeNull()
   })
 
+  it('maybeEnforceLoopExit defers wall while Subagents are live', () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!, { wall: true, oldCreated: true })
+    _setTestLiveSubagents(true)
+    const r = maybeEnforceLoopExit(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(false)
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
+  })
+
   it('forceLoopExitSkippedVerify ends as verify_skipped', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     const r = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
@@ -76,6 +87,14 @@ describe('loop exit enforce (no verdict required)', () => {
     expect(r.reason).toBe('verify_skipped')
     expect(r.run?.endReason).toBe('verify_skipped')
     expect(getActiveLoop(a.platform, a.channelId, a.threadId)).toBeNull()
+  })
+
+  it('forceLoopExitSkippedVerify defers while Subagents are live', () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    _setTestLiveSubagents(true)
+    const r = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(false)
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
   })
 
   it('forceLoopExitSkippedVerify uses limit when round already at max', () => {

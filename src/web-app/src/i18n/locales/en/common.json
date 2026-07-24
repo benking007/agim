@@ -431,8 +431,9 @@
       "menu": {
         "plan": "Plan mode",
         "memo": "Memo",
-        "goal": "Focus",
         "focus": "Focus",
+        "loop": "Loop task",
+        "subagent": "Subagent",
         "remember": "Remember",
         "models": "Models",
         "skills": "Skills",
@@ -452,9 +453,9 @@
         "cmd": {
           "plan": { "label": "Plan", "description": "Generate an implementation plan" },
           "memo": { "label": "Memo", "description": "Save a 5W1H memo" },
-          "goal": { "label": "Focus", "description": "Set attention focus (on/off)" },
           "focus": { "label": "Focus", "description": "Set attention focus (on/off)" },
-          "loop": { "label": "Loop", "description": "Start a Focus-bound development loop" },
+          "loop": { "label": "Loop task", "description": "Start a Focus-bound development loop (/loop)" },
+          "subagent": { "label": "Subagent", "description": "Ask the agent to spawn a Subagent" },
           "remember": { "label": "Remember", "description": "Set a reminder" },
           "models": { "label": "Models", "description": "List available models" },
           "new": { "label": "New", "description": "Start a new conversation" },

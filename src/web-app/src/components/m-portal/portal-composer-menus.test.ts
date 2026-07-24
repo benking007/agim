@@ -78,6 +78,18 @@ describe('filterSlashCommands', () => {
     expect(memo?.id).toBe('memo')
     expect(memo?.action).toEqual({ type: 'fill', text: '/memo here' })
   })
+
+  it('exposes Focus / Loop / Subagent (not Goal)', () => {
+    const focus = filterSlashCommands('focus')[0]
+    const loop = filterSlashCommands('循环')[0]
+    const sub = filterSlashCommands('子代理')[0]
+    expect(focus?.id).toBe('focus')
+    expect(focus?.action).toEqual({ type: 'fill', text: '/focus ' })
+    expect(loop?.id).toBe('loop')
+    expect(loop?.action).toEqual({ type: 'fill', text: '/loop ' })
+    expect(sub?.id).toBe('subagent')
+    expect(filterSlashCommands('goal').some((c) => c.id === 'goal')).toBe(false)
+  })
 })
 
 describe('backspace deletes trailing chip', () => {

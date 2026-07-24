@@ -342,9 +342,9 @@
   },
   "goals": {
     "title": "Active goals",
-    "subtitle": "Cross-thread view of every active /goal. Lifecycle controls (pause / complete / cancel) operate without the IM thread; creating a new goal still requires the thread context — /goal set <title>.",
+    "subtitle": "(Transitional) Cross-thread view of goals.db active rows; product primitive is now /focus. Lifecycle controls still work; create with /focus set <title> in a thread.",
     "refresh": "Refresh",
-    "empty": "No active goals. Create one inside any IM thread with /goal set <title>.",
+    "empty": "No active Focus/goal rows. Create with /focus set <title> in any IM thread.",
     "col": {
       "id": "#",
       "thread": "Thread",

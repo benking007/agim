@@ -14,14 +14,17 @@ import { createPortal } from 'react-dom'
 import {
   ArrowLeft,
   Bell,
+  Bot,
   Boxes,
   Bug,
   ChevronRight,
+  Crosshair,
   File as FileIcon,
   Folder,
   FolderOpen,
   HelpCircle,
   ListTodo,
+  RefreshCw,
   Sparkles,
   Star,
   StickyNote,
@@ -308,7 +311,9 @@ function commandIcon(id: string): ReactNode {
   switch (id) {
     case 'plan': return <ListTodo className="h-3.5 w-3.5 text-orange-400" />
     case 'memo': return <StickyNote className="h-3.5 w-3.5 text-amber-400" />
-    case 'goal': return <ListTodo className="h-3.5 w-3.5 text-sky-400" />
+    case 'focus': return <Crosshair className="h-3.5 w-3.5 text-sky-400" />
+    case 'loop': return <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />
+    case 'subagent': return <Bot className="h-3.5 w-3.5 text-indigo-400" />
     case 'remember': return <Bell className="h-3.5 w-3.5 text-rose-400" />
     case 'models': return <Boxes className="h-3.5 w-3.5 text-violet-400" />
     case 'help': return <HelpCircle className="h-3.5 w-3.5 text-zinc-400" />

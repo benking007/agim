@@ -17,14 +17,16 @@
 | 分区 | 行为 |
 |------|------|
 | **Skills** | 展示最常用 3 个（本地使用频次 + 名称排序）；`Show N more skills` 打开模态选全部 |
-| **Commands** | 高优：Plan / Memo / Goal / Remember / Models；其余经 `Show N more commands` |
+| **Commands** | 高优：Plan / Memo / Focus / 循环任务 / 子代理 / Remember / Models；其余经 `Show N more commands` |
 
 选择后：
 
 - **Skill** → 插入蓝色 skill chip（发送标记 `[技能：name]`）
 - **Plan** → 直接发送 `/plan on` 或 `/plan off`
 - **Memo** → 填入 `/memo here`
-- **Goal / Remember** → 填入 `/goal ` / `/remind `
+- **Focus / 循环任务** → 填入 `/focus ` / `/loop `
+- **子代理** → 填入「请用子代理（call_agent / call_agents）完成：」
+- **Remember** → 填入 `/remind `
 - **Models** → 直接发送 `/models`
 
 键盘：↑↓ 高亮，Enter 确认，Esc 关闭。过滤查询变化时重置高亮；同一查询下不会被 keyup 冲掉。
@@ -44,13 +46,17 @@
 
 ### 加号菜单（`+`）
 
-在 Plan / Memo / Goal 之外增加：
+快捷：
 
+- **Plan / Memo / Focus** → Plan 切换 · `/memo here` · `/focus `
+- **循环任务** → `/loop `
+- **子代理** → 填入子代理引导句（同上）
 - **Remember** → `/remind `
 - **Models** → 发送 `/models`
 - **Skills** → 填入 `/` 并唤出 slash 菜单
 
-另含拍照 / 相册 / 文件附件（上传后以媒体标记入消息）。
+另含拍照 / 相册 / 文件附件（上传后以媒体标记入消息）。  
+`/goal` 已废弃，菜单不再出现 Goal 入口（见 [`architecture/goal-residue.md`](./architecture/goal-residue.md)）。
 
 ### Mention chip 与 Backspace
 

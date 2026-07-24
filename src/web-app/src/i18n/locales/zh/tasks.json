@@ -342,9 +342,9 @@
   },
   "goals": {
     "title": "活跃目标",
-    "subtitle": "跨线程查看所有活跃 /goal。生命周期操作（暂停/完成/取消）无需 IM 线程；新建目标仍需在线程内执行 /goal set <title>。",
+    "subtitle": "（过渡）跨线程查看 goals.db 活跃行；产品原语已改为 /focus。生命周期操作仍可用；新建请用线程内 /focus set <title>。",
     "refresh": "刷新",
-    "empty": "暂无活跃目标。在任意 IM 线程执行 /goal set <title> 创建。",
+    "empty": "暂无活跃 Focus/goal 行。在任意 IM 线程执行 /focus set <title> 创建。",
     "col": {
       "id": "#",
       "thread": "线程",

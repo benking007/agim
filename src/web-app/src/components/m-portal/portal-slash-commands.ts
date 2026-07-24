@@ -1,6 +1,6 @@
 /**
  * Portal slash-command registry for the `/` composer picker.
- * High-priority Commands: Plan, Memo, Focus, Remember, Models.
+ * High-priority: Plan, Memo, Focus, Loop, Subagent, Remember, Models.
  */
 
 export type PortalSlashAction =
@@ -16,7 +16,7 @@ export interface PortalSlashCommand {
   description?: string
   /** Filter tokens (lowercase). */
   keywords: string[]
-  /** Priority: lower = higher in the list. High-priority ids use 0–4. */
+  /** Priority: lower = higher in the list. High-priority ids use 0–6. */
   priority: number
   action: PortalSlashAction
 }
@@ -26,9 +26,15 @@ export const PRIORITY_COMMAND_IDS = [
   'plan',
   'memo',
   'focus',
+  'loop',
+  'subagent',
   'remember',
   'models',
 ] as const
+
+/** Composer fill that steers the agent to spawn Subagent(s). */
+export const SUBAGENT_COMPOSER_FILL =
+  '请用子代理（call_agent / call_agents）完成：'
 
 export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
   {
@@ -59,16 +65,24 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     id: 'loop',
     label: 'Loop',
     description: 'Start a Focus-bound development loop',
-    keywords: ['loop', '闭环', 'engineering'],
-    priority: 21,
+    keywords: ['loop', '循环', '循环任务', '闭环', 'engineering'],
+    priority: 3,
     action: { type: 'fill', text: '/loop ' },
+  },
+  {
+    id: 'subagent',
+    label: 'Subagent',
+    description: 'Ask the agent to spawn a Subagent',
+    keywords: ['subagent', '子代理', 'call_agent', 'call_agents', '并行'],
+    priority: 4,
+    action: { type: 'fill', text: SUBAGENT_COMPOSER_FILL },
   },
   {
     id: 'remember',
     label: 'Remember',
     description: 'Set a reminder',
     keywords: ['remember', 'remind', '提醒', 'reminder'],
-    priority: 3,
+    priority: 5,
     action: { type: 'fill', text: '/remind ' },
   },
   {
@@ -76,7 +90,7 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     label: 'Models',
     description: 'List available models',
     keywords: ['models', 'model', '模型'],
-    priority: 4,
+    priority: 6,
     action: { type: 'send', text: '/models' },
   },
   {

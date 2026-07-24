@@ -43,6 +43,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Portal `+` / `/` menus**: Goal entry removed; **Focus**、**循环任务**
+  (`/loop`)、**子代理**（填入 call_agent 引导句）进入高优快捷；
+  `/help` 文案改为 focus/loop。残留盘点见
+  `docs/architecture/goal-residue.md`。
 - **`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` default 2 → 3** (counts both `call_agent` and each `call_agents` task). Set `0` to disable the cap.
 - **Subagent Stop (chat)**: live Subagent rows expose a right-side **Stop** control (WS `stop-subagent`). Cancel keeps the parent turn alive and returns partial output plus summarize/continue instructions to the parent agent.
 - **Approval dock (chat)**: slightly smaller sheet, denser header/body, and compact buttons (`min-h-8` / `text-xs`) so it competes less with the composer.

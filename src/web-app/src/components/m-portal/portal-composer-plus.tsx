@@ -6,13 +6,14 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  Camera, FileText, FolderOpen, Image as ImageIcon, ListTodo, MapPin,
-  StickyNote, X, Bell, Boxes, Sparkles,
+  Bot, Camera, Crosshair, FileText, FolderOpen, Image as ImageIcon, ListTodo, MapPin,
+  RefreshCw, StickyNote, X, Bell, Boxes, Sparkles,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
+import { SUBAGENT_COMPOSER_FILL } from './portal-slash-commands'
 
 export interface PendingAttachment {
   id: string
@@ -258,11 +259,35 @@ export function PortalComposerPlus({
             className={itemCls}
             onClick={() => {
               setMenuOpen(false)
-              onFillInput('/focus')
+              onFillInput('/focus ')
             }}
           >
-            <ListTodo className="h-3.5 w-3.5 text-sky-500" />
+            <Crosshair className="h-3.5 w-3.5 text-sky-500" />
             <span>{t('chat.portal.menu.focus')}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => {
+              setMenuOpen(false)
+              onFillInput('/loop ')
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-emerald-500" />
+            <span>{t('chat.portal.menu.loop')}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={itemCls}
+            onClick={() => {
+              setMenuOpen(false)
+              onFillInput(SUBAGENT_COMPOSER_FILL)
+            }}
+          >
+            <Bot className="h-3.5 w-3.5 text-indigo-400" />
+            <span>{t('chat.portal.menu.subagent')}</span>
           </button>
           <button
             type="button"

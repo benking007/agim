@@ -23,11 +23,12 @@ export const SUBAGENT_HEURISTIC_KEYWORDS = [
  */
 export const CALL_AGENT_TOOL_DESCRIPTION = [
   'Spawn a Subagent (nested worker; you keep the user-facing reply).',
-  'Targets: (1) same-family Agim — isolate:true (reuse default model), role:"cheap" (llmRoles.cheap / flash), or backend:"<llmBackends.name>";',
+  'Targets: (1) same-family Agim — prefer backend:"<llmBackends.name>" (concrete model backend);',
+  'isolate:true reuses the parent default model; role:"cheap" only when llmRoles.cheap is configured (optional alias).',
   '(2) another registered adapter (claude-code, codex, …) via A2A.',
   'Brief MUST be self-contained: Objective + Output format + Boundaries + Done-when.',
   'Scale: single-fact / short edit → do it yourself (do not spawn for trivial one-step work);',
-  '2–3 independent research/verify lanes → 1–3 Subagents; broad read-only search → fan-out with role:cheap when available;',
+  '2–3 independent research/verify lanes → 1–3 Subagents; broad read-only search → fan-out with a cheaper backend when available;',
   'coding that writes the same file → do not parallel-write (serialize or split directories).',
   'After Subagents return: synthesize yourself — never ask the user to merge raw child output.',
   'Vacuous self-call without isolate/role/backend is refused. Guardrails: depth, ACL, per-turn cap.',
@@ -44,9 +45,29 @@ export function buildSubagentDelegationGuidance(): string {
     '  - When to spawn: long / context-polluting / independently parallelizable work. Single-fact answers and short edits → do it yourself;',
     '    do not spawn for trivial one-step work.',
     '  - Brief four-piece (required in `prompt`): Objective; Output format; Boundaries (what not to redo); Done-when.',
-    '  - Same-family: isolate:true reuses default model; role:"cheap" / backend:"…" when configured. Cross-adapter when another CLI is needed.',
-    '  - Scale: 2–3 independent research/verify lanes → 1–3 Subagents; broad read-only explore → prefer role:cheap; coding that writes the same file → do not parallel-write (serialize or split dirs).',
+    '  - Same-family: prefer backend:"<llmBackends.name>" (concrete). isolate:true reuses default model.',
+    '    role:"cheap" is only an optional alias when llmRoles.cheap exists — do not assume it.',
+    '  - Scale: 2–3 independent research/verify lanes → 1–3 Subagents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
     '  - Verification: after a substantive result, a fresh verifier Subagent can be valuable — give an exact claim + how to check it.',
     '  - Synthesize, don\'t delegate understanding: merge child summaries into one Chinese user reply; never dump raw child transcripts.',
   ].join('\n')
+}
+
+/** Append live backend/role roster so the model can pick real names. */
+export function buildCallAgentToolDescription(extra?: {
+  backends?: string[]
+  roles?: string[]
+}): string {
+  const backends = (extra?.backends ?? []).filter(Boolean)
+  const roles = (extra?.roles ?? []).filter(Boolean)
+  const bits = [CALL_AGENT_TOOL_DESCRIPTION]
+  if (backends.length > 0) {
+    bits.push(`Configured llmBackends (prefer these in backend=): ${backends.join(', ')}.`)
+  } else {
+    bits.push('No llmBackends configured — use isolate:true for same-family, or a cross-adapter id.')
+  }
+  if (roles.length > 0) {
+    bits.push(`Optional llmRoles aliases: ${roles.join(', ')}.`)
+  }
+  return bits.join(' ')
 }

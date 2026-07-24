@@ -10,6 +10,7 @@ import { canonicalizeToolName, expandToolNameList } from '../../../core/llm/tool
 import { approvalBus, threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { buildNativeAskUser, resolvePolicy } from '../agim-agent-shared/index.js'
+import { NATIVE_HITL_EXEMPT } from '../agim-agent-shared/tool-registry.js'
 
 export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: string): ApprovalGate {
   const o = opts ?? {}
@@ -55,6 +56,18 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
     if (isTodoActivityLabel(call.name)
       && !denyExpanded.has(call.name)
       && !denyExpanded.has(canonicalizeToolName(call.name))
+      && policy.mode !== 'deny-all') {
+      return 'allow'
+    }
+    // Observer / read-class natives: builtins (agim_now…), FS reads, and web
+    // search/fetch. Under default allow-list these used to spam HITL cards
+    // (often empty `agim_now({})` first). web_fetch still has dispatcher SSRF
+    // blocking; skipping the card does not open private URLs. Deny-all and
+    // explicit deny-list still win.
+    const canon = canonicalizeToolName(call.name)
+    if (NATIVE_HITL_EXEMPT.has(canon)
+      && !denyExpanded.has(call.name)
+      && !denyExpanded.has(canon)
       && policy.mode !== 'deny-all') {
       return 'allow'
     }

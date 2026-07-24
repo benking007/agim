@@ -41,4 +41,36 @@ describe('pi-native plan-exit approval routing', () => {
       arguments: { items: [{ content: 'a', status: 'in_progress' }] },
     }, 0)).toBe('allow')
   })
+
+  it('auto-allows side-effect-free builtins (agim_now etc.) without empty HITL cards', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    delete process.env.AGIM_NATIVE_AGENT_DENYLIST
+    const gate = buildPiApprovalGate(undefined, 'session-builtin')
+    expect(await gate({ id: 'n1', name: 'agim_now', arguments: {} }, 0)).toBe('allow')
+    expect(await gate({ id: 'n2', name: 'native_now', arguments: {} }, 0)).toBe('allow')
+    expect(await gate({ id: 'e1', name: 'agim_echo', arguments: { text: 'hi' } }, 0)).toBe('allow')
+    expect(await gate({ id: 'u1', name: 'agim_random_uuid', arguments: {} }, 0)).toBe('allow')
+  })
+
+  it('auto-allows web_search / web_fetch and FS reads under allow-list', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    delete process.env.AGIM_NATIVE_AGENT_DENYLIST
+    const gate = buildPiApprovalGate(undefined, 'session-web-fs')
+    expect(await gate({ id: 's1', name: 'agim_web_search', arguments: { query: 'agim' } }, 0)).toBe('allow')
+    expect(await gate({ id: 'f1', name: 'agim_web_fetch', arguments: { url: 'https://example.com' } }, 0)).toBe('allow')
+    expect(await gate({ id: 'r1', name: 'agim_read_file', arguments: { path: 'README.md' } }, 0)).toBe('allow')
+    expect(await gate({ id: 'g1', name: 'agim_grep', arguments: { pattern: 'x' } }, 0)).toBe('allow')
+  })
+
+  it('still denies builtins under deny-all / explicit deny-list', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'deny-all'
+    let gate = buildPiApprovalGate(undefined, 'session-deny-all')
+    expect(await gate({ id: 'n1', name: 'agim_now', arguments: {} }, 0)).toBe('deny')
+
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    process.env.AGIM_NATIVE_AGENT_DENYLIST = 'agim_now,agim_web_fetch'
+    gate = buildPiApprovalGate(undefined, 'session-deny-list')
+    expect(await gate({ id: 'n2', name: 'agim_now', arguments: {} }, 0)).toBe('deny')
+    expect(await gate({ id: 'f2', name: 'agim_web_fetch', arguments: { url: 'https://example.com' } }, 0)).toBe('deny')
+  })
 })

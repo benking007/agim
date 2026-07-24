@@ -204,6 +204,23 @@ function err(text: string): DispatcherResult {
   return { text, isError: true, source: 'agim' }
 }
 
+/** R1 hard gate: while Loop is ALIGNING, refuse dispatch / verdict tools. */
+async function refuseIfLoopAligning(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  tool: string,
+): Promise<string | null> {
+  const { getActiveLoop, isLoopAligning } = await import('../loop-run.js')
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run || !isLoopAligning(run)) return null
+  return (
+    `${tool} refused: Loop is ALIGNING (objective + exit not confirmed). `
+    + 'Use mcp__agim__ask_user (or tell user `/loop objective` / `/loop exit` / `/loop confirm`). '
+    + 'Do not spawn subagents until mission is confirmed.'
+  )
+}
+
 function unknown(name: string): DispatcherResult {
   // matches builtin-dispatcher's marker so combineDispatchers falls
   // through to the next dispatcher in the stack.
@@ -483,8 +500,9 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__loop_verdict',
       description:
-        'Report a Loop observer verdict while a /loop session is active: continue, revise, or stop. ' +
-        'stop ends the Loop (and focus-off only if Loop opened Focus).',
+        'Report a Loop observer verdict while a /loop session is active (not during ALIGNING): ' +
+        'continue, revise, or stop. stop ends the Loop (and focus-off only if Loop opened Focus). ' +
+        'Refused while status=aligning — finish objective+exit via ask_user / /loop confirm first.',
       parameters: {
         type: 'object',
         properties: {
@@ -777,6 +795,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           return ok(safeJson(r.result))
         }
         case 'call_agent': {
+          {
+            const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agent')
+            if (gate) return err(gate)
+          }
           const agentName = typeof args.agent === 'string' ? args.agent : ''
           const prompt = typeof args.prompt === 'string' ? args.prompt : ''
           if (!agentName || !prompt) {
@@ -851,6 +873,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           return ok(one.text)
         }
         case 'call_agents': {
+          {
+            const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agents')
+            if (gate) return err(gate)
+          }
           const rawTasks = Array.isArray(args.tasks) ? args.tasks : null
           if (!rawTasks || rawTasks.length === 0) {
             return err('call_agents requires a non-empty `tasks` array.')
@@ -1106,6 +1132,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }
         }
         case 'loop_verdict': {
+          {
+            const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'loop_verdict')
+            if (gate) return err(gate)
+          }
           const { applyLoopVerdict } = await import('../loop-run.js')
           const decision = String(args.decision || '')
           if (decision !== 'continue' && decision !== 'revise' && decision !== 'stop') {

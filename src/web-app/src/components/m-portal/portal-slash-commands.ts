@@ -64,8 +64,8 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
   {
     id: 'loop',
     label: 'Loop',
-    description: 'Start a Focus-bound development loop',
-    keywords: ['loop', '循环', '循环任务', '闭环', 'engineering'],
+    description: 'Loop Engineering — align objective + exit, then dispatch',
+    keywords: ['loop', '循环', '循环任务', '闭环', 'engineering', '对焦'],
     priority: 3,
     action: { type: 'fill', text: '/loop ' },
   },

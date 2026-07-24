@@ -96,12 +96,12 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 
 | 能力 | 目标形态 | 现行 `/loop` |
 |------|----------|--------------|
-| 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | 无；可空转启动 |
-| 对焦讨论 | `ask_user` | 无 |
-| 拆解 → 子代理 | 核心 | 未强制 |
-| 对照目标验收 | 硬门闸 | 软 `loop_verdict` |
+| 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | **R1**：ALIGNING + slash/`ask_user`；确认前禁派工 |
+| 对焦讨论 | `ask_user` + `/loop objective\|exit\|confirm` | **R1** 已接线 |
+| 拆解 → 子代理 | 核心 | R3 |
+| 对照目标验收 | 硬门闸 | R4（现行仍软 `loop_verdict`） |
 
-**结论**：现行是占位壳；按下文节奏演进到 L3。
+**结论**：R1 锁门禁；R3/R4 补齐调度与验收，才是完整 L3。
 
 ---
 
@@ -144,11 +144,14 @@ type LoopRun = {
 };
 ```
 
-用户面（目标）：
+用户面：
 
 ```text
-/loop <objective> [；退出：…]     # 尽量一次给齐
+/loop <objective> [；退出：…]     # 尽量一次给齐（齐 → planning）
 /loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
+/loop objective <text>            # 对焦中补目标
+/loop exit <text>                 # 对焦中补退出条件
+/loop confirm                     # 两硬字段齐后确认
 /loop status | stop | help
 ```
 
@@ -172,11 +175,6 @@ type LoopRun = {
        │ PLANNING│
        └────┬────┘
             ▼
-    ┌──────────────┐
-    │ DISPATCHING  │ call_agents
-    └──────┬───────┘
-           ▼
-     �            ▼
     ┌──────────────┐
     │ DISPATCHING  │ call_agents
     └──────┬───────┘
@@ -231,7 +229,7 @@ type LoopRun = {
 | 节奏 | 切片 | 交付物 | 验收 |
 |------|------|--------|------|
 | **R0** ✅ | Focus + `/loop` 壳 | 已在 main | — |
-| **R1** | **对焦门禁** | `ALIGNING`；缺 objective/exit → `ask_user` 讨论；确认前禁止派工 | 无退出条件无法进入 planning |
+| **R1** ✅ | **对焦门禁** | `ALIGNING`；缺 objective/exit → slash + snippet→`ask_user`；确认前拒绝 `call_agent(s)`/`loop_verdict` | 无退出条件无法进入 planning |
 | **R2** | **Mission 持久化** | `LoopMission` 写入 loop store；`/loop status` 展示目标+退出 | status 可读两硬字段 |
 | **R3** | **PLAN + DISPATCH** | 确认后强制拆解 → `call_agents`（可先串行） | 无子代理调用则不算完成一轮 |
 | **R4** | **VERIFY + REFLECT** | 对照 objective 结构化验收；未达写 nextDirection 再规划 | 死循环有 exit 截断 |
@@ -274,3 +272,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-24 | 初稿（executor/observer 薄模型） |
 | 2026-07-24 | 按三层图重写为 L3 |
 | 2026-07-24 | **目标+退出条件硬门禁 + ALIGNING；落地节奏 R1–R6** |
+| 2026-07-24 | **R1 落地**：ALIGNING 状态机 + slash 对焦 + dispatcher 门禁 |

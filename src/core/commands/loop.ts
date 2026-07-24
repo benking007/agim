@@ -1,21 +1,34 @@
-// /loop — Phase C development loop. See docs/architecture/loop-engineering.md
+// /loop — L3 Loop Engineering. See docs/architecture/loop-engineering.md
 
 import type { RouteContext } from '../router.js'
 import {
+  confirmLoopMission,
+  formatAligningPrompt,
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
+  parseLoopStartText,
+  setLoopExit,
+  setLoopObjective,
   startLoop,
   stopLoop,
+  type LoopRun,
+  type StartLoopResult,
 } from '../loop-run.js'
 
 const HELP = [
-  '🔁 **/loop** — 开发闭环（Focus 上的 executor ↔ observer）',
+  '🔁 **/loop** — Loop Engineering（L3：对焦 → 拆解 → 子代理 → 验收）',
+  '',
+  '硬输入（缺一不可，确认前不派子代理）：',
+  '  **目标** + **退出条件**',
   '',
   '用法：',
-  '  `/loop <text>`           Focus 未开时：代开 Focus 并启动（结束会 focus off）',
-  '  `/loop` / `/loop start`  Focus 已 on：直接启动（结束保留 Focus）',
-  '  `/loop start <note>`     Focus 已 on：启动并附带说明',
+  '  `/loop 目标…；退出：…`   尽量一次给齐（齐则直接 planning）',
+  '  `/loop` / `/loop start`  Focus 已 on：用 Focus 作文稿，仍须补退出条件',
+  '  `/loop start <note>`     Focus 已 on：附带说明启动对焦',
+  '  `/loop objective <text>` 对焦中补目标',
+  '  `/loop exit <text>`      对焦中补退出条件',
+  '  `/loop confirm`          两硬字段齐后确认 → planning',
   '  `/loop status`           查看状态',
   '  `/loop stop`             强制结束',
   '  `/loop help`             本帮助',
@@ -32,30 +45,9 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
 
   if (sub === 'help' || sub === '?') return HELP
 
-  if (!sub) {
-    const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
-    if (active) return formatLoopStatus(active)
-    // Path A: Focus already on → start with no note; else need text (error from startLoop).
-    const result = startLoop({
-      platform: ctx.platform,
-      channelId: ctx.channelId,
-      threadId: ctx.threadId,
-      userId: ctx.userId || 'unknown',
-      text: '',
-    })
-    if (!result.ok) {
-      if (result.error === 'need_text') {
-        return 'Focus 未开启。请 `/loop <要聚焦的内容>`，或先 `/focus set <标题>` 再 `/loop`。\n\n' + HELP
-      }
-      if (result.error === 'already_running') return '已有 Loop 在运行。`/loop status` 或 `/loop stop`。'
-      return `❌ 启动失败：${result.error}`
-    }
-    return formatStartOk(result.run, result.path, '')
-  }
-
   if (sub === 'status' || sub === 'show') {
     const run = getLoopRun(ctx.platform, ctx.channelId, ctx.threadId)
-    if (!run) return '本线程还没有 Loop。用 `/loop <text>` 或先 `/focus` 再 `/loop` 启动。'
+    if (!run) return '本线程还没有 Loop。用 `/loop 目标…；退出：…` 或先 `/focus` 再 `/loop`。'
     return formatLoopStatus(run)
   }
 
@@ -68,26 +60,122 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
     return `🛑 Loop 已结束。${focusNote}`
   }
 
-  // start | bare text
+  if (sub === 'objective' || sub === 'goal' || sub === '目标') {
+    if (!rest) return '用法：`/loop objective <目标描述>`'
+    const r = setLoopObjective(ctx.platform, ctx.channelId, ctx.threadId, rest)
+    if (!r.ok) return mapAlignError(r.error)
+    return maybeConfirmOrPrompt(ctx, r.run)
+  }
+
+  if (sub === 'exit' || sub === '退出') {
+    if (!rest) return '用法：`/loop exit <退出条件>`（例：验收通过，或最多 5 轮）'
+    const r = setLoopExit(ctx.platform, ctx.channelId, ctx.threadId, rest)
+    if (!r.ok) return mapAlignError(r.error)
+    return maybeConfirmOrPrompt(ctx, r.run)
+  }
+
+  if (sub === 'confirm' || sub === 'ok' || sub === '确认') {
+    const r = confirmLoopMission(ctx.platform, ctx.channelId, ctx.threadId)
+    if (!r.ok) {
+      if (r.error === 'incomplete') {
+        const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+        if (active) return formatAligningPrompt(active)
+      }
+      return mapAlignError(r.error)
+    }
+    return formatConfirmed(r.run)
+  }
+
+  // Bare `/loop` — status if active; else try path A start
+  if (!sub) {
+    const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+    if (active) {
+      if (active.status === 'aligning') return formatAligningPrompt(active)
+      return formatLoopStatus(active)
+    }
+    return respondStart(startLoop({
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+      userId: ctx.userId || 'unknown',
+      text: '',
+    }))
+  }
+
+  // Aligning: free text updates drafts (and confirms when both present)
+  const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+  if (active?.status === 'aligning' && sub !== 'start') {
+    return applyAligningText(ctx, trimmed)
+  }
+
+  // start | bare text → startLoop
   let text = trimmed
   if (sub === 'start') {
     text = rest
   }
 
-  const result = startLoop({
+  return respondStart(startLoop({
     platform: ctx.platform,
     channelId: ctx.channelId,
     threadId: ctx.threadId,
     userId: ctx.userId || 'unknown',
     text,
-  })
+  }))
+}
 
+function mapAlignError(error: string): string {
+  switch (error) {
+    case 'no_active_loop':
+      return '没有活跃 Loop。先 `/loop …` 启动。'
+    case 'not_aligning':
+      return '当前不在对焦（ALIGNING）阶段。用 `/loop status` 查看。'
+    case 'empty':
+      return '内容不能为空。'
+    case 'incomplete':
+      return '目标与退出条件都需要填写后再 `/loop confirm`。'
+    default:
+      return `❌ ${error}`
+  }
+}
+
+function maybeConfirmOrPrompt(ctx: RouteContext, run: LoopRun): string {
+  const obj = (run.draftObjective || '').trim()
+  const exit = (run.draftExitDescription || '').trim()
+  if (obj && exit) {
+    const confirmed = confirmLoopMission(ctx.platform, ctx.channelId, ctx.threadId)
+    if (confirmed.ok) return formatConfirmed(confirmed.run)
+  }
+  return formatAligningPrompt(run)
+}
+
+function applyAligningText(ctx: RouteContext, text: string): string {
+  const parsed = parseLoopStartText(text)
+  if (parsed.objective) {
+    const r = setLoopObjective(ctx.platform, ctx.channelId, ctx.threadId, parsed.objective)
+    if (!r.ok) return mapAlignError(r.error)
+  }
+  if (parsed.exitDescription) {
+    const r = setLoopExit(ctx.platform, ctx.channelId, ctx.threadId, parsed.exitDescription)
+    if (!r.ok) return mapAlignError(r.error)
+  }
+  if (!parsed.objective && !parsed.exitDescription) {
+    // Treat whole string as objective draft
+    const r = setLoopObjective(ctx.platform, ctx.channelId, ctx.threadId, text)
+    if (!r.ok) return mapAlignError(r.error)
+    return formatAligningPrompt(r.run)
+  }
+  const run = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+  if (!run) return '没有活跃 Loop。'
+  return maybeConfirmOrPrompt(ctx, run)
+}
+
+function respondStart(result: StartLoopResult): string {
   if (!result.ok) {
     switch (result.error) {
       case 'already_running':
         return '已有 Loop 在运行。先 `/loop status` 或 `/loop stop`。'
       case 'need_text':
-        return 'Focus 未开启。请 `/loop <要聚焦的内容>`，或先 `/focus set <标题>` 再 `/loop`。'
+        return 'Focus 未开启。请 `/loop 目标…；退出：…`，或先 `/focus set <标题>` 再 `/loop`。\n\n' + HELP
       case 'focus_set_failed':
       case 'focus_required':
         return '❌ 无法准备 Focus，Loop 未启动。'
@@ -98,26 +186,27 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
     }
   }
 
-  return formatStartOk(result.run, result.path, text)
+  if (!result.aligned || result.run.status === 'aligning') {
+    return formatAligningPrompt(result.run)
+  }
+  return formatConfirmed(result.run, result.path)
 }
 
-function formatStartOk(
-  run: import('../loop-run.js').LoopRun,
-  path: 'A' | 'B',
-  text: string,
-): string {
-  if (path === 'A') {
-    return [
-      `✅ Loop 已启动（路径 A · 沿用现有 Focus）\`${run.id.slice(0, 8)}\``,
-      `Round 1/${run.maxRounds} · 结束时 **不会** 关闭 Focus`,
-      run.startNote ? `Note: ${run.startNote}` : '',
-      '用 `/loop status` 查看；`/loop stop` 结束。',
-    ].filter(Boolean).join('\n')
-  }
+function formatConfirmed(run: LoopRun, path?: 'A' | 'B'): string {
+  const pathNote = path === 'B'
+    ? '路径 B · 已代开 Focus · 结束会 focus off'
+    : path === 'A'
+      ? '路径 A · 沿用 Focus · 结束保留 Focus'
+      : (run.openedFocus
+        ? '结束会 focus off'
+        : '结束保留 Focus')
   return [
-    `✅ Loop 已启动（路径 B · 已代开 Focus）\`${run.id.slice(0, 8)}\``,
-    `Focus: ${text}`,
-    `Round 1/${run.maxRounds} · 结束时会 **focus off**`,
+    `✅ Loop 使命已确认 → **planning** \`${run.id.slice(0, 8)}\``,
+    pathNote,
+    `**目标**：${run.mission?.objective ?? ''}`,
+    `**退出**：${run.mission?.exit.description ?? ''}`,
+    `Round ${run.round}/${run.maxRounds}`,
+    '',
     '用 `/loop status` 查看；`/loop stop` 结束。',
   ].join('\n')
 }

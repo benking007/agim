@@ -4,24 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Docs
-
-- **Loop Engineering 定义对齐三层图（L3）**: rewrite
-  `docs/architecture/loop-engineering.md` — Loop = 自动调度层
-  （对焦目标+退出条件 → 拆解 → 子代理 → 验收 → 退出），明确 ≠ L2
-  Agent Loop；硬门禁 ALIGNING；落地节奏 R1–R6。现行 `/loop` 为占位壳。
-
 ### Added
 
+- **Loop R1 ALIGNING gate**: Loop requires **objective + exit** before
+  planning/dispatch. Missing either → `status=aligning`; slash
+  `/loop objective|exit|confirm` (or `目标…；退出：…`); snippet steers
+  `ask_user`. Dispatcher refuses `call_agent` / `call_agents` /
+  `loop_verdict` while aligning. Confirmed → `planning`.
 - **Focus runtime (C0)**: `/focus` (`set` / `on` / `off` / `clear` /
   `body` / bare text). Wire-only injection via `buildFocusSnippet`
   (no `complete_goal` tokens). MCP: `focus_set` / `focus_on` /
   `focus_off` / `focus_clear`. Storage reuses `goals.db` (active=on,
   paused=off retained).
-- **Loop runtime (C1)**: `/loop` paths A/B — Focus already on → start
-  (end keeps Focus); else `/loop <text>` auto Focus (end Focus off).
-  Persist `~/.agim/loops/*.json`; inject loop status; MCP
+- **Loop runtime (C1 / R0 shell)**: `/loop` paths A/B — Focus already on
+  → start (end keeps Focus); else `/loop <text>` auto Focus (end Focus
+  off). Persist `~/.agim/loops/*.json`; inject loop status; MCP
   `loop_verdict` (`continue|revise|stop`). Focus off/clear cancels Loop.
+
+### Docs
+
+- **Loop Engineering 定义对齐三层图（L3）**: rewrite
+  `docs/architecture/loop-engineering.md` — Loop = 自动调度层
+  （对焦目标+退出条件 → 拆解 → 子代理 → 验收 → 退出），明确 ≠ L2
+  Agent Loop；硬门禁 ALIGNING；落地节奏 R1–R6。
 - **Focus + Loop design SSOT (Phase C, docs-first)**:
   `docs/architecture/focus.md` and `docs/architecture/loop-engineering.md`.
 - **Phase B Subagent parallel fan-out**: new `mcp__agim__call_agents({ tasks[] })` joins multiple SubagentRuns in one tool call (`allSettled` — one lane fail/timeout/cancel does not kill siblings). Knobs: `AGIM_SUBAGENT_PARALLEL` (default **on**; `0/off` serializes the batch), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3). Per-lane activity step ids `${toolCallId}#i`. See `docs/architecture/orchestration-roadmap.md` Phase B.

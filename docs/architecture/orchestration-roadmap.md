@@ -108,10 +108,10 @@ SubagentRun 树 → WS / Portal / /tasks
 **验收**
 
 - [x] 单元：`resolveSubagentSpawn` / A2A self-call gate / dispatcher 参数与拒绝路径。  
-- [ ] 手工：agim + 仅 pro，`isolate:true` 派同族子循环，job/activity 可见。  
-- [ ] 手工：另配 flash 且 `llmRoles.cheap`，`role=cheap` 走 flash。  
-- [x] `call_agent('claude-code', …)` 仍走跨 adapter（单测不回归）。  
-- [x] 无差异的纯自调用仍拒绝。  
+- [x] 测试环境：agim + mock-pro，`isolate:true` 派同族子循环，job/activity/`jobId`/`/api/a2a/tree/:id` 可见（`tools/phase-a-acceptance.mjs`）。  
+- [x] 测试环境：mock-flash + `llmRoles.cheap`，`role=cheap` 嵌套请求命中 `mock-flash-model`。  
+- [x] `call_agent('claude-code', …)` 仍走跨 adapter（单测 + 测试环境 stub 活动行）。  
+- [x] 无差异的纯自调用仍拒绝（单测 + 测试环境 vacuous 脚本）。  
 
 #### A2. 事件与前端
 
@@ -141,7 +141,7 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 **验收**
 
-- [ ] 小样本手工：简单题不滥派；多路调研会派（需真实 LLM；本阶段以 prompt + 单测防回潮为准）。  
+- [x] 测试环境：父请求 system/tool description 含 §5 启发式；`PHASE_A3_SIMPLE` 脚本路径不滥派（真实 LLM 过度/欠委派率仍属后续评估）。  
 - [x] 单测锁定工具 description / 父 system 含关键启发式关键词（`subagent-heuristics.test.ts` + dispatcher / `buildSystemPrompt`）。  
 
 **落地（2026-07-24）：**

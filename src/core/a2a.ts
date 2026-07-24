@@ -58,7 +58,7 @@ import {
   notifyA2AFailed,
   startHeartbeat,
 } from './a2a-notify.js'
-import { isSameAgent } from './subagent.js'
+import { isSameAgent, parseCallAgentTarget } from './subagent.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
@@ -239,6 +239,31 @@ function emitAgentActivity(
   } catch { /* observer must not break A2A */ }
 }
 
+/** Mark the pending Subagent card failed when A2A bails before job start. */
+function emitEarlyAgentFailure(
+  opts: CallAgentOpts,
+  ctx: RouteContext,
+  agentName: string,
+  error: string,
+): void {
+  const id = (typeof opts.activityStepId === 'string' && opts.activityStepId.trim())
+    ? opts.activityStepId.trim()
+    : `a2a-fail-${Date.now()}`
+  const label = (typeof opts.activityLabel === 'string' && opts.activityLabel.trim())
+    ? opts.activityLabel.trim()
+    : agentName
+  const now = Date.now()
+  emitAgentActivity(opts, ctx, {
+    id,
+    kind: 'agent',
+    label,
+    status: 'error',
+    startedAt: now,
+    finishedAt: now,
+    preview: error.slice(0, 180),
+  })
+}
+
 /** Programmatic A2A entry. Invokes `agentName` with `prompt` under the
  *  given RouteContext. Does NOT touch session history, does NOT deliver
  *  to IM. Result is returned to the caller verbatim. */
@@ -246,10 +271,23 @@ export async function callAgentByName(
   agentName: string,
   prompt: string,
   ctx: RouteContext,
-  opts: CallAgentOpts = {},
+  rawOpts: CallAgentOpts = {},
 ): Promise<CallAgentResult> {
+  // Defense in depth: models often pass schema-legacy "agim/native".
+  const parsedTarget = parseCallAgentTarget(agentName)
+  const resolvedAgentName = parsedTarget.agent || agentName
+  const opts: CallAgentOpts = {
+    ...rawOpts,
+    ...(parsedTarget.isolate && !rawOpts.isolate ? { isolate: true } : {}),
+  }
+
+  const earlyFail = (error: string, agent?: string): CallAgentResult => {
+    emitEarlyAgentFailure(opts, ctx, agent ?? resolvedAgentName, error)
+    return agent ? { ok: false, error, agent } : { ok: false, error }
+  }
+
   if (!isA2AEnabled()) {
-    return { ok: false, error: 'A2A disabled (AGIM_A2A_ENABLED=0)' }
+    return earlyFail('A2A disabled (AGIM_A2A_ENABLED=0)')
   }
 
   const callerDepth = opts.callerDepth ?? 0
@@ -257,9 +295,13 @@ export async function callAgentByName(
   const maxDepth = getA2AMaxDepth()
   if (nextDepth > maxDepth) {
     log.warn({
-      event: 'a2a.depth_exceeded', agentName, callerDepth, maxDepth, threadId: ctx.threadId,
+      event: 'a2a.depth_exceeded',
+      agentName: resolvedAgentName,
+      callerDepth,
+      maxDepth,
+      threadId: ctx.threadId,
     }, `call_agent rejected: depth ${nextDepth} > max ${maxDepth}`)
-    return { ok: false, error: `call depth exceeded (max=${maxDepth})` }
+    return earlyFail(`call depth exceeded (max=${maxDepth})`)
   }
 
   // Same-agent nested call is vacuous recursion unless this is an explicit
@@ -268,24 +310,25 @@ export async function callAgentByName(
   // When callerAgent is unset we skip the check; depth still caps chains.
   if (
     opts.callerAgent
-    && isSameAgent(opts.callerAgent, agentName)
+    && isSameAgent(opts.callerAgent, resolvedAgentName)
     && !opts.isolate
     && !(typeof opts.model === 'string' && opts.model.trim())
   ) {
     log.warn({
-      event: 'a2a.self_call_rejected', agentName, callerAgent: opts.callerAgent, threadId: ctx.threadId,
+      event: 'a2a.self_call_rejected',
+      agentName: resolvedAgentName,
+      callerAgent: opts.callerAgent,
+      threadId: ctx.threadId,
     }, 'call_agent rejected: agent cannot call itself without isolate/model')
-    return {
-      ok: false,
-      error:
-        `cannot call self (${agentName}) without isolate/role/backend. ` +
-        `Pass isolate:true or a role/backend for a same-family Subagent.`,
-    }
+    return earlyFail(
+      `cannot call self (${resolvedAgentName}) without isolate/role/backend. `
+        + `Pass isolate:true or a role/backend for a same-family Subagent.`,
+    )
   }
 
-  const target = registry.findAgent(agentName)
+  const target = registry.findAgent(resolvedAgentName)
   if (!target) {
-    return { ok: false, error: `agent not found: ${agentName}` }
+    return earlyFail(`agent not found: ${resolvedAgentName}`)
   }
 
   // Workspace whitelist applies to A2A the same way it does to /job create.
@@ -293,10 +336,10 @@ export async function callAgentByName(
   // listed in that workspace's agents[].
   const ws = workspaceRegistry.resolve(ctx.userId || 'unknown')
   if (!ws.hasAgent(target.name)) {
-    return {
-      ok: false, agent: target.name,
-      error: `agent "${target.name}" not in workspace "${ws.name}" whitelist`,
-    }
+    return earlyFail(
+      `agent "${target.name}" not in workspace "${ws.name}" whitelist`,
+      target.name,
+    )
   }
 
   const threadKey = `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
@@ -320,6 +363,7 @@ export async function callAgentByName(
   if (opts.signal?.aborted) onOuterAbort()
   if (!markJobRunning(jobId)) {
     cleanupController()
+    emitEarlyAgentFailure(opts, ctx, target.name, 'a2a cancelled before start')
     return { ok: false, error: 'a2a cancelled before start', jobId, agent: target.name }
   }
 
@@ -357,6 +401,7 @@ export async function callAgentByName(
       `A2A artifacts setup failed: ${msg}`)
     markJobFailed(jobId, msg)
     cleanupController()
+    emitEarlyAgentFailure(opts, ctx, target.name, msg)
     return { ok: false, error: msg, jobId, agent: target.name }
   }
 

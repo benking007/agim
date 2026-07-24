@@ -164,6 +164,24 @@ describe('A2A callAgentByName rejection branches', () => {
     if (!r.ok) expect(r.error).toContain('agent not found')
   })
 
+  it('normalizes legacy agent id agim/native before lookup', async () => {
+    const steps: Array<{ id: string; status: string; preview?: string }> = []
+    const r = await a2a.callAgentByName('agim/native', 'hi', fakeCtx(), {
+      callerAgent: 'agim',
+      isolate: true,
+      activityStepId: 'tool-1',
+      activityLabel: 'agim',
+      onToolActivity: (step) => { steps.push(step) },
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      // Must not keep the slash form as a missing registry id.
+      expect(r.error).not.toContain('agent not found: agim/native')
+      expect(r.error).toMatch(/agent not found: agim|not in workspace|A2A disabled/)
+    }
+    expect(steps.some((s) => s.id === 'tool-1' && s.status === 'error')).toBe(true)
+  })
+
   it('depth check runs BEFORE the self-call check (defense in depth)', async () => {
     process.env.AGIM_A2A_MAX_DEPTH = '0'
     const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {

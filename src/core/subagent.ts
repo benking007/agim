@@ -2,7 +2,7 @@
 // cross-adapter targets share one resolution path before A2A / activity.
 // Concept SSOT: docs/architecture/subagent.md
 
-import { isAgimAgentId, normalizeAgentId } from './naming-migrate.js'
+import { AGIM_AGENT_ID, isAgimAgentId, normalizeAgentId } from './naming-migrate.js'
 import { registry } from './registry.js'
 import {
   getBackendBindingByName,
@@ -10,6 +10,39 @@ import {
   getProviderByName,
   listProviders,
 } from './llm/registry.js'
+
+/**
+ * Normalize model-supplied call_agent `agent` strings.
+ * Schema historically advertised `agim/native`, which is NOT a registry id
+ * and used to fail with "agent not found" after the user approved the card.
+ *
+ * - `agim` / `native` → agim
+ * - `agim/native` → agim + isolate
+ * - `agim/<role>` → agim + role (e.g. agim/cheap)
+ */
+export function parseCallAgentTarget(raw: string): {
+  agent: string
+  role?: string
+  isolate?: boolean
+} {
+  const trimmed = raw.trim()
+  if (!trimmed) return { agent: '' }
+
+  const slash = trimmed.indexOf('/')
+  if (slash > 0) {
+    const head = trimmed.slice(0, slash).trim()
+    const tail = trimmed.slice(slash + 1).trim()
+    if (isAgimAgentId(head)) {
+      if (!tail || tail === 'native' || tail === 'agim') {
+        return { agent: AGIM_AGENT_ID, isolate: true }
+      }
+      return { agent: AGIM_AGENT_ID, role: tail, isolate: true }
+    }
+  }
+
+  if (isAgimAgentId(trimmed)) return { agent: AGIM_AGENT_ID }
+  return { agent: normalizeAgentId(trimmed) || trimmed }
+}
 
 export interface SubagentSpawnInput {
   agent: string
@@ -78,14 +111,19 @@ export function resolveSubagentSpawn(
   input: SubagentSpawnInput,
   callerAgent: string,
 ): ResolvedSubagentSpawn {
-  const agent = typeof input.agent === 'string' ? input.agent.trim() : ''
+  const rawAgent = typeof input.agent === 'string' ? input.agent.trim() : ''
+  if (!rawAgent) return { ok: false, error: 'agent is required' }
+
+  const parsed = parseCallAgentTarget(rawAgent)
+  const agent = parsed.agent
   if (!agent) return { ok: false, error: 'agent is required' }
 
   const roleRaw = typeof input.role === 'string' ? input.role.trim() : ''
   const backendRaw = typeof input.backend === 'string' ? input.backend.trim() : ''
-  const role = roleRaw || undefined
+  // Explicit tool args win; slash form (agim/cheap) fills role when omitted.
+  const role = roleRaw || parsed.role || undefined
   const backend = backendRaw || undefined
-  const isolateFlag = input.isolate === true
+  const isolateFlag = input.isolate === true || parsed.isolate === true
 
   let model: string | undefined
   if (backend) {

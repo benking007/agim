@@ -342,7 +342,9 @@ export function getAgimTools(): ToolDef[] {
           agent: {
             type: 'string',
             description:
-              'Target agent id (agim/native for same-family Subagent, or claude-code/codex/…).',
+              'Registry agent id: "agim" for same-family Subagent (also pass isolate:true or role/backend), '
+              + 'or another adapter id (claude-code, codex, …). '
+              + 'Accepts legacy "agim/native" and "agim/<role>" slash forms.',
           },
           prompt: {
             type: 'string',
@@ -598,7 +600,22 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             { agent: agentName, role: roleArg, backend: backendArg, isolate: isolateArg },
             ctx.callerAgent,
           )
-          if (!spawn.ok) return err(`call_agent refused: ${spawn.error}`)
+          if (!spawn.ok) {
+            // Pending Subagent card (toolCallId) would otherwise stay forever —
+            // call_agent tool_result activity is suppressed in the adapter.
+            try {
+              ctx.onToolActivity?.({
+                id: call.id,
+                kind: 'agent',
+                label: agentName,
+                status: 'error',
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                preview: spawn.error.slice(0, 180),
+              })
+            } catch { /* observer must not break dispatch */ }
+            return err(`call_agent refused: ${spawn.error}`)
+          }
 
           // v1.2.59 A — enforce per-turn cap. Without this, a model that
           // keeps delegating ("ask claude-code again, that wasn't enough")

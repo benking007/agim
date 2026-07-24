@@ -112,7 +112,7 @@ describe('ChatActivityBlock', () => {
     expect(screen.getByText(/^skill$|^技能$/)).toBeInTheDocument()
   })
 
-  it('shows Waiting for subagent while a delegated agent is running', () => {
+  it('prefers the delegated agent in the Running title while waiting', () => {
     render(<ChatActivityBlock activity={activity({
       status: 'running',
       finishedAt: undefined,
@@ -126,14 +126,13 @@ describe('ChatActivityBlock', () => {
       }],
     })}
     />)
-    expect(screen.getByRole('button', { name: /Running|执行中/ })).toBeInTheDocument()
-    expect(screen.getByText(/Waiting for subagent|等待子代理/)).toBeInTheDocument()
-    // Collapsed: agent appears in the title, not as an expanded step row.
+    // Inline Subagent card (message list) owns the waiting list; accordion
+    // only peeks the agent in the collapsed Running title.
     expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
     expect(screen.queryByText(/^running$|^运行中$/)).not.toBeInTheDocument()
   })
 
-  it('lists multiple waiting Subagents without expanding', () => {
+  it('summarizes multiple waiting Subagents in the Running title', () => {
     render(<ChatActivityBlock activity={activity({
       status: 'running',
       finishedAt: undefined,
@@ -159,12 +158,9 @@ describe('ChatActivityBlock', () => {
     })}
     />)
     expect(screen.getByRole('button', { name: /Running · 2 subagents|执行中 · 2 个子代理/ })).toBeInTheDocument()
-    expect(screen.getByText(/Waiting for 2 subagents|等待 2 个子代理/)).toBeInTheDocument()
-    expect(screen.getByText('→ agim/cheap')).toBeInTheDocument()
-    expect(screen.getByText('→ claude-code')).toBeInTheDocument()
   })
 
-  it('keeps Waiting for subagent even when an approval is also pending', () => {
+  it('prefers Subagent title even when an approval is also pending', () => {
     render(<ChatActivityBlock activity={activity({
       status: 'running',
       finishedAt: undefined,
@@ -187,7 +183,6 @@ describe('ChatActivityBlock', () => {
       ],
     })}
     />)
-    expect(screen.getByText(/Waiting for subagent|等待子代理/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
   })
 

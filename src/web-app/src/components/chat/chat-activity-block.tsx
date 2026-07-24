@@ -23,7 +23,6 @@ import {
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
 import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
-import { SubagentWaitingList } from './subagent-waiting-list'
 
 export interface ChatActivityBlockProps {
   activity: ChatActivity
@@ -260,14 +259,6 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
           )}
         />
       </button>
-
-      {waitingAgents.length > 0 && (
-        <SubagentWaitingList
-          steps={activity.steps}
-          className="mt-0.5"
-          variant="desktop"
-        />
-      )}
 
       {open && (
         <div className="mt-1.5 space-y-1 border-l border-border/80 pl-3">

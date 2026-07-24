@@ -244,6 +244,7 @@ export function makeOnIncoming(
             finishedAt,
             preview: msg.step.preview,
             ...(msg.step.todoItems ? { todoItems: msg.step.todoItems } : {}),
+            ...(typeof msg.step.jobId === 'number' ? { jobId: msg.step.jobId } : {}),
           },
         })
         return

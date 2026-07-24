@@ -280,6 +280,7 @@
 | 2026-07-24 | **A2**：多 Subagent UI — activity `jobId`；桌面/Portal/TUI 多等待行；标签区分同族 (`agim/cheap`) 与跨 adapter | #223 |
 | 2026-07-24 | **A3**：拆解启发式写入 `call_agent` description + 父 system（`subagent-heuristics.ts` SSOT） | #223 |
 | 2026-07-24 | **Phase A 测试环境正式验收**：`tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs`（27/27） | #223 |
+| 2026-07-24 | **Subagent 消息流卡片**：Todo 级联可见；点击模态查看父提示词 + 结果（`GET /api/jobs/:id`） | #223 |
 
 ### 落地差异（相对 §4.3）
 

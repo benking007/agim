@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Inline Subagent card (message list)**: Desktop `/` and Portal `/m/chat` surface Subagent steps as a Todo-style card (live status + preview). Click a row opens a modal with parent prompt + result via `GET /api/jobs/:id`. Fixes live WS/`active-runs` dropping `jobId`.
 - **Phase A acceptance harness**: `tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs` exercise isolate / `role=cheap`→flash / vacuous refuse / cross-adapter / serial dual Subagent activity+jobId / A3 heuristic presence against a live Agim stack (see `docs/desktop-regression.md` §3).
 - **Subagent decompose heuristics (Phase A3)**: Parent system prompt and `mcp__agim__call_agent` tool description share SSOT guidance from `subagent-heuristics.ts` (brief four-piece, when-not-to-spawn, same-family vs A2A, no parallel-write same file, synthesize). No separate “decomposer agent” service.
 - **Multi-Subagent UI feedback (Phase A2)**: Desktop accordion, Portal run-status, and TUI activity show “waiting N subagents” with a per-agent list when multiple `kind:'agent'` steps are running. Activity steps may carry `jobId`; labels distinguish same-family (`agim/cheap`) vs cross-adapter (`claude-code`). Shared helpers in `chat-activity.ts` + `SubagentWaitingList`.

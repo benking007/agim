@@ -76,7 +76,7 @@ describe('PortalRunStatus', () => {
     expect(screen.getByText('web_search')).toBeTruthy()
   })
 
-  it('shows multiple waiting Subagents under RUNNING…', () => {
+  it('shows inline Subagent card for multiple waiting agents', async () => {
     render(
       <PortalRunStatus
         dark
@@ -107,8 +107,8 @@ describe('PortalRunStatus', () => {
         streaming
       />,
     )
-    expect(screen.getByText(/Waiting for 2 subagents|等待 2 个子代理/)).toBeTruthy()
-    expect(screen.getByText('→ agim/cheap')).toBeTruthy()
+    expect(await screen.findByText(/Subagents · 2 waiting|子代理 · 等待 2 个/)).toBeTruthy()
+    expect(await screen.findByText('→ agim/cheap')).toBeTruthy()
     expect(screen.getByText('→ claude-code')).toBeTruthy()
   })
 })

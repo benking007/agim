@@ -20,6 +20,8 @@ export interface ActiveRunStep {
   finishedAt?: number
   preview?: string
   todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+  /** Subagent / A2A inline job id when known. */
+  jobId?: number
 }
 
 export interface ActiveRunSnapshot {
@@ -81,6 +83,7 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): void
       ...step,
       preview: step.preview ?? prev.preview,
       todoItems: step.todoItems ?? prev.todoItems,
+      jobId: step.jobId ?? prev.jobId,
     }
   } else {
     snap.steps.push(step)

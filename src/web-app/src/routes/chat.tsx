@@ -46,6 +46,11 @@ const ChatTodoList = lazy(async () => {
   const module = await import('@/components/chat/chat-todo-list')
   return { default: module.ChatTodoList }
 })
+/** Subagent card + detail dialog — sibling of Plan in the message list. */
+const ChatSubagentCard = lazy(async () => {
+  const module = await import('@/components/chat/chat-subagent-card')
+  return { default: module.ChatSubagentCard }
+})
 /** Native setup pulls llm-presets + select-heavy form UI — keep out of entry. */
 const NativeSetupDialog = lazy(async () => {
   const module = await import('@/components/chat/native-setup-dialog')
@@ -242,6 +247,11 @@ export default function ChatRoute(): JSX.Element {
               <div key={m.id} className="space-y-1">
                 {m.role === 'assistant' && m.activity && (
                   <ChatActivityBlock activity={m.activity} />
+                )}
+                {m.role === 'assistant' && m.activity && (
+                  <Suspense fallback={null}>
+                    <ChatSubagentCard activity={m.activity} />
+                  </Suspense>
                 )}
                 {m.role === 'assistant' && m.activity && (
                   <Suspense fallback={null}>

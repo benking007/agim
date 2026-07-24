@@ -340,6 +340,7 @@ export async function handleClientMessage(
               finishedAt: step.finishedAt,
               preview: step.preview,
               ...(step.todoItems ? { todoItems: step.todoItems } : {}),
+              ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
             })
             // Drop steps after finishActiveRun — late MCP/approval cleanup
             // must not reopen a Running accordion on the SPA (CLI agents).

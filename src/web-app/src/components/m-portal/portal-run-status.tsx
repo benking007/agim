@@ -23,11 +23,13 @@ import {
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
 import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
-import { SubagentWaitingList } from '@/components/chat/subagent-waiting-list'
-
 const ChatTodoList = lazy(async () => {
   const module = await import('@/components/chat/chat-todo-list')
   return { default: module.ChatTodoList }
+})
+const ChatSubagentCard = lazy(async () => {
+  const module = await import('@/components/chat/chat-subagent-card')
+  return { default: module.ChatSubagentCard }
 })
 
 export interface PortalRunStatusProps {
@@ -127,8 +129,7 @@ export function PortalRunStatus({
   // Auto-hint expand when there are steps to inspect; default collapsed.
   const [open, setOpen] = useState(false)
 
-  // Prefer the real work tool under RUNNING… — Plan has its own card.
-  // Subagent waiting uses SubagentWaitingList (can show N rows).
+  // Prefer the real work tool under RUNNING… — Plan / Subagent have own cards.
   const liveStep = activity
     ? [...activity.steps].reverse().find((s) => (
         (s.status === 'running' || s.status === 'pending')
@@ -209,14 +210,6 @@ export function PortalRunStatus({
         )}
       </div>
 
-      {/* Live Subagent status under RUNNING… (supports N concurrent rows). */}
-      {running && waitingAgents.length > 0 && activity && (
-        <SubagentWaitingList
-          steps={activity.steps}
-          variant="portal"
-          dark={dark}
-        />
-      )}
       {running && waitingAgents.length === 0 && liveStep && (
         <p className={cn(
           'truncate pl-1 text-[11px] leading-snug',
@@ -227,6 +220,13 @@ export function PortalRunStatus({
             defaultValue: 'Running · {{step}}',
           })}
         </p>
+      )}
+
+      {/* Subagent card (message-list surface) — sibling of Plan. */}
+      {activity && (
+        <Suspense fallback={null}>
+          <ChatSubagentCard activity={activity} dark={dark} className="max-w-full" />
+        </Suspense>
       )}
 
       {/* Plan card sits between run status and the assistant body (observer UX). */}

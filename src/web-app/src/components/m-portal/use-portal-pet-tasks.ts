@@ -14,6 +14,8 @@ interface UsePortalPetTasksOptions {
   pendingApprovals: PendingApproval[]
   pendingAsks: PendingAsk[]
   portalThreadId: string | null
+  /** Prebuilt Loop row from lazy PortalLoopDock (keeps getLoop out of entry). */
+  loopTask?: PetTaskItem | null
   demoPet: boolean
 }
 
@@ -32,6 +34,7 @@ export function usePortalPetTasks({
   pendingApprovals,
   pendingAsks,
   portalThreadId,
+  loopTask,
   demoPet,
 }: UsePortalPetTasksOptions): UsePortalPetTasksReturn {
   const { t } = useTranslation()
@@ -77,6 +80,7 @@ export function usePortalPetTasks({
 
   const petTasks = useMemo((): PetTaskItem[] => {
     const items: PetTaskItem[] = []
+    if (loopTask) items.push(loopTask)
     for (const msg of chatMessages) {
       if (msg.role !== 'assistant' || !msg.activity) continue
       if (msg.activity.status !== 'running') continue
@@ -171,6 +175,7 @@ export function usePortalPetTasks({
     pendingAsks,
     threadBgjobs,
     agentId,
+    loopTask,
     demoPet,
     t,
   ])

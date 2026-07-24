@@ -70,7 +70,11 @@ export function SubagentDetailDialog({
       setLoading(true)
       setError(null)
       try {
-        const res = await api.getJob(jobId)
+        let threadId: string | undefined
+        try {
+          threadId = localStorage.getItem('agim-web-thread-id') || undefined
+        } catch { /* ignore */ }
+        const res = await api.getJob(jobId, threadId ? { threadId } : undefined)
         if (cancelled) return
         setJob(res.job)
         setLoading(false)
@@ -82,6 +86,9 @@ export function SubagentDetailDialog({
         if (cancelled) return
         setLoading(false)
         setError(err instanceof Error ? err.message : String(err))
+        // Auth errors will not clear on retry — stop polling.
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/admin role required|AUTH_ADMIN_REQUIRED|403/i.test(msg)) return
         if (live) timer = setTimeout(() => { void load() }, 2000)
       }
     }

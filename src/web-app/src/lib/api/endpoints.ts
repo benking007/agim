@@ -254,9 +254,9 @@ export const api = {
   listJobs: (query: ListJobsQuery) =>
     client.get<ListJobsResponse>('/api/jobs', { query }),
 
-  /** GET /api/jobs/:id */
-  getJob: (id: number) =>
-    client.get<GetJobResponse>(`/api/jobs/${id}`),
+  /** GET /api/jobs/:id — pass threadId for chat/Portal (role=user) Subagent detail */
+  getJob: (id: number, query?: { threadId?: string }) =>
+    client.get<GetJobResponse>(`/api/jobs/${id}`, { query }),
 
   /** POST /api/jobs */
   createJob: (body: CreateJobBody) =>

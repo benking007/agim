@@ -4,14 +4,14 @@
  * a direct backend route in tools/endpoints.json. This script never writes.
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 const toolDir = dirname(fileURLToPath(import.meta.url))
 const manifestPath = resolve(toolDir, 'endpoints.json')
-const apiPath = resolve(toolDir, '../src/lib/api/endpoints.ts')
+const apiDir = resolve(toolDir, '../src/lib/api')
 const verbs = new Set(['get', 'post', 'put', 'patch', 'delete'])
 
 function normalizePath(path) {
@@ -32,8 +32,8 @@ function readCallPath(node) {
   return path
 }
 
-function collectClientRoutes(sourceText) {
-  const sourceFile = ts.createSourceFile(apiPath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+function collectClientRoutes(filePath, sourceText) {
+  const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const routes = []
   const unsupported = []
 
@@ -49,7 +49,7 @@ function collectClientRoutes(sourceText) {
       const path = pathNode ? readCallPath(pathNode) : null
       if (!path) {
         const pos = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-        unsupported.push(`${apiPath}:${pos.line + 1}`)
+        unsupported.push(`${filePath}:${pos.line + 1}`)
       } else {
         routes.push({ method: node.expression.name.text.toUpperCase(), path })
       }
@@ -63,7 +63,16 @@ function collectClientRoutes(sourceText) {
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 const serverRoutes = new Set(manifest.endpoints.map((endpoint) => routeKey(endpoint.method, endpoint.path)))
-const { routes: clientRoutes, unsupported } = collectClientRoutes(readFileSync(apiPath, 'utf8'))
+const apiFiles = readdirSync(apiDir)
+  .filter((name) => name.endsWith('.ts') && !name.endsWith('.d.ts') && !name.includes('.test.'))
+  .map((name) => resolve(apiDir, name))
+const clientRoutes = []
+const unsupported = []
+for (const filePath of apiFiles) {
+  const collected = collectClientRoutes(filePath, readFileSync(filePath, 'utf8'))
+  clientRoutes.push(...collected.routes)
+  unsupported.push(...collected.unsupported)
+}
 const clientKeys = clientRoutes.map((route) => routeKey(route.method, route.path))
 const duplicateKeys = [...new Set(clientKeys.filter((key, index) => clientKeys.indexOf(key) !== index))]
 const missingKeys = [...new Set(clientKeys.filter((key) => !serverRoutes.has(key)))]

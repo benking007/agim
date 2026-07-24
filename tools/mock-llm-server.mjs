@@ -14,6 +14,8 @@
  *   PHASE_A1_SUBAGENT_BRIEF → nested Subagent reply (plain text)
  *   PHASE_B_PARALLEL_TEST  → tool_call call_agents with 3 slow lanes
  *   PHASE_B_SUBAGENT_SLOW  → nested Subagent reply after ~800ms (concurrency probe)
+ *   LOOP_E2E_TEST          → call_agents then loop_verdict stop met=true (Loop R3–R5)
+ *   (evaluator)            → JSON agree when prompt asks for independent Loop verifier
  */
 import { createServer } from 'node:http'
 import { appendFileSync, writeFileSync } from 'node:fs'
@@ -125,10 +127,43 @@ function decide(body) {
   state.requests.push(entry)
   try { appendFileSync(LOG, `${JSON.stringify(entry)}\n`) } catch { /* ignore */ }
 
+  // Independent Loop cheap evaluator (AGIM_LOOP_EVALUATOR)
+  if (/independent Loop verifier|Loop verifier/i.test(user) || /"agree":boolean/i.test(user)) {
+    return textReply('{"agree":true,"reason":"mock evaluator: objective claim looks sufficient"}')
+  }
+
   // Nested Subagent sessions get a fresh transcript with our brief marker.
   if (/PHASE_B_SUBAGENT_SLOW/i.test(user)) {
     const lane = (user.match(/lane=(\w+)/i) || [])[1] || '?'
     return textReply(`SUBAGENT_OK SLOW lane=${lane} model=${model}`)
+  }
+
+  if (/LOOP_E2E_TEST/i.test(user)) {
+    if (toolResults === 0) {
+      return toolCall('mcp__agim__call_agents', {
+        tasks: [
+          {
+            agent: 'agim',
+            role: 'cheap',
+            prompt:
+              'PHASE_A1_SUBAGENT_BRIEF lane=loop\n'
+              + 'Objective: reply SUBAGENT_OK for Loop E2E\n'
+              + 'Output format: one line\n'
+              + 'Boundaries: no tools\n'
+              + 'Done-when: printed SUBAGENT_OK',
+          },
+        ],
+      }, 'loop_e2e_dispatch')
+    }
+    if (toolResults === 1) {
+      return toolCall('mcp__agim__loop_verdict', {
+        decision: 'stop',
+        met: true,
+        summary: 'LOOP_E2E: mock dispatch done; objective treated as met for demo',
+        gaps: [],
+      }, 'loop_e2e_verdict')
+    }
+    return textReply('LOOP_E2E_PARENT_DONE — mission closed (objective_met)')
   }
 
   if (/PHASE_A1_SUBAGENT_BRIEF/i.test(user)) {

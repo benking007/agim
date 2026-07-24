@@ -250,45 +250,6 @@ export const api = {
   invoke: (opts?: { body?: unknown }) =>
     client.post<unknown>('/api/invoke', opts),
 
-  /** GET /api/loop — Portal Loop status chrome (R5) */
-  getLoop: (query: {
-    threadId: string
-    platform?: string
-    channelId?: string
-    lang?: 'zh' | 'en'
-  }) =>
-    client.get<{
-      ok: boolean
-      loop: null | {
-        id: string
-        status: string
-        bucket: 'aligning' | 'dispatch' | 'verify' | 'ended'
-        bucketLabel: string
-        active: boolean
-        round: number
-        maxRounds: number
-        objective: string
-        exitDescription: string
-        acceptance?: string
-        dispatchesThisRound: number
-        endReason?: string
-        lastVerification?: {
-          met: boolean
-          summary: string
-          gaps?: string[]
-          nextDirection?: string
-          at: number
-        }
-        usage?: {
-          dispatchCount: number
-          evaluatorCount: number
-          continueCount: number
-          reviseCount: number
-        }
-        updatedAt: number
-      }
-    }>('/api/loop', { query }),
-
   /** GET /api/jobs */
   listJobs: (query: ListJobsQuery) =>
     client.get<ListJobsResponse>('/api/jobs', { query }),

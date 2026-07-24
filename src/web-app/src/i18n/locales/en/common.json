@@ -441,23 +441,6 @@
         "photos": "Photos",
         "files": "Files"
       },
-      "loop": {
-        "stripAria": "Loop status",
-        "round": "Round {{round}}/{{max}}",
-        "usage": "{{dispatch}} dispatches · {{eval}} evals",
-        "ended": "Ended",
-        "endedMet": "Objective met",
-        "dismiss": "Dismiss",
-        "hintAlign": "Stuck in aligning: confirm objective + exit",
-        "hintDispatch": "Stuck in dispatch: decompose and call_agents",
-        "hintVerify": "Stuck in verify: set met / nextDirection vs objective",
-        "bucket": {
-          "aligning": "Aligning",
-          "dispatch": "Dispatch",
-          "verify": "Verify",
-          "ended": "Ended"
-        }
-      },
       "slash": {
         "skills": "Skills",
         "commands": "Commands",
@@ -471,7 +454,7 @@
           "plan": { "label": "Plan", "description": "Generate an implementation plan" },
           "memo": { "label": "Memo", "description": "Save a 5W1H memo" },
           "focus": { "label": "Focus", "description": "Set attention focus (on/off)" },
-          "loop": { "label": "Loop", "description": "Loop Engineering: align objective+exit → dispatch → verify (/loop)" },
+          "loop": { "label": "Loop", "description": "Align → dispatch → verify (/loop)" },
           "subagent": { "label": "Subagent", "description": "Ask the agent to spawn a Subagent" },
           "remember": { "label": "Remember", "description": "Set a reminder" },
           "models": { "label": "Models", "description": "List available models" },

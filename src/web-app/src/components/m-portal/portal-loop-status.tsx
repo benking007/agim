@@ -1,42 +1,19 @@
 /**
  * Portal Loop status strip (R5) — one-line chrome above composer docks.
  * Shows where the Loop is stuck: 对焦 / 派工 / 验收, or a compact end summary.
+ *
+ * Copy lives here (not common.json) so the status strip can stay in a lazy
+ * chunk without growing the SPA entry budget.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw, X } from 'lucide-react'
 
-import { api } from '@/lib/api/endpoints'
+import { getLoop, type LoopStatusDto } from '@/lib/api/loop'
 import { cn } from '@/lib/utils'
 
-export type LoopStatusDto = {
-  id: string
-  status: string
-  bucket: 'aligning' | 'dispatch' | 'verify' | 'ended'
-  bucketLabel: string
-  active: boolean
-  round: number
-  maxRounds: number
-  objective: string
-  exitDescription: string
-  acceptance?: string
-  dispatchesThisRound: number
-  endReason?: string
-  lastVerification?: {
-    met: boolean
-    summary: string
-    gaps?: string[]
-    nextDirection?: string
-  }
-  usage?: {
-    dispatchCount: number
-    evaluatorCount: number
-    continueCount: number
-    reviseCount: number
-  }
-  updatedAt: number
-}
+export type { LoopStatusDto }
 
 export interface PortalLoopStatusProps {
   threadId: string | null | undefined
@@ -48,6 +25,45 @@ export interface PortalLoopStatusProps {
 }
 
 const ENDED_SHOW_MS = 10 * 60_000
+
+const COPY = {
+  en: {
+    stripAria: 'Loop status',
+    round: (round: number, max: number) => `Round ${round}/${max}`,
+    usage: (dispatch: number, evalCount: number) =>
+      `${dispatch} dispatches · ${evalCount} evals`,
+    ended: 'Ended',
+    endedMet: 'Objective met',
+    dismiss: 'Dismiss',
+    hintAlign: 'Stuck in aligning: confirm objective + exit',
+    hintDispatch: 'Stuck in dispatch: decompose and call_agents',
+    hintVerify: 'Stuck in verify: set met / nextDirection vs objective',
+    bucket: {
+      aligning: 'Aligning',
+      dispatch: 'Dispatch',
+      verify: 'Verify',
+      ended: 'Ended',
+    },
+  },
+  zh: {
+    stripAria: 'Loop 状态',
+    round: (round: number, max: number) => `第 ${round}/${max} 轮`,
+    usage: (dispatch: number, evalCount: number) =>
+      `派工 ${dispatch} · 验收 ${evalCount}`,
+    ended: '已结束',
+    endedMet: '达标结束',
+    dismiss: '关闭',
+    hintAlign: '卡在对焦：请确认目标与退出条件',
+    hintDispatch: '卡在派工：拆解任务并 call_agents',
+    hintVerify: '卡在验收：对照目标给出 met / nextDirection',
+    bucket: {
+      aligning: '对焦',
+      dispatch: '派工',
+      verify: '验收',
+      ended: '已结束',
+    },
+  },
+} as const
 
 function bucketTone(bucket: LoopStatusDto['bucket'], dark?: boolean): string {
   switch (bucket) {
@@ -69,7 +85,9 @@ export function PortalLoopStatus({
   onFillStatus,
   className,
 }: PortalLoopStatusProps): JSX.Element | null {
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
+  const zh = i18n.language?.startsWith('zh')
+  const copy = zh ? COPY.zh : COPY.en
   const [loop, setLoop] = useState<LoopStatusDto | null>(null)
   const [dismissedId, setDismissedId] = useState<string | null>(null)
 
@@ -79,14 +97,14 @@ export function PortalLoopStatus({
       return
     }
     try {
-      const lang = i18n.language?.startsWith('zh') ? 'zh' : 'en'
-      const res = await api.getLoop({ threadId, lang })
+      const lang = zh ? 'zh' : 'en'
+      const res = await getLoop({ threadId, lang })
       setLoop(res.loop ?? null)
     } catch {
       // fail-soft — strip just hides
       setLoop(null)
     }
-  }, [threadId, i18n.language])
+  }, [threadId, zh])
 
   useEffect(() => {
     void load()
@@ -119,7 +137,7 @@ export function PortalLoopStatus({
         className,
       )}
       role="status"
-      aria-label={t('chat.portal.loop.stripAria')}
+      aria-label={copy.stripAria}
     >
       <RefreshCw className={cn(
         'mt-0.5 h-3.5 w-3.5 shrink-0',
@@ -135,25 +153,20 @@ export function PortalLoopStatus({
             'inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium',
             bucketTone(loop.bucket, dark),
           )}>
-            {loop.bucketLabel || t(`chat.portal.loop.bucket.${loop.bucket}`)}
+            {loop.bucketLabel || copy.bucket[loop.bucket]}
           </span>
           {loop.active ? (
             <span className={dark ? 'text-zinc-400' : 'text-zinc-500'}>
-              {t('chat.portal.loop.round', { round: loop.round, max: loop.maxRounds })}
+              {copy.round(loop.round, loop.maxRounds)}
             </span>
           ) : (
             <span className={dark ? 'text-zinc-400' : 'text-zinc-500'}>
-              {loop.endReason === 'objective_met'
-                ? t('chat.portal.loop.endedMet')
-                : t('chat.portal.loop.ended')}
+              {loop.endReason === 'objective_met' ? copy.endedMet : copy.ended}
             </span>
           )}
           {loop.usage ? (
             <span className={dark ? 'text-zinc-500' : 'text-zinc-400'}>
-              {t('chat.portal.loop.usage', {
-                dispatch: loop.usage.dispatchCount,
-                eval: loop.usage.evaluatorCount,
-              })}
+              {copy.usage(loop.usage.dispatchCount, loop.usage.evaluatorCount)}
             </span>
           ) : null}
         </div>
@@ -175,17 +188,17 @@ export function PortalLoopStatus({
         ) : null}
         {loop.active && loop.bucket === 'aligning' ? (
           <div className={cn('mt-0.5', dark ? 'text-amber-200/80' : 'text-amber-800/80')}>
-            {t('chat.portal.loop.hintAlign')}
+            {copy.hintAlign}
           </div>
         ) : null}
         {loop.active && loop.bucket === 'dispatch' ? (
           <div className={cn('mt-0.5', dark ? 'text-emerald-200/80' : 'text-emerald-800/80')}>
-            {t('chat.portal.loop.hintDispatch')}
+            {copy.hintDispatch}
           </div>
         ) : null}
         {loop.active && loop.bucket === 'verify' ? (
           <div className={cn('mt-0.5', dark ? 'text-sky-200/80' : 'text-sky-800/80')}>
-            {t('chat.portal.loop.hintVerify')}
+            {copy.hintVerify}
           </div>
         ) : null}
       </button>
@@ -196,7 +209,7 @@ export function PortalLoopStatus({
             'shrink-0 rounded-md p-1',
             dark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-100',
           )}
-          aria-label={t('chat.portal.loop.dismiss')}
+          aria-label={copy.dismiss}
           onClick={() => setDismissedId(loop.id)}
         >
           <X className="h-3.5 w-3.5" />

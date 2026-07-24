@@ -65,7 +65,7 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     id: 'loop',
     label: 'Loop',
     description: 'Loop Engineering — align → dispatch → verify',
-    keywords: ['loop', '循环', '循环任务', '闭环', 'engineering', '对焦', '派工', '验收'],
+    keywords: ['loop', '循环', '闭环', 'engineering'],
     priority: 3,
     action: { type: 'fill', text: '/loop ' },
   },

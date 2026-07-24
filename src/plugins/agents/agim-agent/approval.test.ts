@@ -62,6 +62,22 @@ describe('pi-native plan-exit approval routing', () => {
     expect(await gate({ id: 'g1', name: 'agim_grep', arguments: { pattern: 'x' } }, 0)).toBe('allow')
   })
 
+  it('auto-allows mcp__agim__call_agent so Subagent panel can appear without HITL', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    delete process.env.AGIM_NATIVE_AGENT_DENYLIST
+    const gate = buildPiApprovalGate(undefined, 'session-call-agent')
+    expect(await gate({
+      id: 'c1',
+      name: 'mcp__agim__call_agent',
+      arguments: { agent: 'agim', isolate: true, prompt: 'research X' },
+    }, 0)).toBe('allow')
+    expect(await gate({
+      id: 'c2',
+      name: 'call_agent',
+      arguments: { agent: 'claude-code', prompt: 'patch' },
+    }, 0)).toBe('allow')
+  })
+
   it('still denies builtins under deny-all / explicit deny-list', async () => {
     process.env.AGIM_NATIVE_AGENT_MODE = 'deny-all'
     let gate = buildPiApprovalGate(undefined, 'session-deny-all')

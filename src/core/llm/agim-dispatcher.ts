@@ -696,6 +696,8 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ...(spawn.isolate ? { isolate: true } : {}),
             ...(spawn.model ? { model: spawn.model } : {}),
             activityLabel: spawn.label,
+            // Keep the pending Subagent card (emitted at tool_call) in sync.
+            activityStepId: call.id,
             signal,
           }
           // v1.2.139 — one-shot transient retry. callAgentByName already

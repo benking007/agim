@@ -123,6 +123,40 @@ function decide(body) {
     return textReply(`SUBAGENT_OK model=${model}`)
   }
 
+  if (/PHASE_A_TODO_AND_SUBAGENT_TEST/i.test(user)) {
+    if (toolResults === 0) {
+      return toolCall('agim_todo_write', {
+        items: [
+          { content: 'plan work', status: 'in_progress' },
+          { content: 'delegate detail', status: 'pending' },
+          { content: 'synthesize', status: 'pending' },
+        ],
+      }, 'todo_sa_1')
+    }
+    if (toolResults === 1) {
+      return toolCall('mcp__agim__call_agent', {
+        agent: 'agim',
+        isolate: true,
+        prompt:
+          'PHASE_A1_SUBAGENT_BRIEF\n'
+          + 'Objective: reply with SUBAGENT_OK\n'
+          + 'Output format: one line\n'
+          + 'Boundaries: no tools\n'
+          + 'Done-when: printed SUBAGENT_OK',
+      }, 'todo_sa_call')
+    }
+    if (toolResults === 2) {
+      return toolCall('agim_todo_write', {
+        items: [
+          { content: 'plan work', status: 'completed' },
+          { content: 'delegate detail', status: 'completed' },
+          { content: 'synthesize', status: 'completed' },
+        ],
+      }, 'todo_sa_2')
+    }
+    return textReply('PARENT_DONE todo-and-subagent')
+  }
+
   if (/PHASE_A_TODO_PROGRESS_TEST/i.test(user)) {
     if (toolResults === 0) {
       return toolCall('agim_todo_write', {

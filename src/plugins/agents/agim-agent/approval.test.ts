@@ -30,4 +30,15 @@ describe('pi-native plan-exit approval routing', () => {
     gate = buildPiApprovalGate(undefined, 'session-2')
     expect(await gate({ id: 'p2', name: PLAN_EXIT_TOOL_NAME, arguments: {} }, 0)).toBe('deny')
   })
+
+  it('auto-allows agim_todo_write so Plan can surface mid-turn without HITL', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    delete process.env.AGIM_NATIVE_AGENT_DENYLIST
+    const gate = buildPiApprovalGate(undefined, 'session-todo')
+    expect(await gate({
+      id: 't1',
+      name: 'agim_todo_write',
+      arguments: { items: [{ content: 'a', status: 'in_progress' }] },
+    }, 0)).toBe('allow')
+  })
 })

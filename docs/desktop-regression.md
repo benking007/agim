@@ -75,7 +75,29 @@ node tools/phase-a-acceptance.mjs
 | `AGIM_AUTO_APPROVE=0` + 需审批工具 | 审批卡紧凑；子代理审批可标 origin；Settings 未配置时显示 OFF |
 | `AGIM_AUTO_APPROVE=1` | 主/子共用自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
 
-生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。\n\n## 4. Phase B（并行 call_agents）验收
+生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。
+
+### 3.2 Loop Engineering（Portal / mock）
+
+前置同 §3；建议 `AGIM_LOOP_DISPATCH_GATE` / `AGIM_LOOP_VERIFY_GATE` 保持默认 on。契约见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。
+
+| 标记 / 场景 | 期望 |
+|---|---|
+| `/loop`（空） | Portal **待对焦**底栏；小精灵气泡「待对焦」；填目标+退出 →「确定并开始」后进入待派工 |
+| `LOOP_SELF_RESEARCH_TEST`（已确认使命） | 父侧不可自行调研；须 `call_agents`；小精灵/底栏「待派工」→「立即行动」可推进 |
+| `LOOP_E2E_TEST` | 派工后验收；`loop_verdict` stop+met；结束总结；**不**残留待验收条 |
+| `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死 |
+| 用量文案 | 显示「独立验收 N」，勿把 N=0 当成「没验收」（独立验收可能 skip） |
+
+离线门禁（无浏览器）：
+
+```bash
+npm run build   # 需要 dist
+node tools/loop-gates-sim.mjs
+# report → /opt/cursor/artifacts/loop-gates-sim-report.json（若目录存在）
+```
+
+## 4. Phase B（并行 call_agents）验收
 
 ```bash
 # terminal A — mock LLM（含 PHASE_B_* 慢车道探针）

@@ -9,10 +9,17 @@ All notable changes to this project will be documented in this file.
 - **Loop polish (Claude blog A/B/C)**: taxonomy对照表 in docs/`/loop help`;
   independent cheap evaluator before `stop`+`met=true`
   (`AGIM_LOOP_EVALUATOR=auto|on|off`); cumulative Loop usage
-  (dispatches / evals / continue / revise) on status, summary, Portal strip.
-- **Loop R5 UX**: `GET /api/loop?threadId=` + Portal status strip showing
-  对焦/派工/验收; ended summary Markdown (`formatLoopEndedSummary`);
-  menu/slash copy aligned to Loop Engineering L3. R6 triggers deferred.
+  (dispatches / indep. evals / continue / revise) on status, summary, Portal.
+- **Loop R5 UX**: `GET /api/loop?threadId=` + Portal **aligning dock** /
+  **Act now** bar + pet Loop bubble (no blocking status strip);
+  copy **待对焦/待派工/待验收**; ended summary Markdown; R6 deferred.
+- **Loop hard gates**: dispatch gate (parent must `call_agents` before
+  research tools); verify gate (must `loop_verdict` after dispatch;
+  `verify_skipped` / wall exit without waiting on verdict).
+  `loop_verdict` `timeoutMs:0` + tool-bridge prefers mutation success
+  after wall abort (avoids `no_active_loop` after a successful end).
+- **Loop sim**: `tools/loop-gates-sim.mjs`; mock markers
+  `LOOP_E2E_TEST` / `LOOP_SKIP_VERDICT_TEST` / `LOOP_SELF_RESEARCH_TEST`.
 - **Loop R4 VERIFY+REFLECT**: `loop_verdict` takes structured
   `met` / `gaps` / `nextDirection`. `continue|revise` require unmet
   verification + nextDirection (reflect → planning). `stop` + `met=true`
@@ -45,6 +52,9 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- **Loop Engineering SSOT 补齐**：`loop-engineering.md` §6 门禁/Portal/
+  env/mock；`portal-composer` 小精灵+Loop 底栏；`desktop-regression` §3.2；
+  orchestration-roadmap R5/加固行对齐。
 - **Loop Engineering 定义对齐三层图（L3）**: rewrite
   `docs/architecture/loop-engineering.md` — Loop = 自动调度层
   （对焦目标+退出条件 → 拆解 → 子代理 → 验收 → 退出），明确 ≠ L2

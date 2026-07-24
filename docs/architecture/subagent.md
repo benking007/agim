@@ -298,6 +298,7 @@
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
+| 2026-07-24 | **loop_verdict 墙钟**：同样 `timeoutMs:0`（嵌套独立验收可 >60s）；mutation 成功后不以假超时覆盖（见 Loop §6.2） | #243 |
 
 ### 落地差异（相对 §4.3）
 

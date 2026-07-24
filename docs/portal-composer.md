@@ -86,6 +86,28 @@ Workspace / 文件 / skill 以蓝色 chip 显示在输入区；光标在文本�
 
 停在输入框右上沿；仅脚部被 composer 遮挡（`bottom: calc(100% - 0.55rem)`）。忙时脉搏、任务角标与完成飘字见 `portal-pet.tsx`。
 
+点击展开左侧任务面板，分组展示：
+
+| kind | 含义 |
+|------|------|
+| `loop` | 活跃 Loop（待对焦 / 待派工 / 待验收）— 进展状态之一，**不再另造挡内容状态条** |
+| `approval` / `ask` | 待你处理 |
+| `run` | 本轮 Agent 执行 |
+| `bgjob` | 后台任务 |
+
+有活跃 Loop 时，小精灵上方优先显示琥珀色状态气泡（桶名 · 目标摘要 · 轮次 · 用量），盖过闲聊文案。
+
+## Loop 底栏（与审批同级）
+
+Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry）：
+
+| 状态 | 底栏 |
+|------|------|
+| 待对焦 | 表单：目标 + 退出条件 →「确定并开始」 |
+| 待派工 / 待验收（Agent 空闲，且无审批/提问挡板） | 「立即行动」代用户发推进句 |
+
+契约与门禁见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。
+
 ## 相关文件
 
 | 区域 | 路径 |
@@ -94,8 +116,10 @@ Workspace / 文件 / skill 以蓝色 chip 显示在输入区；光标在文本�
 | Slash / @ 菜单 | `portal-composer-menus.tsx`、`portal-slash-commands.ts` |
 | Chip 输入 | `portal-composer-input.tsx`、`portal-mention-chip.tsx` |
 | 加号菜单 | `portal-composer-plus.tsx` |
+| 小精灵 / Loop 底栏 | `portal-pet.tsx`、`use-portal-pet-tasks.ts`、`portal-loop-dock.tsx`、`use-portal-loop.ts` |
 | 气泡渲染 | `portal-user-content.tsx`、`lib/parse-user-media.ts` |
 | 媒体 API | `src/core/web-media-upload.ts`、`src/web/chat-media-api.ts` |
+| Loop REST | `src/web/loop-api.ts`、`src/web-app/src/lib/api/loop.ts` |
 
 ## 安全与权限摘要
 

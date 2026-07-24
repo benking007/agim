@@ -22,7 +22,7 @@
 - [`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md)：桥接 + Agim Agent 产品立场（旧名 `architecture-bridge-and-native.md` 仅作跳转）
 - [`architecture/subagent.md`](./architecture/subagent.md)：**现行设计** — Subagent 概念、与 A2A/handoff 边界、同族 role/backend、拆解原则
 - [`architecture/focus.md`](./architecture/focus.md)：**现行设计** — Focus：聚焦注入 / on / off（废弃 `/goal`）
-- [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop / Phase C：Focus 上的执行–观察闭环（`/loop`）
+- [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；Portal 底栏/小精灵；门禁与 env）
 - [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点
 - [`architecture/orchestration-roadmap.md`](./architecture/orchestration-roadmap.md)：**现行计划** — Subagent 可观测 → 并行 fan-out → Loop（A→B→C）
 - [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)：工作目录与记忆隔离（已实施）
@@ -50,7 +50,7 @@
 ## 能力专题
 
 - [`skills.md`](./skills.md)：Skills 机制
-- [`portal-composer.md`](./portal-composer.md)：Portal（`/m/chat`）输入框 `/`·`@`、chip、长文折叠与附件预览
+- [`portal-composer.md`](./portal-composer.md)：Portal（`/m/chat`）输入框 `/`·`@`、chip、小精灵/Loop 底栏、长文折叠与附件预览
 - [`goals.md`](./goals.md)：`/goal` 现行实现（**已废弃设计** → Focus）
 - [`ask-user.md`](./ask-user.md)：结构化提问（ask_user）
 - [`memory-and-vector.md`](./memory-and-vector.md)：长期记忆与向量召回

@@ -1,8 +1,8 @@
 # Loop Engineering（循环工程 · Phase C）
 
-> **状态**：概念 SSOT（按三层定义重对齐）· 2026-07-24  
-> **用户面**：`/loop`  
-> **关联**：[Focus](./focus.md) · [Subagent](./subagent.md) · [命名](../naming.md) · [残留盘点](./goal-residue.md)
+> **状态**：现行设计 SSOT（R1–R5 + 派工/验收硬门禁已落地）· 2026-07-24  
+> **用户面**：`/loop` · Portal `/m/chat` 底栏/小精灵  
+> **关联**：[Focus](./focus.md) · [Subagent](./subagent.md) · [Portal 输入框](../portal-composer.md) · [命名](../naming.md) · [残留盘点](./goal-residue.md) · [编排路线图](./orchestration-roadmap.md)
 
 ---
 
@@ -92,16 +92,17 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
          └─ 触达 exit / 用户 stop → ENDED
 ```
 
-### 2.3 与现行薄实现的差距
+### 2.3 现行落地（对照目标形态）
 
-| 能力 | 目标形态 | 现行 `/loop` |
-|------|----------|--------------|
-| 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | **R1**：ALIGNING + slash/`ask_user`；确认前禁派工 |
-| 对焦讨论 | `ask_user` + `/loop objective\|exit\|confirm` | **R1** 已接线 |
-| 拆解 → 子代理 | 核心 | **R3**：continue/revise 前本轮须 ≥1 次 call_agent(s) |
-| 对照目标验收 | 硬门闸 | **R4**：`met`/`gaps`/`nextDirection`；exit 截断 |
+| 能力 | 目标形态 | 现行 |
+|------|----------|------|
+| 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | **R1** ✅ slash / Portal 对焦浮层 / `ask_user` |
+| 拆解 → 子代理 | 核心 | **R3** ✅ + **派工硬门禁**（本轮 0 派工时父侧禁调研类工具） |
+| 对照目标验收 | 硬门闸 | **R4** ✅ + **验收硬门禁**（派工后须 `loop_verdict`；跳过则强制收尾） |
+| 退出截断 | 不挂死 | `maxRounds` / `maxWallMs` **不等待** verdict；`verify_skipped` |
+| Portal 可操作 | 用户懂「待哪」并能点 | **R5** ✅ 底栏 + 小精灵（见 §6.3） |
 
-**结论**：R1 锁门禁；R3/R4 补齐调度与验收，才是完整 L3。
+**结论**：R1–R5 + 门禁加固已构成可演示的 L3；R6（定时触发）暂缓。
 
 ---
 
@@ -142,9 +143,18 @@ type LoopRun = {
     gaps?: string[];
     nextDirection?: string;
   };
+  usage: {
+    dispatchCount: number;
+    evaluatorCount: number;   // 独立 cheap 验收次数（≠ loop_verdict 次数）
+    continueCount: number;
+    reviseCount: number;
+  };
   timeline: Array<{ at: number; kind: string; summary: string }>;
 };
 ```
+
+**UX 桶**（Portal / status，非 store status）：`待对焦` / `待派工` / `待验收` / `已结束`  
+（`getLoopUxBucket`：有本轮派工后即进「待验收」，直至 ENDED。）
 
 用户面：
 
@@ -215,12 +225,72 @@ type LoopRun = {
 
 ---
 
-## 6. 验收与退出
+## 6. 验收、退出与硬门禁
 
-- **达标退出**：VERIFYING `met: true` → 总结 → ENDED  
-- **条件退出**：触达用户确认的 exit（轮次/时限/失败策略等）→ ENDED（可带「未完全达标」摘要）  
-- **用户退出**：`/loop stop`；Focus off → cancel  
-- VERIFYING 至少：`{ met, summary, gaps?, nextDirection? }`
+### 6.1 退出路径
+
+| 路径 | 条件 | `endReason`（示意） |
+|------|------|---------------------|
+| 达标 | `loop_verdict` `decision=stop` + `met=true`（可选独立验收同意） | `objective_met` |
+| 轮次/墙钟 | 触达 Mission 的 `maxRounds` / `maxWallMs` | `limit` / `wall_limit` |
+| 跳过验收 | 强制 follow-up 后仍无 verdict（或回合结束仍缺） | `verify_skipped` |
+| 用户/Focus | `/loop stop`；Focus off/clear | `cancelled` / `focus_off` |
+
+VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。  
+`continue|revise` 要求本轮已派工 + `met=false` + `nextDirection`。
+
+**重要**：墙钟 / 轮次截断 **不等待** `loop_verdict`（`maybeEnforceLoopExit`）；避免报告已写出却永远停在「待验收」。
+
+### 6.2 硬门禁（运行时）
+
+| 门禁 | 默认 | 行为 | 开关 |
+|------|------|------|------|
+| **ALIGNING** | on | 确认前拒绝 `call_agent(s)` / `loop_verdict` | （核心，无关） |
+| **派工** | on | 本轮 `dispatchesThisRound===0` 时父侧拒绝调研类工具（`web_fetch`/`exec`/…），须先 `call_agents` | `AGIM_LOOP_DISPATCH_GATE`（`off` 关闭） |
+| **验收** | on | 本轮已派工后须成功 `loop_verdict`；缺则 follow-up 一轮，仍缺 → `verify_skipped` | `AGIM_LOOP_VERIFY_GATE`（`off` 关闭） |
+| **独立验收** | auto | `stop`+`met=true` 前用 `llmRoles.cheap` 再判（无 cheap / `off` 则 skip） | `AGIM_LOOP_EVALUATOR=auto\|on\|off` |
+
+实现要点：
+
+- `mcp__agim__loop_verdict` 与 `call_agents` 一样设 **`timeoutMs: 0`**，避免嵌套独立验收超过 Native 默认 60s 后，工具桥把**已成功结束的 Loop** 报成超时 → 模型重试得到 `no_active_loop`。  
+- mutation 墙钟 abort 后若副作用已成功，tool-bridge **回报成功**（附注），不覆盖为假超时。
+
+### 6.3 Portal UX（R5）
+
+不挡聊天的状态条已去掉；Loop 进展是小精灵的一种任务状态。
+
+| 场景 | UI | 用户动作 |
+|------|-----|----------|
+| **待对焦** | 底部浮层：目标 + 退出条件 | 「确定并开始」→ 发送 `/loop …；退出条件为…` |
+| **待派工 / 待验收**（Agent 空闲） | 底部「立即行动」条（类审批） | 代用户发推进指令（`call_agents` / `loop_verdict`） |
+| **任意活跃阶段** | 小精灵气泡 + 任务面板 `loop` 行 | 展示桶名 · 轮次 · 派工/独立验收用量 |
+| **结束** | Markdown 结束总结；小精灵可短暂显示后消失 | — |
+
+API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `bucketLabel` / `usage` / `lastVerification`…）。  
+轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。
+
+**文案**：一律「待对焦 / 待派工 / 待验收」，不用「卡在…」。  
+用量行写 **「独立验收 N」**（`usage.evaluatorCount`），**不要**读成「loop_verdict 次数」——独立验收 skip 时 N 可为 0，但 Loop 已通过 verdict 结束。
+
+相关文件：`portal-loop-dock.tsx` · `use-portal-loop.ts` · `portal-pet.tsx` · `src/web/loop-api.ts`。
+
+### 6.4 离线 / mock 验收
+
+| 工具 | 用途 |
+|------|------|
+| `tools/loop-gates-sim.mjs` | 无浏览器：派工门禁 / 验收门禁 / wall / `verify_skipped` / 文案解析 |
+| `tools/mock-llm-server.mjs` | `LOOP_E2E_TEST` · `LOOP_SKIP_VERDICT_TEST` · `LOOP_SELF_RESEARCH_TEST` |
+
+手测清单见 [`desktop-regression.md`](../desktop-regression.md) §3.2。
+
+### 6.5 环境变量速查
+
+| 变量 | 默认 | 含义 |
+|------|------|------|
+| `AGIM_LOOP_DISPATCH_GATE` | on | 派工前禁父侧调研 |
+| `AGIM_LOOP_VERIFY_GATE` | on | 派工后强制 `loop_verdict` |
+| `AGIM_LOOP_EVALUATOR` | `auto` | `stop`+`met=true` 前独立 cheap 验收 |
+| `AGIM_LOOPS_DIR` | `~/.agim/loops` | Loop JSON 目录（测试可覆盖） |
 
 ---
 
@@ -237,12 +307,15 @@ type LoopRun = {
 | **R3** ✅ | **PLAN + DISPATCH** | 确认后 snippet 强制拆解；`noteLoopDispatch` + `dispatchesThisRound`；`continue/revise` 无派工 → `no_dispatch` | 无子代理调用则不算完成一轮 |
 | **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
 | **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 对焦/立即行动底栏 + 小精灵 Loop 状态；结束总结 Markdown；菜单文案对齐 L3 | 用户能看懂「待对焦/待派工/待验收」并直接操作 |
+| **加固** ✅ | **门禁 + 超时** | 派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` `timeoutMs:0`；假超时不覆盖成功 | 不出现「已提交却无活跃 Loop / UI 假待验收」 |
 | **R6** | **可选触发** | Heartbeat/cron **只负责 start**，仍走 ALIGNING | 不绕过对焦 |
 
-推荐合入顺序：**R1 → R2 → R3 → R4 → R5**（产品闭环）；**R6 可选，暂缓**。
+推荐合入顺序：**R1 → R2 → R3 → R4 → R5 → 加固**（产品闭环）；**R6 可选，暂缓**。
 
 ```text
 R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──► R4 验收闭环 ──► R5 UX ✅
+                                                                      │
+                                                         加固（门禁/超时/exit）✅
                                                                       │
                                                             R6 触发器（可选·暂缓）
 ```
@@ -266,7 +339,7 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 
 - **A** 本文对照表 + `/loop help` + naming  
 - **B** `stop`+`met=true` 前 `AGIM_LOOP_EVALUATOR`（默认 `auto`：有 `llmRoles.cheap` 则独立验收）  
-- **C** Loop 累计用量（派工 / 独立验收 / continue / revise）进 status、结束总结、Portal 条  
+- **C** Loop 累计用量（派工 / 独立验收 / continue / revise）进 status、结束总结、Portal（小精灵/底栏）  
 
 ---
 
@@ -285,7 +358,7 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 > **Loop = L3：先对焦（目标+退出条件）→ 拆解 → 子代理 → 验收 →（未达）再来 → 退出。**  
 > **两硬输入缺一不可；缺则 ALIGNING，不派工。**  
 > **≠ Claude 的定时 `/loop`；≈ 他们的 `/goal` 级闭环。**  
-> 节奏：R1–R5 已齐；R6 触发暂缓。
+> 节奏：R1–R5 + 门禁加固已齐；R6 触发暂缓。
 
 ---
 
@@ -302,3 +375,5 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-24 | **R4 落地**：VERIFY+REFLECT 结构化验收 + exit 截断 |
 | 2026-07-24 | **R5 落地**：`/api/loop` + Portal 底栏/小精灵状态 + 结束总结；R6 暂缓 |
 | 2026-07-24 | **吸收 Claude 文 A/B/C**：对照表、cheap 独立验收、Loop 用量 |
+| 2026-07-24 | **加固**：派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` 超时与假超时修复；Portal「待*」话术 + 独立验收计数 |
+| 2026-07-24 | **文档**：§6 展开门禁/Portal/env/mock；与 orchestration / portal-composer / 回归清单对齐 |

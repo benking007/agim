@@ -34,6 +34,8 @@ export default defineConfig({
     include: [
       'src/core/goal-rpc.test.ts',
       'src/core/goals.test.ts',
+      'src/core/focus.test.ts',
+      'src/core/loop-run.test.ts',
       'src/web/background-tasks-api.test.ts',
       'test/unit/audit-events.test.ts',
       'test/unit/goal-evidence.test.ts',

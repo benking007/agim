@@ -24,8 +24,10 @@ import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
 import { handleHeartbeatCommand } from './commands/heartbeat.js'
-import { handleGoalCommand } from './commands/goal.js'
-import { buildGoalSnippet } from './goals.js'
+import { handleFocusCommand, handleGoalCommandDeprecated } from './commands/focus.js'
+import { handleLoopCommand } from './commands/loop.js'
+import { buildFocusSnippet } from './focus.js'
+import { buildLoopSnippet } from './loop-run.js'
 import { handleSkillCommand } from './commands/skill.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
@@ -203,14 +205,10 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'remind' || cmd === 'reminder') return { type: 'remind', args: rest }
   if (cmd === 'memo' || cmd === '记' || cmd === 'note') return { type: 'memo', args: rest }
   if (cmd === 'heartbeat') return { type: 'heartbeat', args: rest }
-  if (cmd === 'goal') return { type: 'goal', args: rest }
-  // v1.2.102 — slash aliases for the long_task / complete_goal MCP tools.
-  // Field observation: agents (and humans!) tried `/long_task <title>` after
-  // the goal-critic recap suggested switching tactics, but got back
-  // "Unknown command" because parseMessage had no branch for these — only
-  // the MCP tool surface existed. `/long_task X` is equivalent to
-  // `/goal set X` (active-goal create); `/complete_goal` is `/goal complete`.
-  // Underscored + no-separator forms accepted because IMs vary in keyboard.
+  if (cmd === 'focus' || cmd === 'f' || cmd === '聚焦') return { type: 'focus', args: rest }
+  if (cmd === 'loop') return { type: 'loop', args: rest }
+  // Deprecated: /goal → Focus (compat). /long_task → focus set.
+  if (cmd === 'goal' || cmd === 'g' || cmd === '目标') return { type: 'goal', args: rest }
   if (cmd === 'long_task' || cmd === 'longtask' || cmd === 'long-task') {
     return { type: 'goal', args: rest ? `set ${rest}` : '' }
   }
@@ -326,8 +324,14 @@ export async function routeMessage(
       return handleHeartbeatCommand(parsed.args, ctx)
     }
 
+    case 'focus': {
+      return handleFocusCommand(parsed.args, ctx)
+    }
+    case 'loop': {
+      return handleLoopCommand(parsed.args, ctx)
+    }
     case 'goal': {
-      return handleGoalCommand(parsed.args, ctx)
+      return handleGoalCommandDeprecated(parsed.args, ctx)
     }
 
     case 'skill': {
@@ -723,10 +727,9 @@ export async function callAgentWithHistory(
     platform: ctx.platform,
     userId: ctx.userId ?? '',
   })
-  // P0 #2 — inject the thread's active goal so the agent always sees
-  // it and stays on-mission across turns. buildGoalSnippet returns ''
-  // when no active goal, so the filter(Boolean) below drops it.
-  const goalSnippet = buildGoalSnippet(ctx.platform, ctx.channelId, ctx.threadId)
+  // Focus (replaces goal injection) + optional Loop status — wire-only.
+  const focusSnippet = buildFocusSnippet(ctx.platform, ctx.channelId, ctx.threadId)
+  const loopSnippet = buildLoopSnippet(ctx.platform, ctx.channelId, ctx.threadId)
   // P0 #3 (Stage 3) — inject the agim skills tier-1 summary so every
   // agent reply sees what skills are configured. Empty when no skills
   // installed; filter(Boolean) below drops it cleanly.
@@ -743,7 +746,8 @@ export async function callAgentWithHistory(
   const headerBlocks = [
     downvoteHint,
     personaSnippet,
-    goalSnippet,
+    focusSnippet,
+    loopSnippet,
     skillsSnippet,
     viewerHint,
     reminderContext,

@@ -448,31 +448,72 @@ export function getAgimTools(): ToolDef[] {
       timeoutMs: 0,
     },
     {
+      name: 'mcp__agim__focus_set',
+      description:
+        'Set this thread\'s Focus (attention anchor) and turn injection ON. Prefer this over the ' +
+        'deprecated long_task tool. Focus is injected each turn while on; it is NOT a completion gate.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Focus title (what to stay on).' },
+          body: { type: 'string', description: 'Optional longer body.' },
+          force: {
+            type: 'boolean',
+            description: 'Override an existing Focus on this thread (default false refuses).',
+          },
+        },
+        required: ['title'],
+      },
+    },
+    {
+      name: 'mcp__agim__focus_on',
+      description: 'Turn Focus injection ON (requires retained Focus content).',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
+      name: 'mcp__agim__focus_off',
+      description: 'Turn Focus injection OFF but keep content. Cancels an active Loop.',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
+      name: 'mcp__agim__focus_clear',
+      description: 'Clear Focus content and turn off. Cancels an active Loop.',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
+      name: 'mcp__agim__loop_verdict',
+      description:
+        'Report a Loop observer verdict while a /loop session is active: continue, revise, or stop. ' +
+        'stop ends the Loop (and focus-off only if Loop opened Focus).',
+      parameters: {
+        type: 'object',
+        properties: {
+          decision: { type: 'string', enum: ['continue', 'revise', 'stop'] },
+          summary: { type: 'string', description: 'Short human-readable summary.' },
+          nextHint: { type: 'string', description: 'Hint for the next executor round (continue/revise).' },
+          reasons: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['decision', 'summary'],
+      },
+    },
+    {
       name: 'mcp__agim__long_task',
       description:
-        'Register a sustained multi-turn objective for this thread. Use when the user describes ' +
-        'work that should stay visible across many turns ("ship v1.3 this week", "track X for the ' +
-        'next 3 days"). The goal is injected into your future system prompts as an `[Active goal]` ' +
-        'block. If a goal is ALREADY active on this thread, this refuses unless you pass force:true ' +
-        '(complete_goal first, or force to pause the prior one). NOT for one-shot questions — ' +
-        'use this only when persistence across turns is the point.',
+        'DEPRECATED — use mcp__agim__focus_set. Registers Focus (was: sustained goal) for this thread.',
       parameters: {
         type: 'object',
         properties: {
           goal: {
             type: 'string',
-            description:
-              'One-line objective. Write it idempotent + bounded + self-contained: "Ship agim v1.3 ' +
-              'with the fs/web/exec tool batch landed and CHANGELOG updated", not "improve agim".',
+            description: 'Focus title (legacy field name `goal`).',
           },
           summary: {
             type: 'string',
-            description: 'Optional short acceptance criteria / scope notes (≤ 4000 chars).',
+            description: 'Optional body / notes.',
           },
           force: {
             type: 'boolean',
-            description: 'Set true to override (auto-pause) an existing active goal on this thread. ' +
-              'Defaults to false, which refuses when a goal is already active.',
+            description: 'Override existing Focus when true.',
           },
         },
         required: ['goal'],
@@ -481,9 +522,8 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__complete_goal',
       description:
-        'Complete exactly the active goal identified by the Completion token in context. Copy its ' +
-        '`goalId` and `goalVersion` verbatim. Native completed goals also require current server-issued ' +
-        '`evidenceIds` from successful tool results and final user confirmation; cancelled goals do not. Stale tokens fail closed.',
+        'DEPRECATED — completion is not part of Focus. Prefer /loop (loop_verdict stop) for engineering ' +
+        'closure. Legacy CAS complete may still run for older goal rows.',
       parameters: {
         type: 'object',
         properties: {
@@ -1022,10 +1062,101 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ].join('\n'),
           )
         }
+        case 'focus_set':
+        case 'focus_on':
+        case 'focus_off':
+        case 'focus_clear': {
+          const focusMod = await import('../focus.js')
+          const loopMod = await import('../loop-run.js')
+          if (op === 'focus_set') {
+            const title = typeof args.title === 'string' ? args.title.trim() : ''
+            if (!title) return err('focus_set failed: title required')
+            const existing = focusMod.getFocusOn(ctx.platform, ctx.channelId, ctx.threadId)
+            if (existing && args.force !== true) {
+              return err('focus_set failed: focus already on (pass force:true to replace)')
+            }
+            const row = focusMod.setFocus({
+              platform: ctx.platform,
+              channelId: ctx.channelId,
+              threadId: ctx.threadId,
+              userId: ctx.userId,
+              title,
+              body: typeof args.body === 'string' ? args.body : undefined,
+              replaceActive: true,
+            })
+            if (!row) return err('focus_set failed: persist')
+            return ok(safeJson({ deprecatedAlias: false, focus: row }))
+          }
+          if (op === 'focus_on') {
+            const r = focusMod.focusOn(ctx.platform, ctx.channelId, ctx.threadId)
+            if (!r.ok) return err(`focus_on failed: ${r.error}`)
+            return ok(safeJson({ focus: r.focus }))
+          }
+          if (op === 'focus_off') {
+            const r = focusMod.focusOff(ctx.platform, ctx.channelId, ctx.threadId)
+            if (!r.ok) return err(`focus_off failed: ${r.error}`)
+            loopMod.cancelLoopForFocusOff(ctx.platform, ctx.channelId, ctx.threadId)
+            return ok(safeJson({ focus: r.focus }))
+          }
+          {
+            const r = focusMod.focusClear(ctx.platform, ctx.channelId, ctx.threadId)
+            loopMod.cancelLoopForFocusOff(ctx.platform, ctx.channelId, ctx.threadId)
+            if (!r.ok) return err(`focus_clear failed: ${r.error}`)
+            return ok(safeJson({ cleared: true }))
+          }
+        }
+        case 'loop_verdict': {
+          const { applyLoopVerdict } = await import('../loop-run.js')
+          const decision = String(args.decision || '')
+          if (decision !== 'continue' && decision !== 'revise' && decision !== 'stop') {
+            return err('loop_verdict failed: decision must be continue|revise|stop')
+          }
+          const summary = typeof args.summary === 'string' ? args.summary.trim() : ''
+          if (!summary) return err('loop_verdict failed: summary required')
+          const r = applyLoopVerdict(ctx.platform, ctx.channelId, ctx.threadId, {
+            decision,
+            summary,
+            nextHint: typeof args.nextHint === 'string' ? args.nextHint : undefined,
+            reasons: Array.isArray(args.reasons)
+              ? args.reasons.filter((x): x is string => typeof x === 'string')
+              : undefined,
+          })
+          if (!r.ok) return err(`loop_verdict failed: ${r.error}`)
+          return ok(safeJson({
+            status: r.run.status,
+            round: r.run.round,
+            endReason: r.run.endReason,
+            lastVerdict: r.run.lastVerdict,
+            openedFocus: r.run.openedFocus,
+          }))
+        }
         case 'long_task':
         case 'complete_goal': {
-          // v1.2.63 — thin wrapper over goals.ts. RPC layer enforces
-          // ctx integrity + writes audit logs.
+          // Deprecated aliases — long_task → focus_set; complete_goal still CAS for legacy.
+          if (op === 'long_task') {
+            const focusMod = await import('../focus.js')
+            const title = typeof args.goal === 'string' ? args.goal.trim() : ''
+            if (!title) return err('long_task failed: goal required')
+            const existing = focusMod.getFocusOn(ctx.platform, ctx.channelId, ctx.threadId)
+            if (existing && args.force !== true) {
+              return err('long_task failed: focus already on (pass force:true); prefer mcp__agim__focus_set')
+            }
+            const row = focusMod.setFocus({
+              platform: ctx.platform,
+              channelId: ctx.channelId,
+              threadId: ctx.threadId,
+              userId: ctx.userId,
+              title,
+              body: typeof args.summary === 'string' ? args.summary : undefined,
+              replaceActive: true,
+            })
+            if (!row) return err('long_task failed: persist')
+            return ok(safeJson({
+              deprecated: true,
+              prefer: 'mcp__agim__focus_set',
+              focus: row,
+            }))
+          }
           const { handleGoalOp } = await import('../goal-rpc.js')
           const r = await handleGoalOp(op, args, {
             platform: ctx.platform,
@@ -1044,7 +1175,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ),
           })
           if (!r.ok) return err(`${op} failed: ${r.error}`)
-          return ok(safeJson(r.result))
+          return ok(safeJson({ deprecated: true, prefer: '/loop or loop_verdict', ...((r.result && typeof r.result === 'object') ? r.result as object : { result: r.result }) }))
         }
         case 'create_reminder': {
           // v1.2.98 — wire reminder tools into native (was previously

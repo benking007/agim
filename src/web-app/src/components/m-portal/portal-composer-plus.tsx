@@ -1,5 +1,5 @@
 /**
- * PortalComposerPlus — "+" menu for Plan / Memo / Goal / camera / photos / files,
+ * PortalComposerPlus — "+" menu for Plan / Memo / Focus / camera / photos / files,
  * plus a pending-attachment strip above the input.
  */
 
@@ -258,11 +258,11 @@ export function PortalComposerPlus({
             className={itemCls}
             onClick={() => {
               setMenuOpen(false)
-              onFillInput('/goal')
+              onFillInput('/focus')
             }}
           >
             <ListTodo className="h-3.5 w-3.5 text-sky-500" />
-            <span>{t('chat.portal.menu.goal')}</span>
+            <span>{t('chat.portal.menu.focus')}</span>
           </button>
           <button
             type="button"

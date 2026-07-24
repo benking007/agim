@@ -1,6 +1,6 @@
 /**
  * Portal slash-command registry for the `/` composer picker.
- * High-priority Commands: Plan, Memo, Goal, Remember, Models.
+ * High-priority Commands: Plan, Memo, Focus, Remember, Models.
  */
 
 export type PortalSlashAction =
@@ -25,7 +25,7 @@ export interface PortalSlashCommand {
 export const PRIORITY_COMMAND_IDS = [
   'plan',
   'memo',
-  'goal',
+  'focus',
   'remember',
   'models',
 ] as const
@@ -48,12 +48,20 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     action: { type: 'fill', text: '/memo here' },
   },
   {
-    id: 'goal',
-    label: 'Goal',
-    description: 'Track a long-running goal',
-    keywords: ['goal', '目标', 'long_task'],
+    id: 'focus',
+    label: 'Focus',
+    description: 'Set attention focus (on/off)',
+    keywords: ['focus', '聚焦', 'goal', '目标', 'long_task'],
     priority: 2,
-    action: { type: 'fill', text: '/goal ' },
+    action: { type: 'fill', text: '/focus ' },
+  },
+  {
+    id: 'loop',
+    label: 'Loop',
+    description: 'Start a Focus-bound development loop',
+    keywords: ['loop', '闭环', 'engineering'],
+    priority: 21,
+    action: { type: 'fill', text: '/loop ' },
   },
   {
     id: 'remember',

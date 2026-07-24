@@ -110,7 +110,7 @@ export function buildSystemPrompt(
 
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
-    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, long_task, complete_goal',
+    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict (long_task/complete_goal deprecated)',
     '  - native filesystem tools: agim_read_file, agim_write_file, agim_list_dir, agim_glob, agim_grep — full filesystem access by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
     '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
@@ -145,7 +145,7 @@ export function buildSystemPrompt(
     '    Bare `bgjob`, host-hardcoded /home/<user>/... paths, and `nohup … &` are forbidden.',
     '  - Write the worker script first (agim_write_file), then start; reply with full job id + log path and end the sync turn.',
     '  - Jobs land in ${AGIM_HOME:-$HOME/.agim}/bgjobs (all agents). Follow up: status / tail / list --running on the same wrapper expr.',
-    '  - long_task//goal tracks objectives across turns — it is NOT a background process.',
+    '  - Focus (/focus, focus_set) keeps attention across turns; Loop (/loop, loop_verdict) is the engineering closed loop. Neither is a background process (use bgjob for that).',
     '',
     buildSubagentDelegationGuidance(),
   )

@@ -117,19 +117,29 @@ describe('parseMessage', () => {
       expect(parseMessage('/stop')).toEqual({ type: 'service', action: 'stop', args: '' })
     })
 
-    // v1.2.102 — /goal + /long_task + /complete_goal parsing
-    describe('/goal + /long_task + /complete_goal aliases', () => {
-      it('parses /goal as type: goal', () => {
+    describe('/focus + /loop + deprecated /goal aliases', () => {
+      it('parses /focus and aliases', () => {
+        expect(parseMessage('/focus')).toEqual({ type: 'focus', args: '' })
+        expect(parseMessage('/focus set foo')).toEqual({ type: 'focus', args: 'set foo' })
+        expect(parseMessage('/f on')).toEqual({ type: 'focus', args: 'on' })
+        expect(parseMessage('/聚焦 off')).toEqual({ type: 'focus', args: 'off' })
+      })
+      it('parses /loop', () => {
+        expect(parseMessage('/loop')).toEqual({ type: 'loop', args: '' })
+        expect(parseMessage('/loop ship it')).toEqual({ type: 'loop', args: 'ship it' })
+        expect(parseMessage('/loop status')).toEqual({ type: 'loop', args: 'status' })
+      })
+      it('parses deprecated /goal as type: goal', () => {
         expect(parseMessage('/goal')).toEqual({ type: 'goal', args: '' })
         expect(parseMessage('/goal set foo')).toEqual({ type: 'goal', args: 'set foo' })
-        expect(parseMessage('/goal list')).toEqual({ type: 'goal', args: 'list' })
+        expect(parseMessage('/g set foo')).toEqual({ type: 'goal', args: 'set foo' })
       })
-      it('parses /long_task as goal-set shortcut', () => {
+      it('parses /long_task as goal-set shortcut (→ focus via deprecated handler)', () => {
         expect(parseMessage('/long_task ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
         expect(parseMessage('/longtask ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
         expect(parseMessage('/long-task ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
       })
-      it('parses bare /long_task as help (empty args reach goal handler)', () => {
+      it('parses bare /long_task as empty args', () => {
         expect(parseMessage('/long_task')).toEqual({ type: 'goal', args: '' })
       })
       it('parses /complete_goal as goal-complete shortcut', () => {

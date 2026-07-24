@@ -74,6 +74,8 @@ export type ParsedMessage =
   | { type: 'memo'; args: string }
   | { type: 'heartbeat'; args: string }
   | { type: 'goal'; args: string }
+  | { type: 'focus'; args: string }
+  | { type: 'loop'; args: string }
   | { type: 'skill'; args: string }
   | { type: 'job'; args: string }
   | { type: 'outbox'; args: string }

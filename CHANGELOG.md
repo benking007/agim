@@ -6,12 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Focus runtime (C0)**: `/focus` (`set` / `on` / `off` / `clear` /
+  `body` / bare text). Wire-only injection via `buildFocusSnippet`
+  (no `complete_goal` tokens). MCP: `focus_set` / `focus_on` /
+  `focus_off` / `focus_clear`. Storage reuses `goals.db` (active=on,
+  paused=off retained).
+- **Loop runtime (C1)**: `/loop` paths A/B — Focus already on → start
+  (end keeps Focus); else `/loop <text>` auto Focus (end Focus off).
+  Persist `~/.agim/loops/*.json`; inject loop status; MCP
+  `loop_verdict` (`continue|revise|stop`). Focus off/clear cancels Loop.
 - **Focus + Loop design SSOT (Phase C, docs-first)**:
-  `docs/architecture/focus.md` (attention anchor: inject / on / off;
-  **deprecates `/goal`**) and `docs/architecture/loop-engineering.md`
-  (Focus-bound executor↔observer `/loop`, verdict
-  `continue|revise|stop`). Cross-links in naming / goals / roadmap /
-  README / current. **No runtime yet.**
+  `docs/architecture/focus.md` and `docs/architecture/loop-engineering.md`.
 - **Phase B Subagent parallel fan-out**: new `mcp__agim__call_agents({ tasks[] })` joins multiple SubagentRuns in one tool call (`allSettled` — one lane fail/timeout/cancel does not kill siblings). Knobs: `AGIM_SUBAGENT_PARALLEL` (default **on**; `0/off` serializes the batch), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3). Per-lane activity step ids `${toolCallId}#i`. See `docs/architecture/orchestration-roadmap.md` Phase B.
 - **Inline Subagent card (message list)**: Desktop `/` and Portal `/m/chat` surface Subagent steps as a Todo-style card (live status + preview). Click a row opens a composer-docked half-sheet (max-height + scroll, expand/collapse) with parent prompt + result via `GET /api/jobs/:id`. Fixes live WS/`active-runs` dropping `jobId`.
 - **Phase A acceptance harness**: `tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs` exercise isolate / `role=cheap`→flash / vacuous refuse / cross-adapter / serial dual Subagent activity+jobId / A3 heuristic presence against a live Agim stack (see `docs/desktop-regression.md` §3).
@@ -29,6 +34,12 @@ All notable changes to this project will be documented in this file.
 - **IM/bgjob SOP baseline for all agents**: managed `<!-- agim:im-ops -->` upserts into every IM workspace role file (not only Agim). Paths use portable `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"` — no host-absolute `/home/<user>/...` baked into AGENTS.md.
 - Default Agim Agent `~/.agim-workspaces/agim/AGENTS.md` ships IM reply norms + **bgjob SOP** (>10 min → absolute `~/.agim/scripts/bgjob start …`, plan+ETA confirmation, no `nohup &`). Managed `<!-- agim:im-ops -->` block upserts on bootstrap. Framework system prompt carries a condensed safety-net copy. See `docs/im-workspaces-guide.md`.
 - Settings `/settings/stt` whisper.cpp card: **初始化本地引擎** (`POST /api/stt/whispercpp/model`) installs official `whisper-cli` prebuild (Linux x64/arm64, Windows x64) + `ggml-base.bin`. `agim start` does the same silently when local STT is likely. macOS still needs `brew install whisper-cpp`. Card shows CLI vs model status separately.
+
+### Deprecated
+
+- **`/goal`**, `/long_task`, `mcp__agim__long_task`,
+  `mcp__agim__complete_goal` — prefer `/focus` + `/loop`. Slash `/goal`
+  forwards to Focus with a banner; `complete` is hard-deprecated.
 
 ### Changed
 

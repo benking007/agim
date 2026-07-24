@@ -175,7 +175,7 @@ Focus (on)  ──门禁──►  /loop start   （Phase C）
 
 > **Focus = 开/关注入的注意力锚点。**  
 > **Goal 废弃。**  
-> **Loop（Phase C）建在 Focus 之上，不抢 Focus 的定位。**
+> **Loop：可先 focus 再 loop（结束保留 focus），或 `/loop <text>` 代开（结束 focus off）。**
 
 ---
 

@@ -22,16 +22,27 @@ export const SUBAGENT_HEURISTIC_KEYWORDS = [
  * Keep under ~900 chars so providers that truncate tool schemas stay usable.
  */
 export const CALL_AGENT_TOOL_DESCRIPTION = [
-  'Spawn a Subagent (nested worker; you keep the user-facing reply).',
+  'Spawn ONE Subagent (nested worker; you keep the user-facing reply).',
+  'For 2+ independent lanes prefer mcp__agim__call_agents (batch fan-out).',
   'Targets: (1) same-family Agim — prefer backend:"<llmBackends.name>" (concrete model backend);',
   'isolate:true reuses the parent default model; role:"cheap" only when llmRoles.cheap is configured (optional alias).',
   '(2) another registered adapter (claude-code, codex, …) via A2A.',
   'Brief MUST be self-contained: Objective + Output format + Boundaries + Done-when.',
   'Scale: single-fact / short edit → do it yourself (do not spawn for trivial one-step work);',
-  '2–3 independent research/verify lanes → 1–3 Subagents; broad read-only search → fan-out with a cheaper backend when available;',
+  '2–3 independent research/verify lanes → call_agents; broad read-only search → fan-out with a cheaper backend when available;',
   'coding that writes the same file → do not parallel-write (serialize or split directories).',
   'After Subagents return: synthesize yourself — never ask the user to merge raw child output.',
   'Vacuous self-call without isolate/role/backend is refused. Guardrails: depth, ACL, per-turn cap.',
+].join(' ')
+
+/** Compact tool description for mcp__agim__call_agents (Phase B). */
+export const CALL_AGENTS_TOOL_DESCRIPTION = [
+  'Spawn MULTIPLE Subagents in one call (fan-out / join). You keep the user-facing reply.',
+  'Use when 2–3 lanes are independent (research/verify/explore). Do not use for trivial one-step work.',
+  'Each tasks[] item needs a self-contained brief (Objective + Output format + Boundaries + Done-when).',
+  'Do not parallel-write the same file — split directories or serialize writers.',
+  'Failure mode: allSettled — one child fail/timeout/cancel does not kill siblings; synthesize all results.',
+  'Same-family: prefer backend=; isolate:true reuses default model. Guardrails: depth, ACL, per-turn cap, parallel max.',
 ].join(' ')
 
 /**
@@ -40,27 +51,28 @@ export const CALL_AGENT_TOOL_DESCRIPTION = [
  */
 export function buildSubagentDelegationGuidance(): string {
   return [
-    'Subagent delegation (mcp__agim__call_agent):',
+    'Subagent delegation (mcp__agim__call_agent / mcp__agim__call_agents):',
     '  - You stay the user-facing owner. Subagents are nested workers (same-family Agim or cross-adapter A2A), not a sticky handoff.',
     '  - When to spawn: long / context-polluting / independently parallelizable work. Single-fact answers and short edits → do it yourself;',
     '    do not spawn for trivial one-step work.',
-    '  - Brief four-piece (required in `prompt`): Objective; Output format; Boundaries (what not to redo); Done-when.',
+    '  - One lane → call_agent. Two or more independent lanes → call_agents (batch fan-out; join then synthesize).',
+    '  - Brief four-piece (required in each `prompt`): Objective; Output format; Boundaries (what not to redo); Done-when.',
     '  - Same-family: prefer backend:"<llmBackends.name>" (concrete). isolate:true reuses default model.',
     '    role:"cheap" is only an optional alias when llmRoles.cheap exists — do not assume it.',
-    '  - Scale: 2–3 independent research/verify lanes → 1–3 Subagents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
+    '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
     '  - Verification: after a substantive result, a fresh verifier Subagent can be valuable — give an exact claim + how to check it.',
     '  - Synthesize, don\'t delegate understanding: merge child summaries into one Chinese user reply; never dump raw child transcripts.',
   ].join('\n')
 }
 
 /** Append live backend/role roster so the model can pick real names. */
-export function buildCallAgentToolDescription(extra?: {
-  backends?: string[]
-  roles?: string[]
-}): string {
+function appendBackendRoleRoster(
+  base: string,
+  extra?: { backends?: string[]; roles?: string[] },
+): string {
   const backends = (extra?.backends ?? []).filter(Boolean)
   const roles = (extra?.roles ?? []).filter(Boolean)
-  const bits = [CALL_AGENT_TOOL_DESCRIPTION]
+  const bits = [base]
   if (backends.length > 0) {
     bits.push(`Configured llmBackends (prefer these in backend=): ${backends.join(', ')}.`)
   } else {
@@ -70,4 +82,18 @@ export function buildCallAgentToolDescription(extra?: {
     bits.push(`Optional llmRoles aliases: ${roles.join(', ')}.`)
   }
   return bits.join(' ')
+}
+
+export function buildCallAgentToolDescription(extra?: {
+  backends?: string[]
+  roles?: string[]
+}): string {
+  return appendBackendRoleRoster(CALL_AGENT_TOOL_DESCRIPTION, extra)
+}
+
+export function buildCallAgentsToolDescription(extra?: {
+  backends?: string[]
+  roles?: string[]
+}): string {
+  return appendBackendRoleRoster(CALL_AGENTS_TOOL_DESCRIPTION, extra)
 }

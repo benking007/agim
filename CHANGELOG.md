@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Phase B Subagent parallel fan-out**: new `mcp__agim__call_agents({ tasks[] })` joins multiple SubagentRuns in one tool call (`allSettled` — one lane fail/timeout/cancel does not kill siblings). Knobs: `AGIM_SUBAGENT_PARALLEL` (default **on**; `0/off` serializes the batch), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3). Per-lane activity step ids `${toolCallId}#i`. See `docs/architecture/orchestration-roadmap.md` Phase B.
 - **Inline Subagent card (message list)**: Desktop `/` and Portal `/m/chat` surface Subagent steps as a Todo-style card (live status + preview). Click a row opens a composer-docked half-sheet (max-height + scroll, expand/collapse) with parent prompt + result via `GET /api/jobs/:id`. Fixes live WS/`active-runs` dropping `jobId`.
 - **Phase A acceptance harness**: `tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs` exercise isolate / `role=cheap`→flash / vacuous refuse / cross-adapter / serial dual Subagent activity+jobId / A3 heuristic presence against a live Agim stack (see `docs/desktop-regression.md` §3).
 - **Subagent decompose heuristics (Phase A3)**: Parent system prompt and `mcp__agim__call_agent` tool description share SSOT guidance from `subagent-heuristics.ts` (brief four-piece, when-not-to-spawn, same-family vs A2A, no parallel-write same file, synthesize). No separate “decomposer agent” service.
@@ -25,6 +26,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` default 2 → 3** (counts both `call_agent` and each `call_agents` task). Set `0` to disable the cap.
 - **Subagent Stop (chat)**: live Subagent rows expose a right-side **Stop** control (WS `stop-subagent`). Cancel keeps the parent turn alive and returns partial output plus summarize/continue instructions to the parent agent.
 - **Approval dock (chat)**: slightly smaller sheet, denser header/body, and compact buttons (`min-h-8` / `text-xs`) so it competes less with the composer.
 - **Plan + Subagent stacking**: when both cards are present, Plan renders above Subagents (desktop + Portal).

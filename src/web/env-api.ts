@@ -85,8 +85,10 @@ export const ENV_EDITABLE_KEYS = [
   'AGIM_EXEC_SANDBOX_NET',
   'AGIM_EXEC_TIMEOUT_MS',
   'AGIM_EXEC_MAX_OUTPUT',
-  // Native call_agent per-turn cap.
+  // Native call_agent / call_agents per-turn cap + Phase B parallel fan-out.
   'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
+  'AGIM_SUBAGENT_PARALLEL',
+  'AGIM_SUBAGENT_PARALLEL_MAX',
   // v1.2.69 — IM platform blacklist (CSV of platform ids). Default
   // empty (no blocks); listed platforms vanish from web + CLI + are
   // refused at registry.registerMessenger.
@@ -138,6 +140,8 @@ export const ENV_EDITABLE_KEYS = [
   'AGIM_A2A_TIMEOUT_DEFAULT_MS',
   'AGIM_NATIVE_CALL_AGENT_IN_PROCESS',
   'AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN',
+  'AGIM_SUBAGENT_PARALLEL',
+  'AGIM_SUBAGENT_PARALLEL_MAX',
   // Plan mode default state. Canonical AGIM_PLAN_MODE=on|off|disabled;
   // legacy AGIM_NATIVE_PLAN_MODE / AGIM_DISABLE_PLAN_MODE still read.
   'AGIM_NATIVE_PLAN_MODE',

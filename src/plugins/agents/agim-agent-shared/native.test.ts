@@ -352,6 +352,7 @@ describe('buildSystemPrompt — Subagent delegation heuristics (Phase A3)', () =
   it('includes decompose heuristics + synthesize-dont-delegate guidance', () => {
     const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
     expect(prompt).toContain('Subagent delegation')
+    expect(prompt).toContain('call_agents')
     expect(prompt).toMatch(/Brief four-piece/)
     expect(prompt).toMatch(/do not spawn for trivial/i)
     expect(prompt).toMatch(/do not parallel-write/i)

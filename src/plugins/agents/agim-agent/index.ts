@@ -300,10 +300,13 @@ function todoItemsForActivity(toolName: string | undefined, input: unknown, resu
   return resolveTodoItems({ input, resultText }) ?? undefined
 }
 
-/** Heuristic: skill-ish tools get kind=skill; call_agent is owned by A2A. */
+/** Heuristic: skill-ish tools get kind=skill; call_agent(s) activity is owned by A2A. */
 function classifyToolActivityKind(toolName: string): 'tool' | 'skill' | 'agent' {
   const n = toolName.toLowerCase()
-  if (n === 'call_agent' || n.endsWith('__call_agent')) return 'agent'
+  if (
+    n === 'call_agent' || n.endsWith('__call_agent')
+    || n === 'call_agents' || n.endsWith('__call_agents')
+  ) return 'agent'
   if (n.includes('skill') || n.startsWith('mcp__agim__skill')) return 'skill'
   return 'tool'
 }
@@ -311,6 +314,15 @@ function classifyToolActivityKind(toolName: string): 'tool' | 'skill' | 'agent' 
 function isCallAgentTool(toolName: string): boolean {
   const n = toolName.toLowerCase()
   return n === 'call_agent' || n.endsWith('__call_agent')
+}
+
+function isCallAgentsTool(toolName: string): boolean {
+  const n = toolName.toLowerCase()
+  return n === 'call_agents' || n.endsWith('__call_agents')
+}
+
+function isSubagentTool(toolName: string): boolean {
+  return isCallAgentTool(toolName) || isCallAgentsTool(toolName)
 }
 
 /**
@@ -951,9 +963,9 @@ export class NativeAgentAdapter implements AgentAdapter {
       },
     ): void => {
       if (!opts?.onToolActivity) return
-      // call_agent activity is owned by callAgentByName / in-process spawn
-      // so the accordion shows a single "Waiting for subagent" row.
-      if (isCallAgentTool(step.label) && step.status !== 'denied') return
+      // call_agent(s) activity is owned by callAgentByName (per-lane step ids)
+      // so the accordion does not also show the raw tool row.
+      if (isSubagentTool(step.label) && step.status !== 'denied') return
       try {
         // Collapse every todo_write onto one step id so the Plan card
         // refreshes in place as items complete mid-turn (observer UX).
@@ -1068,11 +1080,39 @@ export class NativeAgentAdapter implements AgentAdapter {
           })
           return { block: true, reason: todoGate.reason }
         }
-        // Subagent: surface a pending card immediately (before HITL / A2A).
-        // A2A later updates the same toolCallId via activityStepId so the
-        // panel does not wait on approval + job creation to appear.
+        // Subagent: surface pending card(s) immediately (before HITL / A2A).
+        // A2A later updates the same step id(s) via activityStepId.
         let callAgentPendingLabel: string | undefined
-        if (isCallAgentTool(ev.toolName)) {
+        if (isCallAgentsTool(ev.toolName)) {
+          const input = (ev.input ?? {}) as Record<string, unknown>
+          const tasks = Array.isArray(input.tasks) ? input.tasks : []
+          for (let i = 0; i < tasks.length; i++) {
+            const t = (tasks[i] && typeof tasks[i] === 'object')
+              ? tasks[i] as Record<string, unknown>
+              : {}
+            const agentArg = typeof t.agent === 'string' ? t.agent : 'agent'
+            const parsed = parseCallAgentTarget(agentArg)
+            const backendArg = (typeof t.backend === 'string' ? t.backend : undefined)
+              || parsed.backend
+            const roleArg = backendArg
+              ? undefined
+              : ((typeof t.role === 'string' ? t.role : undefined) || parsed.role)
+            const promptArg = typeof t.prompt === 'string' ? t.prompt : ''
+            const label = formatSubagentLabel(parsed.agent || agentArg, {
+              role: roleArg,
+              backend: backendArg,
+            })
+            if (i === 0) callAgentPendingLabel = label
+            emitToolActivity({
+              id: `${ev.toolCallId}#${i}`,
+              kind: 'agent',
+              label,
+              status: 'pending',
+              startedAt: Date.now(),
+              preview: promptArg.slice(0, 120).replace(/\s+/g, ' '),
+            })
+          }
+        } else if (isCallAgentTool(ev.toolName)) {
           const input = (ev.input ?? {}) as Record<string, unknown>
           const agentArg = typeof input.agent === 'string' ? input.agent : 'agent'
           const parsed = parseCallAgentTarget(agentArg)

@@ -169,40 +169,42 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 ### Phase B — 任务内并行 Subagent fan-out
 
 > 目标：一次 turn 可**并行**派出多个 SubagentRun（同族或跨 adapter），join 后交回父 agent。  
-> 依赖：Phase A（同族路径 + 多行 UI 已就绪）。
+> 依赖：Phase A（同族路径 + 多行 UI 已就绪）。  
+> 产品默认（2026-07-24）：**并行开**、批量工具、`MAX_PER_TURN=3`。
 
 #### B1. 运行时
 
-- 批量原语包装多次 Subagent spawn（同族 runner 与/或 `callAgentByName`）。  
-- **Env 门控**（默认关），例如：`AGIM_SUBAGENT_PARALLEL=0|1`（实现时若沿用 `AGIM_A2A_PARALLEL` 须在 naming 注明别名）。  
-- 预算：每 turn 总次数 + 同时运行上限（建议默认 3）。  
-- 每个 callee：独立 `runId` / approval / trace。  
-- 父 turn 仍占 thread-queue（嵌套等 join）——不放开双 sticky。
+- [x] 批量工具 `mcp__agim__call_agents({ tasks[] })` → 内部 `mapPool` + `callAgentByName`（同族/跨 adapter）。  
+- [x] **Env 门控** `AGIM_SUBAGENT_PARALLEL`（**默认 ON**；`0|off|false|no` 串行化 batch）。  
+- [x] 预算：`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` 默认 **3**（单次 + batch 任务均计入）+ `AGIM_SUBAGENT_PARALLEL_MAX` 默认 **3**。  
+- [x] 每个 callee：独立 job / activity stepId（`${toolCallId}#i`）/ trace。  
+- [x] 父 turn 仍占 thread-queue（嵌套等 join）——不放开双 sticky。  
+- [x] 失败策略：`allSettled`（工具层 ok，按 lane 报告 ok/error）。
 
 #### B2. 冲突与安全
 
 | 风险 | 策略 |
 |---|---|
 | 两子 agent 同写一文件 | 文档约定 brief 划目录；可选后续加 workspace lease（本阶段可不做） |
-| 审批卡交错 | 每 callee 独立 pending；UI 按 stepId 分组 |
-| 开放 IM 放大攻击面 | 并行默认关；接 IM 时保持 auto-approve 抑制逻辑 |
+| 审批卡交错 | 每 callee 独立 pending；UI 按 stepId 分组；`call_agents` HITL 豁免同 `call_agent` |
+| 开放 IM 放大攻击面 | 可设 `AGIM_SUBAGENT_PARALLEL=0`；接 IM 时保持 auto-approve 抑制逻辑 |
 | 费用爆炸 | hard cap + 工具返回明确 `cap_exceeded` |
 
 #### B3. 前端
 
-- Phase A 的多 step 列表在并行时同时 `running`。
-- Join 后父消息可折叠展示各子结果摘要（全文仍走现有 cap / viewer spill）。
+- [x] Phase A 的多 step 列表在并行时同时 `running`（每 lane 一张卡）。
+- Join 后父消息可折叠展示各子结果摘要（可选增强；全文仍走现有 cap / viewer spill）。
 
 #### B4. 验收
 
-- [ ] `AGIM_A2A_PARALLEL=1` 时，一次编排派出 2–3 个不同 agent（或同 agent 不同 brief），墙钟时间明显低于串行。
-- [ ] 默认 `=0` 行为与今日一致。
-- [ ] 审批、取消、超时：单个子失败不必然杀死兄弟（策略写清：`allSettled` + 父汇总）。
-- [ ] audit / job 树完整；`npm test` 覆盖并行预算与门控。
+- [x] `AGIM_SUBAGENT_PARALLEL` 默认开：`call_agents` 以 concurrency≤PARALLEL_MAX 并行。
+- [x] `AGIM_SUBAGENT_PARALLEL=0`：batch 串行，行为可预期。
+- [x] 审批、取消、超时：单个子失败不必然杀死兄弟（`allSettled` + 父汇总）。
+- [x] audit / job 树完整；单测覆盖并行预算与门控。
 
 #### B5. 非本阶段
 
-观察者状态机、同 thread 多主 agent。
+观察者状态机、同 thread 多主 agent、Claude MCP sidecar 暴露 `call_agents`（Native 优先）。
 
 ---
 
@@ -296,9 +298,9 @@ Phase C  long-engineering    ──►  可先 RFC 再实现
 | 键（草案） | 阶段 | 默认 | 含义 |
 |---|---|---|---|
 | （复用）`AGIM_A2A_MAX_DEPTH` | A/B/C | 8 | 嵌套深度 |
-| （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B | 2 | 每 turn 委派上限（并行计入） |
-| `AGIM_SUBAGENT_PARALLEL` | B | `0` | 允许并行 Subagent |
-| `AGIM_SUBAGENT_PARALLEL_MAX` | B | `3` | 同时运行 Subagent 上限 |
+| （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B | **3** | 每 turn 委派上限（`call_agent` + `call_agents` 任务均计入） |
+| `AGIM_SUBAGENT_PARALLEL` | B | **on**（unset=on） | `call_agents` 是否并行；`0/off` 串行 |
+| `AGIM_SUBAGENT_PARALLEL_MAX` | B | `3` | 单次 batch 同时运行上限 |
 | `AGIM_ENGINEERING_MODE` / 或纯工具触发 | C | off | 是否允许进入 long-engineering |
 | `AGIM_ENGINEERING_OBSERVER` | C | （可选默认 agent id） | 默认观察者 |
 

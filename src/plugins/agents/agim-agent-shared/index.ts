@@ -24,6 +24,7 @@ import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { isTodoGateOn, TODO_FIRST_PROMPT } from '../../../core/llm/todo-gate.js'
 import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/prompt-injection-guard.js'
 import { buildSkillsSummary } from '../../../core/skills/loader.js'
+import { buildSubagentDelegationGuidance } from '../../../core/subagent-heuristics.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
@@ -127,7 +128,7 @@ export function buildSystemPrompt(
     '  - When uncertain, call mcp__agim__ask_user(question, choices[]); do not pretend work is done.',
     '  - Destructive ops (delete/overwrite/outbound send): state impact, get confirmation first.',
     '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
-    '  - For file/list/search/fetch requests, use native tools first; reserve call_agent for work that genuinely needs another CLI agent.',
+    '  - For file/list/search/fetch requests, use native tools first; spawn a Subagent (call_agent) only when isolation, a cheaper model, or another CLI is genuinely needed.',
     '  - Closure rule: the FINAL assistant message (the hop with no more tool calls) MUST contain the full user-readable conclusion in Chinese — findings and next steps. Do NOT end with only a status line like「盘点完成」/「已完成」/「报告输出完毕」.',
     '',
     'IM reply shape (chat clients, not a terminal):',
@@ -146,10 +147,7 @@ export function buildSystemPrompt(
     '  - Jobs land in ${AGIM_HOME:-$HOME/.agim}/bgjobs (all agents). Follow up: status / tail / list --running on the same wrapper expr.',
     '  - long_task//goal tracks objectives across turns — it is NOT a background process.',
     '',
-    'Verification subagent:',
-    '  - After a substantive result, use call_agent with a fresh verifier when a second pass is valuable.',
-    "  - Synthesize, don't delegate understanding: state the exact claim and how to verify it.",
-    '  - Give the verifier a self-contained brief; it does not see this conversation.',
+    buildSubagentDelegationGuidance(),
   )
   return lines.join('\n')
 }

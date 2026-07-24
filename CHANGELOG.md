@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Subagent decompose heuristics (Phase A3)**: Parent system prompt and `mcp__agim__call_agent` tool description share SSOT guidance from `subagent-heuristics.ts` (brief four-piece, when-not-to-spawn, same-family vs A2A, no parallel-write same file, synthesize). No separate “decomposer agent” service.
 - **Multi-Subagent UI feedback (Phase A2)**: Desktop accordion, Portal run-status, and TUI activity show “waiting N subagents” with a per-agent list when multiple `kind:'agent'` steps are running. Activity steps may carry `jobId`; labels distinguish same-family (`agim/cheap`) vs cross-adapter (`claude-code`). Shared helpers in `chat-activity.ts` + `SubagentWaitingList`.
 - **Same-family Subagent spawn (Phase A1)**: `mcp__agim__call_agent` accepts optional `role` / `backend` / `isolate` so Agim Agent can nest a Subagent on itself (e.g. reuse pro via `isolate:true`, or `role:"cheap"` → `llmRoles.cheap` / flash) while keeping job-board + activity parity. Cross-adapter A2A unchanged. Vacuous self-call without isolate/role/backend still refused. See `docs/architecture/subagent.md`.
 - **Portal hold-to-talk + multi-vendor STT**: `/m/chat` microphone hold-to-talk posts audio to `POST /api/chat/transcribe`. Providers: iFlytek / Tencent / Baidu / StepFun / MiMo / Zhipu GLM / OpenAI Whisper / whisper.cpp. Settings at `/settings/stt`; Auto order prefers Chinese quality → stability → cost. Secrets in `~/.agim/env` (`AGIM_STT_*` only).

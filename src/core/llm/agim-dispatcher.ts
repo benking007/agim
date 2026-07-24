@@ -44,6 +44,7 @@ import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
 import { resolveSubagentSpawn } from '../subagent.js'
+import { CALL_AGENT_TOOL_DESCRIPTION } from '../subagent-heuristics.js'
 import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
 import { hashWorkspaceScope } from '../goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../agent-cwd.js'
@@ -334,14 +335,7 @@ export function getAgimTools(): ToolDef[] {
     },
     {
       name: 'mcp__agim__call_agent',
-      description:
-        'Spawn a Subagent (nested worker; you keep the user-facing reply). ' +
-        'Targets: (1) same-family Agim Agent — pass isolate:true to reuse the default model, ' +
-        'role:"cheap" for llmRoles.cheap (e.g. flash), or backend:"<llmBackends.name>"; ' +
-        '(2) another registered adapter (claude-code, codex, opencode, …) via A2A. ' +
-        'Write a self-contained brief (objective, output format, boundaries, done-when). ' +
-        'Do NOT spawn for trivial one-step work. Vacuous self-call without isolate/role/backend is refused. ' +
-        'Guardrails: depth limit, workspace ACL, per-turn cap. Returns the callee\'s final text.',
+      description: CALL_AGENT_TOOL_DESCRIPTION,
       parameters: {
         type: 'object',
         properties: {
@@ -353,7 +347,8 @@ export function getAgimTools(): ToolDef[] {
           prompt: {
             type: 'string',
             description:
-              'Self-contained Subagent brief (objective + output format + boundaries + done-when).',
+              'Self-contained Subagent brief: Objective + Output format + Boundaries + Done-when. '
+              + 'Do not spawn for trivial one-step work; child does not see parent chat history.',
           },
           role: {
             type: 'string',

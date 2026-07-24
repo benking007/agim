@@ -214,5 +214,21 @@ describe('buildAgimDispatcher', () => {
       expect(props).toHaveProperty('backend')
       expect(props).toHaveProperty('isolate')
     })
+
+    it('call_agent tool description locks Phase A3 decompose heuristics', async () => {
+      const { SUBAGENT_HEURISTIC_KEYWORDS } = await import('../subagent-heuristics.js')
+      const tools = getAgimTools()
+      const callAgent = tools.find((t) => t.name === 'mcp__agim__call_agent')
+      const desc = (callAgent?.description ?? '').toLowerCase()
+      expect(desc.length).toBeGreaterThan(80)
+      for (const kw of SUBAGENT_HEURISTIC_KEYWORDS) {
+        expect(desc).toContain(kw.toLowerCase())
+      }
+      const promptProp = (callAgent?.parameters as {
+        properties?: { prompt?: { description?: string } }
+      })?.properties?.prompt?.description ?? ''
+      expect(promptProp.toLowerCase()).toMatch(/objective/)
+      expect(promptProp.toLowerCase()).toMatch(/done-when/)
+    })
   })
 })

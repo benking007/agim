@@ -347,13 +347,16 @@ describe('buildSystemPrompt — tool-call discipline (v1.2.147)', () => {
   })
 })
 
-describe('buildSystemPrompt — verification-subagent SOP (T5)', () => {
+describe('buildSystemPrompt — Subagent delegation heuristics (Phase A3)', () => {
   const stub = { providerType: 'stub', name: 'stub-backend' } as unknown as LlmProvider
-  it('includes the verification-subagent + synthesize-dont-delegate guidance', () => {
+  it('includes decompose heuristics + synthesize-dont-delegate guidance', () => {
     const prompt = buildSystemPrompt(stub, 'native-chat', '/tmp/agim-no-such-cwd')
-    expect(prompt).toContain('Verification subagent')
+    expect(prompt).toContain('Subagent delegation')
+    expect(prompt).toMatch(/Brief four-piece/)
+    expect(prompt).toMatch(/do not spawn for trivial/i)
+    expect(prompt).toMatch(/do not parallel-write/i)
     expect(prompt).toMatch(/Synthesize, don't delegate understanding/)
-    expect(prompt).toMatch(/self-contained brief/i)
+    expect(prompt).toMatch(/same-family/)
   })
 })
 

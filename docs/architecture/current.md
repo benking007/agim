@@ -279,11 +279,20 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 | 改 Portal UI | `m-portal/*` 子组件；页面壳保持薄 |
 | 新 agent 后端 | 遵循 [`../agent-integration-sop.md`](../agent-integration-sop.md) |
 
-## 13. 推荐阅读顺序
+## 13. 演进计划（编排）
+
+多 Agent 并行、Subagent 可观测 fan-out、Long-engineering（观察者+执行者）的分阶段计划见：
+
+- [`orchestration-roadmap.md`](./orchestration-roadmap.md)（**现行**；Phase A → B → C，逐项合入）
+
+该计划在现有 `callAgentByName` / job 树 / activity-WS / goal+critic 之上加薄编排层，不另起第二路由。
+
+## 14. 推荐阅读顺序
 
 1. [`../../README.md`](../../README.md) / [`../../README.zh-CN.md`](../../README.zh-CN.md)  
 2. [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md)  
 3. 本文（模块地图与数据流）  
-4. [`../endpoint-contracts.md`](../endpoint-contracts.md)  
-5. [`../security-hardening.md`](../security-hardening.md)  
-6. [`../llm-backends.md`](../llm-backends.md) · [`../runbook.md`](../runbook.md) · [`../adr/`](../adr/)  
+4. [`orchestration-roadmap.md`](./orchestration-roadmap.md)（若做多 Agent / 长工程）  
+5. [`../endpoint-contracts.md`](../endpoint-contracts.md)  
+6. [`../security-hardening.md`](../security-hardening.md)  
+7. [`../llm-backends.md`](../llm-backends.md) · [`../runbook.md`](../runbook.md) · [`../adr/`](../adr/)  

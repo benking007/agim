@@ -20,6 +20,7 @@
 
 - [`architecture/current.md`](./architecture/current.md)：**现行**组合根 / 域模块地图、数据流、文件预算与扩展配方（架构首页）
 - [`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md)：桥接 + Agim Agent 产品立场（旧名 `architecture-bridge-and-native.md` 仅作跳转）
+- [`architecture/orchestration-roadmap.md`](./architecture/orchestration-roadmap.md)：**现行计划** — 多 Agent / Subagent fan-out / Long-engineering（A→B→C 分阶段）
 - [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)：工作目录与记忆隔离（已实施）
 - [`architecture/reminders.md`](./architecture/reminders.md)：提醒与主动通知链路
 - [`endpoint-contracts.md`](./endpoint-contracts.md)：Web 路由清单与 SPA API 合同维护

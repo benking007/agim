@@ -131,6 +131,17 @@ async function dispatchWithTimeout(
     if (aborted) races.push(aborted)
     const result = await Promise.race(races)
     if (timedOut && !detachOnAbort) {
+      // Mutations wait for settle after the wall abort. If the dispatcher still
+      // succeeded (e.g. loop_verdict already ended the Loop), prefer that
+      // outcome — a synthetic timeout here makes the model retry into
+      // no_active_loop while the store is already closed.
+      if (result && result.isError !== true) {
+        const note = `\n\n[注：工具墙钟 ${timeoutMs}ms 已触发 abort，但副作用已成功提交]`
+        return {
+          ...result,
+          text: `${result.text || ''}${note}`,
+        }
+      }
       return {
         text: `工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时并已停止`,
         isError: true,

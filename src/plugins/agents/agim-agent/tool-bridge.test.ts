@@ -139,6 +139,34 @@ describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', 
     }
   })
 
+  it('prefers mutation success after wall abort (avoids no_active_loop after loop_verdict)', async () => {
+    const prev = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+    process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '20'
+    try {
+      const mutation: ToolDef = {
+        name: 'mcp__agim__loop_verdict',
+        description: 'verdict',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }
+      const dispatch: ToolDispatcher = (_call, signal) => new Promise((resolve) => {
+        signal.addEventListener('abort', () => {
+          setTimeout(() => resolve({
+            text: '{"status":"ended","endReason":"objective_met"}',
+            isError: false,
+          }), 40)
+        }, { once: true })
+      })
+      const [tool] = agimToolsToPi([mutation], dispatch)
+      const out = await tool.execute('mutation-success-after-timeout', {}, new AbortController().signal)
+      const text = (out.content[0] as { text: string }).text
+      expect(text).toContain('objective_met')
+      expect(text).toContain('副作用已成功提交')
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
+      else process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = prev
+    }
+  })
+
   it('returns promptly on outer abort even when the dispatcher ignores its signal', async () => {
     const slowTool: ToolDef = { ...QUOTE_TOOL, timeoutMs: 0 }
     const dispatch: ToolDispatcher = async () => await new Promise<never>(() => {})

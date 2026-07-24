@@ -154,14 +154,14 @@ export interface LoopMissionView {
   partial: boolean
 }
 
-/** R5 UX buckets — user-facing “卡在哪”. */
+/** R5 UX buckets — user-facing waiting stage (待对焦 / 待派工 / 待验收). */
 export type LoopUxBucket = 'aligning' | 'dispatch' | 'verify' | 'ended'
 
 export function getLoopUxBucket(run: LoopRun): LoopUxBucket {
   if (run.status === 'ended') return 'ended'
   if (run.status === 'aligning') return 'aligning'
   if (run.status === 'verifying' || run.status === 'reflecting') return 'verify'
-  // After dispatch, waiting on structured verdict → 验收
+  // After dispatch, waiting on structured verdict → 待验收
   if ((run.dispatchesThisRound || 0) > 0) return 'verify'
   return 'dispatch'
 }
@@ -169,16 +169,16 @@ export function getLoopUxBucket(run: LoopRun): LoopUxBucket {
 export function loopUxBucketLabel(bucket: LoopUxBucket, lang: 'zh' | 'en' = 'zh'): string {
   if (lang === 'en') {
     switch (bucket) {
-      case 'aligning': return 'Aligning'
-      case 'dispatch': return 'Dispatch'
-      case 'verify': return 'Verify'
+      case 'aligning': return 'Awaiting align'
+      case 'dispatch': return 'Awaiting dispatch'
+      case 'verify': return 'Awaiting verify'
       case 'ended': return 'Ended'
     }
   }
   switch (bucket) {
-    case 'aligning': return '对焦'
-    case 'dispatch': return '派工'
-    case 'verify': return '验收'
+    case 'aligning': return '待对焦'
+    case 'dispatch': return '待派工'
+    case 'verify': return '待验收'
     case 'ended': return '已结束'
   }
 }

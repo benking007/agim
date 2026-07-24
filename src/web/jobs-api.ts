@@ -19,7 +19,9 @@
 //   POST   /api/reminders/:id/snooze        → { ok, originalId, newId, duration }
 //   GET    /api/plans                       → { plans, total }
 //
-// All routes require admin (same gates as the original server.ts route table).
+// Most routes require admin. Exception: GET /api/jobs/:id allows role=user
+// when `?threadId=` matches the job's web thread and the token owns that thread
+// (Subagent detail sheet in chat/Portal).
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registry } from '../core/registry.js'

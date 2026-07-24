@@ -163,7 +163,11 @@ export default function ChatRoute(): JSX.Element {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-bg">
+    <div
+      className="relative flex h-dvh flex-col bg-bg"
+      data-agim-composer-sheet-root
+      data-agim-sheet-column="chat"
+    >
       {/* App-wide Topbar (brand + nav + theme/lang). Chat-specific
           chrome — WS status pill + agent picker — slots into the
           children prop so it stays on the right of the topbar. */}

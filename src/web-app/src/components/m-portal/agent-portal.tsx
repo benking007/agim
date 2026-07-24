@@ -554,6 +554,8 @@ export function AgentPortal(): JSX.Element {
           sidebarOpen && 'max-lg:pointer-events-none max-lg:select-none max-lg:blur-[6px] max-lg:brightness-75',
         )}
         aria-hidden={(sidebarOpen ? true : undefined)}
+        data-agim-composer-sheet-root
+        data-agim-sheet-column="portal"
       >
         <PortalHeader
           dark={dark}

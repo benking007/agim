@@ -1,8 +1,9 @@
 /**
  * Composer-docked Subagent detail sheet.
  *
- * Half-floats above the chat input (Cursor-style): expands upward, capped
- * height, internal scroll. Fetches parent prompt + result via GET /api/jobs/:id.
+ * Portals into `[data-agim-composer-sheet-root]` so horizontal centering
+ * matches the chat content column (not the full viewport — avoids sidebar
+ * skew). Expands upward above the input with max-height + internal scroll.
  */
 
 import { useEffect, useState } from 'react'
@@ -40,12 +41,19 @@ export function SubagentDetailDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [sheetRoot, setSheetRoot] = useState<HTMLElement | null>(null)
 
   const jobId = step ? resolveSubagentJobId(step) : undefined
   const live = step ? isSubagentLive(step) : false
+  const portalColumn = sheetRoot?.getAttribute('data-agim-sheet-column') === 'portal'
+  const docked = !!sheetRoot
 
   useEffect(() => {
-    if (!open) setExpanded(false)
+    if (!open) {
+      setExpanded(false)
+      return
+    }
+    setSheetRoot(document.querySelector<HTMLElement>('[data-agim-composer-sheet-root]'))
   }, [open])
 
   useEffect(() => {
@@ -93,10 +101,11 @@ export function SubagentDetailDialog({
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
+      <DialogPrimitive.Portal container={sheetRoot ?? undefined}>
         <DialogPrimitive.Overlay
           className={cn(
-            'fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px]',
+            docked ? 'absolute inset-0' : 'fixed inset-0',
+            'z-50 bg-black/30 backdrop-blur-[2px]',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           )}
@@ -104,10 +113,14 @@ export function SubagentDetailDialog({
         <DialogPrimitive.Content
           aria-describedby={undefined}
           className={cn(
-            // Dock above the composer / status bar — expand upward.
-            'fixed inset-x-3 z-50 flex flex-col overflow-hidden',
+            // Center on the content column (sheet root), same as max-w-3xl / 750px stream.
+            docked ? 'absolute' : 'fixed',
+            'left-1/2 z-50 -translate-x-1/2',
             'bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))]',
-            'sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-2xl sm:-translate-x-1/2',
+            portalColumn
+              ? 'w-[calc(100%-2rem)] max-w-[750px]'
+              : 'w-[calc(100%-1.5rem)] max-w-3xl sm:w-[calc(100%-2rem)]',
+            'flex flex-col overflow-hidden',
             expanded
               ? 'max-h-[min(88dvh,820px)]'
               : 'max-h-[min(62dvh,560px)]',

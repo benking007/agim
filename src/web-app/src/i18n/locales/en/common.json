@@ -444,6 +444,7 @@
       "loop": {
         "stripAria": "Loop status",
         "round": "Round {{round}}/{{max}}",
+        "usage": "{{dispatch}} dispatches · {{eval}} evals",
         "ended": "Ended",
         "endedMet": "Objective met",
         "dismiss": "Dismiss",

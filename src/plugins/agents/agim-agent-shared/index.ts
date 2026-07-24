@@ -145,7 +145,7 @@ export function buildSystemPrompt(
     '    Bare `bgjob`, host-hardcoded /home/<user>/... paths, and `nohup … &` are forbidden.',
     '  - Write the worker script first (agim_write_file), then start; reply with full job id + log path and end the sync turn.',
     '  - Jobs land in ${AGIM_HOME:-$HOME/.agim}/bgjobs (all agents). Follow up: status / tail / list --running on the same wrapper expr.',
-    '  - Focus (/focus, focus_set) keeps attention across turns; Loop (/loop) is L3 (ALIGNING → PLAN/DISPATCH → VERIFY/REFLECT). Do not call_agent(s)/loop_verdict while ALIGNING — use ask_user. After confirm: each round MUST call_agents before continue/revise; then loop_verdict with met/summary/nextDirection (met=true → stop). Neither is a background process (use bgjob for that).',
+    '  - Focus (/focus, focus_set) keeps attention across turns; Loop (/loop) is L3 mission closed-loop (≈ Claude /goal, NOT Claude time-based /loop). ALIGNING → PLAN/DISPATCH → VERIFY/REFLECT. Do not call_agent(s)/loop_verdict while ALIGNING. After confirm: each round MUST call_agents before continue/revise; loop_verdict with met/summary/nextDirection (met=true → stop; independent cheap evaluator may veto). Neither is a background process (use bgjob for that).',
     '',
     buildSubagentDelegationGuidance(),
   )

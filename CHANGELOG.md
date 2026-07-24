@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop polish (Claude blog A/B/C)**: taxonomy对照表 in docs/`/loop help`;
+  independent cheap evaluator before `stop`+`met=true`
+  (`AGIM_LOOP_EVALUATOR=auto|on|off`); cumulative Loop usage
+  (dispatches / evals / continue / revise) on status, summary, Portal strip.
 - **Loop R5 UX**: `GET /api/loop?threadId=` + Portal status strip showing
   对焦/派工/验收; ended summary Markdown (`formatLoopEndedSummary`);
   menu/slash copy aligned to Loop Engineering L3. R6 triggers deferred.

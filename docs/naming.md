@@ -40,6 +40,7 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | **Focus** | Per-thread attention anchor: auto-inject when **on**, stop inject when **off**, optional clear | `/focus`; replaces `/goal` (deprecated); SSOT [`architecture/focus.md`](./architecture/focus.md) |
 | **Loop / Loop Engineering**（Phase C；历史名 Long-engineering） | **L3 自动调度层**：目标 → 拆解 → 调度 Subagent → 验收 →（未达）反思再来 → 退出。≠ L2 Agent Loop（单代理 tool while） | `/loop`; `AGIM_LOOP_*` / `AGIM_ENGINEERING_*`; SSOT [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) |
 | **Agent Loop（L2）** | Single-agent Observe→Think→Tools→Results while not done | pi-agent / native tool loop — **not** `/loop` |
+| **≠ Claude Code `/loop`** | Claude 博客里的 `/loop` 是**定时再跑 prompt**（time-based）；Agim `/loop` ≈ 他们的 **`/goal` 级使命闭环**。定时触发属 Heartbeat/R6，不占用 `/loop` | 见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §对照 |
 | **goal**（deprecated） | Legacy sustained-objective slash/tools — migrate to **Focus**; do **not** revive completion on Focus | `/goal`, `long_task`, `complete_goal` → see [`goals.md`](./goals.md) banner |
 | **goal-critic** | In-process cheap on-track check — **not** a Subagent / not Loop observer; product copy may say focus-critic | `AGIM_NATIVE_CRITIC_*` |
 | **Heartbeat** | Wall-clock “anything to do?” — must **not** share LoopRun paths | `AGIM_HEARTBEAT_*` |

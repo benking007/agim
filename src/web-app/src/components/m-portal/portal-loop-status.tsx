@@ -29,6 +29,12 @@ export type LoopStatusDto = {
     gaps?: string[]
     nextDirection?: string
   }
+  usage?: {
+    dispatchCount: number
+    evaluatorCount: number
+    continueCount: number
+    reviseCount: number
+  }
   updatedAt: number
 }
 
@@ -142,6 +148,14 @@ export function PortalLoopStatus({
                 : t('chat.portal.loop.ended')}
             </span>
           )}
+          {loop.usage ? (
+            <span className={dark ? 'text-zinc-500' : 'text-zinc-400'}>
+              {t('chat.portal.loop.usage', {
+                dispatch: loop.usage.dispatchCount,
+                eval: loop.usage.evaluatorCount,
+              })}
+            </span>
+          ) : null}
         </div>
         {shortObj ? (
           <div className={cn(

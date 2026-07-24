@@ -114,10 +114,32 @@ export interface LoopRun {
   }
   /** R4: last structured verification */
   lastVerification?: LoopVerification & { at: number }
+  /** Independent evaluator (cheap) opinion on met=true stop claims */
+  lastEvaluator?: {
+    at: number
+    agree: boolean
+    reason: string
+    skipped?: boolean
+  }
+  /** Cumulative usage for this Loop (C — Loop 用量) */
+  usage: LoopUsage
   createdAt: number
   updatedAt: number
   lastVerdict?: LoopVerdict
   timeline: LoopTimelineEntry[]
+}
+
+export interface LoopUsage {
+  /** Accepted call_agent(s) across all rounds */
+  dispatchCount: number
+  /** Independent evaluator invocations */
+  evaluatorCount: number
+  continueCount: number
+  reviseCount: number
+}
+
+export function emptyLoopUsage(): LoopUsage {
+  return { dispatchCount: 0, evaluatorCount: 0, continueCount: 0, reviseCount: 0 }
 }
 
 /** Readable mission view for status / snippet / aligning prompts. */
@@ -176,7 +198,9 @@ export interface LoopStatusDto {
   dispatchesThisRound: number
   endReason?: LoopRun['endReason']
   lastVerification?: LoopVerification & { at: number }
+  lastEvaluator?: LoopRun['lastEvaluator']
   lastPlan?: LoopRun['lastPlan']
+  usage: LoopUsage
   openedFocus: boolean
   createdAt: number
   updatedAt: number
@@ -186,6 +210,7 @@ export interface LoopStatusDto {
 export function toLoopStatusDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopStatusDto {
   const view = getMissionView(run)
   const bucket = getLoopUxBucket(run)
+  const usage = run.usage || emptyLoopUsage()
   return {
     id: run.id,
     sessionKey: run.sessionKey || threadKey(run.platform, run.channelId, run.threadId),
@@ -201,7 +226,9 @@ export function toLoopStatusDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopSta
     dispatchesThisRound: run.dispatchesThisRound || 0,
     endReason: run.endReason,
     lastVerification: run.lastVerification,
+    lastEvaluator: run.lastEvaluator,
     lastPlan: run.lastPlan,
+    usage,
     openedFocus: run.openedFocus,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
@@ -226,6 +253,11 @@ export function formatLoopEndedSummary(run: LoopRun): string {
     `**退出条件**：${view.exitDescription || '（无）'}`,
     `轮次：${run.round}/${view.maxRounds} · 原因：\`${reason}\``,
   ]
+  const usage = run.usage || emptyLoopUsage()
+  lines.push(
+    `用量：派工 ${usage.dispatchCount} · 独立验收 ${usage.evaluatorCount}`
+    + ` · continue ${usage.continueCount} · revise ${usage.reviseCount}`,
+  )
   if (view.acceptance) lines.push(`**验收**：${view.acceptance}`)
   if (run.lastVerification) {
     lines.push(
@@ -236,6 +268,11 @@ export function formatLoopEndedSummary(run: LoopRun): string {
     }
   } else if (run.lastVerdict?.summary) {
     lines.push(`摘要：${run.lastVerdict.summary}`)
+  }
+  if (run.lastEvaluator && !run.lastEvaluator.skipped) {
+    lines.push(
+      `独立验收：${run.lastEvaluator.agree ? '同意' : '不同意'} — ${run.lastEvaluator.reason}`,
+    )
   }
   return lines.join('\n')
 }
@@ -299,6 +336,16 @@ function normalizeRun(raw: LoopRun): LoopRun {
   if (!raw.maxRounds || raw.maxRounds < 1) raw.maxRounds = defaultMaxRounds()
   if (typeof raw.dispatchesThisRound !== 'number' || raw.dispatchesThisRound < 0) {
     raw.dispatchesThisRound = 0
+  }
+  if (!raw.usage || typeof raw.usage !== 'object') {
+    raw.usage = emptyLoopUsage()
+  } else {
+    raw.usage = {
+      dispatchCount: Math.max(0, Number(raw.usage.dispatchCount) || 0),
+      evaluatorCount: Math.max(0, Number(raw.usage.evaluatorCount) || 0),
+      continueCount: Math.max(0, Number(raw.usage.continueCount) || 0),
+      reviseCount: Math.max(0, Number(raw.usage.reviseCount) || 0),
+    }
   }
   syncMissionMirrors(raw)
   return raw
@@ -650,6 +697,7 @@ export function startLoop(input: {
     draftObjective: objective || undefined,
     draftExitDescription: exitDescription || undefined,
     dispatchesThisRound: 0,
+    usage: emptyLoopUsage(),
     createdAt: now,
     updatedAt: now,
     timeline: [],
@@ -786,6 +834,8 @@ export function noteLoopDispatch(
 
   const n = Math.max(1, input.count ?? 1)
   run.dispatchesThisRound = (run.dispatchesThisRound || 0) + n
+  if (!run.usage) run.usage = emptyLoopUsage()
+  run.usage.dispatchCount += n
   if (input.tasks && input.tasks.length > 0) {
     run.lastPlan = {
       at: Date.now(),
@@ -802,6 +852,35 @@ export function noteLoopDispatch(
   }
   run.updatedAt = Date.now()
   pushTimeline(run, 'system', `dispatch +${n} (round total ${run.dispatchesThisRound})`)
+  writeRun(run)
+  return run
+}
+
+/** Record independent evaluator result (does not count as R3 dispatch). */
+export function noteLoopEvaluator(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  result: { agree: boolean; reason: string; skipped?: boolean },
+): LoopRun | null {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return null
+  if (!run.usage) run.usage = emptyLoopUsage()
+  if (!result.skipped) run.usage.evaluatorCount += 1
+  run.lastEvaluator = {
+    at: Date.now(),
+    agree: result.agree,
+    reason: (result.reason || '').slice(0, 500),
+    ...(result.skipped ? { skipped: true } : {}),
+  }
+  run.updatedAt = Date.now()
+  pushTimeline(
+    run,
+    'system',
+    result.skipped
+      ? `evaluator skipped: ${run.lastEvaluator.reason.slice(0, 120)}`
+      : `evaluator ${result.agree ? 'agree' : 'disagree'}: ${run.lastEvaluator.reason.slice(0, 120)}`,
+  )
   writeRun(run)
   return run
 }
@@ -941,6 +1020,9 @@ export function applyLoopVerdict(
   }
 
   // REFLECT → next PLANNING
+  if (!run.usage) run.usage = emptyLoopUsage()
+  if (verdict.decision === 'continue') run.usage.continueCount += 1
+  if (verdict.decision === 'revise') run.usage.reviseCount += 1
   run.round += 1
   run.dispatchesThisRound = 0
   run.status = 'planning'
@@ -1086,6 +1168,11 @@ export function formatLoopStatus(run: LoopRun): string {
     lines.push(`本轮派工：${run.dispatchesThisRound || 0}${
       (run.dispatchesThisRound || 0) < 1 ? '（continue/revise 前至少 1 次 call_agent(s)）' : ''
     }`)
+    const usage = run.usage || emptyLoopUsage()
+    lines.push(
+      `累计用量：派工 ${usage.dispatchCount} · 独立验收 ${usage.evaluatorCount}`
+      + ` · continue ${usage.continueCount} · revise ${usage.reviseCount}`,
+    )
     if (run.lastPlan?.tasks?.length) {
       lines.push('最近计划：')
       for (const t of run.lastPlan.tasks.slice(0, 5)) {

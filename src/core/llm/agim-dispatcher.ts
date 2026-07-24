@@ -503,7 +503,8 @@ export function getAgimTools(): ToolDef[] {
         'Loop VERIFY/REFLECT verdict (not during ALIGNING). continue/revise require ≥1 '
         + 'call_agent(s) this round (R3) AND structured verification (R4): met=false, '
         + 'summary, nextDirection (gaps recommended). met=true must use decision=stop '
-        + '(ends as objective_met). stop without met abandons. Exit truncates on maxRounds/maxWallMs.',
+        + '(independent cheap evaluator may veto; AGIM_LOOP_EVALUATOR=auto|on|off). '
+        + 'stop without met abandons. Exit truncates on maxRounds/maxWallMs.',
       parameters: {
         type: 'object',
         properties: {
@@ -1177,17 +1178,53 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'loop_verdict')
             if (gate) return err(gate)
           }
-          const { applyLoopVerdict } = await import('../loop-run.js')
+          const { applyLoopVerdict, getActiveLoop } = await import('../loop-run.js')
           const decision = String(args.decision || '')
           if (decision !== 'continue' && decision !== 'revise' && decision !== 'stop') {
             return err('loop_verdict failed: decision must be continue|revise|stop')
           }
           const summary = typeof args.summary === 'string' ? args.summary.trim() : ''
           if (!summary) return err('loop_verdict failed: summary required')
+          const met = typeof args.met === 'boolean' ? args.met : undefined
+
+          // B: independent cheap evaluator before objective_met
+          let evaluatorNote: { skipped: boolean; agree?: boolean; reason: string } | undefined
+          if (decision === 'stop' && met === true) {
+            const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+            if (active) {
+              const { evaluateLoopObjectiveMet } = await import('../loop-evaluator.js')
+              const evalRoute: RouteContext = {
+                channelId: ctx.channelId,
+                threadId: ctx.threadId,
+                platform: ctx.platform,
+                userId: ctx.userId,
+                defaultAgent: ctx.callerAgent,
+                traceId: `loop-eval-${Date.now()}`,
+                logger: (ctx.logger ?? rootLogger).child({ component: 'loop-evaluator' }),
+                ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
+              }
+              const ev = await evaluateLoopObjectiveMet({
+                run: active,
+                claimSummary: summary,
+                callerAgent: ctx.callerAgent,
+                routeCtx: evalRoute,
+                signal,
+              })
+              evaluatorNote = { skipped: ev.skipped, agree: ev.agree, reason: ev.reason }
+              if (!ev.proceed) {
+                return err(
+                  'loop_verdict failed: evaluator_disagree — independent cheap verifier '
+                  + `did not accept met=true (${ev.reason}). Fix gaps or continue/revise; `
+                  + 'or set AGIM_LOOP_EVALUATOR=off to skip.',
+                )
+              }
+            }
+          }
+
           const r = applyLoopVerdict(ctx.platform, ctx.channelId, ctx.threadId, {
             decision,
             summary,
-            met: typeof args.met === 'boolean' ? args.met : undefined,
+            met,
             nextDirection: typeof args.nextDirection === 'string' ? args.nextDirection : undefined,
             nextHint: typeof args.nextHint === 'string' ? args.nextHint : undefined,
             gaps: Array.isArray(args.gaps)
@@ -1232,8 +1269,11 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             endReason: r.run.endReason,
             lastVerdict: r.run.lastVerdict,
             lastVerification: r.run.lastVerification,
+            lastEvaluator: r.run.lastEvaluator,
             openedFocus: r.run.openedFocus,
             dispatchesThisRound: r.run.dispatchesThisRound,
+            usage: r.run.usage,
+            evaluator: evaluatorNote,
           }))
         }
         case 'long_task':

@@ -279,6 +279,12 @@ export const api = {
           nextDirection?: string
           at: number
         }
+        usage?: {
+          dispatchCount: number
+          evaluatorCount: number
+          continueCount: number
+          reviseCount: number
+        }
         updatedAt: number
       }
     }>('/api/loop', { query }),

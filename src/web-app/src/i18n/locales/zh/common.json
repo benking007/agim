@@ -444,6 +444,7 @@
       "loop": {
         "stripAria": "Loop 状态",
         "round": "第 {{round}}/{{max}} 轮",
+        "usage": "派工 {{dispatch}} · 验收 {{eval}}",
         "ended": "已结束",
         "endedMet": "达标结束",
         "dismiss": "关闭",

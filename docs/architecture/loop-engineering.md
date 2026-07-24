@@ -249,7 +249,28 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 
 ---
 
-## 8. 非目标
+## 8. 与 Claude Code「Loop Engineering」对照
+
+来源：[Getting started with loops](https://claude.com/blog/getting-started-with-loops)（Claude Code 团队分类）。
+
+| Claude 类型 | 你移交什么 | Claude 原语 | **Agim 对应** |
+|-------------|------------|-------------|----------------|
+| Turn-based | 检查 | 普通对话 / skills | **L2 Agent Loop**（每轮工具循环） |
+| Goal-based | 停止条件 | **`/goal`**（达成或轮次上限；可有独立 evaluator） | **`/loop`（本 SSOT）** + R4 `met`/`nextDirection` + 可选 **cheap 独立验收** |
+| Time-based | 触发 | **`/loop` / `/schedule`**（按间隔再跑） | **Heartbeat / 提醒**（R6 暂缓；**不**占用 `/loop` 名） |
+| Proactive | prompt + 组合 | schedule × goal × workflow | 未做；勿与使命 `/loop` 混谈 |
+
+**命名要点**：用户从 Claude 过来时，听到「Loop」常以为是定时轮询——在 Agim 里请说「使命闭环 / Loop Engineering L3」；定时能力另开刀。
+
+**已吸收**：
+
+- **A** 本文对照表 + `/loop help` + naming  
+- **B** `stop`+`met=true` 前 `AGIM_LOOP_EVALUATOR`（默认 `auto`：有 `llmRoles.cheap` 则独立验收）  
+- **C** Loop 累计用量（派工 / 独立验收 / continue / revise）进 status、结束总结、Portal 条  
+
+---
+
+## 9. 非目标
 
 - 把 L2 Agent Loop 再包一层皮叫 Loop  
 - 静默默认退出条件（禁止「没说就按 12 轮」不经确认）  
@@ -259,15 +280,16 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 
 ---
 
-## 9. TL;DR
+## 10. TL;DR
 
 > **Loop = L3：先对焦（目标+退出条件）→ 拆解 → 子代理 → 验收 →（未达）再来 → 退出。**  
 > **两硬输入缺一不可；缺则 ALIGNING，不派工。**  
-> 落地节奏：R1 门禁 → R2 存储 → R3 调度 → R4 验收 → R5 UX → R6 触发。
+> **≠ Claude 的定时 `/loop`；≈ 他们的 `/goal` 级闭环。**  
+> 节奏：R1–R5 已齐；R6 触发暂缓。
 
 ---
 
-## 10. 修订记录
+## 11. 修订记录
 
 | 日期 | 变更 |
 |------|------|
@@ -279,3 +301,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-24 | **R3 落地**：PLAN+DISPATCH 门禁（本轮须派工才能 continue/revise） |
 | 2026-07-24 | **R4 落地**：VERIFY+REFLECT 结构化验收 + exit 截断 |
 | 2026-07-24 | **R5 落地**：Portal 状态条 + `/api/loop` + 结束总结；R6 暂缓 |
+| 2026-07-24 | **吸收 Claude 文 A/B/C**：对照表、cheap 独立验收、Loop 用量 |

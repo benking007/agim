@@ -232,10 +232,11 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | R2 | Mission SSOT 持久化 — **已落地**（#233） |
 | R3 | PLAN + DISPATCH — **已落地**（#234） |
 | R4 | VERIFY + REFLECT — **已落地**（#235） |
-| **R5** | Portal 状态条 + 结束总结 + 菜单 L3 文案 — **本 PR** |
+| R5 | Portal 状态条 + 结束总结 + 菜单 L3 文案 — **已落地**（#236） |
+| + | Claude 文吸收 A/B/C：对照表、cheap 独立验收、Loop 用量 — **本 PR** |
 | R6 | 可选触发器（仅 start，仍走对焦）— **暂缓** |
 
-**R1–R5 完成后暂停；R6 另开刀。**
+**R1–R5 + A/B/C 后暂停；R6 另开刀。**
 
 #### 非本阶段
 

@@ -44,6 +44,7 @@ import {
 } from '../../../core/llm/todo-items.js'
 import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
+import { evaluateLoopDispatchGate } from '../../../core/loop-dispatch-gate.js'
 import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
@@ -1079,6 +1080,27 @@ export class NativeAgentAdapter implements AgentAdapter {
             preview: todoGate.reason,
           })
           return { block: true, reason: todoGate.reason }
+        }
+        // Loop R3: before first dispatch this round, parent must call_agents
+        // (not web_fetch / exec the mission alone).
+        if (opts?.platform && opts?.threadId) {
+          const loopGate = evaluateLoopDispatchGate(
+            opts.platform,
+            opts.channelId ?? '',
+            opts.threadId,
+            ev.toolName,
+          )
+          if (!loopGate.ok) {
+            emitToolActivity({
+              id: ev.toolCallId,
+              label: ev.toolName,
+              status: 'denied',
+              startedAt: Date.now(),
+              finishedAt: Date.now(),
+              preview: loopGate.reason,
+            })
+            return { block: true, reason: loopGate.reason }
+          }
         }
         // Subagent: surface pending card(s) immediately (before HITL / A2A).
         // A2A later updates the same step id(s) via activityStepId.

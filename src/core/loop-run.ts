@@ -491,7 +491,11 @@ export function parseExitConstraints(exitDescription: string): {
   const text = exitDescription.trim()
   if (!text) return {}
   let maxRounds: number | undefined
-  const roundsHit = text.match(/最多\s*(\d+)\s*轮/) || text.match(/(\d+)\s*rounds?/i)
+  const roundsHit =
+    text.match(/最多\s*(\d+)\s*轮/)
+    || text.match(/重复\s*(\d+)\s*轮/)
+    || text.match(/(\d+)\s*轮\s*结束/)
+    || text.match(/(\d+)\s*rounds?/i)
   if (roundsHit) {
     const n = Number.parseInt(roundsHit[1]!, 10)
     if (Number.isFinite(n) && n > 0) maxRounds = Math.min(n, 100)
@@ -1097,6 +1101,9 @@ export function buildLoopSnippet(
     lines.push(
       'MUST decompose the objective into tasks and call mcp__agim__call_agents '
         + '(or call_agent) at least once this round before loop_verdict continue/revise. '
+        + 'HARD GATE: do NOT web_fetch / web_search / exec / write the mission yourself '
+        + 'until after the first call_agents — those tools are refused (AGIM_LOOP_DISPATCH_GATE). '
+        + 'Write a short todo plan if needed, then immediately call_agents. '
         + 'Serial dispatch is fine. loop_verdict stop may end without dispatch. User can /loop stop.',
     )
   } else {

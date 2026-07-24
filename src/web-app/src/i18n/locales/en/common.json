@@ -314,6 +314,8 @@
     "subagentResultEmpty": "No result recorded.",
     "subagentResultRunning": "Subagent still running…",
     "subagentLoading": "Loading…",
+    "subagentSheetExpand": "Expand sheet",
+    "subagentSheetCollapse": "Collapse sheet",
     "llmSettings": "Agim Agent settings",
     "nativeSetupRequired": "Agim Agent is not configured. Paste a DeepSeek API key to enable in one step (or pick another vendor).",
     "nativeSetupAction": "Configure now",

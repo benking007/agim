@@ -84,7 +84,7 @@ describe('ChatSubagentCard', () => {
     expect(screen.getAllByText(/Waiting for subagent|等待子代理/).length).toBeGreaterThanOrEqual(1)
   })
 
-  it('opens detail dialog with parent prompt and result', async () => {
+  it('opens composer-docked sheet with parent prompt and result', async () => {
     const user = userEvent.setup()
     render(<ChatSubagentCard activity={activity({
       status: 'success',
@@ -108,6 +108,9 @@ describe('ChatSubagentCard', () => {
       expect(screen.getByText('PARENT_PROMPT_FOR_10')).toBeInTheDocument()
       expect(screen.getByText('RESULT_BODY_10')).toBeInTheDocument()
     })
+    // Sheet chrome: expand + close affordances (Cursor-style half-float).
+    expect(screen.getByRole('button', { name: /Expand sheet|扩大浮层/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Close|关闭/ })).toBeInTheDocument()
   })
 
   it('resolves jobId from a2a-<id> when jobId field missing', async () => {

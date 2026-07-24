@@ -1,23 +1,26 @@
 /**
- * Modal: Subagent parent prompt + execution result (fetched via GET /api/jobs/:id).
+ * Composer-docked Subagent detail sheet.
+ *
+ * Half-floats above the chat input (Cursor-style): expands upward, capped
+ * height, internal scroll. Fetches parent prompt + result via GET /api/jobs/:id.
  */
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, Loader2 } from 'lucide-react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import {
+  Bot,
+  Expand,
+  Loader2,
+  Minimize2,
+  X,
+} from 'lucide-react'
 
 import { api } from '@/lib/api/endpoints'
 import type { Job } from '@/types/api'
 import type { ChatActivityStep } from '@/hooks/use-chat'
 import { resolveSubagentJobId, isSubagentLive } from '@/lib/activity-subagent'
 import { cn } from '@/lib/utils'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 
 export interface SubagentDetailDialogProps {
   open: boolean
@@ -36,9 +39,14 @@ export function SubagentDetailDialog({
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   const jobId = step ? resolveSubagentJobId(step) : undefined
   const live = step ? isSubagentLive(step) : false
+
+  useEffect(() => {
+    if (!open) setExpanded(false)
+  }, [open])
 
   useEffect(() => {
     if (!open || !step || jobId == null) {
@@ -58,7 +66,6 @@ export function SubagentDetailDialog({
         if (cancelled) return
         setJob(res.job)
         setLoading(false)
-        // Poll while the Subagent (or job) is still running.
         const stillRunning = res.job.status === 'pending' || res.job.status === 'running' || live
         if (stillRunning) {
           timer = setTimeout(() => { void load() }, 1200)
@@ -82,90 +89,154 @@ export function SubagentDetailDialog({
     || (live ? step?.preview : undefined)
     || ''
   const result = job?.result
-    || (job?.error ? undefined : undefined)
   const failText = job?.error || (step?.status === 'error' ? step.preview : undefined)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('sm:max-w-2xl', dark && 'border-zinc-800 bg-zinc-950 text-zinc-100')}>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Bot className={cn('h-4 w-4', dark ? 'text-teal-400' : 'text-accent')} />
-            {t('chat.subagentDetailTitle', {
-              agent: step?.label ?? '—',
-              defaultValue: 'Subagent · {{agent}}',
-            })}
-          </DialogTitle>
-          <DialogDescription className={dark ? 'text-zinc-500' : undefined}>
-            {jobId != null
-              ? t('chat.subagentDetailJob', {
-                  jobId,
-                  defaultValue: 'Job #{{jobId}}',
-                })
-              : t('chat.subagentDetailNoJob', {
-                  defaultValue: 'No job id on this step yet.',
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay
+          className={cn(
+            'fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px]',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out',
+            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          )}
+        />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className={cn(
+            // Dock above the composer / status bar — expand upward.
+            'fixed inset-x-3 z-50 flex flex-col overflow-hidden',
+            'bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))]',
+            'sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-2xl sm:-translate-x-1/2',
+            expanded
+              ? 'max-h-[min(88dvh,820px)]'
+              : 'max-h-[min(62dvh,560px)]',
+            'rounded-2xl border shadow-2xl',
+            'duration-200',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out',
+            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+            'data-[state=closed]:slide-out-to-bottom-4 data-[state=open]:slide-in-from-bottom-4',
+            dark
+              ? 'border-zinc-800 bg-zinc-950 text-zinc-100'
+              : 'border-border bg-surface text-text',
+          )}
+        >
+          <header className={cn(
+            'flex shrink-0 items-center gap-2 border-b px-4 py-3',
+            dark ? 'border-zinc-800' : 'border-border/70',
+          )}
+          >
+            <Bot className={cn('h-4 w-4 shrink-0', dark ? 'text-teal-400' : 'text-accent')} />
+            <div className="min-w-0 flex-1">
+              <DialogPrimitive.Title className="truncate text-[15px] font-semibold leading-tight tracking-tight">
+                {t('chat.subagentDetailTitle', {
+                  agent: step?.label ?? '—',
+                  defaultValue: 'Subagent · {{agent}}',
                 })}
-          </DialogDescription>
-        </DialogHeader>
+              </DialogPrimitive.Title>
+              <p className={cn('truncate text-[11px]', dark ? 'text-zinc-500' : 'text-text-muted')}>
+                {jobId != null
+                  ? t('chat.subagentDetailJob', {
+                      jobId,
+                      defaultValue: 'Job #{{jobId}}',
+                    })
+                  : t('chat.subagentDetailNoJob', {
+                      defaultValue: 'No job id on this step yet.',
+                    })}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className={cn(
+                'rounded-md p-1.5 transition',
+                dark
+                  ? 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100'
+                  : 'text-text-dim hover:bg-surface-2 hover:text-text',
+              )}
+              aria-label={expanded
+                ? t('chat.subagentSheetCollapse', { defaultValue: 'Collapse sheet' })
+                : t('chat.subagentSheetExpand', { defaultValue: 'Expand sheet' })}
+              title={expanded
+                ? t('chat.subagentSheetCollapse', { defaultValue: 'Collapse sheet' })
+                : t('chat.subagentSheetExpand', { defaultValue: 'Expand sheet' })}
+            >
+              {expanded
+                ? <Minimize2 className="h-4 w-4" />
+                : <Expand className="h-4 w-4" />}
+            </button>
+            <DialogPrimitive.Close
+              className={cn(
+                'rounded-md p-1.5 transition',
+                dark
+                  ? 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100'
+                  : 'text-text-dim hover:bg-surface-2 hover:text-text',
+              )}
+              aria-label={t('actions.close', { defaultValue: 'Close' })}
+            >
+              <X className="h-4 w-4" />
+            </DialogPrimitive.Close>
+          </header>
 
-        <div className="space-y-4">
-          <section className="space-y-1.5">
-            <h3 className={cn(
-              'text-[11px] font-semibold uppercase tracking-wide',
-              dark ? 'text-zinc-500' : 'text-text-muted',
-            )}
-            >
-              {t('chat.subagentPromptHeading', { defaultValue: 'Parent prompt' })}
-            </h3>
-            <pre className={cn(
-              'max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md px-3 py-2 font-mono text-[12px] leading-relaxed',
-              dark ? 'bg-zinc-900 text-zinc-300' : 'bg-surface-2 text-text-dim',
-            )}
-            >
-              {prompt
-                || (loading
-                  ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
-                  : t('chat.subagentPromptEmpty', { defaultValue: 'Prompt not available yet.' }))}
-            </pre>
-          </section>
-
-          <section className="space-y-1.5">
-            <h3 className={cn(
-              'flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide',
-              dark ? 'text-zinc-500' : 'text-text-muted',
-            )}
-            >
-              {t('chat.subagentResultHeading', { defaultValue: 'Result' })}
-              {live && <Loader2 className="h-3 w-3 animate-spin text-teal-500" />}
-            </h3>
-            {failText ? (
-              <pre className={cn(
-                'max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md px-3 py-2 font-mono text-[12px] leading-relaxed text-danger',
-                dark ? 'bg-zinc-900' : 'bg-surface-2',
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-3">
+            <section className="space-y-1.5">
+              <h3 className={cn(
+                'text-[11px] font-semibold uppercase tracking-wide',
+                dark ? 'text-zinc-500' : 'text-text-muted',
               )}
               >
-                {failText}
-              </pre>
-            ) : (
+                {t('chat.subagentPromptHeading', { defaultValue: 'Parent prompt' })}
+              </h3>
               <pre className={cn(
-                'max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md px-3 py-2 font-mono text-[12px] leading-relaxed',
+                'whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 font-mono text-[12px] leading-relaxed',
                 dark ? 'bg-zinc-900 text-zinc-300' : 'bg-surface-2 text-text-dim',
               )}
               >
-                {result
-                  || (live
-                    ? t('chat.subagentResultRunning', { defaultValue: 'Subagent still running…' })
-                    : (loading
-                        ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
-                        : t('chat.subagentResultEmpty', { defaultValue: 'No result recorded.' })))}
+                {prompt
+                  || (loading
+                    ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
+                    : t('chat.subagentPromptEmpty', { defaultValue: 'Prompt not available yet.' }))}
               </pre>
-            )}
-            {error && (
-              <p className="text-xs text-danger">{error}</p>
-            )}
-          </section>
-        </div>
-      </DialogContent>
-    </Dialog>
+            </section>
+
+            <section className="space-y-1.5">
+              <h3 className={cn(
+                'flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide',
+                dark ? 'text-zinc-500' : 'text-text-muted',
+              )}
+              >
+                {t('chat.subagentResultHeading', { defaultValue: 'Result' })}
+                {live && <Loader2 className="h-3 w-3 animate-spin text-teal-500" />}
+              </h3>
+              {failText ? (
+                <pre className={cn(
+                  'whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 font-mono text-[12px] leading-relaxed text-danger',
+                  dark ? 'bg-zinc-900' : 'bg-surface-2',
+                )}
+                >
+                  {failText}
+                </pre>
+              ) : (
+                <pre className={cn(
+                  'whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 font-mono text-[12px] leading-relaxed',
+                  dark ? 'bg-zinc-900 text-zinc-300' : 'bg-surface-2 text-text-dim',
+                )}
+                >
+                  {result
+                    || (live
+                      ? t('chat.subagentResultRunning', { defaultValue: 'Subagent still running…' })
+                      : (loading
+                          ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
+                          : t('chat.subagentResultEmpty', { defaultValue: 'No result recorded.' })))}
+                </pre>
+              )}
+              {error && (
+                <p className="text-xs text-danger">{error}</p>
+              )}
+            </section>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }

@@ -516,12 +516,6 @@
         "runLabel": "Agent running",
         "approvalLabel": "Awaiting approval",
         "askLabel": "Awaiting your reply",
-        "loopBucket": {
-          "aligning": "Awaiting align",
-          "dispatch": "Awaiting dispatch",
-          "verify": "Awaiting verify",
-          "ended": "Ended"
-        },
         "bgjobDone": "Background job finished",
         "needsYouCount": "{{count}} need you",
         "section": {

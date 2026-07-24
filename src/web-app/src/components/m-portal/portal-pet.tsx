@@ -11,7 +11,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, Compass, Loader2, MessageCircleQuestion, ShieldAlert, Terminal, X } from 'lucide-react'
+import { CheckCircle2, Loader2, MessageCircleQuestion, ShieldAlert, Terminal, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type PetTaskKind = 'loop' | 'run' | 'approval' | 'ask' | 'bgjob'
@@ -164,11 +164,11 @@ function PixelSprite({
 }
 
 function KindIcon({ kind, className }: { kind: PetTaskKind; className?: string }): JSX.Element {
-  if (kind === 'loop') return <Compass className={className} />
   if (kind === 'approval') return <ShieldAlert className={className} />
   if (kind === 'ask') return <MessageCircleQuestion className={className} />
   if (kind === 'bgjob') return <Terminal className={className} />
-  return <Loader2 className={cn(className, 'animate-spin')} />
+  // loop + run share Loader2; only run spins
+  return <Loader2 className={cn(className, kind === 'run' && 'animate-spin')} />
 }
 
 function kindTone(kind: PetTaskKind): string {

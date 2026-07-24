@@ -516,12 +516,6 @@
         "runLabel": "Agent 执行中",
         "approvalLabel": "等待审批",
         "askLabel": "等待你的回答",
-        "loopBucket": {
-          "aligning": "待对焦",
-          "dispatch": "待派工",
-          "verify": "待验收",
-          "ended": "已结束"
-        },
         "bgjobDone": "后台任务完成",
         "needsYouCount": "{{count}} 待你处理",
         "section": {

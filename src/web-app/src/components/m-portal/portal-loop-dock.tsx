@@ -4,6 +4,7 @@
  * - Ready (dispatch/verify): "Act now" sheet like ApprovalDock
  *
  * Status chrome lives on the pet — these only ask for user action.
+ * Polling + pet-task formatting stay in this lazy chunk (entry budget).
  */
 
 import { useEffect, useState } from 'react'
@@ -13,9 +14,14 @@ import { Compass, Play, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { LoopStatusDto } from '@/lib/api/loop'
+import { usePortalLoop } from './use-portal-loop'
+import type { PetTaskItem } from './portal-pet'
 
 export interface PortalLoopDockProps {
-  loop: LoopStatusDto | null
+  threadId: string | null | undefined
+  refreshKey?: number | string
+  /** Compact Loop row for the pet panel / bubble. */
+  onLoopPetTask?: (task: PetTaskItem | null) => void
   dark?: boolean
   /** True while an agent turn is in flight — hide Act Now. */
   busy?: boolean
@@ -44,8 +50,29 @@ function actNowPrompt(loop: LoopStatusDto, zh: boolean): string {
     : 'Start: decompose and call_agents to dispatch Subagents this round — do not research alone.'
 }
 
+function toPetTask(loop: LoopStatusDto, zh: boolean): PetTaskItem {
+  const obj = (loop.objective || '').trim()
+  const shortObj = obj.length > 36 ? `${obj.slice(0, 36)}…` : obj
+  const round = zh
+    ? `第 ${loop.round}/${loop.maxRounds} 轮`
+    : `R${loop.round}/${loop.maxRounds}`
+  const usage = loop.usage
+    ? (zh
+      ? `派工 ${loop.usage.dispatchCount} · 验收 ${loop.usage.evaluatorCount}`
+      : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} eval`)
+    : ''
+  return {
+    id: `loop-${loop.id}`,
+    kind: 'loop',
+    label: loop.bucketLabel,
+    detail: [shortObj || undefined, round, usage].filter(Boolean).join(' · ') || undefined,
+  }
+}
+
 export function PortalLoopDock({
-  loop,
+  threadId,
+  refreshKey,
+  onLoopPetTask,
   dark,
   busy,
   hasBlockingDock,
@@ -54,7 +81,16 @@ export function PortalLoopDock({
   className,
 }: PortalLoopDockProps): JSX.Element | null {
   const { i18n } = useTranslation()
-  const zh = i18n.language?.startsWith('zh')
+  const zh = Boolean(i18n.language?.startsWith('zh'))
+  const { loop } = usePortalLoop(threadId, refreshKey)
+
+  useEffect(() => {
+    onLoopPetTask?.(loop?.active ? toPetTask(loop, zh) : null)
+  }, [loop, onLoopPetTask, zh])
+
+  useEffect(() => () => {
+    onLoopPetTask?.(null)
+  }, [onLoopPetTask])
 
   if (!loop?.active) return null
   if (loop.bucket === 'aligning') {

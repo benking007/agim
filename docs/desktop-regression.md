@@ -75,4 +75,24 @@ node tools/phase-a-acceptance.mjs
 | `AGIM_AUTO_APPROVE=0` + 需审批工具 | 审批卡紧凑；子代理审批可标 origin；Settings 未配置时显示 OFF |
 | `AGIM_AUTO_APPROVE=1` | 主/子共用自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
 
-生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。
+生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。\n\n## 4. Phase B（并行 call_agents）验收
+
+```bash
+# terminal A — mock LLM（含 PHASE_B_* 慢车道探针）
+node tools/mock-llm-server.mjs
+
+# terminal B — Phase B 构建后的 agim
+export AGIM_URL_ALLOW_PRIVATE=1 AGIM_WEB_AUTH=off AGIM_TODO_GATE=off
+export AGIM_AUTO_APPROVE=1 AGIM_ALLOWED_USERS='*'
+# PARALLEL 默认 on；可显式：
+export AGIM_SUBAGENT_PARALLEL=1 AGIM_SUBAGENT_PARALLEL_MAX=3
+export AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN=3
+node dist/cli.js start </dev/null
+
+# terminal C
+node tools/phase-b-acceptance.mjs
+# report → /opt/cursor/artifacts/phase-b-acceptance-report.json
+```
+
+覆盖：`call_agents` 三路 fan-out、`toolCallId#i` activity、三 `jobId`、mock `peakSlow≥2`（真并行）、墙钟低于串行、`agim/cheap` 标签。
+

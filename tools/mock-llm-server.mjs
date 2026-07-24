@@ -12,18 +12,29 @@
  *   PHASE_A1_VACUOUS_TEST  → tool_call call_agent (no isolate/role/backend)
  *   PHASE_A2_SERIAL_TEST   → first call_agent cheap, then isolate after tool result
  *   PHASE_A1_SUBAGENT_BRIEF → nested Subagent reply (plain text)
+ *   PHASE_B_PARALLEL_TEST  → tool_call call_agents with 3 slow lanes
+ *   PHASE_B_SUBAGENT_SLOW  → nested Subagent reply after ~800ms (concurrency probe)
  */
 import { createServer } from 'node:http'
 import { appendFileSync, writeFileSync } from 'node:fs'
 
 const PORT = Number(process.env.MOCK_LLM_PORT || 18080)
 const LOG = process.env.MOCK_LLM_LOG || '/tmp/agim-mock-llm.jsonl'
+const SLOW_MS = Number(process.env.MOCK_LLM_SLOW_MS || 800)
 writeFileSync(LOG, '', 'utf8')
 
 const state = {
   requests: [],
   /** Per-conversation fingerprint → how many assistant tool rounds already done. */
   rounds: new Map(),
+  /** Concurrency probe for PHASE_B_SUBAGENT_SLOW nested calls. */
+  liveSlow: 0,
+  peakSlow: 0,
+  slowHits: 0,
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms))
 }
 
 function lastUserText(messages) {
@@ -106,6 +117,7 @@ function decide(body) {
     toolResults,
     hasSubagentHeuristics: /Subagent delegation|do not spawn for trivial|Brief four-piece|do not parallel-write|Objective \+ Output format/i.test(heuristicHaystack),
     systemHasCallAgent: /mcp__agim__call_agent|call_agent/i.test(heuristicHaystack),
+    systemHasCallAgents: /mcp__agim__call_agents|call_agents/i.test(heuristicHaystack),
     systemHead: sys.slice(0, 240).replace(/\s+/g, ' '),
     systemLen: sys.length,
     toolsHead: toolsBlob.slice(0, 280).replace(/\s+/g, ' '),
@@ -114,6 +126,11 @@ function decide(body) {
   try { appendFileSync(LOG, `${JSON.stringify(entry)}\n`) } catch { /* ignore */ }
 
   // Nested Subagent sessions get a fresh transcript with our brief marker.
+  if (/PHASE_B_SUBAGENT_SLOW/i.test(user)) {
+    const lane = (user.match(/lane=(\w+)/i) || [])[1] || '?'
+    return textReply(`SUBAGENT_OK SLOW lane=${lane} model=${model}`)
+  }
+
   if (/PHASE_A1_SUBAGENT_BRIEF/i.test(user)) {
     if (/LONG_RESULT/i.test(user)) {
       const lines = Array.from({ length: 80 }, (_, i) =>
@@ -295,6 +312,26 @@ function decide(body) {
     return textReply('PARENT_DONE serial-two-subagents')
   }
 
+  if (/PHASE_B_PARALLEL_TEST/i.test(user)) {
+    if (toolResults === 0) {
+      const brief = (lane) => (
+        `PHASE_B_SUBAGENT_SLOW lane=${lane}\n`
+        + `Objective: reply SUBAGENT_OK SLOW for lane ${lane}\n`
+        + 'Output format: one line\n'
+        + 'Boundaries: do not write files\n'
+        + 'Done-when: printed SUBAGENT_OK SLOW'
+      )
+      return toolCall('mcp__agim__call_agents', {
+        tasks: [
+          { agent: 'agim', isolate: true, prompt: brief('0') },
+          { agent: 'agim', isolate: true, prompt: brief('1') },
+          { agent: 'agim', role: 'cheap', prompt: brief('2') },
+        ],
+      }, 'call_agents_b')
+    }
+    return textReply('PARENT_DONE parallel-fanout')
+  }
+
   // Default / A3 probe — answer without tools.
   if (/PHASE_A3_SIMPLE/i.test(user)) {
     return textReply('2')
@@ -356,17 +393,30 @@ function writeSse(res, payload) {
 const server = createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, requests: state.requests.length }))
+    res.end(JSON.stringify({
+      ok: true,
+      requests: state.requests.length,
+      peakSlow: state.peakSlow,
+      slowHits: state.slowHits,
+    }))
     return
   }
   if (req.method === 'GET' && req.url === '/__mock/log') {
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ requests: state.requests }))
+    res.end(JSON.stringify({
+      requests: state.requests,
+      peakSlow: state.peakSlow,
+      slowHits: state.slowHits,
+      liveSlow: state.liveSlow,
+    }))
     return
   }
   if (req.method === 'POST' && req.url === '/__mock/reset') {
     state.requests = []
     state.rounds.clear()
+    state.liveSlow = 0
+    state.peakSlow = 0
+    state.slowHits = 0
     writeFileSync(LOG, '', 'utf8')
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ ok: true }))
@@ -378,6 +428,16 @@ const server = createServer(async (req, res) => {
     for await (const c of req) chunks.push(c)
     let body = {}
     try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch { body = {} }
+    const messages = Array.isArray(body.messages) ? body.messages : []
+    const user = lastUserText(messages)
+    const slow = /PHASE_B_SUBAGENT_SLOW/i.test(user)
+    if (slow) {
+      state.liveSlow += 1
+      state.slowHits += 1
+      state.peakSlow = Math.max(state.peakSlow, state.liveSlow)
+      await sleep(SLOW_MS)
+      state.liveSlow = Math.max(0, state.liveSlow - 1)
+    }
     const payload = decide(body)
     if (body.stream) {
       writeSse(res, payload)

@@ -15,6 +15,7 @@ import { NATIVE_HITL_EXEMPT } from '../agim-agent-shared/tool-registry.js'
 function isCallAgentToolName(name: string): boolean {
   const n = name.toLowerCase()
   return n === 'call_agent' || n.endsWith('__call_agent')
+    || n === 'call_agents' || n.endsWith('__call_agents')
 }
 
 export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: string): ApprovalGate {
@@ -77,7 +78,7 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
       return 'allow'
     }
     // Subagent spawn is the product surface — under allow-list, don't block
-    // mcp__agim__call_agent behind HITL or the Subagent panel never appears
+    // mcp__agim__call_agent(s) behind HITL or the Subagent panel never appears
     // (activity is owned by A2A, which only runs after the tool is allowed).
     // Depth / ACL / per-turn caps inside call_agent still apply. Deny-all and
     // explicit deny-list still win.

@@ -76,6 +76,16 @@ describe('pi-native plan-exit approval routing', () => {
       name: 'call_agent',
       arguments: { agent: 'claude-code', prompt: 'patch' },
     }, 0)).toBe('allow')
+    expect(await gate({
+      id: 'c3',
+      name: 'mcp__agim__call_agents',
+      arguments: {
+        tasks: [
+          { agent: 'agim', isolate: true, prompt: 'lane A' },
+          { agent: 'agim', isolate: true, prompt: 'lane B' },
+        ],
+      },
+    }, 0)).toBe('allow')
   })
 
   it('still denies builtins under deny-all / explicit deny-list', async () => {

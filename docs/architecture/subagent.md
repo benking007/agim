@@ -270,7 +270,7 @@
 | **A1** | 同族 spawn：解除「无 role 差异的自调用」误伤；支持 `role`/`backend`；**必写 job + activity** |
 | **A2** | UI 多 Subagent 行 + 树切片 |
 | **A3** | 父 prompt：委派启发式 + brief 四件套（可与 A1 同 PR 或紧随） |
-| **B** | 并行 fan-out（门控） |
+| **B** | 并行 fan-out：`mcp__agim__call_agents` + `AGIM_SUBAGENT_PARALLEL`（默认开） |
 | **C** | Long-engineering：观察者作为一类 Subagent（只读 / 结构化结论） |
 
 ---
@@ -297,6 +297,7 @@
 | 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
+| 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
 
 ### 落地差异（相对 §4.3）
 

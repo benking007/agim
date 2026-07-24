@@ -33,6 +33,7 @@ describe('getAgimTools', () => {
     expect(names).toContain('mcp__agim__push_message')
     expect(names).toContain('mcp__agim__ask_user')
     expect(names).toContain('mcp__agim__call_agent')
+    expect(names).toContain('mcp__agim__call_agents')
   })
 
   it('every tool has a non-empty description and a parameters object', () => {
@@ -43,13 +44,21 @@ describe('getAgimTools', () => {
     }
   })
 
-  it('call_agent and ask_user opt out of the Native 60s tool-bridge default', () => {
+  it('call_agent / call_agents / ask_user opt out of the Native 60s tool-bridge default', () => {
     const tools = getAgimTools()
     const callAgent = tools.find((t) => t.name === 'mcp__agim__call_agent')
+    const callAgents = tools.find((t) => t.name === 'mcp__agim__call_agents')
     const askUser = tools.find((t) => t.name === 'mcp__agim__ask_user')
     // timeoutMs: 0 = no per-tool wall cap; A2A / ask_user own their clocks.
     expect(callAgent?.timeoutMs).toBe(0)
+    expect(callAgents?.timeoutMs).toBe(0)
     expect(askUser?.timeoutMs).toBe(0)
+  })
+
+  it('call_agents tool description advertises fan-out / allSettled heuristics', () => {
+    const callAgents = getAgimTools().find((t) => t.name === 'mcp__agim__call_agents')
+    expect(callAgents?.description.toLowerCase()).toMatch(/fan-out|multiple/)
+    expect(callAgents?.description.toLowerCase()).toContain('allsettled')
   })
 })
 
@@ -238,6 +247,109 @@ describe('buildAgimDispatcher', () => {
       })?.properties?.prompt?.description ?? ''
       expect(promptProp.toLowerCase()).toMatch(/objective/)
       expect(promptProp.toLowerCase()).toMatch(/done-when/)
+    })
+  })
+
+  describe('call_agents batch fan-out (Phase B)', () => {
+    const SAVED = {
+      depth: process.env.AGIM_A2A_MAX_DEPTH,
+      parallel: process.env.AGIM_SUBAGENT_PARALLEL,
+      parallelMax: process.env.AGIM_SUBAGENT_PARALLEL_MAX,
+      cap: process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN,
+      a2aEnabled: process.env.AGIM_A2A_ENABLED,
+    }
+    function restoreEnv(): void {
+      for (const [k, v] of Object.entries({
+        AGIM_A2A_MAX_DEPTH: SAVED.depth,
+        AGIM_SUBAGENT_PARALLEL: SAVED.parallel,
+        AGIM_SUBAGENT_PARALLEL_MAX: SAVED.parallelMax,
+        AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN: SAVED.cap,
+        AGIM_A2A_ENABLED: SAVED.a2aEnabled,
+      })) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+
+    it('refuses empty tasks', async () => {
+      const d = buildAgimDispatcher(CTX)
+      const r = await d(
+        { id: 'batch-0', name: 'mcp__agim__call_agents', arguments: { tasks: [] } },
+        NOOP_SIGNAL,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/non-empty/i)
+    })
+
+    it('refuses vacuous same-family task without isolate/role/backend', async () => {
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      try {
+        const d = buildAgimDispatcher({ ...CTX, callerAgent: 'agim' })
+        const r = await d(
+          {
+            id: 'batch-1',
+            name: 'mcp__agim__call_agents',
+            arguments: {
+              tasks: [{ agent: 'agim', prompt: 'research A' }],
+            },
+          },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/isolate\/role\/backend|refused/i)
+      } finally { restoreEnv() }
+    })
+
+    it('cap counts batch size against MAX_PER_TURN before fan-out', async () => {
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '2'
+      process.env.AGIM_A2A_ENABLED = '0'
+      try {
+        const d = buildAgimDispatcher({ ...CTX, callerAgent: 'agim' })
+        const r = await d(
+          {
+            id: 'batch-2',
+            name: 'mcp__agim__call_agents',
+            arguments: {
+              tasks: [
+                { agent: 'agim', prompt: 'lane 1', isolate: true },
+                { agent: 'agim', prompt: 'lane 2', isolate: true },
+                { agent: 'agim', prompt: 'lane 3', isolate: true },
+              ],
+            },
+          },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/cap=2/i)
+        expect(r.text).toMatch(/\+3/)
+      } finally { restoreEnv() }
+    })
+
+    it('fan-out with A2A disabled returns allSettled-style join (per-lane errors)', async () => {
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      process.env.AGIM_A2A_ENABLED = '0'
+      process.env.AGIM_SUBAGENT_PARALLEL = '1'
+      try {
+        const d = buildAgimDispatcher({ ...CTX, callerAgent: 'agim' })
+        const r = await d(
+          {
+            id: 'batch-3',
+            name: 'mcp__agim__call_agents',
+            arguments: {
+              tasks: [
+                { agent: 'agim', prompt: 'lane 1', isolate: true },
+                { agent: 'agim', prompt: 'lane 2', isolate: true },
+              ],
+            },
+          },
+          NOOP_SIGNAL,
+        )
+        // Tool-level ok (allSettled); lanes report A2A disabled.
+        expect(r.isError).toBe(false)
+        expect(r.text).toMatch(/call_agents join/i)
+        expect(r.text).toMatch(/0\/2 succeeded/)
+        expect(r.text).toMatch(/A2A disabled|disabled/i)
+      } finally { restoreEnv() }
     })
   })
 })

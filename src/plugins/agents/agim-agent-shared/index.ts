@@ -110,7 +110,7 @@ export function buildSystemPrompt(
 
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
-    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, long_task, complete_goal',
+    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, long_task, complete_goal',
     '  - native filesystem tools: agim_read_file, agim_write_file, agim_list_dir, agim_glob, agim_grep — full filesystem access by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
     '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
@@ -128,7 +128,7 @@ export function buildSystemPrompt(
     '  - When uncertain, call mcp__agim__ask_user(question, choices[]); do not pretend work is done.',
     '  - Destructive ops (delete/overwrite/outbound send): state impact, get confirmation first.',
     '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
-    '  - For file/list/search/fetch requests, use native tools first; spawn a Subagent (call_agent) only when isolation, a cheaper model, or another CLI is genuinely needed.',
+    '  - For file/list/search/fetch requests, use native tools first; spawn a Subagent (call_agent / call_agents) only when isolation, a cheaper model, or another CLI is genuinely needed.',
     '  - Closure rule: the FINAL assistant message (the hop with no more tool calls) MUST contain the full user-readable conclusion in Chinese — findings and next steps. Do NOT end with only a status line like「盘点完成」/「已完成」/「报告输出完毕」.',
     '',
     'IM reply shape (chat clients, not a terminal):',

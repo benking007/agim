@@ -35,7 +35,8 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | **ACP** | Remote agents plugged **into** Agim (`acpAgents[]`, discovery) | `acpPort`, `AGIM_ENABLE_REMOTE_AGENT` |
 | **A2A** | Transport/guardrails for calling **another registered** `AgentAdapter` (`callAgentByName` / `call_agent`) | `AGIM_A2A_*` |
 | **Agim ACP endpoint** | Agim speaking ACP **outward** on `:9090` | `~/.agim` access-token / legacy `acp-token` |
-| **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` (`role`/`backend`/`isolate`); [`architecture/subagent.md`](./architecture/subagent.md) |
+| **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` / `mcp__agim__call_agents` (`role`/`backend`/`isolate`); [`architecture/subagent.md`](./architecture/subagent.md) |
+| **Subagent parallel fan-out** | One parent turn joins multiple SubagentRuns (batch tool) | `AGIM_SUBAGENT_PARALLEL` (default on), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3), `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default 3) |
 | **Handoff / sticky switch** | User conversation control moves to another backend (`/cc`, `/oc`, …) — **not** a Subagent | session sticky |
 
 UI copy should say the full phrase (“Remote agents (ACP)”, “Subagent”

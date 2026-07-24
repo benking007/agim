@@ -44,7 +44,17 @@ import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
 import { resolveSubagentSpawn } from '../subagent.js'
-import { buildCallAgentToolDescription } from '../subagent-heuristics.js'
+import {
+  buildCallAgentToolDescription,
+  buildCallAgentsToolDescription,
+} from '../subagent-heuristics.js'
+import {
+  CALL_AGENTS_TASKS_HARD_MAX,
+  getCallAgentMaxPerTurn,
+  getSubagentParallelMax,
+  isSubagentParallelEnabled,
+  mapPool,
+} from '../subagent-parallel.js'
 import { describeRegistry, listProviders } from './registry.js'
 import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
 import { hashWorkspaceScope } from '../goal-evidence.js'
@@ -385,6 +395,59 @@ export function getAgimTools(): ToolDef[] {
       timeoutMs: 0,
     },
     {
+      name: 'mcp__agim__call_agents',
+      description: buildCallAgentsToolDescription({
+        backends: listProviders().map((p) => p.name),
+        roles: Object.keys(describeRegistry().roles),
+      }),
+      parameters: {
+        type: 'object',
+        properties: {
+          tasks: {
+            type: 'array',
+            minItems: 1,
+            maxItems: CALL_AGENTS_TASKS_HARD_MAX,
+            description:
+              `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). `
+              + 'Prefer 2–3 lanes. Each prompt must be self-contained. '
+              + 'Do not assign two writers to the same file.',
+            items: {
+              type: 'object',
+              properties: {
+                agent: {
+                  type: 'string',
+                  description:
+                    'Registry agent id ("agim" or cross-adapter). Same shorthand as call_agent.',
+                },
+                prompt: {
+                  type: 'string',
+                  description:
+                    'Self-contained brief: Objective + Output format + Boundaries + Done-when.',
+                },
+                backend: {
+                  type: 'string',
+                  description: 'Preferred llmBackends.name for same-family Agim (implies isolate).',
+                },
+                role: {
+                  type: 'string',
+                  description: 'Optional llmRoles alias when configured; prefer backend=.',
+                },
+                isolate: {
+                  type: 'boolean',
+                  description:
+                    'Same-family nested Subagent with fresh context (default model if backend/role omitted).',
+                },
+              },
+              required: ['agent', 'prompt'],
+            },
+          },
+        },
+        required: ['tasks'],
+      },
+      // Batch fan-out can run for A2A's full wall clock; never inherit 60s tool default.
+      timeoutMs: 0,
+    },
+    {
       name: 'mcp__agim__long_task',
       description:
         'Register a sustained multi-turn objective for this thread. Use when the user describes ' +
@@ -519,22 +582,95 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
     channelId: ctx.channelId,
   }
 
-  // v1.2.59 A — per-turn call_agent cap. Closure state is scoped to ONE
-  // dispatcher instance, which native rebuilds per turn — so the counter
-  // resets on every new user message. Default 2; override with
-  // AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN. Set 0 to disable the cap
-  // (legacy unlimited behavior).
-  const callAgentMaxPerTurn = (() => {
-    const raw = process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN
-    if (!raw) return 2
-    const n = Number(raw)
-    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2
-  })()
+  // Per-turn call_agent + call_agents task budget. Closure is per dispatcher
+  // instance (native rebuilds each turn). Default 3; AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN=0 disables.
+  const callAgentMaxPerTurn = getCallAgentMaxPerTurn()
   // v1.2.139 — track call history (not just count) so the cap_exceeded
   // refusal can name which agents the model already invoked and whether
   // they succeeded — model self-corrects faster when it can see "you
   // already asked claude-code, it returned OK; don't ask it again".
   const callAgentHistory: SubAgentCall[] = []
+
+  function capExceededError(requested: number): string {
+    const summary = callAgentHistory
+      .map((h, i) => `  ${i + 1}. ${h.agent} ${h.ok ? '✓' : '✗'}: "${h.promptHead}…"`)
+      .join('\n')
+    return (
+      `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn `
+      + `(cap=${callAgentMaxPerTurn}`
+      + (requested > 1 ? `; this batch wanted +${requested}` : '')
+      + `). Prior delegations:\n${summary || '  (none)'}\n\n`
+      + `Use your own tools (agim_read_file, agim_grep, agim_list_dir, mcp__agim__* …) to `
+      + `finish with what you already gathered, shrink the batch, or ask the user to switch `
+      + `agents explicitly (/cc, /oc, …) — don't keep chaining call_agent / call_agents.`
+    )
+  }
+
+  type SpawnOk = Extract<ReturnType<typeof resolveSubagentSpawn>, { ok: true }>
+
+  async function invokeOneSubagent(opts: {
+    spawn: SpawnOk
+    prompt: string
+    activityStepId: string
+    signal: AbortSignal
+    toolCtx?: { traceId?: string }
+    callId: string
+  }): Promise<{ ok: true; text: string; cancelled?: boolean } | { ok: false; error: string }> {
+    const { spawn, prompt, activityStepId, signal: sig, toolCtx, callId } = opts
+    if (isInProcessSpawnEnabled() && spawn.sameAgent) {
+      log.info({
+        event: 'native.call_agent.in_process_skipped_for_parity',
+        threadId: ctx.threadId,
+        label: spawn.label,
+      }, 'same-family Subagent uses callAgentByName (job/activity parity); ignoring AGIM_NATIVE_CALL_AGENT_IN_PROCESS')
+    }
+    const parentTrace = toolCtx?.traceId
+    const a2aTrace = parentTrace
+      ? `${parentTrace}/a2a-${callId}`
+      : `native-a2a-${Date.now()}`
+    const routeCtx: RouteContext = {
+      channelId: ctx.channelId,
+      threadId: ctx.threadId,
+      platform: ctx.platform,
+      userId: ctx.userId,
+      defaultAgent: ctx.callerAgent,
+      traceId: a2aTrace,
+      logger: (ctx.logger ?? rootLogger).child({ component: 'a2a-from-native', threadId: ctx.threadId }),
+      ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
+    }
+    const baseOpts = {
+      callerDepth: ctx.callerDepth ?? 0,
+      callerAgent: ctx.callerAgent,
+      ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
+      ...(ctx.callerPlanMode ? { planMode: true } : {}),
+      ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
+      ...(spawn.isolate ? { isolate: true } : {}),
+      ...(spawn.model ? { model: spawn.model } : {}),
+      activityLabel: spawn.label,
+      activityStepId,
+      signal: sig,
+    }
+    let result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
+    if (!sig.aborted && !result.ok && isTransientSubAgentError(result.error || '')) {
+      log.warn({
+        event: 'native.call_agent.retry',
+        calleeAgent: spawn.label,
+        err: result.error,
+        threadId: ctx.threadId,
+      }, `call_agent transient-failed; retrying once`)
+      result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
+    }
+    if (!result.ok) return { ok: false, error: result.error || 'unknown error' }
+    if (result.cancelled) {
+      return {
+        ok: true,
+        cancelled: true,
+        text: typeof result.result === 'string' ? result.result : safeJson(result),
+      }
+    }
+    const raw = typeof result.result === 'string' ? result.result : safeJson(result)
+    return { ok: true, text: applyOutputCap(raw, spawn.label, result.jobId ?? null) }
+  }
 
   return async (call, signal, toolCtx): Promise<DispatcherResult> => {
     if (!call.name.startsWith('mcp__agim__')) return unknown(call.name)
@@ -630,21 +766,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             return err(`call_agent refused: ${spawn.error}`)
           }
 
-          // v1.2.59 A — enforce per-turn cap. Without this, a model that
-          // keeps delegating ("ask claude-code again, that wasn't enough")
-          // can chain dozens of A2A calls per single user turn — observed
-          // 8 chained calls in one wechat turn before the user had to
-          // /abort. The cap is also visible in the deny message so the
-          // model self-corrects on its next iteration.
           if (callAgentMaxPerTurn > 0 && callAgentHistory.length >= callAgentMaxPerTurn) {
-            // v1.2.139 — include the history so the model can see what it
-            // has already tried (and whether those calls succeeded). A
-            // model that sees "you already called claude-code and got an
-            // OK 4k-char reply" stops re-delegating much faster than one
-            // that just sees a bare count.
-            const summary = callAgentHistory
-              .map((h, i) => `  ${i + 1}. ${h.agent} ${h.ok ? '✓' : '✗'}: "${h.promptHead}…"`)
-              .join('\n')
             log.warn({
               event: 'native.call_agent.cap_exceeded',
               callerAgent: ctx.callerAgent,
@@ -654,13 +776,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               history: callAgentHistory,
               threadId: ctx.threadId,
             }, `call_agent cap exceeded (${callAgentHistory.length}/${callAgentMaxPerTurn}) — refusing further delegation`)
-            return err(
-              `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn ` +
-              `(cap=${callAgentMaxPerTurn}). Prior delegations:\n${summary}\n\n` +
-              `Use your own tools (agim_read_file, agim_grep, agim_list_dir, mcp__agim__* …) to ` +
-              `finish the task with the information you already gathered. If you genuinely need another ` +
-              `agent for the rest, tell the user to switch explicitly (for example /cc, /oc, /co, /qd, /pi, or /mimo) — don't keep chaining call_agent.`,
-            )
+            return err(capExceededError(1))
           }
           const promptHead = prompt.slice(0, 60).replace(/\s+/g, ' ')
           log.info({
@@ -679,93 +795,232 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }, `delegating to ${spawn.label} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
               `${ctx.callerPlanMode ? ', plan-mode propagated' : ''})`)
 
-          // Same-family and cross-adapter Subagent both go through
-          // callAgentByName so job-board + activity stay observable.
-          // (Legacy AGIM_NATIVE_CALL_AGENT_IN_PROCESS in-process path skipped
-          // job rows; see docs/architecture/subagent.md Phase A1.)
-          if (isInProcessSpawnEnabled() && spawn.sameAgent) {
-            log.info({
-              event: 'native.call_agent.in_process_skipped_for_parity',
-              threadId: ctx.threadId,
-              label: spawn.label,
-            }, 'same-family Subagent uses callAgentByName (job/activity parity); ignoring AGIM_NATIVE_CALL_AGENT_IN_PROCESS')
-          }
-
-          // Construct a minimal RouteContext from the run context so A2A
-          // can audit / route. Lifted to a partial cast because most of
-          // RouteContext's optional fields (intent, agentSessionId, …)
-          // are only used by full-router dispatch — not A2A.
-          // v1.2.111 — chain the parent trace id from the agent loop
-          // rather than minting a fresh root, so a full turn (every
-          // tool call + every A2A fan-out) is traceable end-to-end via
-          // a single prefix in the audit log. Falls back to the legacy
-          // mint when the caller didn't supply one (e.g. tests).
-          const parentTrace = toolCtx?.traceId
-          const a2aTrace = parentTrace
-            ? `${parentTrace}/a2a-${call.id}`
-            : `native-a2a-${Date.now()}`
-          const routeCtx: RouteContext = {
-            channelId: ctx.channelId,
-            threadId: ctx.threadId,
-            platform: ctx.platform,
-            userId: ctx.userId,
-            defaultAgent: ctx.callerAgent,
-            traceId: a2aTrace,
-            logger: (ctx.logger ?? rootLogger).child({ component: 'a2a-from-native', threadId: ctx.threadId }),
-            ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
-          }
-          const baseOpts = {
-            callerDepth: ctx.callerDepth ?? 0,
-            callerAgent: ctx.callerAgent,
-            // Link the callee row to the parent turn so the web A2A views
-            // (parent_id IS NOT NULL) can see native-originated A2A.
-            ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
-            // v1.2.139 — propagate parent's plan-mode to the sub-agent.
-            ...(ctx.callerPlanMode ? { planMode: true } : {}),
-            ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
-            ...(spawn.isolate ? { isolate: true } : {}),
-            ...(spawn.model ? { model: spawn.model } : {}),
-            activityLabel: spawn.label,
-            // Keep the pending Subagent card (emitted at tool_call) in sync.
+          const one = await invokeOneSubagent({
+            spawn,
+            prompt,
             activityStepId: call.id,
             signal,
-          }
-          // v1.2.139 — one-shot transient retry. callAgentByName already
-          // wraps its own audit + notify lifecycle; we just retry the
-          // whole call when the first attempt looks like a 5xx / socket
-          // reset / quick timeout. Permanent failures (workspace ACL,
-          // depth exceeded, model refusal) skip the retry.
-          let result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
-          // User Stop returns { ok:true, cancelled:true } — no retry.
-          if (!signal.aborted && !result.ok && isTransientSubAgentError(result.error || '')) {
-            log.warn({
-              event: 'native.call_agent.retry',
-              calleeAgent: spawn.label,
-              err: result.error,
-              threadId: ctx.threadId,
-            }, `call_agent transient-failed; retrying once`)
-            result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
-          }
-          if (!result.ok) {
+            toolCtx,
+            callId: call.id,
+          })
+          if (!one.ok) {
             callAgentHistory.push({ agent: spawn.label, promptHead, ok: false })
-            return err(`call_agent failed: ${result.error}`)
+            return err(`call_agent failed: ${one.error}`)
           }
           callAgentHistory.push({ agent: spawn.label, promptHead, ok: true })
-          // CallAgentResult exposes the callee's final text as `result`.
-          // Outputs, jobId, durationMs etc. are returned as a JSON
-          // sidecar so the model can reference produced artifacts if
-          // it asks for them — keeps the main payload terse.
-          // v1.2.139 — apply output cap so a chatty sub-agent doesn't
-          // blow the parent's context budget. The full text is spilled
-          // into viewer-paste (when configured) so the model can still
-          // cite the link.
-          // Stopped Subagents already carry summarize/continue instructions —
-          // do not truncate that guidance away.
-          if (result.cancelled) {
-            return ok(typeof result.result === 'string' ? result.result : safeJson(result))
+          return ok(one.text)
+        }
+        case 'call_agents': {
+          const rawTasks = Array.isArray(args.tasks) ? args.tasks : null
+          if (!rawTasks || rawTasks.length === 0) {
+            return err('call_agents requires a non-empty `tasks` array.')
           }
-          const raw = typeof result.result === 'string' ? result.result : safeJson(result)
-          return ok(applyOutputCap(raw, spawn.label, result.jobId ?? null))
+          if (rawTasks.length > CALL_AGENTS_TASKS_HARD_MAX) {
+            return err(
+              `call_agents refused: tasks.length=${rawTasks.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`,
+            )
+          }
+
+          type TaskIn = {
+            agent: string
+            prompt: string
+            role?: string
+            backend?: string
+            isolate?: boolean
+          }
+          const tasks: TaskIn[] = []
+          for (let i = 0; i < rawTasks.length; i++) {
+            const t = rawTasks[i]
+            if (!t || typeof t !== 'object') {
+              return err(`call_agents tasks[${i}] must be an object.`)
+            }
+            const rec = t as Record<string, unknown>
+            const agent = typeof rec.agent === 'string' ? rec.agent : ''
+            const prompt = typeof rec.prompt === 'string' ? rec.prompt : ''
+            if (!agent || !prompt) {
+              return err(`call_agents tasks[${i}] requires both agent and prompt strings.`)
+            }
+            tasks.push({
+              agent,
+              prompt,
+              role: typeof rec.role === 'string' ? rec.role : undefined,
+              backend: typeof rec.backend === 'string' ? rec.backend : undefined,
+              isolate: rec.isolate === true,
+            })
+          }
+
+          if (
+            callAgentMaxPerTurn > 0
+            && callAgentHistory.length + tasks.length > callAgentMaxPerTurn
+          ) {
+            log.warn({
+              event: 'native.call_agents.cap_exceeded',
+              callerAgent: ctx.callerAgent,
+              count: callAgentHistory.length,
+              batch: tasks.length,
+              cap: callAgentMaxPerTurn,
+              history: callAgentHistory,
+              threadId: ctx.threadId,
+            }, `call_agents cap exceeded (${callAgentHistory.length}+${tasks.length}/${callAgentMaxPerTurn})`)
+            return err(capExceededError(tasks.length))
+          }
+
+          const prepared: Array<{
+            index: number
+            task: TaskIn
+            spawn: SpawnOk
+            stepId: string
+            promptHead: string
+          }> = []
+          for (let i = 0; i < tasks.length; i++) {
+            const task = tasks[i]!
+            const spawn = resolveSubagentSpawn(
+              {
+                agent: task.agent,
+                role: task.role,
+                backend: task.backend,
+                isolate: task.isolate,
+              },
+              ctx.callerAgent,
+            )
+            const stepId = `${call.id}#${i}`
+            if (!spawn.ok) {
+              try {
+                ctx.onToolActivity?.({
+                  id: stepId,
+                  kind: 'agent',
+                  label: task.agent,
+                  status: 'error',
+                  startedAt: Date.now(),
+                  finishedAt: Date.now(),
+                  preview: spawn.error.slice(0, 180),
+                })
+              } catch { /* observer must not break dispatch */ }
+              return err(`call_agents tasks[${i}] refused: ${spawn.error}`)
+            }
+            prepared.push({
+              index: i,
+              task,
+              spawn,
+              stepId,
+              promptHead: task.prompt.slice(0, 60).replace(/\s+/g, ' '),
+            })
+          }
+
+          const parallelOn = isSubagentParallelEnabled()
+          const concurrency = parallelOn
+            ? Math.min(getSubagentParallelMax(), prepared.length)
+            : 1
+          log.info({
+            event: 'native.call_agents.fanout',
+            callerAgent: ctx.callerAgent,
+            batch: prepared.length,
+            parallel: parallelOn,
+            concurrency,
+            cap: callAgentMaxPerTurn,
+            threadId: ctx.threadId,
+          }, `call_agents fan-out x${prepared.length} (concurrency=${concurrency})`)
+
+          type LaneResult = {
+            index: number
+            agent: string
+            label: string
+            promptHead: string
+            ok: boolean
+            cancelled?: boolean
+            text?: string
+            error?: string
+          }
+
+          const laneResults = await mapPool(prepared, concurrency, async (item) => {
+            log.info({
+              event: 'native.call_agent.delegated',
+              callerAgent: ctx.callerAgent,
+              calleeAgent: item.spawn.agent,
+              subagentLabel: item.spawn.label,
+              model: item.spawn.model,
+              role: item.spawn.role,
+              isolate: item.spawn.isolate,
+              sameAgent: item.spawn.sameAgent,
+              batchIndex: item.index,
+              batchSize: prepared.length,
+              attempt: callAgentHistory.length + item.index + 1,
+              cap: callAgentMaxPerTurn,
+              callerPlanMode: ctx.callerPlanMode ?? false,
+              threadId: ctx.threadId,
+            }, `delegating batch[${item.index}] → ${item.spawn.label}`)
+            const one = await invokeOneSubagent({
+              spawn: item.spawn,
+              prompt: item.task.prompt,
+              activityStepId: item.stepId,
+              signal,
+              toolCtx,
+              callId: `${call.id}-${item.index}`,
+            })
+            if (!one.ok) {
+              return {
+                index: item.index,
+                agent: item.spawn.agent,
+                label: item.spawn.label,
+                promptHead: item.promptHead,
+                ok: false,
+                error: one.error,
+              } satisfies LaneResult
+            }
+            return {
+              index: item.index,
+              agent: item.spawn.agent,
+              label: item.spawn.label,
+              promptHead: item.promptHead,
+              ok: true,
+              cancelled: one.cancelled,
+              text: one.text,
+            } satisfies LaneResult
+          })
+
+          for (const lane of laneResults) {
+            callAgentHistory.push({
+              agent: lane.label,
+              promptHead: lane.promptHead,
+              ok: lane.ok,
+            })
+          }
+
+          const okCount = laneResults.filter((l) => l.ok).length
+          const payload = {
+            parallel: parallelOn,
+            concurrency,
+            okCount,
+            failCount: laneResults.length - okCount,
+            results: laneResults.map((l) => (
+              l.ok
+                ? {
+                    index: l.index,
+                    ok: true as const,
+                    agent: l.agent,
+                    label: l.label,
+                    cancelled: l.cancelled === true,
+                    result: l.text ?? '',
+                  }
+                : {
+                    index: l.index,
+                    ok: false as const,
+                    agent: l.agent,
+                    label: l.label,
+                    error: l.error ?? 'failed',
+                  }
+            )),
+          }
+          // Always ok:true at tool level (allSettled) so the parent can synthesize
+          // partial successes; per-lane ok flags carry individual outcomes.
+          return ok(
+            [
+              `[call_agents join] ${okCount}/${laneResults.length} succeeded`
+              + ` (parallel=${parallelOn ? 'on' : 'off'}, concurrency=${concurrency}).`,
+              'Synthesize the lane results below into one Chinese user reply; do not dump raw transcripts.',
+              safeJson(payload),
+            ].join('\n'),
+          )
         }
         case 'long_task':
         case 'complete_goal': {

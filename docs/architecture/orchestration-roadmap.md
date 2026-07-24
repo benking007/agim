@@ -2,10 +2,11 @@
 
 > 状态：**现行计划（living）** · 2026-07-24  
 > 立场：在现有桥接架构上**加薄编排层**，不推倒重来。  
-> **概念 SSOT**：[`subagent.md`](./subagent.md)（先读再实施）  
+> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`loop-engineering.md`](./loop-engineering.md)（Phase C）  
 > 关联：[`current.md`](./current.md) · [`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../goals.md`](../goals.md) · [`../session-model.md`](../session-model.md)
 
-本文是**实施计划**；Subagent / A2A / handoff 的定义以 [`subagent.md`](./subagent.md) 为准。  
+本文是**实施计划**；Subagent / A2A / handoff 以 [`subagent.md`](./subagent.md) 为准；  
+**Loop-engineering（Phase C）以 [`loop-engineering.md`](./loop-engineering.md) 为准（文档先行，未拍板前不写运行时）**。  
 **实施顺序固定为 Phase A → B → C**；每阶段单独开 PR，合入后再开下一阶段。
 
 ---
@@ -15,7 +16,7 @@
 1. **Subagent 一等公民**：同 Agim（pro/flash）与跨 adapter（Claude/Codex）统一为 SubagentRun；父保留对用户回复的控制权。  
 2. **前端实时看到**每个子代理进度与结果树。  
 3. **并行 fan-out**（门控）加速独立子任务。  
-4. **Long-engineering**：观察者作为一类 Subagent，盯目标做阶段评审。
+4. **Loop-engineering**：观察者作为一类只读 Subagent，盯 goal 做阶段评审。
 
 产品身份不变：Agim 仍是 **messenger ↔ agent 桥**。  
 **Subagent ≠ 多 sticky Agent**；见 [`subagent.md`](./subagent.md) §1。
@@ -208,69 +209,36 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 ---
 
-### Phase C — Long-engineering 模式（观察者 + 执行者）
+### Phase C — Loop-engineering（观察者 + 执行者）
 
-> 目标：围绕**一个目标**，执行者干活，**观察者作为一类 Subagent** 按 checkpoint 评审。  
-> 依赖：Phase A；Phase B 可选（观察可先串行 spawn）。
+> 目标：围绕**一个 goal**，执行者干活，**观察者作为一类只读 Subagent** 按 checkpoint 评审。  
+> **概念 SSOT**：[`loop-engineering.md`](./loop-engineering.md)（文档先行；未拍板开放决策前不写运行时）。  
+> 依赖：Phase A；Phase B 可选（观察可先串行 spawn）。  
+> 历史名：Long-engineering（与 Loop-engineering 同义）。
 
-#### C1. 概念模型
+#### C0. 文档（本批）
 
-```text
-EngineeringRun
-  id
-  goalId                 -- 必须绑定 active / 指定 goal
-  threadKey              -- platform:channel:thread
-  executorAgent          -- 主执行者（sticky 或显式）
-  observerAgent          -- 观察者（常为 agim/cheap 或另一 CLI）
-  cadence                -- 检查点：每 N tool steps / 每阶段 / 手动
-  status                 -- planned|running|observing|revising|completed|failed|cancelled
-  checkpoints[]          -- { at, observerSummary, decision: continue|revise|stop }
-```
+- [x] [`loop-engineering.md`](./loop-engineering.md) 概念 / 状态机 / Observer 契约 / 开放决策  
+- [x] naming / README / current / goals / roadmap 交叉链接  
 
-存储建议：先 SQLite 新表或挂在 `goals` / `jobs` 扩展字段；**不要**塞进 session.messages。
+#### C1–C4. 实现（详见 loop-engineering §14）
 
-#### C2. 协议（最小）
+摘要（细节以概念文为准，避免双源漂移）：
 
-1. 进入模式：slash 或工具，如 `/engineer` / `mcp__agim__start_engineering`（命名实施时定，需进 `naming.md`）。
-2. 要求存在可注入的 goal（或创建时一并 `goal set`）。
-3. 执行者主循环照旧；在 checkpoint：
-   - Orchestrator 调用 `callAgentByName(observer, self-contained brief)`；
-   - brief 含：goal 摘要、近期进度、执行者产出指针（artifacts / diff 摘要）；
-   - 观察者返回结构化结论：`continue | revise | stop` + 理由（schema 固定，便于 UI）。
-4. `revise` → 把观察意见注入执行者下一轮（wire-only，类似 goal snippet）。
-5. `stop` / `complete_goal` → 走现有 evidence 门闸。
-6. `goal-critic`：模式开启时建议 `always` 或至少 goal-only 加强；与观察者分工：
-   - **critic** = 廉价、同进程、拦明显跑偏；
-   - **observer** = 可换 agent、带产物上下文的阶段评审。
+| 切片 | 内容 |
+|---|---|
+| C1a–d | EngineeringRun 存储、start/stop、cadence、只读 Observer、reviseSteer |
+| C2 | 与 goal-critic 分工与辅助调用预算 |
+| C3 | Chat/Portal 徽章 + checkpoint 一行 |
+| C4 | mock 验收脚本 |
 
-#### C3. 前端
+#### C5. 验收（勾选在实现 PR 回写）
 
-- Run 面板（桌面 chat 或 `/tasks`）：当前 phase、最近 checkpoint、observer 结论。
-- 复用 Phase A 的 agent steps 展示观察者调用。
-- Portal：至少显示「engineering · observing」类状态，避免只有 admin 看得见。
-
-#### C4. 与 heartbeat 的边界
-
-| | Heartbeat | Engineering observer |
-|---|---|---|
-| 触发 | 墙钟周期、「有没有事」 | 任务内 checkpoint |
-| 目的 | 监控 / 提醒 | 盯目标、改计划、验收 |
-| 评价器 | notification-evaluator（防刷） | 结构化 observe 结果 |
-| 绑定 | 可跨多线程 | 绑定单次 EngineeringRun |
-
-二者可并存，**禁止**合并成一个模块。
-
-#### C5. 验收
-
-- [ ] 无 goal 时无法进入模式（或强制创建 goal）。
-- [ ] 一次 run 至少产生 1 次 observer checkpoint，UI 可见结论。
-- [ ] `complete_goal` 仍受 evidence / epoch 约束。
-- [ ] 关闭模式后行为回到普通 chat；无孤儿 run（取消 / META 清理策略写明）。
-- [ ] 文档：`goals.md` 交叉链接 + `naming.md` 新术语 + CHANGELOG。
+见 [`loop-engineering.md`](./loop-engineering.md) §15。
 
 #### C6. 非本阶段
 
-多执行者 DAG、自动合并 PR、跨机器编排。
+多执行者 DAG、自动合并 PR、跨机器编排；见概念文 §12。
 
 ---
 
@@ -281,7 +249,7 @@ Phase A0 概念文档（本批）     ──►  #223
 Phase A1 同族 spawn 运行时   ──►  实现 PR（可含 A3）
 Phase A2 多 Subagent UI      ──►  可随 A1 或紧随
 Phase B  并行 fan-out        ──►  A 合入后再开
-Phase C  long-engineering    ──►  可先 RFC 再实现
+Phase C  loop-engineering    ──►  概念文先行 → 拍板 §13 → 再实现
 ```
 
 每个实现 PR 必须：
@@ -301,8 +269,9 @@ Phase C  long-engineering    ──►  可先 RFC 再实现
 | （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B | **3** | 每 turn 委派上限（`call_agent` + `call_agents` 任务均计入） |
 | `AGIM_SUBAGENT_PARALLEL` | B | **on**（unset=on） | `call_agents` 是否并行；`0/off` 串行 |
 | `AGIM_SUBAGENT_PARALLEL_MAX` | B | `3` | 单次 batch 同时运行上限 |
-| `AGIM_ENGINEERING_MODE` / 或纯工具触发 | C | off | 是否允许进入 long-engineering |
-| `AGIM_ENGINEERING_OBSERVER` | C | （可选默认 agent id） | 默认观察者 |
+| `AGIM_ENGINEERING_MODE` | C | `off` | 是否允许进入 Loop-engineering（见 loop-engineering.md） |
+| `AGIM_ENGINEERING_OBSERVER` | C | （可选） | 默认观察者；空则 cheap→isolate |
+| `AGIM_ENGINEERING_OBSERVE_EVERY_TOOLS` | C | `8` | 步数 cadence；`0`=仅手动 |
 
 命名定稿时同步 [`../naming.md`](../naming.md)；避免再引入第三套 id。
 
@@ -315,7 +284,7 @@ Phase C  long-engineering    ──►  可先 RFC 再实现
 | approval-bus 在并行下变厚 / 竞态 | Phase B 先隔离 runId；必要时先 peel `approval-bus`（见 tech-debt）再开并行默认 |
 | 费用与超时叠加 | hard cap + 单子超时 + 父级 ceiling；UI 显示累计 |
 | 观察者与执行者抢写 | 观察者默认只读工具集（planMode 或 tool allowlist） |
-| 文档/实现双源 | 概念以 `subagent.md` 为准，计划以本文为准；`current.md` 只加短链 |
+| 文档/实现双源 | Subagent→`subagent.md`；Loop-engineering→`loop-engineering.md`；计划勾选以本文为准 |
 | 同族自调用变递归炸弹 | 无 role/backend/isolate 差异仍拒绝；深度与每 turn cap 保留 |
 
 ---
@@ -323,10 +292,11 @@ Phase C  long-engineering    ──►  可先 RFC 再实现
 ## 8. 建议阅读与动手顺序
 
 1. 读 [`subagent.md`](./subagent.md)，对齐「Subagent ≠ 多 Agent」。  
-2. 读本文 §0–§2，对齐非目标。  
-3. **先做 Phase A1→A2→A3**（同族 spawn → UI → 拆解启发式）。  
-4. 再 Phase B；最后 Phase C。  
-5. 每阶段结束后更新落地记录：
+2. 做 Phase C 前读 [`loop-engineering.md`](./loop-engineering.md)，拍板 §13 开放决策。  
+3. 读本文 §0–§2，对齐非目标。  
+4. **先做 Phase A1→A2→A3**（同族 spawn → UI → 拆解启发式）。  
+5. 再 Phase B；最后 Phase C（概念文先行 → 再实现）。  
+6. 每阶段结束后更新落地记录：
 
 ### 落地记录
 
@@ -335,13 +305,13 @@ Phase C  long-engineering    ──►  可先 RFC 再实现
 | 2026-07-24 | A0 文档 | #223 | subagent.md + roadmap 对齐 |
 | 2026-07-24 | A1 运行时 | #223 | `subagent.ts` + call_agent role/backend/isolate |
 | 2026-07-24 | A2–A3 | #223 | 多 Subagent UI / 消息流卡片 / Stop / 启发式；`phase-a-acceptance` 27/27 |
-| （待填） | B | | |
-| （待填） | C | | |
+| 2026-07-24 | B | #228 | `call_agents` 并行 fan-out；验收 13/13 |
+| 2026-07-24 | C0 文档 | （本 PR） | `loop-engineering.md` 概念先行；无运行时 |
 
 ---
 
 ## 9. TL;DR
 
 > **Subagent 先于「多 Agent」：同族 pro/flash 与跨 adapter 都是子工人；A2A 是跨 adapter 的管子。**  
-> **先打通同族 + 看得见（A），再并行（B），再观察者长工程（C）。**  
+> **先打通同族 + 看得见（A），再并行（B），再 Loop-engineering 观察闭环（C，文档先行）。**  
 > 拆解靠 brief/启发式 + 硬预算，不靠第二套中台。

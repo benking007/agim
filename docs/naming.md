@@ -37,6 +37,9 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | **Agim ACP endpoint** | Agim speaking ACP **outward** on `:9090` | `~/.agim` access-token / legacy `acp-token` |
 | **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` / `mcp__agim__call_agents` (`role`/`backend`/`isolate`); [`architecture/subagent.md`](./architecture/subagent.md) |
 | **Subagent parallel fan-out** | One parent turn joins multiple SubagentRuns (batch tool) | `AGIM_SUBAGENT_PARALLEL` (default on), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3), `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default 3) |
+| **Loop-engineering**（Phase C；历史名 Long-engineering） | Goal-bound executor↔observer loop; observer is a **read-only Subagent** returning `continue\|revise\|stop` | `AGIM_ENGINEERING_*`; SSOT [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) |
+| **goal-critic** | In-process cheap on-track check — **not** a Subagent / not Loop-engineering observer | `AGIM_NATIVE_CRITIC_*` |
+| **Heartbeat** | Wall-clock “anything to do?” — must **not** share EngineeringRun paths | `AGIM_HEARTBEAT_*` |
 | **Handoff / sticky switch** | User conversation control moves to another backend (`/cc`, `/oc`, …) — **not** a Subagent | session sticky |
 
 UI copy should say the full phrase (“Remote agents (ACP)”, “Subagent”

@@ -75,7 +75,7 @@
 | **按复杂度缩放** | 简单题 0 子代理；对比 2–4；广搜才更多 | 写入父 system / 工具 description；硬 cap 防爆 |
 | **并行是加速器不是定义** | Research 用 3–5 并行；编码任务往往并行点更少 | Phase B 门控并行；先串行可观测（Phase A） |
 | **贵** | 多代理常数倍～十余倍 token | 默认偏保守；cheap role 优先子任务 |
-| **编码场景慎用无脑 fan-out** | Anthropic：多数 coding 不如 research 那么可并行 | Long-engineering（观察者）与「广搜 fan-out」分开设计 |
+| **编码场景慎用无脑 fan-out** | Anthropic：多数 coding 不如 research 那么可并行 | Loop-engineering（观察者）与「广搜 fan-out」分开设计 |
 
 **结论：最难的不是进程模型，而是「何时拆、怎么写 brief、何时停」。**  
 运行时先提供可靠 spawn + 观测；分解策略以 prompt/heuristics 为主，辅以硬预算。
@@ -271,7 +271,7 @@
 | **A2** | UI 多 Subagent 行 + 树切片 |
 | **A3** | 父 prompt：委派启发式 + brief 四件套（可与 A1 同 PR 或紧随） |
 | **B** | 并行 fan-out：`mcp__agim__call_agents` + `AGIM_SUBAGENT_PARALLEL`（默认开） |
-| **C** | Long-engineering：观察者作为一类 Subagent（只读 / 结构化结论） |
+| **C** | Loop-engineering：观察者作为一类只读 Subagent（见 [`loop-engineering.md`](./loop-engineering.md)） |
 
 ---
 
@@ -315,4 +315,4 @@
 > **Subagent 是「父还在开会对用户负责」时的隔离子工人。**  
 > 同 Agim 换 pro/flash、或派 Claude/Codex，都是 Subagent；A2A 是跨 adapter 的管子。  
 > 难关在拆解与 brief，不在再写一个调度中台。  
-> 先打通同族 spawn + 统一观测，再并行，再观察者。
+> 先打通同族 spawn + 统一观测，再并行，再 Loop-engineering（见 [`loop-engineering.md`](./loop-engineering.md)）。

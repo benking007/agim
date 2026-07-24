@@ -138,3 +138,22 @@ Each primitive serves a different lifecycle:
 - `/remind` = scheduled nudges
 - `/heartbeat` = autonomous periodic checks
 - `/memo` = scattered facts the agent should remember
+
+## Loop-engineering (planned)
+
+**Loop-engineering** (roadmap Phase C; design SSOT:
+[`architecture/loop-engineering.md`](./architecture/loop-engineering.md))
+binds an **EngineeringRun** to the thread's active goal: the executor
+works as today, and at checkpoints a **read-only observer Subagent**
+returns `continue | revise | stop`.
+
+Boundaries that must not blur:
+
+- Observer **cannot** complete a goal — `complete_goal` evidence / epoch
+  gates still apply.
+- Heartbeat stays a wall-clock “anything to do?” loop; it must **not**
+  share EngineeringRun storage or observer code paths.
+- `goal-critic` remains an in-process cheap on-track check, not the
+  observer Subagent.
+
+No runtime yet — document first; open decisions in loop-engineering §13.

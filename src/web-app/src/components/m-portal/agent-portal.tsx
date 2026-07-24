@@ -30,6 +30,7 @@ import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
+import { PortalLoopStatus } from './portal-loop-status'
 import { activityFollowSignal } from '@/lib/activity-follow-signal'
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
@@ -623,6 +624,12 @@ export function AgentPortal(): JSX.Element {
             dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
           )}>
             <div className="mx-auto w-full max-w-[750px]">
+              <PortalLoopStatus
+                threadId={portalThreadId}
+                dark={dark}
+                refreshKey={`${state.messages.length}:${canStop ? 1 : 0}`}
+                onFillStatus={() => fillComposer('/loop status')}
+              />
               <ApprovalDock
                 flush
                 approvals={state.pendingApprovals}

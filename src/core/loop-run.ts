@@ -131,6 +131,115 @@ export interface LoopMissionView {
   partial: boolean
 }
 
+/** R5 UX buckets — user-facing “卡在哪”. */
+export type LoopUxBucket = 'aligning' | 'dispatch' | 'verify' | 'ended'
+
+export function getLoopUxBucket(run: LoopRun): LoopUxBucket {
+  if (run.status === 'ended') return 'ended'
+  if (run.status === 'aligning') return 'aligning'
+  if (run.status === 'verifying' || run.status === 'reflecting') return 'verify'
+  // After dispatch, waiting on structured verdict → 验收
+  if ((run.dispatchesThisRound || 0) > 0) return 'verify'
+  return 'dispatch'
+}
+
+export function loopUxBucketLabel(bucket: LoopUxBucket, lang: 'zh' | 'en' = 'zh'): string {
+  if (lang === 'en') {
+    switch (bucket) {
+      case 'aligning': return 'Aligning'
+      case 'dispatch': return 'Dispatch'
+      case 'verify': return 'Verify'
+      case 'ended': return 'Ended'
+    }
+  }
+  switch (bucket) {
+    case 'aligning': return '对焦'
+    case 'dispatch': return '派工'
+    case 'verify': return '验收'
+    case 'ended': return '已结束'
+  }
+}
+
+/** Compact DTO for Portal / REST (R5). */
+export interface LoopStatusDto {
+  id: string
+  sessionKey: string
+  status: LoopStatus
+  bucket: LoopUxBucket
+  bucketLabel: string
+  active: boolean
+  round: number
+  maxRounds: number
+  objective: string
+  exitDescription: string
+  acceptance?: string
+  dispatchesThisRound: number
+  endReason?: LoopRun['endReason']
+  lastVerification?: LoopVerification & { at: number }
+  lastPlan?: LoopRun['lastPlan']
+  openedFocus: boolean
+  createdAt: number
+  updatedAt: number
+  maxWallMs?: number
+}
+
+export function toLoopStatusDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopStatusDto {
+  const view = getMissionView(run)
+  const bucket = getLoopUxBucket(run)
+  return {
+    id: run.id,
+    sessionKey: run.sessionKey || threadKey(run.platform, run.channelId, run.threadId),
+    status: run.status,
+    bucket,
+    bucketLabel: loopUxBucketLabel(bucket, lang),
+    active: run.status !== 'ended',
+    round: run.round,
+    maxRounds: view.maxRounds,
+    objective: view.objective,
+    exitDescription: view.exitDescription,
+    acceptance: view.acceptance,
+    dispatchesThisRound: run.dispatchesThisRound || 0,
+    endReason: run.endReason,
+    lastVerification: run.lastVerification,
+    lastPlan: run.lastPlan,
+    openedFocus: run.openedFocus,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    maxWallMs: view.maxWallMs,
+  }
+}
+
+/** Markdown summary card when a Loop ends (R5). */
+export function formatLoopEndedSummary(run: LoopRun): string {
+  const view = getMissionView(run)
+  const reason = run.endReason ?? 'done'
+  const title =
+    reason === 'objective_met' ? '✅ Loop 达标结束'
+      : reason === 'wall_limit' ? '⏱ Loop 触达墙钟上限'
+        : reason === 'limit' ? '⏹ Loop 触达轮次上限'
+          : reason === 'focus_off' ? '⏹ Loop 因 Focus off 取消'
+            : '🛑 Loop 已结束'
+  const lines = [
+    title,
+    '',
+    `**目标**：${view.objective || '（无）'}`,
+    `**退出条件**：${view.exitDescription || '（无）'}`,
+    `轮次：${run.round}/${view.maxRounds} · 原因：\`${reason}\``,
+  ]
+  if (view.acceptance) lines.push(`**验收**：${view.acceptance}`)
+  if (run.lastVerification) {
+    lines.push(
+      `**最终验收**：met=${run.lastVerification.met ? '是' : '否'} — ${run.lastVerification.summary}`,
+    )
+    if (run.lastVerification.gaps?.length) {
+      lines.push(`缺口：${run.lastVerification.gaps.join('；')}`)
+    }
+  } else if (run.lastVerdict?.summary) {
+    lines.push(`摘要：${run.lastVerdict.summary}`)
+  }
+  return lines.join('\n')
+}
+
 function threadKey(platform: string, channelId: string, threadId: string): string {
   const raw = `${platform}__${channelId}__${threadId}`
   return raw.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 180)
@@ -960,9 +1069,14 @@ export function _touchLoopCreatedAtForTests(
 
 export function formatLoopStatus(run: LoopRun): string {
   const active = run.status !== 'ended'
+  if (!active) {
+    return formatLoopEndedSummary(run)
+  }
   const view = getMissionView(run)
+  const bucket = getLoopUxBucket(run)
   const lines = [
-    `🔁 Loop \`${run.id.slice(0, 8)}\` — ${active ? run.status : `ended (${run.endReason ?? 'done'})`}`,
+    `🔁 Loop \`${run.id.slice(0, 8)}\` — ${run.status}`,
+    `当前阶段：**${loopUxBucketLabel(bucket)}**（${run.status}）`,
     `session: \`${run.sessionKey || threadKey(run.platform, run.channelId, run.threadId)}\``,
     `Round: ${run.round}/${view.maxRounds}`,
     `openedFocus: ${run.openedFocus ? 'yes（结束会 focus off）' : 'no（结束保留 focus）'}`,

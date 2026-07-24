@@ -236,16 +236,15 @@ type LoopRun = {
 | **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出 | status / reload 可读两硬字段 |
 | **R3** ✅ | **PLAN + DISPATCH** | 确认后 snippet 强制拆解；`noteLoopDispatch` + `dispatchesThisRound`；`continue/revise` 无派工 → `no_dispatch` | 无子代理调用则不算完成一轮 |
 | **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
-| **R5** | **收尾 UX** | 达标总结卡片；Portal Loop 状态条；菜单文案对齐 L3 | 用户能看懂「卡在对焦/派工/验收」 |
+| **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 状态条（对焦/派工/验收）；结束总结 Markdown；菜单文案对齐 L3 | 用户能看懂「卡在对焦/派工/验收」 |
 | **R6** | **可选触发** | Heartbeat/cron **只负责 start**，仍走 ALIGNING | 不绕过对焦 |
 
-推荐合入顺序：**R1 → R2 → R3 → R4**（L3 最小闭环）；R5/R6 可并行或后置。
+推荐合入顺序：**R1 → R2 → R3 → R4 → R5**（产品闭环）；**R6 可选，暂缓**。
 
 ```text
-R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──► R4 验收闭环
-                                                      │
-                                            R5 UX ◄───┘
-                                            R6 触发器（可选）
+R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──► R4 验收闭环 ──► R5 UX ✅
+                                                                      │
+                                                            R6 触发器（可选·暂缓）
 ```
 
 ---
@@ -279,3 +278,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-24 | **R2 落地**：Mission SSOT（对焦期部分填写）+ sessionKey + acceptance/maxWallMs + status |
 | 2026-07-24 | **R3 落地**：PLAN+DISPATCH 门禁（本轮须派工才能 continue/revise） |
 | 2026-07-24 | **R4 落地**：VERIFY+REFLECT 结构化验收 + exit 截断 |
+| 2026-07-24 | **R5 落地**：Portal 状态条 + `/api/loop` + 结束总结；R6 暂缓 |

@@ -4,6 +4,7 @@ import type { RouteContext } from '../router.js'
 import {
   confirmLoopMission,
   formatAligningPrompt,
+  formatLoopEndedSummary,
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
@@ -58,9 +59,9 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
     const ended = stopLoop(ctx.platform, ctx.channelId, ctx.threadId, 'user_stop')
     if (!ended) return '没有正在运行的 Loop。'
     const focusNote = ended.openedFocus
-      ? '\n（本次为直开路径：Focus 已 off）'
-      : '\n（Focus 保持原样）'
-    return `🛑 Loop 已结束。${focusNote}`
+      ? '\n\n（本次为直开路径：Focus 已 off）'
+      : '\n\n（Focus 保持原样）'
+    return formatLoopEndedSummary(ended) + focusNote
   }
 
   if (sub === 'objective' || sub === 'goal' || sub === '目标') {

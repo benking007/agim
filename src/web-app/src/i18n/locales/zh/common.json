@@ -432,7 +432,7 @@
         "plan": "Plan 模式",
         "memo": "备忘",
         "focus": "聚焦",
-        "loop": "循环任务",
+        "loop": "Loop 工程",
         "subagent": "子代理",
         "remember": "提醒",
         "models": "模型",
@@ -440,6 +440,22 @@
         "camera": "拍照",
         "photos": "照片",
         "files": "文件"
+      },
+      "loop": {
+        "stripAria": "Loop 状态",
+        "round": "第 {{round}}/{{max}} 轮",
+        "ended": "已结束",
+        "endedMet": "达标结束",
+        "dismiss": "关闭",
+        "hintAlign": "卡在对焦：请确认目标与退出条件",
+        "hintDispatch": "卡在派工：拆解任务并 call_agents",
+        "hintVerify": "卡在验收：对照目标给出 met / nextDirection",
+        "bucket": {
+          "aligning": "对焦",
+          "dispatch": "派工",
+          "verify": "验收",
+          "ended": "已结束"
+        }
       },
       "slash": {
         "skills": "技能",
@@ -454,7 +470,7 @@
           "plan": { "label": "Plan", "description": "生成实现计划" },
           "memo": { "label": "备忘", "description": "保存一条 5W1H 备忘" },
           "focus": { "label": "聚焦", "description": "设置注意力聚焦（开/关）" },
-          "loop": { "label": "循环任务", "description": "在 Focus 上启动开发闭环（/loop）" },
+          "loop": { "label": "Loop", "description": "Loop 工程：对焦目标+退出 → 派工 → 验收（/loop）" },
           "subagent": { "label": "子代理", "description": "让 Agent 派出子代理完成任务" },
           "remember": { "label": "提醒", "description": "设置提醒" },
           "models": { "label": "模型", "description": "列出可用模型" },

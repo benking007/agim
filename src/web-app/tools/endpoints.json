@@ -15,6 +15,7 @@
     "src/web/http-utils.ts",
     "src/web/jobs-api.ts",
     "src/web/llm-api.ts",
+    "src/web/loop-api.ts",
     "src/web/mcp-api.ts",
     "src/web/memory-api.ts",
     "src/web/memos-api.ts",
@@ -32,7 +33,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 121,
+  "count": 122,
   "endpoints": [
     {
       "method": "DELETE",
@@ -273,6 +274,12 @@
       "path": "/api/loc/info",
       "source": "exact",
       "authRequired": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/loop",
+      "source": "exact",
+      "authRequired": true
     },
     {
       "method": "GET",

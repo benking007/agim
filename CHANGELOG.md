@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop R5 UX**: `GET /api/loop?threadId=` + Portal status strip showing
+  对焦/派工/验收; ended summary Markdown (`formatLoopEndedSummary`);
+  menu/slash copy aligned to Loop Engineering L3. R6 triggers deferred.
 - **Loop R4 VERIFY+REFLECT**: `loop_verdict` takes structured
   `met` / `gaps` / `nextDirection`. `continue|revise` require unmet
   verification + nextDirection (reflect → planning). `stop` + `met=true`

@@ -439,7 +439,8 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(stop.run.status).toBe('ended')
     expect(stop.run.endReason).toBe('objective_met')
     expect(stop.run.lastVerification?.met).toBe(true)
-    expect(formatLoopStatus(stop.run)).toContain('met=✅')
+    expect(formatLoopStatus(stop.run)).toContain('达标结束')
+    expect(formatLoopStatus(stop.run)).toContain('regression green')
   })
 
   it('maxRounds truncates after verify-unmet', () => {

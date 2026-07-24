@@ -231,11 +231,11 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | R1 | ALIGNING 硬门禁 — **已落地**（#232） |
 | R2 | Mission SSOT 持久化 — **已落地**（#233） |
 | R3 | PLAN + DISPATCH — **已落地**（#234） |
-| **R4** | VERIFY + REFLECT：结构化 `met`/`nextDirection`；exit 截断 — **本 PR** |
-| R5 | SPA / 总结卡片 UX |
-| R6 | 可选触发器（仅 start，仍走对焦） |
+| R4 | VERIFY + REFLECT — **已落地**（#235） |
+| **R5** | Portal 状态条 + 结束总结 + 菜单 L3 文案 — **本 PR** |
+| R6 | 可选触发器（仅 start，仍走对焦）— **暂缓** |
 
-**下一刀：R5（或 R6）。**
+**R1–R5 完成后暂停；R6 另开刀。**
 
 #### 非本阶段
 

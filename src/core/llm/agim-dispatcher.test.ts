@@ -42,6 +42,15 @@ describe('getAgimTools', () => {
       expect(typeof t.parameters).toBe('object')
     }
   })
+
+  it('call_agent and ask_user opt out of the Native 60s tool-bridge default', () => {
+    const tools = getAgimTools()
+    const callAgent = tools.find((t) => t.name === 'mcp__agim__call_agent')
+    const askUser = tools.find((t) => t.name === 'mcp__agim__ask_user')
+    // timeoutMs: 0 = no per-tool wall cap; A2A / ask_user own their clocks.
+    expect(callAgent?.timeoutMs).toBe(0)
+    expect(askUser?.timeoutMs).toBe(0)
+  })
 })
 
 describe('buildAgimDispatcher', () => {

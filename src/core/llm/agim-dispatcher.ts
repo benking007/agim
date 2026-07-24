@@ -333,6 +333,9 @@ export function getAgimTools(): ToolDef[] {
         },
         required: ['question', 'choices'],
       },
+      // Waiting on a human can take up to timeoutSec (max 1800s). Do not inherit
+      // the Native Agent tool-bridge 60s default — that would cancel the card early.
+      timeoutMs: 0,
     },
     {
       name: 'mcp__agim__call_agent',
@@ -376,6 +379,10 @@ export function getAgimTools(): ToolDef[] {
         },
         required: ['agent', 'prompt'],
       },
+      // Subagent wall clock is owned by A2A (AGIM_A2A_TIMEOUT_DEFAULT_MS, 30 min
+      // default). The Native tool-bridge default (60s) must not abort call_agent
+      // mid-research — that was mis-labeled "Stopped by user" in the UI.
+      timeoutMs: 0,
     },
     {
       name: 'mcp__agim__long_task',

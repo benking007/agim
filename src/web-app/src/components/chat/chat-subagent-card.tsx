@@ -63,6 +63,9 @@ function statusLabel(
   if (step.preview === 'Stopped by user' || /stopped by user/i.test(step.preview || '')) {
     return t('chat.subagentStopped', { defaultValue: 'stopped' })
   }
+  if (/timed?\s*out|timeout|超时/i.test(step.preview || '')) {
+    return t('chat.subagentTimedOut', { defaultValue: 'timed out' })
+  }
   if (step.status === 'success') {
     return t('chat.activityAgentDone', { defaultValue: 'completed' })
   }

@@ -296,6 +296,7 @@
 | 2026-07-24 | **半浮层对齐 / 长内容滚动**；Plan 中途可见（`activityFollowSignal` + todo status 归一）；Plan 叠在 Subagent 上方 | #223 |
 | 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
+| 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 
 ### 落地差异（相对 §4.3）
 
@@ -303,7 +304,8 @@
 - `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` 对同族 Subagent **不再走无 job 快路径**（打日志后仍走 A2A）。  
 - A2 UI：消息流卡片 + 半浮层详情（`chat-subagent-card` / `subagent-detail-dialog`），activity 仍带 `jobId`；未另开独立「Subagent 面板」路由树。  
 - A3 不引入独立分解 Agent；启发式仅以 prompt / tool description 形式注入父侧。  
-- 用户 Stop 子代理时返回 **cancelled + ok**（非硬失败），以便父 turn 用阶段性内容继续。
+- 用户 Stop 子代理时返回 **cancelled + ok**（非硬失败），以便父 turn 用阶段性内容继续。  
+- Subagent **墙钟由 A2A**（`AGIM_A2A_TIMEOUT_DEFAULT_MS`，默认 30 min）负责；同族 Agim 子会话仍经 `buildSystemPrompt` 注入 skills 摘要，但**不继承父对话历史**（isolate 设计如此，brief 须自包含）。
 
 ---
 

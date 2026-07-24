@@ -111,8 +111,12 @@ async function dispatchWithTimeout(
       // Only read-only/parallel-safe tools may detach. Mutations wait for
       // their dispatcher to settle so no late side effect can land after the
       // evidence ledger has unblocked completion.
-      rejectTimeout?.(new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`))
-      ctrl.abort()
+      const timeoutErr = new Error(`工具 ${toolName} 执行超过 ${timeoutMs}ms 已超时`)
+      timeoutErr.name = 'TimeoutError'
+      rejectTimeout?.(timeoutErr)
+      // Propagate a named timeout reason so nested A2A does not mis-label
+      // the abort as "Stopped by user".
+      ctrl.abort(timeoutErr)
     }, timeoutMs)
   }
 

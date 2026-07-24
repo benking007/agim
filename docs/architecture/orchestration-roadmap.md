@@ -236,11 +236,11 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 #### 验收（勾选在实现 PR 回写）
 
-见 [`focus.md`](./focus.md) §7 · [`loop-engineering.md`](./loop-engineering.md) §9。
+见 [`focus.md`](./focus.md) §7 · [`loop-engineering.md`](./loop-engineering.md) §7。
 
 #### 非本阶段
 
-多执行者 DAG、自动合并 PR、跨机器编排；见 loop-engineering §10。
+多执行者 DAG、自动合并 PR、跨机器编排；见 loop-engineering §8。
 
 ---
 

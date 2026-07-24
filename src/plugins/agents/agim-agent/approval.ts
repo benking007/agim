@@ -5,6 +5,7 @@
 import type { ApprovalGate } from '../../../core/llm/agent-loop.js'
 import { isPlanExitToolName, PLAN_EXIT_TOOL_NAME } from '../../../core/llm/plan-exit-dispatcher.js'
 import { buildPolicyApprovalGate } from '../../../core/llm/policy-approval-gate.js'
+import { isTodoActivityLabel } from '../../../core/llm/todo-items.js'
 import { canonicalizeToolName, expandToolNameList } from '../../../core/llm/tool-names.js'
 import { approvalBus, threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import type { AgentSendOpts } from '../../../core/types.js'
@@ -25,6 +26,12 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
           channelId: o.channelId ?? 'default',
           threadId: o.threadId,
           userId: o.userId ?? 'unknown',
+          // Same-family / A2A Subagents inherit the parent thread; stamp
+          // depth + agent so AGIM_AUTO_APPROVE and the web dock treat
+          // parent and child through one ApprovalBus.
+          callerAgent: 'agim',
+          ...(typeof o.callDepth === 'number' ? { callDepth: o.callDepth } : {}),
+          ...(typeof o.parentJobId === 'number' ? { parentJobId: o.parentJobId } : {}),
         })
       : undefined
   const gate = buildPolicyApprovalGate({ ...policy, askUser })
@@ -39,6 +46,16 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
         || denyExpanded.has(canonicalizeToolName(call.name))) {
         return 'deny'
       }
+      return 'allow'
+    }
+    // Checklist writes only update observer UI / todo store — never mutate
+    // the workspace. Auto-allow so the Plan card can appear mid-turn even
+    // when AGIM_AUTO_APPROVE is off (otherwise every todo_write blocks HITL
+    // and the checklist looks "stuck until the end").
+    if (isTodoActivityLabel(call.name)
+      && !denyExpanded.has(call.name)
+      && !denyExpanded.has(canonicalizeToolName(call.name))
+      && policy.mode !== 'deny-all') {
       return 'allow'
     }
     return await gate(call, attempt, signal)

@@ -30,10 +30,13 @@ import { logger as rootLogger } from './logger.js'
 import { workspaceRegistry } from './workspace.js'
 import {
   bindJobController,
+  cancelJob,
   createInlineJob,
+  getJob,
   markJobRunning,
   markJobCompleted,
   markJobFailed,
+  setJobResult,
 } from './job-board.js'
 import { logInvocation } from './audit-log.js'
 import { applyGoalTimeoutBoost } from './goals.js'
@@ -55,6 +58,7 @@ import {
   notifyA2AFailed,
   startHeartbeat,
 } from './a2a-notify.js'
+import { isSameAgent } from './subagent.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
@@ -179,6 +183,13 @@ export interface CallAgentOpts {
   /** Web chat activity accordion — live "Waiting for subagent" steps.
    *  Prefer this over RouteContext.onToolActivity when both are set. */
   onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
+  /** Allow same-agent nested Subagent (isolated context). Vacuous self-call
+   *  without isolate/model is still rejected. See docs/architecture/subagent.md. */
+  isolate?: boolean
+  /** Agim Agent backend name → `AgentSendOpts.model` (role already resolved). */
+  model?: string
+  /** Activity accordion label override (e.g. `agim/cheap`). */
+  activityLabel?: string
 }
 
 export type CallAgentResult =
@@ -190,8 +201,25 @@ export type CallAgentResult =
       outputs: OutputFile[]
       /** L2: non-fatal advisories — e.g. expectOutputs that didn't show up. */
       warnings?: string[]
+      /** True when the user (or parent) stopped the Subagent mid-run. */
+      cancelled?: true
     }
   | { ok: false; error: string;  jobId?: number; agent?: string }
+
+/** Tool-result text handed back to the parent after a user Stop. */
+export function formatSubagentStoppedResult(partial: string): string {
+  const body = partial.trim() || '(no output yet)'
+  return [
+    '[Subagent stopped by user]',
+    'Partial output (may be incomplete):',
+    '---',
+    body,
+    '---',
+    'Instructions for parent: Summarize what is already known from the partial '
+      + 'output above, update the Plan checklist if one exists, and continue with '
+      + 'the next unfinished step. Do not re-spawn the same Subagent unless the user asks.',
+  ].join('\n')
+}
 
 function emitAgentActivity(
   opts: CallAgentOpts,
@@ -228,15 +256,25 @@ export async function callAgentByName(
     return { ok: false, error: `call depth exceeded (max=${maxDepth})` }
   }
 
-  // self-call: would be vacuous recursion. Caller agent name comes through
-  // opts.callerAgent (bus knows it from the runId → RunContext lookup).
-  // When unset (non-bus entry points) we skip the check; the depth ceiling
-  // still prevents runaway chains.
-  if (opts.callerAgent && opts.callerAgent === agentName) {
+  // Same-agent nested call is vacuous recursion unless this is an explicit
+  // Subagent spawn (isolate and/or a concrete model/backend override).
+  // Treat agim/native aliases (and registry aliases) as the same agent.
+  // When callerAgent is unset we skip the check; depth still caps chains.
+  if (
+    opts.callerAgent
+    && isSameAgent(opts.callerAgent, agentName)
+    && !opts.isolate
+    && !(typeof opts.model === 'string' && opts.model.trim())
+  ) {
     log.warn({
-      event: 'a2a.self_call_rejected', agentName, threadId: ctx.threadId,
-    }, 'call_agent rejected: agent cannot call itself')
-    return { ok: false, error: `cannot call self (${agentName})` }
+      event: 'a2a.self_call_rejected', agentName, callerAgent: opts.callerAgent, threadId: ctx.threadId,
+    }, 'call_agent rejected: agent cannot call itself without isolate/model')
+    return {
+      ok: false,
+      error:
+        `cannot call self (${agentName}) without isolate/role/backend. ` +
+        `Pass isolate:true or a role/backend for a same-family Subagent.`,
+    }
   }
 
   const target = registry.findAgent(agentName)
@@ -350,18 +388,22 @@ export async function callAgentByName(
     callerAgent: opts.callerAgent,
   })
   const heartbeat = startHeartbeat(ctx, nextDepth, jobId, target.name)
+  const activityLabel = (typeof opts.activityLabel === 'string' && opts.activityLabel.trim())
+    ? opts.activityLabel.trim()
+    : target.name
   const activityStartedAt = Date.now()
   emitAgentActivity(opts, ctx, {
     id: `a2a-${jobId}`,
     kind: 'agent',
-    label: target.name,
+    label: activityLabel,
     status: 'running',
     startedAt: activityStartedAt,
     preview: prompt.slice(0, 120).replace(/\s+/g, ' '),
+    jobId,
   })
 
   let result = ''
-  let outcome: 'completed' | 'failed' | 'timeout' = 'completed'
+  let outcome: 'completed' | 'failed' | 'timeout' | 'cancelled' = 'completed'
   let errMsg = ''
   const calleeOutcomes: AgentTurnOutcome[] = []
   // v1.1.10: abortController is passed into sendPrompt so the underlying
@@ -369,6 +411,9 @@ export async function callAgentByName(
   // (codex / claude / opencode) keeps running and writes "orphan" files
   // into _agim-output/ long after agim has given up.
   try {
+    const modelOverride = typeof opts.model === 'string' && opts.model.trim()
+      ? opts.model.trim()
+      : undefined
     const gen = target.sendPrompt(`a2a-${jobId}`, promptWithEnvelope, [], {
       threadId: ctx.threadId,
       platform: ctx.platform,
@@ -382,6 +427,8 @@ export async function callAgentByName(
       // parent_id = jobId (our callee row).
       parentJobId: jobId,
       callDepth: nextDepth,
+      // Same-family Subagent: pin Agim Agent to role/backend via model name.
+      ...(modelOverride ? { model: modelOverride } : {}),
       // v1.2.139 — propagate parent's plan-mode state so the callee runs
       // read-only too. Without this, a parent under /plan on could delegate
       // a write task to claude-code and the child would launch with full
@@ -390,15 +437,28 @@ export async function callAgentByName(
       signal: abortController.signal,
       onOutcome: (value) => { calleeOutcomes.push(value) },
     })
-    result = await accumulateWithTimeout(gen, timeoutMs)
-    const calleeOutcome = calleeOutcomes.at(-1)
-    if (calleeOutcome && calleeOutcome.status !== 'success' && calleeOutcome.status !== 'partial') {
-      outcome = calleeOutcome.status === 'timeout' ? 'timeout' : 'failed'
-      errMsg = calleeOutcome.error ?? calleeOutcome.status
+    result = await accumulateWithTimeout(gen, timeoutMs, abortController.signal)
+    if (abortController.signal.aborted || opts.signal?.aborted || getJob(jobId)?.status === 'cancelled') {
+      outcome = 'cancelled'
+      errMsg = 'stopped by user'
+    } else {
+      const calleeOutcome = calleeOutcomes.at(-1)
+      if (calleeOutcome && calleeOutcome.status !== 'success' && calleeOutcome.status !== 'partial') {
+        outcome = calleeOutcome.status === 'timeout' ? 'timeout' : 'failed'
+        errMsg = calleeOutcome.error ?? calleeOutcome.status
+      }
     }
   } catch (err) {
-    outcome = err instanceof TimeoutError ? 'timeout' : 'failed'
-    errMsg = err instanceof Error ? err.message : String(err)
+    if (err instanceof TimeoutError) {
+      outcome = 'timeout'
+      errMsg = err.message
+    } else if (abortController.signal.aborted || opts.signal?.aborted) {
+      outcome = 'cancelled'
+      errMsg = 'stopped by user'
+    } else {
+      outcome = 'failed'
+      errMsg = err instanceof Error ? err.message : String(err)
+    }
     // Cancel the in-flight child. spawnStream listens on the signal and
     // sends SIGTERM (then SIGKILL after a grace period) to the agent CLI.
     try { abortController.abort() } catch { /* noop */ }
@@ -413,6 +473,15 @@ export async function callAgentByName(
 
   if (outcome === 'completed') {
     markJobCompleted(jobId, result)
+  } else if (outcome === 'cancelled') {
+    // WS/UI cancelJob() may already have flipped status; always persist
+    // partial text. If status is still running, cancel now with result.
+    const row = getJob(jobId)
+    if (row?.status === 'cancelled') {
+      setJobResult(jobId, result || null)
+    } else if (!cancelJob(jobId, { result: result || null })) {
+      setJobResult(jobId, result || null)
+    }
   } else {
     markJobFailed(jobId, errMsg || outcome)
   }
@@ -431,11 +500,45 @@ export async function callAgentByName(
       responseLen: result.length,
       durationMs,
       cost: 0,
-      success: outcome === 'completed',
-      error: outcome === 'completed' ? undefined : (errMsg || outcome),
+      success: outcome === 'completed' || outcome === 'cancelled',
+      error: outcome === 'completed' || outcome === 'cancelled'
+        ? undefined
+        : (errMsg || outcome),
     })
   } catch (err) {
     log.debug({ event: 'a2a.audit_failed', err: String(err) }, 'audit write failed (continuing)')
+  }
+
+  if (outcome === 'cancelled') {
+    const resultForParent = formatSubagentStoppedResult(result)
+    log.info({
+      event: 'a2a.invoke_end', outcome: 'cancelled', jobId, durationMs, callee: target.name,
+      resultLen: result.length,
+    }, `A2A → ${target.name} cancelled (${result.length} chars partial)`)
+    emitAgentActivity(opts, ctx, {
+      id: `a2a-${jobId}`,
+      kind: 'agent',
+      label: activityLabel,
+      status: 'error',
+      startedAt: activityStartedAt,
+      finishedAt: Date.now(),
+      preview: 'Stopped by user',
+      jobId,
+    })
+    const artifactsDir = getArtifactsDir(jobId).outputDir
+    const outputs = await listOutputs(jobId).catch(() => [] as OutputFile[])
+    // ok:true so the parent turn continues — tool result asks it to summarize
+    // partial progress and advance the next Plan step.
+    return {
+      ok: true,
+      cancelled: true,
+      result: resultForParent,
+      jobId,
+      agent: target.name,
+      durationMs,
+      artifactsDir,
+      outputs,
+    }
   }
 
   if (outcome !== 'completed') {
@@ -445,11 +548,12 @@ export async function callAgentByName(
     emitAgentActivity(opts, ctx, {
       id: `a2a-${jobId}`,
       kind: 'agent',
-      label: target.name,
+      label: activityLabel,
       status: 'error',
       startedAt: activityStartedAt,
       finishedAt: Date.now(),
       preview: (errMsg || outcome).slice(0, 180),
+      jobId,
     })
     if (outcome === 'timeout') {
       void notifyA2ATimeout(ctx, nextDepth, { jobId, callee: target.name, durationMs })
@@ -485,11 +589,12 @@ export async function callAgentByName(
   emitAgentActivity(opts, ctx, {
     id: `a2a-${jobId}`,
     kind: 'agent',
-    label: target.name,
+    label: activityLabel,
     status: 'success',
     startedAt: activityStartedAt,
     finishedAt: Date.now(),
     preview: `${Math.round(durationMs / 100) / 10}s · ${result.length} chars`,
+    jobId,
   })
   void notifyA2AComplete(ctx, nextDepth, {
     jobId,
@@ -513,24 +618,42 @@ class TimeoutError extends Error {
 async function accumulateWithTimeout(
   gen: AsyncGenerator<string>,
   ms: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   let acc = ''
   const deadline = Date.now() + ms
-  // Drain the generator with a per-step race against a deadline check.
-  // We don't fight with the agent's internal stream — the timeout aborts
-  // the AGGREGATION; the underlying spawn keeps running and gets logged
-  // (caller's audit row gets outcome='timeout'). Future enhancement:
-  // pass an AbortSignal to the adapter so the child actually terminates.
+  // Drain the generator with a per-step race against deadline + abort.
+  // Abort returns accumulated partial text so the parent can summarize.
   while (true) {
+    if (signal?.aborted) return acc
     if (Date.now() >= deadline) throw new TimeoutError(ms)
     const nextP = gen.next()
-    const timeoutP = new Promise<{ done: true; value: undefined }>((_, reject) => {
+    const timeoutP = new Promise<never>((_, reject) => {
       const t = setTimeout(() => reject(new TimeoutError(ms)), Math.max(0, deadline - Date.now()))
-      // Don't leak the timer when next() resolves first.
       nextP.finally(() => clearTimeout(t)).catch(() => { /* nothing */ })
     })
-    const step = await Promise.race([nextP, timeoutP]) as IteratorResult<string>
-    if (step.done) return acc
-    if (typeof step.value === 'string') acc += step.value
+    const abortP = signal
+      ? new Promise<never>((_, reject) => {
+          const onAbort = () => reject(new Error('a2a aborted'))
+          if (signal.aborted) {
+            onAbort()
+            return
+          }
+          signal.addEventListener('abort', onAbort, { once: true })
+          nextP.finally(() => signal.removeEventListener('abort', onAbort)).catch(() => { /* nothing */ })
+        })
+      : null
+    try {
+      const step = await Promise.race(
+        abortP ? [nextP, timeoutP, abortP] : [nextP, timeoutP],
+      ) as IteratorResult<string>
+      if (step.done) return acc
+      if (typeof step.value === 'string') acc += step.value
+    } catch (err) {
+      if (signal?.aborted || (err instanceof Error && /a2a aborted/i.test(err.message))) {
+        return acc
+      }
+      throw err
+    }
   }
 }

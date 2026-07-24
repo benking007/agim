@@ -717,6 +717,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           startedAt: Math.min(prev.startedAt, a.step.startedAt),
           preview: a.step.preview ?? prev.preview,
           todoItems: a.step.todoItems ?? prev.todoItems,
+          jobId: a.step.jobId ?? prev.jobId,
         }
       } else {
         steps.push(a.step)

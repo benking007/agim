@@ -761,6 +761,17 @@ export async function startWebServer(options: {
         ac.abort()
         return
       }
+      if (msgType === 'stop-subagent') {
+        // Per-Subagent Stop must bypass the serial queue for the same
+        // reason as parent Stop — otherwise cancel waits until the parent
+        // turn (which is blocked waiting on the Subagent) finishes.
+        void handleClientMessage(
+          client,
+          msg as Parameters<typeof handleClientMessage>[1],
+          getDefaultAgent(options.defaultAgent),
+        )
+        return
+      }
       enqueueInbound(async () => {
         try {
           // Pass an onRekey callback so handleClientMessage can keep

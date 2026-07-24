@@ -369,6 +369,12 @@ export interface ApprovalCardPrompt {
   canPin?: boolean
   /** Auto-allow grace window in seconds, present iff mode === 'auto-allow'. */
   graceSeconds?: number
+  /** Agent that requested the tool (parent or Subagent). */
+  callerAgent?: string
+  /** Nested call depth; >0 means a Subagent / A2A callee. */
+  callDepth?: number
+  /** Preformatted origin label for UI (e.g. "Subagent · agim/cheap"). */
+  originLabel?: string
 }
 
 /**
@@ -552,7 +558,7 @@ export interface AgentSendOpts {
 /** One live activity step pushed to the web chat UI (P1 activity-step). */
 export interface ToolActivityStep {
   id: string
-  /** `agent` = A2A / call_agent delegation (Waiting for subagent). */
+  /** `agent` = A2A / call_agent / Subagent delegation. */
   kind: 'tool' | 'skill' | 'status' | 'agent'
   label: string
   status: 'pending' | 'running' | 'success' | 'error' | 'denied'
@@ -562,6 +568,8 @@ export interface ToolActivityStep {
   preview?: string
   /** Structured checklist for `agim_todo_write` (avoids preview truncation). */
   todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+  /** Inline job id for Subagent / A2A steps (`a2a-${jobId}`). */
+  jobId?: number
 }
 
 /**

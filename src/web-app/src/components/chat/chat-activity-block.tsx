@@ -198,24 +198,34 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
   const liveStep = [...activity.steps].reverse().find((s) => (
     s.status === 'running' || s.status === 'pending'
   ))
-  // Prefer a live A2A/agent step for the Cursor-style subtitle even when an
+  // Prefer live Subagent step(s) for the Cursor-style subtitle even when an
   // approval/ask is also pending further down the same turn.
-  const waitingAgent = [...activity.steps].reverse().find((s) => (
+  const waitingAgents = activity.steps.filter((s) => (
     s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
   ))
+  const waitingAgent = waitingAgents.length > 0
+    ? waitingAgents[waitingAgents.length - 1]
+    : undefined
   const duration = formatDuration(activity.durationMs)
   const running = activity.status === 'running'
 
   let title: string
   if (running) {
     // Prefer showing the delegated agent in the Running title while waiting.
-    const titleStep = waitingAgent ?? liveStep
-    title = titleStep
-      ? t('chat.activityRunningStep', {
-          step: localizeStepLabel(titleStep, t),
-          defaultValue: 'Running · {{step}}',
-        })
-      : t('chat.activityRunning', { defaultValue: 'Running' })
+    if (waitingAgents.length > 1) {
+      title = t('chat.activityRunningSubagents', {
+        count: waitingAgents.length,
+        defaultValue: 'Running · {{count}} subagents',
+      })
+    } else {
+      const titleStep = waitingAgent ?? liveStep
+      title = titleStep
+        ? t('chat.activityRunningStep', {
+            step: localizeStepLabel(titleStep, t),
+            defaultValue: 'Running · {{step}}',
+          })
+        : t('chat.activityRunning', { defaultValue: 'Running' })
+    }
   } else if (activity.status === 'error') {
     title = t('chat.activityFailed', { defaultValue: 'Failed' })
   } else {
@@ -249,15 +259,6 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
           )}
         />
       </button>
-
-      {waitingAgent && (
-        <p className="mt-0.5 pl-1.5 text-xs text-text-muted">
-          {t('chat.activityWaitingSubagent', {
-            agent: waitingAgent.label,
-            defaultValue: 'Waiting for subagent',
-          })}
-        </p>
-      )}
 
       {open && (
         <div className="mt-1.5 space-y-1 border-l border-border/80 pl-3">
@@ -296,6 +297,11 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                 {step.kind === 'skill' && (
                   <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
                     {t('chat.activitySkill', { defaultValue: 'skill' })}
+                  </span>
+                )}
+                {step.kind === 'agent' && (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
+                    {t('chat.activitySubagentBadge', { defaultValue: 'subagent' })}
                   </span>
                 )}
                 <AgentStatusBadge step={step} />

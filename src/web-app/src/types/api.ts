@@ -88,6 +88,10 @@ export interface ListJobsResponse {
   }
 }
 
+export interface GetJobResponse {
+  job: Job
+}
+
 export interface CreateJobBody {
   agent: string
   prompt: string

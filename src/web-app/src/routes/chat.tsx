@@ -40,11 +40,17 @@ import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { ApprovalDock } from '@/components/chat/approval-dock'
+import { activityFollowSignal } from '@/lib/activity-follow-signal'
 
 /** Keep the Todo card out of the SPA entry budget (same pattern as MessageActions). */
 const ChatTodoList = lazy(async () => {
   const module = await import('@/components/chat/chat-todo-list')
   return { default: module.ChatTodoList }
+})
+/** Subagent card + detail dialog — sibling of Plan in the message list. */
+const ChatSubagentCard = lazy(async () => {
+  const module = await import('@/components/chat/chat-subagent-card')
+  return { default: module.ChatSubagentCard }
 })
 /** Native setup pulls llm-presets + select-heavy form UI — keep out of entry. */
 const NativeSetupDialog = lazy(async () => {
@@ -69,7 +75,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function ChatRoute(): JSX.Element {
   const { t } = useTranslation()
   const {
-    state, send, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+    state, send, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
@@ -121,13 +127,13 @@ export default function ChatRoute(): JSX.Element {
     [state.messages],
   )
 
-  const latestActivitySteps = state.messages.at(-1)?.activity?.steps.length ?? 0
+  const latestFollowSignal = activityFollowSignal(state.messages.at(-1)?.activity)
   const { stickToBottom } = useChatFollowBottom({
     listRef,
     messageCount,
     latestMessageContent,
     streaming: state.currentReplyId != null,
-    followSignal: latestActivitySteps,
+    followSignal: latestFollowSignal,
   })
   useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
   useBlurComposerOnUserScroll(listRef, inputRef)
@@ -158,7 +164,11 @@ export default function ChatRoute(): JSX.Element {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-bg">
+    <div
+      className="relative flex h-dvh flex-col bg-bg"
+      data-agim-composer-sheet-root
+      data-agim-sheet-column="chat"
+    >
       {/* App-wide Topbar (brand + nav + theme/lang). Chat-specific
           chrome — WS status pill + agent picker — slots into the
           children prop so it stays on the right of the topbar. */}
@@ -243,9 +253,19 @@ export default function ChatRoute(): JSX.Element {
                 {m.role === 'assistant' && m.activity && (
                   <ChatActivityBlock activity={m.activity} />
                 )}
+                {/* Plan first, then Subagents — Plan is the turn outline and
+                    should stay above nested work when both are present. */}
                 {m.role === 'assistant' && m.activity && (
                   <Suspense fallback={null}>
                     <ChatTodoList activity={m.activity} />
+                  </Suspense>
+                )}
+                {m.role === 'assistant' && m.activity && (
+                  <Suspense fallback={null}>
+                    <ChatSubagentCard
+                      activity={m.activity}
+                      onStopSubagent={stopSubagent}
+                    />
                   </Suspense>
                 )}
                 <MessageBubble

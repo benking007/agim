@@ -24,6 +24,7 @@ import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { isTodoGateOn, TODO_FIRST_PROMPT } from '../../../core/llm/todo-gate.js'
 import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/prompt-injection-guard.js'
 import { buildSkillsSummary } from '../../../core/skills/loader.js'
+import { buildSubagentDelegationGuidance } from '../../../core/subagent-heuristics.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
@@ -127,7 +128,7 @@ export function buildSystemPrompt(
     '  - When uncertain, call mcp__agim__ask_user(question, choices[]); do not pretend work is done.',
     '  - Destructive ops (delete/overwrite/outbound send): state impact, get confirmation first.',
     '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
-    '  - For file/list/search/fetch requests, use native tools first; reserve call_agent for work that genuinely needs another CLI agent.',
+    '  - For file/list/search/fetch requests, use native tools first; spawn a Subagent (call_agent) only when isolation, a cheaper model, or another CLI is genuinely needed.',
     '  - Closure rule: the FINAL assistant message (the hop with no more tool calls) MUST contain the full user-readable conclusion in Chinese — findings and next steps. Do NOT end with only a status line like「盘点完成」/「已完成」/「报告输出完毕」.',
     '',
     'IM reply shape (chat clients, not a terminal):',
@@ -146,10 +147,7 @@ export function buildSystemPrompt(
     '  - Jobs land in ${AGIM_HOME:-$HOME/.agim}/bgjobs (all agents). Follow up: status / tail / list --running on the same wrapper expr.',
     '  - long_task//goal tracks objectives across turns — it is NOT a background process.',
     '',
-    'Verification subagent:',
-    '  - After a substantive result, use call_agent with a fresh verifier when a second pass is valuable.',
-    "  - Synthesize, don't delegate understanding: state the exact claim and how to verify it.",
-    '  - Give the verifier a self-contained brief; it does not see this conversation.',
+    buildSubagentDelegationGuidance(),
   )
   return lines.join('\n')
 }
@@ -246,10 +244,11 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   const mode = (process.env.AGIM_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
   const autoAllow = splitEnvList(process.env.AGIM_NATIVE_AGENT_AUTOALLOW)
   const denyList = splitEnvList(process.env.AGIM_NATIVE_AGENT_DENYLIST)
-  // Default autoAllow list is empty — when AGIM_AUTO_APPROVE=1 (default),
-  // the approval bus handles auto-approval for all tools after safety
-  // checks. Operators can still populate AGIM_NATIVE_AGENT_AUTOALLOW to
-  // pre-approve specific tools even when auto-approve is off.
+  // Default autoAllow list is empty. Global AGIM_AUTO_APPROVE defaults OFF;
+  // when enabled, the shared ApprovalBus auto-allows parent and Subagent
+  // tools after safety checks. Operators can still populate
+  // AGIM_NATIVE_AGENT_AUTOALLOW to pre-approve specific tools when
+  // auto-approve is off.
   const effectiveAllow = autoAllow
   const effectiveDeny = isPlanModeOn(threadKey)
     ? Array.from(expandToolNameList([...denyList, ...PLAN_MODE_DENY_TOOLS]))
@@ -347,13 +346,18 @@ export function buildNativeAskUser(opts: {
   channelId: string
   threadId: string
   userId: string
+  callerAgent?: string
+  callDepth?: number
+  parentJobId?: number
 }): (call: ToolCallRequest, signal?: AbortSignal) => Promise<'allow' | 'deny'> {
   const baseCtx = {
     platform: opts.platform,
     channelId: opts.channelId,
     threadId: opts.threadId,
     userId: opts.userId,
-    callerAgent: 'agim',
+    callerAgent: opts.callerAgent || 'agim',
+    ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
+    ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
   }
   return async (call: ToolCallRequest, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
     if (signal?.aborted) return 'deny'

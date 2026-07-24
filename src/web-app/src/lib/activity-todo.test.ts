@@ -34,6 +34,37 @@ describe('parseTodoItemsFromPreview', () => {
 })
 
 describe('extractLatestTodoItems', () => {
+  it('normalizes common status aliases so the Plan card can render mid-turn', () => {
+    const activity: ChatActivity = {
+      runId: 'r1',
+      status: 'running',
+      startedAt: 1,
+      steps: [{
+        id: 'agim-plan-checklist',
+        kind: 'tool',
+        label: 'agim_todo_write',
+        status: 'running',
+        startedAt: 1,
+        todoItems: [
+          { content: 'a', status: 'done' as 'completed' },
+          { content: 'b', status: 'in-progress' as 'in_progress' },
+          { content: 'c', status: 'todo' as 'pending' },
+        ],
+      }],
+    }
+    // Cast above only satisfies TS; runtime values are the alias strings.
+    ;(activity.steps[0] as { todoItems: Array<{ content: string; status: string }> }).todoItems = [
+      { content: 'a', status: 'done' },
+      { content: 'b', status: 'in-progress' },
+      { content: 'c', status: 'todo' },
+    ]
+    expect(extractLatestTodoItems(activity)).toEqual([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'in_progress' },
+      { content: 'c', status: 'pending' },
+    ])
+  })
+
   it('prefers the latest todo step and structured todoItems', () => {
     const activity: ChatActivity = {
       runId: 'r1',

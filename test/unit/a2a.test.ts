@@ -130,12 +130,32 @@ describe('A2A callAgentByName rejection branches', () => {
     if (!r.ok) expect(r.error).toContain('call depth exceeded')
   })
 
-  it('rejects self-call when callerAgent === target', async () => {
+  it('rejects self-call when callerAgent === target without isolate/model', async () => {
     const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
       callerAgent: 'claude-code',
     })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain('cannot call self')
+  })
+
+  it('allows same-agent Subagent past self-call gate when isolate:true', async () => {
+    // Still fails later (agent may be missing / unavailable), but must NOT
+    // be the vacuous self-call rejection.
+    const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
+      callerAgent: 'claude-code',
+      isolate: true,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).not.toMatch(/cannot call self/)
+  })
+
+  it('allows same-agent Subagent past self-call gate when model is set', async () => {
+    const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
+      callerAgent: 'claude-code',
+      model: 'deepseek-v4-flash',
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).not.toMatch(/cannot call self/)
   })
 
   it('rejects unknown agent name', async () => {
@@ -180,5 +200,15 @@ describe('compressA2AResult (sub-output compression)', () => {
     process.env.AGIM_A2A_MAX_RESULT_CHARS = '0'
     const full = 'y'.repeat(9000)
     expect(await a2a.compressA2AResult(770003, full)).toBe(full)
+  })
+})
+
+
+describe('formatSubagentStoppedResult', () => {
+  it('includes partial output and parent continue instructions', () => {
+    const out = a2a.formatSubagentStoppedResult('half done findings')
+    expect(out).toContain('[Subagent stopped by user]')
+    expect(out).toContain('half done findings')
+    expect(out).toMatch(/Summarize|continue/i)
   })
 })

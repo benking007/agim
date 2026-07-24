@@ -21,6 +21,8 @@ export type ChatOutgoing =
   | { type: 'new-conversation' }
   /** Abort the in-flight web chat run for this thread (Stop button). */
   | { type: 'stop' }
+  /** Cancel one live Subagent/A2A inline job; parent turn continues. */
+  | { type: 'stop-subagent'; jobId: number }
   /** Approval card button click. `data` MUST be the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router's
    *  `parseCallbackData` expects — v2 routes it through unchanged. */
@@ -62,6 +64,8 @@ export type ChatIncoming =
   | ActivityStepEvent
   | ActiveRunEvent
   | { type: 'error'; message: string }
+  /** Ack that a per-Subagent cancel was accepted (activity-step follows). */
+  | { type: 'subagent-stopped'; jobId: number }
   | { type: 'approval-text'; text: string }
   | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
   | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome }
@@ -112,6 +116,8 @@ export interface ActivityStepEvent {
     preview?: string
     /** Structured checklist for agim_todo_write (chat Todo UI). */
     todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+    /** Subagent / A2A inline job id when known. */
+    jobId?: number
   }
 }
 
@@ -150,6 +156,12 @@ export interface ApprovalCardPrompt {
   canPin?: boolean
   /** Auto-allow grace window in seconds, present iff mode = `auto-allow`. */
   graceSeconds?: number
+  /** Agent that requested the tool (parent or Subagent). */
+  callerAgent?: string
+  /** Nested call depth; >0 means a Subagent / A2A callee. */
+  callDepth?: number
+  /** Preformatted origin label for UI (e.g. "Subagent · agim"). */
+  originLabel?: string
 }
 
 /** Mirror of src/core/types.ts:ApprovalCardOutcome — five decisions

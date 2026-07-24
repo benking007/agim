@@ -195,7 +195,7 @@ export async function sendSessionHistory(
  */
 export async function handleClientMessage(
   client: ClientConnection,
-  msg: { type: string; text?: string; agent?: string; threadId?: string },
+  msg: { type: string; text?: string; agent?: string; threadId?: string; jobId?: number },
   defaultAgent: string,
   /** Notify the caller that the client's id changed mid-handler so the
    *  WS handler can keep its `clients` map in sync when a browser refresh resumes
@@ -340,6 +340,7 @@ export async function handleClientMessage(
               finishedAt: step.finishedAt,
               preview: step.preview,
               ...(step.todoItems ? { todoItems: step.todoItems } : {}),
+              ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
             })
             // Drop steps after finishActiveRun — late MCP/approval cleanup
             // must not reopen a Running accordion on the SPA (CLI agents).
@@ -580,6 +581,41 @@ export async function handleClientMessage(
         break
       }
       ac.abort()
+      break
+    }
+
+    case 'stop-subagent': {
+      // Cancel one A2A/Subagent inline job for this web thread. Parent turn
+      // keeps running; callAgentByName returns partial text + summarize brief.
+      const jobId = typeof msg.jobId === 'number' ? msg.jobId : Number(msg.jobId)
+      if (!Number.isFinite(jobId) || jobId <= 0) {
+        sendToClient(ws, { type: 'error', message: 'Invalid Subagent job id' })
+        break
+      }
+      try {
+        const { getJob, cancelJob } = await import('../core/job-board.js')
+        const job = getJob(jobId)
+        if (!job) {
+          sendToClient(ws, { type: 'error', message: 'Subagent job not found' })
+          break
+        }
+        const expectedKey = `web:web:${clientId}`
+        if (job.thread_key && job.thread_key !== expectedKey) {
+          sendToClient(ws, { type: 'error', message: 'Subagent job is not on this thread' })
+          break
+        }
+        const ok = cancelJob(jobId)
+        if (!ok) {
+          sendToClient(ws, { type: 'error', message: 'Subagent is not running' })
+          break
+        }
+        sendToClient(ws, { type: 'subagent-stopped', jobId })
+      } catch (err) {
+        sendToClient(ws, {
+          type: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
       break
     }
 

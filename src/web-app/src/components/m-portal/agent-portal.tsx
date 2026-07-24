@@ -30,6 +30,7 @@ import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
+import { activityFollowSignal } from '@/lib/activity-follow-signal'
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
@@ -94,7 +95,9 @@ export function AgentPortal(): JSX.Element {
     prefs.setLang(next)
   }
 
-  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation, clearError } = useChat()
+  const {
+    state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+  } = useChat()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
@@ -242,7 +245,7 @@ export function AgentPortal(): JSX.Element {
     messageCount: chatMessages.length,
     latestMessageContent: chatMessages[chatMessages.length - 1]?.content ?? '',
     streaming: isTyping,
-    followSignal: chatMessages[chatMessages.length - 1]?.activity?.steps.length ?? 0,
+    followSignal: activityFollowSignal(chatMessages[chatMessages.length - 1]?.activity),
   })
 
   const agentsCatalog = useMemo((): AgentCatalogEntry[] => {
@@ -554,6 +557,8 @@ export function AgentPortal(): JSX.Element {
           sidebarOpen && 'max-lg:pointer-events-none max-lg:select-none max-lg:blur-[6px] max-lg:brightness-75',
         )}
         aria-hidden={(sidebarOpen ? true : undefined)}
+        data-agim-composer-sheet-root
+        data-agim-sheet-column="portal"
       >
         <PortalHeader
           dark={dark}
@@ -583,6 +588,7 @@ export function AgentPortal(): JSX.Element {
           portalThreadId={portalThreadId}
           listRef={messagesListRef}
           onFillComposer={fillComposer}
+          onStopSubagent={stopSubagent}
           emptySlot={
             <PortalEmptyChat
               dark={dark}

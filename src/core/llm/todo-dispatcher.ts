@@ -308,13 +308,24 @@ function handleWrite(args: Record<string, unknown>, threadKey: string): Dispatch
       return { text: `items[${i}].content too long (max 500 chars)`, isError: true, source: 'todo' }
     }
     const rawStatus = typeof it.status === 'string' ? it.status : ''
-    if (rawStatus !== 'pending' && rawStatus !== 'in_progress' && rawStatus !== 'completed') {
+    const status = (
+      rawStatus === 'pending' || rawStatus === 'in_progress' || rawStatus === 'completed'
+    )
+      ? rawStatus
+      : rawStatus === 'todo' || rawStatus === 'not_started' || rawStatus === 'open'
+        ? 'pending' as const
+        : rawStatus === 'in-progress' || rawStatus === 'doing' || rawStatus === 'active'
+          ? 'in_progress' as const
+          : rawStatus === 'done' || rawStatus === 'complete' || rawStatus === 'finished'
+            ? 'completed' as const
+            : null
+    if (!status) {
       return {
         text: `items[${i}].status must be one of: pending | in_progress | completed (got "${rawStatus}")`,
         isError: true, source: 'todo',
       }
     }
-    normalized.push({ content, status: rawStatus })
+    normalized.push({ content, status })
   }
   if (!persistTodo(threadKey, normalized)) {
     return {

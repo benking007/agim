@@ -13,6 +13,7 @@ import {
   findWaitingAgentStep,
   formatActivityDuration,
   formatActivityKindSummaryParts,
+  listWaitingAgentSteps,
   type ChatActivity,
   type ChatActivityStep,
 } from '../../core/chat-activity.js'
@@ -51,6 +52,7 @@ function stepLabel(step: ChatActivityStep): string {
 }
 
 export function ActivityBlock({ activity }: ActivityBlockProps): JSX.Element {
+  const waitingAgents = listWaitingAgentSteps(activity)
   const waitingAgent = findWaitingAgentStep(activity)
   const liveStep = findLiveActivityStep(activity)
   const duration = formatActivityDuration(activity.durationMs)
@@ -59,8 +61,12 @@ export function ActivityBlock({ activity }: ActivityBlockProps): JSX.Element {
 
   let title: string
   if (running) {
-    const titleStep = waitingAgent ?? liveStep
-    title = titleStep ? `执行中 · ${stepLabel(titleStep)}` : '执行中'
+    if (waitingAgents.length > 1) {
+      title = `执行中 · ${waitingAgents.length} 个子代理`
+    } else {
+      const titleStep = waitingAgent ?? liveStep
+      title = titleStep ? `执行中 · ${stepLabel(titleStep)}` : '执行中'
+    }
   } else if (activity.status === 'error') {
     title = '失败'
   } else {
@@ -78,8 +84,16 @@ export function ActivityBlock({ activity }: ActivityBlockProps): JSX.Element {
         </Text>
         {title}
       </Text>
-      {waitingAgent && (
-        <Text dimColor>  等待子 Agent</Text>
+      {waitingAgents.length === 1 && (
+        <Text dimColor>{`  等待子代理 · → ${waitingAgents[0].label}`}</Text>
+      )}
+      {waitingAgents.length > 1 && (
+        <Box flexDirection="column">
+          <Text dimColor>{`  等待 ${waitingAgents.length} 个子代理`}</Text>
+          {waitingAgents.map((step) => (
+            <Text key={step.id} dimColor>{`    → ${step.label}`}</Text>
+          ))}
+        </Box>
       )}
       {stepCount === 0 && running && (
         <Text dimColor>  等待工具活动…</Text>

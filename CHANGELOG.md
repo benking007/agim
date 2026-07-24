@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Inline Subagent card (message list)**: Desktop `/` and Portal `/m/chat` surface Subagent steps as a Todo-style card (live status + preview). Click a row opens a composer-docked half-sheet (max-height + scroll, expand/collapse) with parent prompt + result via `GET /api/jobs/:id`. Fixes live WS/`active-runs` dropping `jobId`.
+- **Phase A acceptance harness**: `tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs` exercise isolate / `role=cheap`→flash / vacuous refuse / cross-adapter / serial dual Subagent activity+jobId / A3 heuristic presence against a live Agim stack (see `docs/desktop-regression.md` §3).
+- **Subagent decompose heuristics (Phase A3)**: Parent system prompt and `mcp__agim__call_agent` tool description share SSOT guidance from `subagent-heuristics.ts` (brief four-piece, when-not-to-spawn, same-family vs A2A, no parallel-write same file, synthesize). No separate “decomposer agent” service.
+- **Multi-Subagent UI feedback (Phase A2)**: Desktop accordion, Portal run-status, and TUI activity show “waiting N subagents” with a per-agent list when multiple `kind:'agent'` steps are running. Activity steps may carry `jobId`; labels distinguish same-family (`agim/cheap`) vs cross-adapter (`claude-code`). Shared helpers in `chat-activity.ts` + `SubagentWaitingList`.
+- **Same-family Subagent spawn (Phase A1)**: `mcp__agim__call_agent` accepts optional `role` / `backend` / `isolate` so Agim Agent can nest a Subagent on itself (e.g. reuse pro via `isolate:true`, or `role:"cheap"` → `llmRoles.cheap` / flash) while keeping job-board + activity parity. Cross-adapter A2A unchanged. Vacuous self-call without isolate/role/backend still refused. See `docs/architecture/subagent.md`.
 - **Portal hold-to-talk + multi-vendor STT**: `/m/chat` microphone hold-to-talk posts audio to `POST /api/chat/transcribe`. Providers: iFlytek / Tencent / Baidu / StepFun / MiMo / Zhipu GLM / OpenAI Whisper / whisper.cpp. Settings at `/settings/stt`; Auto order prefers Chinese quality → stability → cost. Secrets in `~/.agim/env` (`AGIM_STT_*` only).
 - **iOS / macOS App Icon**: ship Agim brand icons into both shell `AppIcon.appiconset`s (plus `assets/app-icon/` source + rounded preview). macOS assets use ~10% transparent margin so Dock size matches peers (full-bleed squircles look oversized).
 - **Chat Todo checklist UI**: `agim_todo_write` plans surface as a Cursor-style collapsible checklist above the tool accordion (desktop + Portal). Items update live with ☐ / ▶ / ☑ as the agent rewrites the list; activity steps keep a short “Plan updated” row without dumping the full checklist into the tool queue.
@@ -20,6 +25,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Subagent Stop (chat)**: live Subagent rows expose a right-side **Stop** control (WS `stop-subagent`). Cancel keeps the parent turn alive and returns partial output plus summarize/continue instructions to the parent agent.
+- **Approval dock (chat)**: slightly smaller sheet, denser header/body, and compact buttons (`min-h-8` / `text-xs`) so it competes less with the composer.
+- **Plan + Subagent stacking**: when both cards are present, Plan renders above Subagents (desktop + Portal).
 - Portal hold-to-talk: recognized text fills the composer for review/edit instead of sending immediately.
 - **STT env keys use `AGIM_STT_*` only** (feature not yet public — no short-name / LLM-key fallbacks):
   - Provider: `AGIM_STT_PROVIDER`
@@ -33,6 +41,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Chat Plan card mid-turn**: scroll-follow now keys off Plan/Subagent content (not only `steps.length`), so progressive `agim_todo_write` updates on the stable checklist step stay in view; Todo status aliases (`done` / `in-progress` / …) normalize for activity + dispatcher. Native policy also auto-allows `agim_todo_write` (unless deny-all / denylist) so checklist updates are not blocked behind HITL when `AGIM_AUTO_APPROVE` is off.
+- **Settings Policy**: `AGIM_AUTO_APPROVE` unset now displays **OFF** (matches backend default). Approval cards label Subagent origin (`callDepth` / `callerAgent`) for parent and nested runs on the shared ApprovalBus.
 - Portal hold-to-talk: `getUserMedia` no longer hard-fails with **Invalid constraint** on Safari / WKWebView — retry with looser audio constraints (`channelCount` / `noiseSuppression` optional), never force `video: false`, fall back to bare `{ audio: true }`. Clear toast when the browser reports **Requested device not found** (no mic device).
 - **whisper.cpp is the built-in local STT**: resolves `AGIM_STT_WHISPERCPP_*` / `AGIM_WHISPERCPP_*`, `~/.agim/whisper/bin/whisper-cli`, and PATH; `agim start` silently prefetches `ggml-base.bin` into `~/.agim/whisper/models/` when local STT is likely (pin / CLI present), with first transcription as fallback. An explicit whisper.cpp pin no longer silently falls through to Auto; missing CLI gets an install hint instead of raw `AGIM_STT_WHISPERCPP_BIN not set`.
 - STT “not configured” errors (Portal / IM) now point at `/settings/stt` instead of only mentioning `OPENAI_API_KEY` / whisper.cpp.

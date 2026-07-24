@@ -67,6 +67,7 @@ import type {
   WorkspaceFilesResponse,
   WriteWorkspaceFileBody,
   WriteWorkspaceFileResponse,
+  GetJobResponse,
   ListJobsQuery,
   ListJobsResponse,
   DeleteMemoryFactsBody,
@@ -252,6 +253,10 @@ export const api = {
   /** GET /api/jobs */
   listJobs: (query: ListJobsQuery) =>
     client.get<ListJobsResponse>('/api/jobs', { query }),
+
+  /** GET /api/jobs/:id */
+  getJob: (id: number) =>
+    client.get<GetJobResponse>(`/api/jobs/${id}`),
 
   /** POST /api/jobs */
   createJob: (body: CreateJobBody) =>

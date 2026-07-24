@@ -50,6 +50,7 @@ export function normalizeActivityStep(st: ActivityStepEvent['step']): ChatActivi
     finishedAt,
     preview: st.preview,
     ...(st.todoItems ? { todoItems: st.todoItems } : {}),
+    ...(typeof st.jobId === 'number' ? { jobId: st.jobId } : {}),
   }
 }
 
@@ -243,6 +244,7 @@ export function makeOnIncoming(
             finishedAt,
             preview: msg.step.preview,
             ...(msg.step.todoItems ? { todoItems: msg.step.todoItems } : {}),
+            ...(typeof msg.step.jobId === 'number' ? { jobId: msg.step.jobId } : {}),
           },
         })
         return

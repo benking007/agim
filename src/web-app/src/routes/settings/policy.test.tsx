@@ -58,7 +58,7 @@ function renderPage(env: Record<string, string> = {
 }
 
 describe('/settings/policy', () => {
-  it('shows auto-approve as enabled when AGIM_AUTO_APPROVE is unset', async () => {
+  it('shows auto-approve as disabled when AGIM_AUTO_APPROVE is unset', async () => {
     renderPage({
       AGIM_TIMEOUT_DEFAULT: 'allow',
       AGIM_APPROVAL_TIMEOUT_MS: '120000',
@@ -67,8 +67,8 @@ describe('/settings/policy', () => {
     const title = await screen.findByText(/^(Auto-Approve|自动审批)$/i)
     const section = title.closest('section')
     if (!section) throw new Error('Auto-Approve section not found')
-    expect(within(section).getByText('ON')).toBeInTheDocument()
-    expect(within(section).getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+    expect(within(section).getByText('OFF')).toBeInTheDocument()
+    expect(within(section).getByRole('switch')).toHaveAttribute('aria-checked', 'false')
   })
 
   it('surfaces auto-approve and saves approval timeout seconds as milliseconds', async () => {

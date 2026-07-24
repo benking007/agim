@@ -18,6 +18,8 @@ export interface ChatActivityStep {
   finishedAt?: number
   preview?: string
   todoItems?: ToolActivityStep['todoItems']
+  /** Subagent / A2A inline job id when known. */
+  jobId?: number
 }
 
 export interface ChatActivity {
@@ -55,6 +57,7 @@ export function mergeActivityStep(
       startedAt: Math.min(prev.startedAt, step.startedAt),
       preview: step.preview ?? prev.preview,
       todoItems: step.todoItems ?? prev.todoItems,
+      jobId: step.jobId ?? prev.jobId,
     }
   } else {
     steps.push(step)
@@ -80,6 +83,7 @@ export function mergeToolActivityStep(
     finishedAt: step.finishedAt,
     preview: step.preview,
     todoItems: step.todoItems,
+    ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
   })
 }
 
@@ -205,13 +209,32 @@ export function approvalDecisionToStepStatus(
   }
 }
 
-/** Live A2A / agent step preferred for "Waiting for subagent" copy. */
+/** All live Subagent / A2A steps (oldest → newest). */
+export function listWaitingAgentSteps(
+  activity: ChatActivity,
+): ChatActivityStep[] {
+  return activity.steps.filter((s) => (
+    s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
+  ))
+}
+
+/** Latest live Subagent step (compat helper for single-line titles). */
 export function findWaitingAgentStep(
   activity: ChatActivity,
 ): ChatActivityStep | undefined {
-  return [...activity.steps].reverse().find((s) => (
-    s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
-  ))
+  const waiting = listWaitingAgentSteps(activity)
+  return waiting.length > 0 ? waiting[waiting.length - 1] : undefined
+}
+
+/** Compact labels for a waiting-subagent banner, e.g. `agim/cheap, claude-code`. */
+export function formatWaitingSubagentLabels(
+  steps: ChatActivityStep[],
+  max = 4,
+): string {
+  const labels = steps.map((s) => s.label).filter(Boolean)
+  if (labels.length === 0) return ''
+  if (labels.length <= max) return labels.join(', ')
+  return `${labels.slice(0, max).join(', ')} +${labels.length - max}`
 }
 
 export function findLiveActivityStep(

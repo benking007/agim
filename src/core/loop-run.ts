@@ -92,6 +92,7 @@ export interface LoopRun {
     | 'wall_limit'
     | 'objective_met'
     | 'focus_off'
+    | 'verify_skipped'
     | 'error'
   round: number
   /** Mirror of mission.exit.maxRounds when present; else provisional. */
@@ -245,7 +246,8 @@ export function formatLoopEndedSummary(run: LoopRun): string {
       : reason === 'wall_limit' ? '⏱ Loop 触达墙钟上限'
         : reason === 'limit' ? '⏹ Loop 触达轮次上限'
           : reason === 'focus_off' ? '⏹ Loop 因 Focus off 取消'
-            : '🛑 Loop 已结束'
+            : reason === 'verify_skipped' ? '🛑 Loop 因跳过验收被强制结束'
+              : '🛑 Loop 已结束'
   const lines = [
     title,
     '',
@@ -468,6 +470,69 @@ export function isLoopWallExceeded(run: LoopRun, now = Date.now()): boolean {
   const wall = run.mission?.exit?.maxWallMs
   if (!wall || wall <= 0) return false
   return now - run.createdAt >= wall
+}
+
+export type LoopExitEnforceResult = {
+  ended: boolean
+  run: LoopRun | null
+  reason?: NonNullable<LoopRun['endReason']>
+}
+
+/**
+ * Active exit truncation that does NOT wait for loop_verdict.
+ * Currently: wall clock. Call at turn start / after dispatch / status poll.
+ */
+export function maybeEnforceLoopExit(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  now = Date.now(),
+): LoopExitEnforceResult {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return { ended: false, run: null }
+  if (isLoopWallExceeded(run, now)) {
+    const ended = endLoopInternal(
+      run,
+      'wall_limit',
+      `maxWallMs ${run.mission?.exit.maxWallMs} (enforced without verdict)`,
+    )
+    return { ended: true, run: ended, reason: 'wall_limit' }
+  }
+  return { ended: false, run }
+}
+
+/**
+ * When VERIFY follow-up still did not produce loop_verdict, force-end the Loop
+ * so it cannot hang forever in「待验收」with a delivered report.
+ */
+export function forceLoopExitSkippedVerify(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): LoopExitEnforceResult {
+  const wall = maybeEnforceLoopExit(platform, channelId, threadId)
+  if (wall.ended) return wall
+
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return { ended: false, run: null }
+  if ((run.dispatchesThisRound || 0) < 1) return { ended: false, run }
+
+  // Round already at cap and work was dispatched → count as limit.
+  if (run.round >= run.maxRounds) {
+    const ended = endLoopInternal(
+      run,
+      'limit',
+      `maxRounds ${run.maxRounds} (verify skipped; enforced without verdict)`,
+    )
+    return { ended: true, run: ended, reason: 'limit' }
+  }
+
+  const ended = endLoopInternal(
+    run,
+    'verify_skipped',
+    'parent skipped loop_verdict after forced follow-up',
+  )
+  return { ended: true, run: ended, reason: 'verify_skipped' }
 }
 
 function resolveVerification(verdict: LoopVerdict): LoopVerification | null {
@@ -857,6 +922,9 @@ export function noteLoopDispatch(
   run.updatedAt = Date.now()
   pushTimeline(run, 'system', `dispatch +${n} (round total ${run.dispatchesThisRound})`)
   writeRun(run)
+  // Active wall truncate — do not wait for loop_verdict.
+  const enforced = maybeEnforceLoopExit(platform, channelId, threadId)
+  if (enforced.ended && enforced.run) return enforced.run
   return run
 }
 

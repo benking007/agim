@@ -53,6 +53,9 @@ const HELP = [
   '验收：本轮已派工后必须 `loop_verdict`；跳过会强制补一轮验收',
   '（`AGIM_LOOP_VERIFY_GATE=on|off`，默认 on）。',
   '',
+  '退出：墙钟在回合开始/派工/轮询时主动截断；强制验收后仍跳过则强制结束',
+  '（不再只依赖模型自愿调用 `loop_verdict`）。',
+  '',
   '路径 A：先 `/focus …` 再 `/loop` → 结束不关 Focus',
   '路径 B：直接 `/loop <text>` → 代开 Focus，结束 Focus off',
 ].join('\n')

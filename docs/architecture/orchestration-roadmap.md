@@ -228,11 +228,11 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 | 切片 | 内容 |
 |---|---|
-| C0 运行时 | Focus 存储/注入/on/off；`/goal` 兼容废弃提示 |
-| C1 | `LoopRun` + `/loop start\|status\|stop` + 要求 Focus on |
-| C2 | Executor ↔ Observer 交替 + verdict |
+| C0 运行时 | Focus 存储/注入/on/off；`/goal` 兼容废弃提示 — **已落地** |
+| C1 | `LoopRun` + `/loop` 路径 A/B + `openedFocus` + `loop_verdict` — **已落地** |
+| C2 | 自动 Observer 轮次（现为工具/提示驱动 verdict） |
 | C3 | Observer 只读强制 |
-| C4 | SPA：Focus 控件 + Loop 状态条 |
+| C4 | SPA：Focus 控件 + Loop 状态条（Portal slash 已改） |
 | C5 | 可选 pause/resume、timeline 导出 |
 
 #### 验收（勾选在实现 PR 回写）

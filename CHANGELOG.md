@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
   `verify_skipped` / wall exit without waiting on verdict).
   `loop_verdict` `timeoutMs:0` + tool-bridge prefers mutation success
   after wall abort (avoids `no_active_loop` after a successful end).
+- **Loop waits for Subagents**: auto exits (`wall_limit` /
+  `verify_skipped`) defer while A2A child jobs are still
+  pending/running; `/loop stop` cancels live Subagents; `loop_verdict`
+  refuses with `live_subagents` until children settle.
 - **Loop sim**: `tools/loop-gates-sim.mjs`; mock markers
   `LOOP_E2E_TEST` / `LOOP_SKIP_VERDICT_TEST` / `LOOP_SELF_RESEARCH_TEST`.
 - **Loop R4 VERIFY+REFLECT**: `loop_verdict` takes structured

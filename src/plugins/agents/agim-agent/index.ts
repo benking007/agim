@@ -1076,8 +1076,11 @@ export class NativeAgentAdapter implements AgentAdapter {
           const input = (ev.input ?? {}) as Record<string, unknown>
           const agentArg = typeof input.agent === 'string' ? input.agent : 'agent'
           const parsed = parseCallAgentTarget(agentArg)
-          const roleArg = (typeof input.role === 'string' ? input.role : undefined) || parsed.role
-          const backendArg = typeof input.backend === 'string' ? input.backend : undefined
+          const backendArg = (typeof input.backend === 'string' ? input.backend : undefined)
+            || parsed.backend
+          const roleArg = backendArg
+            ? undefined
+            : ((typeof input.role === 'string' ? input.role : undefined) || parsed.role)
           const promptArg = typeof input.prompt === 'string' ? input.prompt : ''
           callAgentPendingLabel = formatSubagentLabel(parsed.agent || agentArg, {
             role: roleArg,

@@ -30,6 +30,7 @@ import { handleApprovalsApi } from './approvals-api.js'
 import { handleSearchApi } from './search-api.js'
 import { handleWorkspaceSkillsApi } from './workspace-skills-api.js'
 import { handleMemosApi, handleLocInfo, handleLocPost } from './memos-api.js'
+import { handleLoopApi } from './loop-api.js'
 import {
   checkAuth,
   requireAdmin,
@@ -355,6 +356,10 @@ export async function startWebServer(options: {
     // /api/memos — search / list / delete.
     if (url.pathname === '/api/memos' || url.pathname.startsWith('/api/memos/')) {
       if (await handleMemosApi(req, res, url)) return
+    }
+    // /api/loop — Portal Loop status chrome (R5).
+    if (url.pathname === '/api/loop') {
+      if (await handleLoopApi(req, res, url)) return
     }
 
     // /api/env + /api/security/diagnostics — env var management + security badges.

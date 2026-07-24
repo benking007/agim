@@ -6,15 +6,49 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop polish (Claude blog A/B/C)**: taxonomy对照表 in docs/`/loop help`;
+  independent cheap evaluator before `stop`+`met=true`
+  (`AGIM_LOOP_EVALUATOR=auto|on|off`); cumulative Loop usage
+  (dispatches / evals / continue / revise) on status, summary, Portal strip.
+- **Loop R5 UX**: `GET /api/loop?threadId=` + Portal status strip showing
+  对焦/派工/验收; ended summary Markdown (`formatLoopEndedSummary`);
+  menu/slash copy aligned to Loop Engineering L3. R6 triggers deferred.
+- **Loop R4 VERIFY+REFLECT**: `loop_verdict` takes structured
+  `met` / `gaps` / `nextDirection`. `continue|revise` require unmet
+  verification + nextDirection (reflect → planning). `stop` + `met=true`
+  ends as `objective_met`. Exit truncates on `maxRounds` / `maxWallMs`
+  (`wall_limit`). Snippet/status surface last verification.
+- **Loop R3 PLAN+DISPATCH**: After mission confirm, each round must
+  `call_agents` / `call_agent` at least once before `loop_verdict`
+  `continue|revise` (`no_dispatch` otherwise). `noteLoopDispatch` tracks
+  `dispatchesThisRound` + `lastPlan`; status moves planning→dispatching;
+  `stop` remains an exit hatch without dispatch.
+- **Loop R2 Mission persistence**: `LoopMission` is the loop-store SSOT
+  (partial while ALIGNING); `sessionKey`; optional `acceptance` +
+  parsed `maxWallMs`; `/loop acceptance`; `/loop status` always shows
+  objective + exit (reload-safe via `getMissionView`).
+- **Loop R1 ALIGNING gate**: Loop requires **objective + exit** before
+  planning/dispatch. Missing either → `status=aligning`; slash
+  `/loop objective|exit|confirm` (or `目标…；退出条件为…` / `退出：…`);
+  snippet steers
+  `ask_user`. Dispatcher refuses `call_agent` / `call_agents` /
+  `loop_verdict` while aligning. Confirmed → `planning`.
 - **Focus runtime (C0)**: `/focus` (`set` / `on` / `off` / `clear` /
   `body` / bare text). Wire-only injection via `buildFocusSnippet`
   (no `complete_goal` tokens). MCP: `focus_set` / `focus_on` /
   `focus_off` / `focus_clear`. Storage reuses `goals.db` (active=on,
   paused=off retained).
-- **Loop runtime (C1)**: `/loop` paths A/B — Focus already on → start
-  (end keeps Focus); else `/loop <text>` auto Focus (end Focus off).
-  Persist `~/.agim/loops/*.json`; inject loop status; MCP
+- **Loop runtime (C1 / R0 shell)**: `/loop` paths A/B — Focus already on
+  → start (end keeps Focus); else `/loop <text>` auto Focus (end Focus
+  off). Persist `~/.agim/loops/*.json`; inject loop status; MCP
   `loop_verdict` (`continue|revise|stop`). Focus off/clear cancels Loop.
+
+### Docs
+
+- **Loop Engineering 定义对齐三层图（L3）**: rewrite
+  `docs/architecture/loop-engineering.md` — Loop = 自动调度层
+  （对焦目标+退出条件 → 拆解 → 子代理 → 验收 → 退出），明确 ≠ L2
+  Agent Loop；硬门禁 ALIGNING；落地节奏 R1–R6。
 - **Focus + Loop design SSOT (Phase C, docs-first)**:
   `docs/architecture/focus.md` and `docs/architecture/loop-engineering.md`.
 - **Phase B Subagent parallel fan-out**: new `mcp__agim__call_agents({ tasks[] })` joins multiple SubagentRuns in one tool call (`allSettled` — one lane fail/timeout/cancel does not kill siblings). Knobs: `AGIM_SUBAGENT_PARALLEL` (default **on**; `0/off` serializes the batch), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3). Per-lane activity step ids `${toolCallId}#i`. See `docs/architecture/orchestration-roadmap.md` Phase B.

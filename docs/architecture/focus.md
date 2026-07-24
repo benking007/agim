@@ -11,7 +11,7 @@
 
 **Focus = 当前对话线程上的「注意力锚点」：开启时自动注入 system/wire 上下文，关闭时停止注入，内容可保留。**
 
-它**不是**任务完成系统，**不是** Loop-engineering，**不是** Heartbeat。
+它**不是**任务完成系统，**不是** Loop Engineering（L3 调度/验收），**不是** Heartbeat，**不是** L2 Agent Loop。
 
 ---
 
@@ -90,7 +90,8 @@ Stay on this focus unless the user explicitly changes topic or turns focus off.
 ## 3. 非目标
 
 - 完成门闸 / evidence / epoch（不放在 Focus）  
-- 观察者闭环（那是 `/loop`）  
+- 拆解 / 派子代理 / 对照目标验收（那是 `/loop` · L3）  
+
 - 墙钟提醒（Heartbeat）  
 - 多条并行 Focus（首期一 thread 一条）
 
@@ -101,18 +102,19 @@ Stay on this focus unless the user explicitly changes topic or turns focus off.
 ```text
 Focus (on)  ──门禁──►  /loop start   （Phase C）
    │                      │
-   │ 每 turn 注入正文      │ 另注入 Loop 状态（round / verdict…）
+   │ 每 turn 注入正文      │ 另注入 Loop 状态（plan / 验收…）
    ▼                      ▼
- agent 聚焦            continue|revise|stop
+ agent 聚焦         拆解→子代理→验收→（未达）再来
 ```
 
-**「Loop 绑 Focus」= 生命周期门禁，不是两套聚焦正文抢优先级。**
+**「Loop 绑 Focus」= 生命周期门禁，不是两套聚焦正文抢优先级。**  
+Loop 本体定义见 [`loop-engineering.md`](./loop-engineering.md)（L3，不是 L2 Agent Loop）。
 
 | 问题 | 答案 |
 |------|------|
 | Focus 正文以谁为准？ | **永远只有 thread 上那一条 Focus**（SSOT）。Loop **不**另存一份可覆盖的「聚焦文案」。 |
 | Loop 跑着时还注 Focus 吗？ | **要。** Focus on → 照常注 Focus 块。 |
-| 还注什么？ | **再注** Loop 运行态（round、最近 verdict、`nextHint` 等）——互补，不是二选一。 |
+| 还注什么？ | **再注** Loop 运行态（round、计划、验收摘要等）——互补，不是二选一。 |
 | `focusSnapshot`？ | 仅启动时审计/展示用；运行中用户改 Focus → **下一轮以当前 Focus 为准**。 |
 
 ### 4.1 开 Loop 的两种 UX（拍板）

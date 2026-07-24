@@ -1,279 +1,304 @@
-# Loop（开发闭环 · Phase C）
+# Loop Engineering（循环工程 · Phase C）
 
-> **状态**：设计文档 · 未实现运行时（实现前以本文为准）。  
-> **用户面命令**：`/loop`（推荐）。  
-> **内部类型名（可选）**：`LoopRun` / `LoopSession`。  
-> **关联**：[Focus](./focus.md)（硬依赖）· [Goals 废弃说明](../goals.md) · [Roadmap Phase C](../roadmap.md#phase-c--loop开发闭环) · [命名约定](../naming.md)
-
----
-
-## 0. 一句话
-
-**Focus** 管「盯什么」；**Loop** 管「围着 Focus，executor 改代码 + 只读 observer 判 continue / revise / stop」。
-
-| 概念 | 职责 | 是否改仓库 |
-|------|------|-----------|
-| **Focus** | 聚焦文本 + on/off + 注入 | 否 |
-| **Loop** | 多轮工程闭环（本文） | executor **是**；observer **否** |
-| ~~Goal~~ | **已废弃** → 用 Focus | — |
-
-**不是**：Heartbeat、子代理编排、把 Focus 做成「任务完成系统」。
+> **状态**：概念 SSOT（按三层定义重对齐）· 2026-07-24  
+> **用户面**：`/loop`  
+> **关联**：[Focus](./focus.md) · [Subagent](./subagent.md) · [命名](../naming.md) · [残留盘点](./goal-residue.md)
 
 ---
 
-## 1. 产品决策（已拍板）
+## 0. 一句话（对齐产品图）
 
-| # | 决策 | 说明 |
-|---|------|------|
-| D1 | **Focus 单独成原语** | 自动注入 / 开启 / 关闭；见 [focus.md](./focus.md) |
-| D2 | **废弃 goal** | `/goal`、`long_task`、`complete_goal` 迁到 Focus；完成语义不挂在 Focus 上 |
-| D3 | **Phase C 叫 Loop** | 用户面 `/loop`；文档与 roadmap 统一用 Loop |
-| D4 | **双角色** | Executor（可写）+ Observer（只读） |
-| D5 | **Verdict** | `continue` \| `revise` \| `stop` |
-| D6 | **Focus 与 Loop 开法** | 分步：先 focus 再 loop，结束**不**关 focus；直开：`/loop <text>` 代开 focus，结束 **focus off** |
-| D7 | **与 Heartbeat 正交** | Loop 不复用 Heartbeat 调度 |
+**人对齐的是「设计 Loop（系统）」，不是「给模型写一句 prompt」。**  
+Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含子代理）多轮执行 → 自动验收，直到目标达成或触达退出条件。**
+
+这对应图中的 **第 3 层**，不是第 2 层「单个 Agent 内部的 while 循环」。
 
 ---
 
-## 2. 用户面命令（目标形态）
-
-```text
-/focus …               # 见 focus.md
-/loop <text>           # 或 /loop start <text>
-/loop status
-/loop stop
-/loop pause | resume   # 可选，后置
-```
-
-**开 Loop（两种合法路径）**
-
-| 当前 Focus | 命令 | 行为 | 结束时 Focus |
-|------------|------|------|--------------|
-| **已 on** | `/loop` 或 `/loop <note>` | 启动 Loop；`<note>` 只进 Loop 状态，**不改** Focus 正文 | **不** off（路径 A） |
-| **未 on**（无内容或 off） | `/loop <text>`（**必填**） | 自动 `focus set <text>` + on，`openedFocus=true`，再开 Loop | **focus off**（路径 B） |
-| **未 on** | `/loop` 无文本 | **拒绝**，提示补 `<text>` 或先 `/focus` |
-
-**斜杠解析约定（实现时）**：`/loop …` 优先匹配 Loop；不再用 `/goal` 驱动工程闭环。
-
-**兼容**：过渡期 `/goal` → Focus 提示；`/long` 若曾作别名，改为提示改用 `/loop`（实现阶段定）。
-
----
-
-## 3. 架构关系
+## 1. 三层定位（必读）
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  Conversation / Session                                  │
-│    Focus (on) ──注入正文──┐                               │
-│                           ├──► 每轮 LLM 上下文            │
-│    LoopRun ──注入状态─────┘   （两者叠加，非二选一）        │
-│      ├─ 门禁：启动/续跑要求 Focus 保持 on                   │
-│      ├─ Executor turn  → 改代码 / 跑测试 / 工具            │
-│      └─ Observer turn  → 只读 → continue|revise|stop      │
+│  L3  Loop Engineering（自动调度层）  ← 本文 /loop         │
+│   触发条件 · 验收标准 · 退出条件 · 升级路径 · 调度逻辑      │
+│   例：扫异常单 → 派 Agent 诊断 → 验收修复 → 未达再规划      │
+├─────────────────────────────────────────────────────────┤
+│  L2  Agent Loop（智能体循环层）                           │
+│   while not done: Observe → Think → Tools → Results      │
+│   = Agim Agent / Claude / … 单代理内部跑法（已有）         │
+├─────────────────────────────────────────────────────────┤
+│  L1  LLM API（大模型调用层）                              │
+│   模型选择 · token · 参数 · 流式输出                      │
 └─────────────────────────────────────────────────────────┘
-         │
-         ▼ 可选
-   Heartbeat / 子代理 / MCP …（不驱动 Loop 状态机）
 ```
 
-### 3.1 「绑 Focus」是什么意思
+| 层 | 在 Agim 里是什么 | 不是什么 |
+|----|------------------|----------|
+| **L1** | `llmBackends` / provider / streaming | Loop |
+| **L2** | 单 Agent 的 tool loop（pi-agent / dispatcher） | Loop Engineering |
+| **L3** | **`/loop`：调度 + 验收闭环** | 再写一个「更大的 L2」 |
 
-**不是**「Loop 有自己的 focus，和用户 Focus 比谁大」。  
-**是**：Loop 运行期间必须有 Focus **on**（可事先设好，或由 `/loop <text>` 代开）；用户把 Focus off/clear → **取消 Loop**。
-
-| 层 | 注入什么 | SSOT |
-|----|----------|------|
-| Focus | title/body（盯什么） | thread 唯一 Focus 记录 |
-| Loop | round、status、最近 verdict、`nextHint`、可选 start note | `LoopRun` |
-
-同时存在时：**两层都注入**（Focus 正文 + Loop 状态）。正文只有 Focus 一份。
-
-### 3.2 Focus 在 Loop 中的规则
-
-| 规则 | 行为 |
-|------|------|
-| 启动 · 路径 A | Focus 已 on → 直接开 Loop，`openedFocus=false` |
-| 启动 · 路径 B | Focus 未 on → `/loop <text>` 代开 Focus，`openedFocus=true` |
-| 运行中 Focus off/clear（用户） | **取消 Loop** |
-| 运行中改 Focus 文本 | 允许；下一轮以**当前 Focus**注入；记 `focus_updated` |
-| `focusSnapshot` | 启动时拷贝，供 status/审计；**不覆盖**实时 Focus 注入 |
-| Loop 结束 · `openedFocus=false` | **不**自动 Focus off（用户事先聚焦，继续聊） |
-| Loop 结束 · `openedFocus=true` | **Focus off**（代开的临时锚点收掉注入；内容可保留） |
-
-### 3.3 为何不用 Goal 当 Loop 载体
-
-历史上「goal ≈ 聚焦」已被占用；若把完成/验收塞回 goal，会再次混淆。  
-**Focus = 注意力；Loop = 闭环执行。** 完成判定属于 Loop（或未来独立 complete），**不属于 Focus**。
+**Focus** 仍是注意力锚点（注入 / on / off），给 L3 提供「本轮使命文案」；**完成判定、拆解、派子代理、验收**属于 Loop，不塞回 Focus。
 
 ---
 
-## 4. 角色与权限
+## 2. 产品形态（任务团队 Loop）
 
-### 4.1 Executor
+用户意图示例：
 
-- 普通 Agim Agent 能力：读改文件、跑命令、MCP、（策略允许时）子代理。
-- 每轮开始注入：**Focus 正文（on）** + **Loop 状态**（round / 最近 verdict / `nextHint`）——叠加注入。
-- 结束信号：本轮工具/回复收敛后 → 进入 Observer（或达步数上限）。
+> `/loop` 以 **XX** 为目标，让团队完成；其中子任务完成 a、b…  
+> 主控对照 XX **验收**；未达则反思换方向，直到完成。  
+> **退出条件**为 …  
 
-### 4.2 Observer（只读）
+### 2.1 两个硬输入（拍板）
 
-| 允许 | 禁止 |
-|------|------|
-| 读文件、`git diff` / `git status`、读日志 | 写文件、改配置 |
-| 只读 shell（白名单） | 网络副作用、部署 |
-| 输出结构化 verdict | 调用会突变状态的 MCP |
+| 字段 | 是否必填 | 说明 |
+|------|----------|------|
+| **目标（objective）** | **必须** | 要达成什么；可同步写入 Focus |
+| **退出条件（exit）** | **必须** | 何时停：如「验收通过」+ 上限轮次/时限/失败判据等；用户须明确至少一项可判定的退出语义 |
+| 验收细则（acceptance） | 推荐 | 可并入目标讨论；缺省时用 objective 做验收锚 |
 
-实现倾向：**独立 system 段 + 工具白名单**；与 executor 分 session 或分 turn policy。
+**缺任一硬输入 → 不得进入 PLANNING / 派子代理。**  
+进入 **ALIGNING（对焦）**：用 `ask_user`（或等价对话）与用户讨论，直到目标和退出条件都确认。
 
-### 4.3 Verdict
+对焦示例问法：
 
-```ts
-type LoopVerdict = {
-  decision: "continue" | "revise" | "stop";
-  summary: string;       // 给用户看的短摘要
-  reasons?: string[];    // 可选要点
-  nextHint?: string;     // continue/revise 时给 executor 的提示
-};
-```
+- 目标：「这次 Loop 要达成的结果是什么？怎么算做成？」  
+- 退出：「什么情况下结束？例如：验收通过 / 最多 N 轮 / 超过 T 小时 / 连续失败 K 次就停？」
 
-| decision | 含义 | 下一动作 |
-|----------|------|----------|
-| `continue` | 方向对，未完成 | 下一轮 executor |
-| `revise` | 偏了 / 质量不够 | 下一轮 executor + `nextHint` |
-| `stop` | 够好或不可继续 | 结束 Loop；**不**改 Focus on/off |
+用户可一次给齐（`/loop 目标…；退出条件为…` 或 `；退出：…`），也可分步补全。
 
-用户 `/loop stop` 或达上限 → 强制 `stop`。
-
----
-
-## 5. 状态机
+### 2.2 主流程
 
 ```text
-                  /loop start (Focus on)
-                         │
-                         ▼
-                    ┌─────────┐
-         ┌─────────►│ RUNNING │◄────────┐
-         │          └────┬────┘         │
-         │               │              │
-         │         executor turn        │
-         │               │              │
-         │               ▼              │
-         │        ┌────────────┐        │
-         │        │ OBSERVING  │        │
-         │        └─────┬──────┘        │
-         │              │               │
-         │     continue / revise ───────┘
-         │              │
-         │            stop / cancel / limit / focus-off
-         │              │
-         │              ▼
-         │         ┌─────────┐
-         └─────────│  ENDED  │
-                   └─────────┘
+/loop …
+        │
+        ▼
+   ┌───────────┐  缺目标或退出条件
+   │ ALIGNING  │◄──────────────── ask_user / 讨论
+   └─────┬─────┘
+         │ 两者都确认
+         ▼
+   PLANNING 拆解
+         │
+         ▼
+   DISPATCHING 子代理
+         │
+         ▼
+   VERIFYING 对照目标
+         │
+         ├─ 已达 → SUMMARIZE → ENDED
+         ├─ 未达且未触达 exit → REFLECT → 再 PLANNING
+         └─ 触达 exit / 用户 stop → ENDED
 ```
 
-可选：`PAUSED`（用户 pause 或会话休眠）——后置。
+### 2.3 与现行薄实现的差距
+
+| 能力 | 目标形态 | 现行 `/loop` |
+|------|----------|--------------|
+| 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | **R1**：ALIGNING + slash/`ask_user`；确认前禁派工 |
+| 对焦讨论 | `ask_user` + `/loop objective\|exit\|confirm` | **R1** 已接线 |
+| 拆解 → 子代理 | 核心 | **R3**：continue/revise 前本轮须 ≥1 次 call_agent(s) |
+| 对照目标验收 | 硬门闸 | **R4**：`met`/`gaps`/`nextDirection`；exit 截断 |
+
+**结论**：R1 锁门禁；R3/R4 补齐调度与验收，才是完整 L3。
 
 ---
 
-## 6. 持久化草图
-
-路径倾向：`~/.agim/sessions/<sessionId>/loop.json`（或并入 session store 字段 `loop`）。
+## 3. 核心对象（目标 API 草图）
 
 ```ts
+type LoopMission = {
+  objective: string;                 // 必填（对焦确认后）
+  acceptance?: string;               // 推荐
+  exit: {                            // 必填（对焦确认后）
+    /** 用户自然语言退出条件（一等展示） */
+    description: string;
+    maxRounds: number;               // 从描述解析或对焦时确认
+    maxWallMs?: number;
+    onFocusOff: "cancel";
+  };
+};
+
 type LoopRun = {
   id: string;
-  sessionId: string;
-  /** 启动时 Focus 正文快照（审计/status）；实时注入仍读 thread Focus */
-  focusSnapshot: string;
-  /** true = 本次 Loop 代开/代打开了 Focus → 结束时 focus off */
-  openedFocus: boolean;
-  status: "running" | "observing" | "paused" | "ended";
-  endReason?: "stop_verdict" | "user_stop" | "limit" | "focus_off" | "error";
+  sessionKey: string;
+  mission: LoopMission | null;       // ALIGNING 期间可为部分填写
+  status:
+    | "aligning"
+    | "planning"
+    | "dispatching"
+    | "verifying"
+    | "reflecting"
+    | "ended";
   round: number;
-  maxRounds: number;
-  createdAt: number;
-  updatedAt: number;
-  lastVerdict?: LoopVerdict;
-  timeline: Array<{
+  openedFocus: boolean;
+  dispatchesThisRound: number;       // R3: 本轮已接受的子代理派工数
+  lastPlan?: { at: number; tasks: Array<{ id: string; brief: string; agentHint?: string }> };
+  lastVerification?: {
     at: number;
-    kind: "executor" | "observer" | "user" | "system";
+    met: boolean;
     summary: string;
-  }>;
+    gaps?: string[];
+    nextDirection?: string;
+  };
+  timeline: Array<{ at: number; kind: string; summary: string }>;
 };
 ```
 
-**Focus 本体**仍在 session 的 focus 字段（见 focus.md），不把聚焦正文只存在 Loop 里。
+用户面：
+
+```text
+/loop <objective> [；验收：…] [；退出条件为… / 退出：…]  # 一次给齐
+/loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
+/loop objective <text>            # 对焦中补目标（可含「；验收：…」）
+/loop exit <text>                 # 对焦中补退出条件
+/loop acceptance <text>           # 可选验收细则（写入 Mission）
+/loop confirm                     # 两硬字段齐后确认
+/loop status | stop | help        # status 恒展示目标+退出
+```
+
+路径 A/B 与 Focus 关系保留——见 [focus.md](./focus.md)。  
+**即使 Focus 已有文案，退出条件仍必须对焦确认**（不可静默默认「跑到爽」）。
 
 ---
 
-## 7. 与现有子系统边界
+## 4. 状态机（L3）
 
-| 子系统 | 关系 |
-|--------|------|
-| **Focus** | 硬依赖；注入与 on/off 见 focus.md |
-| **~~Goal / long_task / complete_goal~~** | 废弃；不参与 Loop |
-| **Heartbeat** | 不驱动 Loop；Loop 不注册 Heartbeat job |
-| **子代理 Phase B** | Executor 可按策略调用；Observer **默认禁止** fan-out |
-| **goal-critic** | 可内化为 Loop 内「廉价 on-track」；**不能替代** Observer verdict |
-| **Plan mode** | Loop 运行时默认拒绝进 plan，或 pause Loop（实现期二选一，倾向拒绝） |
+```text
+          start
+            │
+            ▼
+       ┌──────────┐
+       │ ALIGNING │ 目标 + 退出条件对焦（硬门禁）
+       └────┬─────┘
+            │ confirmed
+            ▼
+       ┌─────────┐
+       │ PLANNING│
+       └────┬────┘
+            ▼
+    ┌──────────────┐
+    │ DISPATCHING  │ call_agents
+    └──────┬───────┘
+           ▼
+     ┌───────────┐
+     │ VERIFYING │
+     └─────┬─────┘
+           │
+     met ──┼─ yes → SUMMARIZE → ENDED
+           │
+           no → REFLECTING →（未触达 exit）→ PLANNING
+                          └（触达 exit / stop）→ ENDED
+```
 
----
-
-## 8. 安全与资源
-
-| 项 | 默认倾向 |
-|----|----------|
-| `maxRounds` | 有限（如 8～20，可配） |
-| Observer 工具 | 白名单只读 |
-| 每轮 wall time | 复用/对齐 agent 超时，可另设 `loopRoundTimeoutMs` |
-| 并发 | **同一 session 至多一个** LoopRun |
-| 费用 | 每轮 ≈ 2 次主模型；需在 `/loop status` 可见 round 数 |
-
----
-
-## 9. 分阶段实现（建议）
-
-| 阶段 | 内容 | 验收 |
-|------|------|------|
-| **C0** | Focus 运行时（迁移 goal）+ 废弃提示 | 见 [focus.md §7](./focus.md) |
-| **C1** | `LoopRun` + `/loop` 路径 A/B + `openedFocus` 收尾 | 分步结束保留 focus；直开结束 focus off |
-| **C2** | Executor ↔ Observer 交替 + verdict 解析 | 三态驱动状态机 |
-| **C3** | Observer 只读强制（测试证明不能写） | 红队：observer 写文件失败 |
-| **C4** | SPA：Focus 控件 + Loop 状态条 | 与 slash 一致 |
-| **C5** | 可选 pause/resume、导出 timeline | 非阻塞 |
-
-**本 PR 只落文档；C0+ 另开实现 PR。**
-
----
-
-## 10. 非目标（本期）
-
-- 多 agent 投票 / 委员会式 review  
-- 自动开 PR / 自动 merge  
-- 用 Heartbeat 定时「偷偷」跑 Loop  
-- 把 Loop 做成第二个 Claude Code 产品壳  
-- 在 Focus 上实现「任务完成勾选」  
+| 阶段 | 硬约束 |
+|------|--------|
+| ALIGNING | 无完整 objective+exit → **禁止**派子代理 |
+| PLANNING | 产出可派发 tasks |
+| DISPATCHING | 复用 Phase B；吃并行预算 |
+| VERIFYING | 对照 mission.objective（+ acceptance） |
+| REFLECTING | 写 nextDirection；防空转 |
+| ENDED | openedFocus → focus off |
 
 ---
 
-## 11. 待实现期确认（不阻塞文档）
+## 5. 与 Focus / Subagent / Heartbeat
 
-1. Observer：同模型不同 prompt，还是允许 `observerModel`？  
-2. `revise` 是否强制插入用户确认？  
-3. Focus off 时：cancel vs pause（文档倾向 **cancel**）。  
-4. 路径 B：结束时 focus off 是只停注入，还是顺带 clear？（倾向 **只 off**）  
-5. CLI 非 Web 会话是否完整支持 `/loop`。  
-
----
-
-## 12. 文档维护
-
-| 变更 | 更新 |
+| 原语 | 关系 |
 |------|------|
-| 重命名用户命令 | 本文 + naming + roadmap |
-| Focus 语义变更 | [focus.md](./focus.md) 优先 |
-| 实现落地 | CHANGELOG + roadmap Phase C 勾选 |
+| **Focus** | 使命文案与注入；Loop **不**替代 Focus；完成门闸在 Loop |
+| **Subagent** | Loop 的默认劳动力；L3 负责「何时派、派几个、如何验收」 |
+| **Agent Loop (L2)** | 每个子代理内部仍是 L2；L3 不重写 L2 |
+| **Heartbeat** | 墙钟「有没有事」；**不是** Loop。定时触发可 *启动* 一个 Loop，但不共用状态机 |
+| **goal（废弃）** | 勿复活；Loop 的 objective ≠ 旧 `/goal` 完成 CAS |
 
-**作者倾向**：Focus / Loop 拆分已按产品拍板写入；实现以 C0→C1 顺序，避免无 Focus 的 Loop。
+---
+
+## 6. 验收与退出
+
+- **达标退出**：VERIFYING `met: true` → 总结 → ENDED  
+- **条件退出**：触达用户确认的 exit（轮次/时限/失败策略等）→ ENDED（可带「未完全达标」摘要）  
+- **用户退出**：`/loop stop`；Focus off → cancel  
+- VERIFYING 至少：`{ met, summary, gaps?, nextDirection? }`
+
+---
+
+## 7. 落地节奏（建议 PR 切片）
+
+原则：**先锁门禁（目标+退出），再调度，再验收自动化，最后体验与触发器。**  
+每一刀可单独合入、可演示；不把 L3 一次做完。
+
+| 节奏 | 切片 | 交付物 | 验收 |
+|------|------|--------|------|
+| **R0** ✅ | Focus + `/loop` 壳 | 已在 main | — |
+| **R1** ✅ | **对焦门禁** | `ALIGNING`；缺 objective/exit → slash + snippet→`ask_user`；确认前拒绝 `call_agent(s)`/`loop_verdict` | 无退出条件无法进入 planning |
+| **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出 | status / reload 可读两硬字段 |
+| **R3** ✅ | **PLAN + DISPATCH** | 确认后 snippet 强制拆解；`noteLoopDispatch` + `dispatchesThisRound`；`continue/revise` 无派工 → `no_dispatch` | 无子代理调用则不算完成一轮 |
+| **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
+| **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 状态条（对焦/派工/验收）；结束总结 Markdown；菜单文案对齐 L3 | 用户能看懂「卡在对焦/派工/验收」 |
+| **R6** | **可选触发** | Heartbeat/cron **只负责 start**，仍走 ALIGNING | 不绕过对焦 |
+
+推荐合入顺序：**R1 → R2 → R3 → R4 → R5**（产品闭环）；**R6 可选，暂缓**。
+
+```text
+R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──► R4 验收闭环 ──► R5 UX ✅
+                                                                      │
+                                                            R6 触发器（可选·暂缓）
+```
+
+---
+
+## 8. 与 Claude Code「Loop Engineering」对照
+
+来源：[Getting started with loops](https://claude.com/blog/getting-started-with-loops)（Claude Code 团队分类）。
+
+| Claude 类型 | 你移交什么 | Claude 原语 | **Agim 对应** |
+|-------------|------------|-------------|----------------|
+| Turn-based | 检查 | 普通对话 / skills | **L2 Agent Loop**（每轮工具循环） |
+| Goal-based | 停止条件 | **`/goal`**（达成或轮次上限；可有独立 evaluator） | **`/loop`（本 SSOT）** + R4 `met`/`nextDirection` + 可选 **cheap 独立验收** |
+| Time-based | 触发 | **`/loop` / `/schedule`**（按间隔再跑） | **Heartbeat / 提醒**（R6 暂缓；**不**占用 `/loop` 名） |
+| Proactive | prompt + 组合 | schedule × goal × workflow | 未做；勿与使命 `/loop` 混谈 |
+
+**命名要点**：用户从 Claude 过来时，听到「Loop」常以为是定时轮询——在 Agim 里请说「使命闭环 / Loop Engineering L3」；定时能力另开刀。
+
+**已吸收**：
+
+- **A** 本文对照表 + `/loop help` + naming  
+- **B** `stop`+`met=true` 前 `AGIM_LOOP_EVALUATOR`（默认 `auto`：有 `llmRoles.cheap` 则独立验收）  
+- **C** Loop 累计用量（派工 / 独立验收 / continue / revise）进 status、结束总结、Portal 条  
+
+---
+
+## 9. 非目标
+
+- 把 L2 Agent Loop 再包一层皮叫 Loop  
+- 静默默认退出条件（禁止「没说就按 12 轮」不经确认）  
+- 多团队 swarm、自动开 PR/merge（后置）  
+- Focus 上做完成勾选 / evidence CAS  
+- Heartbeat 与 LoopRun 共用存储  
+
+---
+
+## 10. TL;DR
+
+> **Loop = L3：先对焦（目标+退出条件）→ 拆解 → 子代理 → 验收 →（未达）再来 → 退出。**  
+> **两硬输入缺一不可；缺则 ALIGNING，不派工。**  
+> **≠ Claude 的定时 `/loop`；≈ 他们的 `/goal` 级闭环。**  
+> 节奏：R1–R5 已齐；R6 触发暂缓。
+
+---
+
+## 11. 修订记录
+
+| 日期 | 变更 |
+|------|------|
+| 2026-07-24 | 初稿（executor/observer 薄模型） |
+| 2026-07-24 | 按三层图重写为 L3 |
+| 2026-07-24 | **目标+退出条件硬门禁 + ALIGNING；落地节奏 R1–R6** |
+| 2026-07-24 | **R1 落地**：ALIGNING 状态机 + slash 对焦 + dispatcher 门禁 |
+| 2026-07-24 | **R2 落地**：Mission SSOT（对焦期部分填写）+ sessionKey + acceptance/maxWallMs + status |
+| 2026-07-24 | **R3 落地**：PLAN+DISPATCH 门禁（本轮须派工才能 continue/revise） |
+| 2026-07-24 | **R4 落地**：VERIFY+REFLECT 结构化验收 + exit 截断 |
+| 2026-07-24 | **R5 落地**：Portal 状态条 + `/api/loop` + 结束总结；R6 暂缓 |
+| 2026-07-24 | **吸收 Claude 文 A/B/C**：对照表、cheap 独立验收、Loop 用量 |

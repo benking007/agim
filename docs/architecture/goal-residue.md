@@ -8,7 +8,7 @@
 
 | 面 | 状态 |
 |----|------|
-| `/focus` / `/loop` slash + MCP focus_* / loop_verdict | 已落地 |
+| `/focus` / `/loop` slash + MCP focus_* / loop_verdict | 已落地（R1：ALIGNING 门禁） |
 | Portal `/` 斜杠 · `+` 菜单：Focus / 循环任务 / 子代理 | 本批对齐 |
 | `/help` 文案 | 本批改为 focus/loop，goal 标废弃 |
 | `mcp__agim__long_task` | 转发 focus_set + deprecated |

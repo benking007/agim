@@ -204,6 +204,23 @@ function err(text: string): DispatcherResult {
   return { text, isError: true, source: 'agim' }
 }
 
+/** R1 hard gate: while Loop is ALIGNING, refuse dispatch / verdict tools. */
+async function refuseIfLoopAligning(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  tool: string,
+): Promise<string | null> {
+  const { getActiveLoop, isLoopAligning } = await import('../loop-run.js')
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run || !isLoopAligning(run)) return null
+  return (
+    `${tool} refused: Loop is ALIGNING (objective + exit not confirmed). `
+    + 'Use mcp__agim__ask_user (or tell user `/loop objective` / `/loop exit` / `/loop confirm`). '
+    + 'Do not spawn subagents until mission is confirmed.'
+  )
+}
+
 function unknown(name: string): DispatcherResult {
   // matches builtin-dispatcher's marker so combineDispatchers falls
   // through to the next dispatcher in the stack.
@@ -483,14 +500,33 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__loop_verdict',
       description:
-        'Report a Loop observer verdict while a /loop session is active: continue, revise, or stop. ' +
-        'stop ends the Loop (and focus-off only if Loop opened Focus).',
+        'Loop VERIFY/REFLECT verdict (not during ALIGNING). continue/revise require ≥1 '
+        + 'call_agent(s) this round (R3) AND structured verification (R4): met=false, '
+        + 'summary, nextDirection (gaps recommended). met=true must use decision=stop '
+        + '(independent cheap evaluator may veto; AGIM_LOOP_EVALUATOR=auto|on|off). '
+        + 'stop without met abandons. Exit truncates on maxRounds/maxWallMs.',
       parameters: {
         type: 'object',
         properties: {
           decision: { type: 'string', enum: ['continue', 'revise', 'stop'] },
-          summary: { type: 'string', description: 'Short human-readable summary.' },
-          nextHint: { type: 'string', description: 'Hint for the next executor round (continue/revise).' },
+          summary: { type: 'string', description: 'Verification summary against Objective/Acceptance.' },
+          met: {
+            type: 'boolean',
+            description: 'Whether mission objective is met. Required for continue/revise.',
+          },
+          gaps: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'What is still missing when met=false.',
+          },
+          nextDirection: {
+            type: 'string',
+            description: 'Required when met=false for continue/revise — what to try next round.',
+          },
+          nextHint: {
+            type: 'string',
+            description: 'Deprecated alias of nextDirection.',
+          },
           reasons: { type: 'array', items: { type: 'string' } },
         },
         required: ['decision', 'summary'],
@@ -777,6 +813,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           return ok(safeJson(r.result))
         }
         case 'call_agent': {
+          {
+            const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agent')
+            if (gate) return err(gate)
+          }
           const agentName = typeof args.agent === 'string' ? args.agent : ''
           const prompt = typeof args.prompt === 'string' ? args.prompt : ''
           if (!agentName || !prompt) {
@@ -835,6 +875,18 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }, `delegating to ${spawn.label} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
               `${ctx.callerPlanMode ? ', plan-mode propagated' : ''})`)
 
+          {
+            const { noteLoopDispatch } = await import('../loop-run.js')
+            noteLoopDispatch(ctx.platform, ctx.channelId, ctx.threadId, {
+              count: 1,
+              tasks: [{
+                id: '1',
+                brief: promptHead,
+                agentHint: spawn.label,
+              }],
+            })
+          }
+
           const one = await invokeOneSubagent({
             spawn,
             prompt,
@@ -851,6 +903,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           return ok(one.text)
         }
         case 'call_agents': {
+          {
+            const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agents')
+            if (gate) return err(gate)
+          }
           const rawTasks = Array.isArray(args.tasks) ? args.tasks : null
           if (!rawTasks || rawTasks.length === 0) {
             return err('call_agents requires a non-empty `tasks` array.')
@@ -960,6 +1016,18 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             cap: callAgentMaxPerTurn,
             threadId: ctx.threadId,
           }, `call_agents fan-out x${prepared.length} (concurrency=${concurrency})`)
+
+          {
+            const { noteLoopDispatch } = await import('../loop-run.js')
+            noteLoopDispatch(ctx.platform, ctx.channelId, ctx.threadId, {
+              count: prepared.length,
+              tasks: prepared.map((p, i) => ({
+                id: String(i + 1),
+                brief: p.promptHead,
+                agentHint: p.spawn.label,
+              })),
+            })
+          }
 
           type LaneResult = {
             index: number
@@ -1106,28 +1174,106 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }
         }
         case 'loop_verdict': {
-          const { applyLoopVerdict } = await import('../loop-run.js')
+          {
+            const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'loop_verdict')
+            if (gate) return err(gate)
+          }
+          const { applyLoopVerdict, getActiveLoop } = await import('../loop-run.js')
           const decision = String(args.decision || '')
           if (decision !== 'continue' && decision !== 'revise' && decision !== 'stop') {
             return err('loop_verdict failed: decision must be continue|revise|stop')
           }
           const summary = typeof args.summary === 'string' ? args.summary.trim() : ''
           if (!summary) return err('loop_verdict failed: summary required')
+          const met = typeof args.met === 'boolean' ? args.met : undefined
+
+          // B: independent cheap evaluator before objective_met
+          let evaluatorNote: { skipped: boolean; agree?: boolean; reason: string } | undefined
+          if (decision === 'stop' && met === true) {
+            const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+            if (active) {
+              const { evaluateLoopObjectiveMet } = await import('../loop-evaluator.js')
+              const evalRoute: RouteContext = {
+                channelId: ctx.channelId,
+                threadId: ctx.threadId,
+                platform: ctx.platform,
+                userId: ctx.userId,
+                defaultAgent: ctx.callerAgent,
+                traceId: `loop-eval-${Date.now()}`,
+                logger: (ctx.logger ?? rootLogger).child({ component: 'loop-evaluator' }),
+                ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
+              }
+              const ev = await evaluateLoopObjectiveMet({
+                run: active,
+                claimSummary: summary,
+                callerAgent: ctx.callerAgent,
+                routeCtx: evalRoute,
+                signal,
+              })
+              evaluatorNote = { skipped: ev.skipped, agree: ev.agree, reason: ev.reason }
+              if (!ev.proceed) {
+                return err(
+                  'loop_verdict failed: evaluator_disagree — independent cheap verifier '
+                  + `did not accept met=true (${ev.reason}). Fix gaps or continue/revise; `
+                  + 'or set AGIM_LOOP_EVALUATOR=off to skip.',
+                )
+              }
+            }
+          }
+
           const r = applyLoopVerdict(ctx.platform, ctx.channelId, ctx.threadId, {
             decision,
             summary,
+            met,
+            nextDirection: typeof args.nextDirection === 'string' ? args.nextDirection : undefined,
             nextHint: typeof args.nextHint === 'string' ? args.nextHint : undefined,
+            gaps: Array.isArray(args.gaps)
+              ? args.gaps.filter((x): x is string => typeof x === 'string')
+              : undefined,
             reasons: Array.isArray(args.reasons)
               ? args.reasons.filter((x): x is string => typeof x === 'string')
               : undefined,
           })
-          if (!r.ok) return err(`loop_verdict failed: ${r.error}`)
+          if (!r.ok) {
+            if (r.error === 'no_dispatch') {
+              return err(
+                'loop_verdict failed: no_dispatch — this Loop round needs ≥1 '
+                + 'mcp__agim__call_agents (or call_agent) before continue/revise. '
+                + 'Decompose the objective, dispatch, then retry the verdict. '
+                + 'Use decision=stop to end without further dispatch.',
+              )
+            }
+            if (r.error === 'need_verification') {
+              return err(
+                'loop_verdict failed: need_verification — pass met=false, summary, and '
+                + 'nextDirection (gaps recommended) after comparing results to Objective.',
+              )
+            }
+            if (r.error === 'need_next_direction') {
+              return err(
+                'loop_verdict failed: need_next_direction — when met=false, set nextDirection '
+                + 'so the next planning round knows what to try.',
+              )
+            }
+            if (r.error === 'met_use_stop') {
+              return err(
+                'loop_verdict failed: met_use_stop — objective is met; call again with '
+                + 'decision=stop and met=true (ends as objective_met).',
+              )
+            }
+            return err(`loop_verdict failed: ${r.error}`)
+          }
           return ok(safeJson({
             status: r.run.status,
             round: r.run.round,
             endReason: r.run.endReason,
             lastVerdict: r.run.lastVerdict,
+            lastVerification: r.run.lastVerification,
+            lastEvaluator: r.run.lastEvaluator,
             openedFocus: r.run.openedFocus,
+            dispatchesThisRound: r.run.dispatchesThisRound,
+            usage: r.run.usage,
+            evaluator: evaluatorNote,
           }))
         }
         case 'long_task':

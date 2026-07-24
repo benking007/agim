@@ -25,6 +25,11 @@ export function isTodoActivityLabel(label: string | undefined | null): boolean {
 
 function asStatus(raw: unknown): TodoStatus | null {
   if (raw === 'pending' || raw === 'in_progress' || raw === 'completed') return raw
+  // Aliases — keep activity.todoItems populated even when the model drifts
+  // from the schema (dispatcher still validates canonical statuses on write).
+  if (raw === 'todo' || raw === 'not_started' || raw === 'open') return 'pending'
+  if (raw === 'in-progress' || raw === 'doing' || raw === 'active') return 'in_progress'
+  if (raw === 'done' || raw === 'complete' || raw === 'finished') return 'completed'
   return null
 }
 

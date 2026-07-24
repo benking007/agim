@@ -36,27 +36,27 @@ export function ApprovalDock({ approvals, onApprove, flush }: ApprovalDockProps)
   if (approvals.length === 0) return null
 
   return (
-    <div className={cn('relative z-20 pb-1.5 pt-0', flush ? 'px-0' : 'px-3 sm:px-4')}>
+    <div className={cn('relative z-20 pb-1 pt-0', flush ? 'px-0' : 'px-3 sm:px-4')}>
       <section
         className={cn(
-          'mx-auto flex w-full max-w-3xl flex-col',
-          'max-h-[min(52vh,28rem)]',
-          'rounded-2xl border border-warning/30 bg-surface',
-          'shadow-[0_-8px_30px_rgba(15,23,42,0.12)]',
+          'mx-auto flex w-full max-w-2xl flex-col',
+          'max-h-[min(44vh,22rem)]',
+          'rounded-xl border border-warning/30 bg-surface',
+          'shadow-[0_-6px_22px_rgba(15,23,42,0.10)]',
           'ring-1 ring-black/5',
           'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
         )}
         aria-label={t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-warning/15 bg-warning-bg px-4 py-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
-            <ShieldAlert className="h-5 w-5" />
+        <div className="flex shrink-0 items-center gap-2 border-b border-warning/15 bg-warning-bg px-3 py-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+            <ShieldAlert className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-semibold tracking-tight text-text">
+            <p className="truncate text-sm font-semibold tracking-tight text-text">
               {t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
             </p>
-            <p className="truncate text-xs text-text-dim">
+            <p className="truncate text-[11px] text-text-dim">
               {approvals.length > 1
                 ? t('chat.approvalPendingCount', {
                     count: approvals.length,
@@ -68,7 +68,7 @@ export function ApprovalDock({ approvals, onApprove, flush }: ApprovalDockProps)
             </p>
           </div>
           {approvals.length > 1 && (
-            <Badge variant="warning" className="shrink-0 tabular-nums">
+            <Badge variant="warning" className="shrink-0 tabular-nums text-[10px]">
               {approvals.length}
             </Badge>
           )}
@@ -116,19 +116,32 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
     if (ok === false) setPendingChoice(null)
   }
 
+  const originLabel = prompt.originLabel
+    || (typeof prompt.callDepth === 'number' && prompt.callDepth > 0
+      ? t('chat.approvalOriginSubagent', {
+          agent: prompt.callerAgent || 'agent',
+          defaultValue: 'Subagent · {{agent}}',
+        })
+      : null)
+
   return (
     <div className={cn('flex flex-col transition-opacity', outcome && 'opacity-80')}>
-      <div className="px-4 pt-4">
+      <div className="px-3 pt-2.5">
         {stacked && (
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs text-text-dim">
-            <ShieldCheck className="h-3.5 w-3.5 text-warning" />
+          <div className="mb-1 flex items-center gap-1 text-[11px] text-text-dim">
+            <ShieldCheck className="h-3 w-3 text-warning" />
             {t('chat.approvalTitle', { defaultValue: 'Tool approval' })}
           </div>
         )}
-        <code className="block truncate agim-mono text-[15px] font-semibold tracking-tight text-text">
+        <code className="block truncate agim-mono text-[13px] font-semibold tracking-tight text-text">
           {prompt.toolName}
         </code>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {originLabel && (
+          <p className="mt-0.5 truncate text-[11px] text-text-muted">
+            {originLabel}
+          </p>
+        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {isAuto && !outcome && (
             <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
               {t('chat.approvalAutoBadge', { defaultValue: 'auto-allow' })}
@@ -146,29 +159,30 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
           )}
         </div>
 
-        <pre className="mt-3 max-h-36 overflow-auto rounded-xl border border-border/70 bg-bg/80 px-3.5 py-3 agim-mono text-[12px] leading-relaxed text-text-dim sm:text-[13px]">
+        <pre className="mt-2 max-h-28 overflow-auto rounded-lg border border-border/70 bg-bg/80 px-2.5 py-2 agim-mono text-[11px] leading-relaxed text-text-dim sm:text-[12px]">
           {formatted}
         </pre>
       </div>
 
-      <div className="sticky bottom-0 mt-3 border-t border-border/60 bg-surface/95 px-4 py-3 backdrop-blur-sm">
+      <div className="sticky bottom-0 mt-2 border-t border-border/60 bg-surface/95 px-3 py-2 backdrop-blur-sm">
         {outcome ? (
           <OutcomeBadge outcome={outcome} />
         ) : (
           <>
             <div
               className={cn(
-                'grid gap-2',
+                'grid gap-1.5',
                 isAuto
                   ? 'grid-cols-1'
                   : showAuto
-                    ? 'grid-cols-1 sm:grid-cols-[1.4fr_1fr_1fr]'
+                    ? 'grid-cols-1 sm:grid-cols-[1.3fr_1fr_1fr]'
                     : 'grid-cols-2',
               )}
             >
               {!isAuto && (
                 <Button
-                  className="min-h-12 w-full text-sm font-semibold"
+                  size="sm"
+                  className="min-h-8 w-full text-xs font-semibold"
                   disabled={pendingChoice !== null}
                   onClick={() => handleClick('y')}
                 >
@@ -177,8 +191,9 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
               )}
               {showAuto && (
                 <Button
+                  size="sm"
                   variant="secondary"
-                  className="min-h-12 w-full"
+                  className="min-h-8 w-full text-xs"
                   disabled={pendingChoice !== null}
                   onClick={() => handleClick('a')}
                   title={t('chat.approvalAutoTip', {
@@ -189,8 +204,9 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
                 </Button>
               )}
               <Button
+                size="sm"
                 variant="destructive"
-                className="min-h-12 w-full"
+                className="min-h-8 w-full text-xs"
                 disabled={pendingChoice !== null}
                 onClick={() => handleClick('n')}
               >
@@ -198,7 +214,7 @@ function DockRow({ entry, onApprove, stacked }: DockRowProps): JSX.Element {
               </Button>
             </div>
             {pendingChoice !== null && (
-              <p className="mt-2 text-xs text-text-dim">
+              <p className="mt-1.5 text-[11px] text-text-dim">
                 {t('chat.approvalSubmitting')}
               </p>
             )}

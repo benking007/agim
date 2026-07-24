@@ -25,6 +25,12 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
           channelId: o.channelId ?? 'default',
           threadId: o.threadId,
           userId: o.userId ?? 'unknown',
+          // Same-family / A2A Subagents inherit the parent thread; stamp
+          // depth + agent so AGIM_AUTO_APPROVE and the web dock treat
+          // parent and child through one ApprovalBus.
+          callerAgent: 'agim',
+          ...(typeof o.callDepth === 'number' ? { callDepth: o.callDepth } : {}),
+          ...(typeof o.parentJobId === 'number' ? { parentJobId: o.parentJobId } : {}),
         })
       : undefined
   const gate = buildPolicyApprovalGate({ ...policy, askUser })

@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Approval dock (chat)**: slightly smaller sheet, denser header/body, and compact buttons (`min-h-8` / `text-xs`) so it competes less with the composer.
+- **Plan + Subagent stacking**: when both cards are present, Plan renders above Subagents (desktop + Portal).
 - Portal hold-to-talk: recognized text fills the composer for review/edit instead of sending immediately.
 - **STT env keys use `AGIM_STT_*` only** (feature not yet public — no short-name / LLM-key fallbacks):
   - Provider: `AGIM_STT_PROVIDER`
@@ -38,6 +40,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Chat Plan card mid-turn**: scroll-follow now keys off Plan/Subagent content (not only `steps.length`), so progressive `agim_todo_write` updates on the stable checklist step stay in view; Todo status aliases (`done` / `in-progress` / …) normalize for activity + dispatcher.
+- **Settings Policy**: `AGIM_AUTO_APPROVE` unset now displays **OFF** (matches backend default). Approval cards label Subagent origin (`callDepth` / `callerAgent`) for parent and nested runs on the shared ApprovalBus.
 - Portal hold-to-talk: `getUserMedia` no longer hard-fails with **Invalid constraint** on Safari / WKWebView — retry with looser audio constraints (`channelCount` / `noiseSuppression` optional), never force `video: false`, fall back to bare `{ audio: true }`. Clear toast when the browser reports **Requested device not found** (no mic device).
 - **whisper.cpp is the built-in local STT**: resolves `AGIM_STT_WHISPERCPP_*` / `AGIM_WHISPERCPP_*`, `~/.agim/whisper/bin/whisper-cli`, and PATH; `agim start` silently prefetches `ggml-base.bin` into `~/.agim/whisper/models/` when local STT is likely (pin / CLI present), with first transcription as fallback. An explicit whisper.cpp pin no longer silently falls through to Auto; missing CLI gets an install hint instead of raw `AGIM_STT_WHISPERCPP_BIN not set`.
 - STT “not configured” errors (Portal / IM) now point at `/settings/stt` instead of only mentioning `OPENAI_API_KEY` / whisper.cpp.

@@ -25,6 +25,10 @@ export function isTodoActivityStep(step: Pick<ChatActivityStep, 'label'>): boole
 
 function asStatus(raw: unknown): ChatTodoStatus | null {
   if (raw === 'pending' || raw === 'in_progress' || raw === 'completed') return raw
+  // Models occasionally emit aliases; keep the Plan card visible mid-turn.
+  if (raw === 'todo' || raw === 'not_started' || raw === 'open') return 'pending'
+  if (raw === 'in-progress' || raw === 'doing' || raw === 'active') return 'in_progress'
+  if (raw === 'done' || raw === 'complete' || raw === 'finished') return 'completed'
   return null
 }
 

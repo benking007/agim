@@ -369,6 +369,12 @@ export interface ApprovalCardPrompt {
   canPin?: boolean
   /** Auto-allow grace window in seconds, present iff mode === 'auto-allow'. */
   graceSeconds?: number
+  /** Agent that requested the tool (parent or Subagent). */
+  callerAgent?: string
+  /** Nested call depth; >0 means a Subagent / A2A callee. */
+  callDepth?: number
+  /** Preformatted origin label for UI (e.g. "Subagent · agim/cheap"). */
+  originLabel?: string
 }
 
 /**

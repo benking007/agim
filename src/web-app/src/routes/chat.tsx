@@ -40,6 +40,7 @@ import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { ApprovalDock } from '@/components/chat/approval-dock'
+import { activityFollowSignal } from '@/lib/activity-follow-signal'
 
 /** Keep the Todo card out of the SPA entry budget (same pattern as MessageActions). */
 const ChatTodoList = lazy(async () => {
@@ -126,13 +127,13 @@ export default function ChatRoute(): JSX.Element {
     [state.messages],
   )
 
-  const latestActivitySteps = state.messages.at(-1)?.activity?.steps.length ?? 0
+  const latestFollowSignal = activityFollowSignal(state.messages.at(-1)?.activity)
   const { stickToBottom } = useChatFollowBottom({
     listRef,
     messageCount,
     latestMessageContent,
     streaming: state.currentReplyId != null,
-    followSignal: latestActivitySteps,
+    followSignal: latestFollowSignal,
   })
   useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
   useBlurComposerOnUserScroll(listRef, inputRef)
@@ -252,14 +253,16 @@ export default function ChatRoute(): JSX.Element {
                 {m.role === 'assistant' && m.activity && (
                   <ChatActivityBlock activity={m.activity} />
                 )}
+                {/* Plan first, then Subagents — Plan is the turn outline and
+                    should stay above nested work when both are present. */}
                 {m.role === 'assistant' && m.activity && (
                   <Suspense fallback={null}>
-                    <ChatSubagentCard activity={m.activity} />
+                    <ChatTodoList activity={m.activity} />
                   </Suspense>
                 )}
                 {m.role === 'assistant' && m.activity && (
                   <Suspense fallback={null}>
-                    <ChatTodoList activity={m.activity} />
+                    <ChatSubagentCard activity={m.activity} />
                   </Suspense>
                 )}
                 <MessageBubble

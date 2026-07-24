@@ -123,6 +123,37 @@ function decide(body) {
     return textReply(`SUBAGENT_OK model=${model}`)
   }
 
+  if (/PHASE_A_TODO_PROGRESS_TEST/i.test(user)) {
+    if (toolResults === 0) {
+      return toolCall('agim_todo_write', {
+        items: [
+          { content: 'outline steps', status: 'in_progress' },
+          { content: 'do the work', status: 'pending' },
+          { content: 'summarize', status: 'pending' },
+        ],
+      }, 'todo_prog_1')
+    }
+    if (toolResults === 1) {
+      return toolCall('agim_todo_write', {
+        items: [
+          { content: 'outline steps', status: 'completed' },
+          { content: 'do the work', status: 'in_progress' },
+          { content: 'summarize', status: 'pending' },
+        ],
+      }, 'todo_prog_2')
+    }
+    if (toolResults === 2) {
+      return toolCall('agim_todo_write', {
+        items: [
+          { content: 'outline steps', status: 'completed' },
+          { content: 'do the work', status: 'completed' },
+          { content: 'summarize', status: 'completed' },
+        ],
+      }, 'todo_prog_3')
+    }
+    return textReply('PARENT_DONE todo-progress')
+  }
+
   if (/PHASE_A_LONG_SHEET_TEST/i.test(user)) {
     if (toolResults === 0) {
       const promptLines = Array.from({ length: 60 }, (_, i) =>

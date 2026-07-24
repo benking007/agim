@@ -30,6 +30,7 @@ import { useIosViewportZoomReset } from '@/hooks/use-ios-viewport-zoom-reset'
 import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
+import { activityFollowSignal } from '@/lib/activity-follow-signal'
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
@@ -242,7 +243,7 @@ export function AgentPortal(): JSX.Element {
     messageCount: chatMessages.length,
     latestMessageContent: chatMessages[chatMessages.length - 1]?.content ?? '',
     streaming: isTyping,
-    followSignal: chatMessages[chatMessages.length - 1]?.activity?.steps.length ?? 0,
+    followSignal: activityFollowSignal(chatMessages[chatMessages.length - 1]?.activity),
   })
 
   const agentsCatalog = useMemo((): AgentCatalogEntry[] => {

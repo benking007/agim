@@ -222,17 +222,15 @@ export function PortalRunStatus({
         </p>
       )}
 
-      {/* Subagent card (message-list surface) — sibling of Plan. */}
-      {activity && (
-        <Suspense fallback={null}>
-          <ChatSubagentCard activity={activity} dark={dark} className="max-w-full" />
-        </Suspense>
-      )}
-
-      {/* Plan card sits between run status and the assistant body (observer UX). */}
+      {/* Plan first, then Subagents — both sit between run status and body. */}
       {activity && (
         <Suspense fallback={null}>
           <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
+        </Suspense>
+      )}
+      {activity && (
+        <Suspense fallback={null}>
+          <ChatSubagentCard activity={activity} dark={dark} className="max-w-full" />
         </Suspense>
       )}
 

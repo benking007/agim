@@ -244,10 +244,11 @@ export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {
   const mode = (process.env.AGIM_NATIVE_AGENT_MODE || 'allow-list').toLowerCase() as ApprovalMode
   const autoAllow = splitEnvList(process.env.AGIM_NATIVE_AGENT_AUTOALLOW)
   const denyList = splitEnvList(process.env.AGIM_NATIVE_AGENT_DENYLIST)
-  // Default autoAllow list is empty — when AGIM_AUTO_APPROVE=1 (default),
-  // the approval bus handles auto-approval for all tools after safety
-  // checks. Operators can still populate AGIM_NATIVE_AGENT_AUTOALLOW to
-  // pre-approve specific tools even when auto-approve is off.
+  // Default autoAllow list is empty. Global AGIM_AUTO_APPROVE defaults OFF;
+  // when enabled, the shared ApprovalBus auto-allows parent and Subagent
+  // tools after safety checks. Operators can still populate
+  // AGIM_NATIVE_AGENT_AUTOALLOW to pre-approve specific tools when
+  // auto-approve is off.
   const effectiveAllow = autoAllow
   const effectiveDeny = isPlanModeOn(threadKey)
     ? Array.from(expandToolNameList([...denyList, ...PLAN_MODE_DENY_TOOLS]))
@@ -345,13 +346,18 @@ export function buildNativeAskUser(opts: {
   channelId: string
   threadId: string
   userId: string
+  callerAgent?: string
+  callDepth?: number
+  parentJobId?: number
 }): (call: ToolCallRequest, signal?: AbortSignal) => Promise<'allow' | 'deny'> {
   const baseCtx = {
     platform: opts.platform,
     channelId: opts.channelId,
     threadId: opts.threadId,
     userId: opts.userId,
-    callerAgent: 'agim',
+    callerAgent: opts.callerAgent || 'agim',
+    ...(typeof opts.callDepth === 'number' ? { callDepth: opts.callDepth } : {}),
+    ...(typeof opts.parentJobId === 'number' ? { parentJobId: opts.parentJobId } : {}),
   }
   return async (call: ToolCallRequest, signal?: AbortSignal): Promise<'allow' | 'deny'> => {
     if (signal?.aborted) return 'deny'

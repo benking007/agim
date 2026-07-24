@@ -53,4 +53,14 @@ describe('ApprovalDock', () => {
     await user.click(screen.getByRole('button', { name: /Allow|批准/ }))
     expect(onApprove).toHaveBeenCalledWith('m-apv', 'req-1', 'y')
   })
+
+  it('shows Subagent origin when callDepth > 0', () => {
+    render(
+      <ApprovalDock
+        approvals={[approval({ callDepth: 1, callerAgent: 'agim', originLabel: 'Subagent · agim' })]}
+        onApprove={() => true}
+      />,
+    )
+    expect(screen.getByText('Subagent · agim')).toBeInTheDocument()
+  })
 })

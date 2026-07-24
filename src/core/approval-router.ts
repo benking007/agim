@@ -246,11 +246,20 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
   const primary = primaryInlineParam(n.toolName, n.input)
   const body = formatInputBody(n.toolName, n.input, MAX_INPUT_PREVIEW)
   const reqShort = n.reqId.slice(0, 8)
+  const callDepth = typeof n.ctx.callDepth === 'number' ? n.ctx.callDepth : 0
+  const origin = callDepth > 0
+    ? `来源：Subagent · ${n.ctx.callerAgent || 'agent'} (depth ${callDepth})`
+    : (n.ctx.callerAgent ? `来源：Agent · ${n.ctx.callerAgent}` : null)
 
   if (n.autoAllow) {
     const sec = Math.round(n.autoAllow.graceMs / 1000)
     const header = primary ? `⏱ 自动放行 · ${tool} · ${primary}` : `⏱ 自动放行 · ${tool}`
-    return [header, ...body, `${sec}s 后执行 · 回 n 拒绝并撤销规则 · req ${reqShort}`].join('\n')
+    return [
+      header,
+      ...(origin ? [origin] : []),
+      ...body,
+      `${sec}s 后执行 · 回 n 拒绝并撤销规则 · req ${reqShort}`,
+    ].join('\n')
   }
 
   const mins = Math.max(1, Math.round(approvalBus.approvalTimeoutMs / 60000))
@@ -261,6 +270,7 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
       : 'y 批准一次 · n 拒绝'
     return [
       header,
+      ...(origin ? [origin] : []),
       ...body,
       actions,
       `${mins}min 未回 → 拒绝 · req ${reqShort}`,
@@ -270,6 +280,7 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
   const header = primary ? `🔐 审批 · ${tool} · ${primary}` : `🔐 审批 · ${tool}`
   return [
     header,
+    ...(origin ? [origin] : []),
     ...body,
     `y 批准 · n 拒绝 · all 同类放行`,
     `${mins}min 未回 → ${fallback} · req ${reqShort}`,
@@ -357,6 +368,13 @@ export function install(opts: InstallOptions): void {
     // every time the bot blips, even though the next attempt would've
     // succeeded.
     if (m.sendApprovalCard) {
+      const callDepth = typeof n.ctx.callDepth === 'number' ? n.ctx.callDepth : 0
+      const callerAgent = typeof n.ctx.callerAgent === 'string' && n.ctx.callerAgent.trim()
+        ? n.ctx.callerAgent.trim()
+        : undefined
+      const originLabel = callDepth > 0
+        ? `Subagent · ${callerAgent || 'agent'}`
+        : (callerAgent ? `Agent · ${callerAgent}` : undefined)
       const prompt: ApprovalCardPrompt = {
         reqId: n.reqId,
         toolName: n.toolName,
@@ -368,6 +386,9 @@ export function install(opts: InstallOptions): void {
             : {}
         ),
         graceSeconds: n.autoAllow ? Math.round(n.autoAllow.graceMs / 1000) : undefined,
+        ...(callerAgent ? { callerAgent } : {}),
+        ...(callDepth > 0 ? { callDepth } : {}),
+        ...(originLabel ? { originLabel } : {}),
       }
       let lastErr: unknown = null
       for (let attempt = 0; attempt < 2; attempt++) {

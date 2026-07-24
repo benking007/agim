@@ -77,7 +77,8 @@ export default function SettingsPolicyRoute(): JSX.Element {
   const skipPerms     = envBool(env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS)
   const memEnabled    = envBool(env.AGIM_MEMORY_ENABLED)
   const viewerEnabled = envBool(env.AGIM_VIEWER_ENABLED)
-  const autoApprove   = envBool(env.AGIM_AUTO_APPROVE, true)
+  // Match backend isAutoApproveEnabled() — unset/empty means OFF.
+  const autoApprove   = envBool(env.AGIM_AUTO_APPROVE, false)
   const timeoutAllow  = (
     env.AGIM_APPROVAL_ON_TIMEOUT ?? env.AGIM_TIMEOUT_DEFAULT ?? 'allow'
   ).toLowerCase() !== 'deny'

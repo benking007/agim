@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop R3 PLAN+DISPATCH**: After mission confirm, each round must
+  `call_agents` / `call_agent` at least once before `loop_verdict`
+  `continue|revise` (`no_dispatch` otherwise). `noteLoopDispatch` tracks
+  `dispatchesThisRound` + `lastPlan`; status moves planning→dispatching;
+  `stop` remains an exit hatch without dispatch.
 - **Loop R2 Mission persistence**: `LoopMission` is the loop-store SSOT
   (partial while ALIGNING); `sessionKey`; optional `acceptance` +
   parsed `maxWallMs`; `/loop acceptance`; `/loop status` always shows

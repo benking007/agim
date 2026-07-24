@@ -501,8 +501,8 @@ export function getAgimTools(): ToolDef[] {
       name: 'mcp__agim__loop_verdict',
       description:
         'Report a Loop observer verdict while a /loop session is active (not during ALIGNING): ' +
-        'continue, revise, or stop. stop ends the Loop (and focus-off only if Loop opened Focus). ' +
-        'Refused while status=aligning — finish objective+exit via ask_user / /loop confirm first.',
+        'continue, revise, or stop. continue/revise require ≥1 call_agent(s) this round (R3); ' +
+        'stop may end without dispatch. Refused while aligning — finish objective+exit first.',
       parameters: {
         type: 'object',
         properties: {
@@ -857,6 +857,18 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }, `delegating to ${spawn.label} (attempt ${callAgentHistory.length + 1}/${callAgentMaxPerTurn || '∞'}` +
               `${ctx.callerPlanMode ? ', plan-mode propagated' : ''})`)
 
+          {
+            const { noteLoopDispatch } = await import('../loop-run.js')
+            noteLoopDispatch(ctx.platform, ctx.channelId, ctx.threadId, {
+              count: 1,
+              tasks: [{
+                id: '1',
+                brief: promptHead,
+                agentHint: spawn.label,
+              }],
+            })
+          }
+
           const one = await invokeOneSubagent({
             spawn,
             prompt,
@@ -986,6 +998,18 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             cap: callAgentMaxPerTurn,
             threadId: ctx.threadId,
           }, `call_agents fan-out x${prepared.length} (concurrency=${concurrency})`)
+
+          {
+            const { noteLoopDispatch } = await import('../loop-run.js')
+            noteLoopDispatch(ctx.platform, ctx.channelId, ctx.threadId, {
+              count: prepared.length,
+              tasks: prepared.map((p, i) => ({
+                id: String(i + 1),
+                brief: p.promptHead,
+                agentHint: p.spawn.label,
+              })),
+            })
+          }
 
           type LaneResult = {
             index: number
@@ -1151,13 +1175,24 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               ? args.reasons.filter((x): x is string => typeof x === 'string')
               : undefined,
           })
-          if (!r.ok) return err(`loop_verdict failed: ${r.error}`)
+          if (!r.ok) {
+            if (r.error === 'no_dispatch') {
+              return err(
+                'loop_verdict failed: no_dispatch — this Loop round needs ≥1 '
+                + 'mcp__agim__call_agents (or call_agent) before continue/revise. '
+                + 'Decompose the objective, dispatch, then retry the verdict. '
+                + 'Use decision=stop to end without further dispatch.',
+              )
+            }
+            return err(`loop_verdict failed: ${r.error}`)
+          }
           return ok(safeJson({
             status: r.run.status,
             round: r.run.round,
             endReason: r.run.endReason,
             lastVerdict: r.run.lastVerdict,
             openedFocus: r.run.openedFocus,
+            dispatchesThisRound: r.run.dispatchesThisRound,
           }))
         }
         case 'long_task':

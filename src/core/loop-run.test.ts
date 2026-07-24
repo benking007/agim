@@ -13,6 +13,7 @@ import {
   getActiveLoop,
   getLoopRun,
   getMissionView,
+  noteLoopDispatch,
   parseExitConstraints,
   parseLoopStartText,
   setLoopAcceptance,
@@ -203,7 +204,10 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.run.mission?.objective).toContain('修好超时')
     expect(started.run.mission?.exit.description).toContain('验收通过')
     expect(started.run.maxRounds).toBe(3)
-    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).not.toContain('ALIGNING')
+    const snip = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snip).not.toContain('ALIGNING')
+    expect(snip).toContain('MUST decompose')
+    expect(snip).toContain('call_agents')
   })
 
   it('objective + exit + confirm leaves aligning', () => {
@@ -278,6 +282,88 @@ describe('loop-run R1 ALIGNING', () => {
     expect(r.run.status).toBe('ended')
     expect(r.run.endReason).toBe('stop_verdict')
     expect(getFocusOn(base.platform, base.channelId, threadId)).toBeNull()
+  })
+})
+
+describe('loop-run R3 PLAN+DISPATCH', () => {
+  it('continue/revise without dispatch is refused; stop still works', () => {
+    reset()
+    const threadId = 'loop-r3-gate'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '拆解任务；退出条件为验收通过或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.run.status).toBe('planning')
+    expect(started.run.dispatchesThisRound).toBe(0)
+
+    const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'skip dispatch',
+    })
+    expect(cont.ok).toBe(false)
+    if (!cont.ok) expect(cont.error).toBe('no_dispatch')
+    expect(getActiveLoop(base.platform, base.channelId, threadId)?.round).toBe(1)
+
+    const rev = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'revise',
+      summary: 'still no dispatch',
+    })
+    expect(rev.ok).toBe(false)
+
+    const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'stop',
+      summary: 'abandon',
+    })
+    expect(stop.ok).toBe(true)
+  })
+
+  it('dispatch then continue advances round and resets counter', () => {
+    reset()
+    const threadId = 'loop-r3-advance'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '并行调研；退出条件为有结论或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+
+    const noted = noteLoopDispatch(base.platform, base.channelId, threadId, {
+      count: 2,
+      tasks: [
+        { id: '1', brief: '查日志', agentHint: 'agim/cheap' },
+        { id: '2', brief: '写复现', agentHint: 'claude-code' },
+      ],
+    })
+    expect(noted?.status).toBe('dispatching')
+    expect(noted?.dispatchesThisRound).toBe(2)
+    expect(noted?.lastPlan?.tasks.length).toBe(2)
+
+    const status = formatLoopStatus(noted!)
+    expect(status).toContain('本轮派工：2')
+    expect(status).toContain('查日志')
+
+    const snip = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snip).toContain('Dispatch recorded')
+    expect(snip).not.toContain('MUST decompose')
+
+    const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'need another pass',
+      nextHint: 'focus on flaky test',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.round).toBe(2)
+    expect(cont.run.dispatchesThisRound).toBe(0)
+    expect(cont.run.status).toBe('planning')
   })
 })
 

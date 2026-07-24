@@ -229,13 +229,13 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 |---|---|
 | R0 | Focus + `/loop` 壳 — **已落地** |
 | R1 | ALIGNING 硬门禁 — **已落地**（#232） |
-| **R2** | `LoopMission` SSOT 持久化；status 恒展示目标+退出；acceptance / maxWallMs — **本 PR** |
-| R3 | PLANNING + DISPATCHING（强制 `call_agents`） |
+| R2 | Mission SSOT 持久化 — **已落地**（#233） |
+| **R3** | PLAN + DISPATCH：本轮须 `call_agent(s)` 才能 `continue/revise` — **本 PR** |
 | R4 | VERIFYING + REFLECT（对照目标；exit 截断） |
 | R5 | SPA / 总结卡片 UX |
 | R6 | 可选触发器（仅 start，仍走对焦） |
 
-**下一刀：R3。**
+**下一刀：R4。**
 
 #### 非本阶段
 

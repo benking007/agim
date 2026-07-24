@@ -4,6 +4,7 @@
 //
 // R1: ALIGNING gate — objective + exit required before planning/dispatch.
 // R2: LoopMission as persisted SSOT (partial while aligning; status shows both hard fields).
+// R3: PLAN + DISPATCH — continue/revise requires ≥1 subagent call this round.
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -83,6 +84,13 @@ export interface LoopRun {
   /** Legacy mirrors of mission fields (kept in sync for older readers). */
   draftObjective?: string
   draftExitDescription?: string
+  /** R3: subagent spawns accepted this round (call_agent / call_agents). */
+  dispatchesThisRound: number
+  /** R3: last decompose plan recorded from call_agents (or synthetic single). */
+  lastPlan?: {
+    at: number
+    tasks: Array<{ id: string; brief: string; agentHint?: string }>
+  }
   createdAt: number
   updatedAt: number
   lastVerdict?: LoopVerdict
@@ -157,6 +165,9 @@ function normalizeRun(raw: LoopRun): LoopRun {
   }
   if (!Array.isArray(raw.timeline)) raw.timeline = []
   if (!raw.maxRounds || raw.maxRounds < 1) raw.maxRounds = defaultMaxRounds()
+  if (typeof raw.dispatchesThisRound !== 'number' || raw.dispatchesThisRound < 0) {
+    raw.dispatchesThisRound = 0
+  }
   syncMissionMirrors(raw)
   return raw
 }
@@ -486,6 +497,7 @@ export function startLoop(input: {
     mission,
     draftObjective: objective || undefined,
     draftExitDescription: exitDescription || undefined,
+    dispatchesThisRound: 0,
     createdAt: now,
     updatedAt: now,
     timeline: [],
@@ -593,11 +605,53 @@ export function confirmLoopMission(
   run.maxRounds = run.mission.exit.maxRounds
   run.status = 'planning'
   run.round = 1
+  run.dispatchesThisRound = 0
   syncMissionMirrors(run)
   run.updatedAt = Date.now()
   pushTimeline(run, 'system', 'mission confirmed → planning')
   writeRun(run)
   return { ok: true, run }
+}
+
+export type LoopPlanTask = { id: string; brief: string; agentHint?: string }
+
+/**
+ * Record that the active Loop accepted ≥1 subagent spawn this round.
+ * Moves planning → dispatching. No-op when aligning / ended / no active loop.
+ */
+export function noteLoopDispatch(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  input: {
+    count?: number
+    tasks?: LoopPlanTask[]
+  } = {},
+): LoopRun | null {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return null
+  if (run.status === 'aligning' || run.status === 'ended') return run
+
+  const n = Math.max(1, input.count ?? 1)
+  run.dispatchesThisRound = (run.dispatchesThisRound || 0) + n
+  if (input.tasks && input.tasks.length > 0) {
+    run.lastPlan = {
+      at: Date.now(),
+      tasks: input.tasks.slice(0, 8).map((t, i) => ({
+        id: (t.id || `t${i + 1}`).slice(0, 40),
+        brief: (t.brief || '').slice(0, 200),
+        ...(t.agentHint ? { agentHint: t.agentHint.slice(0, 80) } : {}),
+      })),
+    }
+  }
+  if (run.status === 'planning' || run.status === 'running' || run.status === 'observing'
+      || run.status === 'reflecting') {
+    run.status = 'dispatching'
+  }
+  run.updatedAt = Date.now()
+  pushTimeline(run, 'system', `dispatch +${n} (round total ${run.dispatchesThisRound})`)
+  writeRun(run)
+  return run
 }
 
 function endLoopInternal(
@@ -663,6 +717,15 @@ export function applyLoopVerdict(
     return { ok: false, error: 'not_ready' }
   }
 
+  // R3: continue/revise cannot complete a round without ≥1 subagent dispatch.
+  // stop remains an exit hatch (user/observer may abandon without dispatch).
+  if (
+    (verdict.decision === 'continue' || verdict.decision === 'revise')
+    && (run.dispatchesThisRound || 0) < 1
+  ) {
+    return { ok: false, error: 'no_dispatch' }
+  }
+
   run.lastVerdict = {
     decision: verdict.decision,
     summary: (verdict.summary || '').slice(0, 500),
@@ -683,7 +746,9 @@ export function applyLoopVerdict(
   }
 
   run.round += 1
-  run.status = 'running'
+  run.dispatchesThisRound = 0
+  // Next round starts in PLANNING (R3); VERIFY/REFLECT automation is R4.
+  run.status = 'planning'
   writeRun(run)
   return { ok: true, run }
 }
@@ -712,19 +777,35 @@ export function buildLoopSnippet(
     return lines.join('\n')
   }
 
+  lines.push(`Phase: ${run.status === 'dispatching' ? 'DISPATCHING' : 'PLANNING'} (R3)`)
   lines.push(`Round: ${run.round}/${view.maxRounds}`)
   lines.push(`Objective: ${view.objective}`)
   lines.push(`Exit: ${view.exitDescription}`)
   if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
+  lines.push(`Dispatches this round: ${run.dispatchesThisRound || 0}`)
+  if (run.lastPlan?.tasks?.length) {
+    lines.push('Last plan:')
+    for (const t of run.lastPlan.tasks.slice(0, 6)) {
+      lines.push(`  - [${t.agentHint || '?'}] ${t.brief}`)
+    }
+  }
   if (run.startNote) lines.push(`Start note: ${run.startNote}`)
   if (run.lastVerdict) {
     lines.push(`Last verdict: ${run.lastVerdict.decision} — ${run.lastVerdict.summary}`)
     if (run.lastVerdict.nextHint) lines.push(`Next hint: ${run.lastVerdict.nextHint}`)
   }
-  lines.push(
-    'Loop mission is confirmed. Prefer decomposing and mcp__agim__call_agents when useful. '
-      + 'Verify against Objective/Exit. User can /loop stop.',
-  )
+  if ((run.dispatchesThisRound || 0) < 1) {
+    lines.push(
+      'MUST decompose the objective into tasks and call mcp__agim__call_agents '
+        + '(or call_agent) at least once this round before loop_verdict continue/revise. '
+        + 'Serial dispatch is fine. loop_verdict stop may end without dispatch. User can /loop stop.',
+    )
+  } else {
+    lines.push(
+      'Dispatch recorded. You may synthesize results, then loop_verdict continue|revise|stop '
+        + 'against Objective/Exit. User can /loop stop.',
+    )
+  }
   lines.push('')
   return lines.join('\n')
 }
@@ -762,6 +843,17 @@ export function formatLoopStatus(run: LoopRun): string {
     `openedFocus: ${run.openedFocus ? 'yes（结束会 focus off）' : 'no（结束保留 focus）'}`,
     ...formatMissionFields(run, { draftLabel: run.status === 'aligning' }),
   ]
+  if (run.status !== 'aligning') {
+    lines.push(`本轮派工：${run.dispatchesThisRound || 0}${
+      (run.dispatchesThisRound || 0) < 1 ? '（continue/revise 前至少 1 次 call_agent(s)）' : ''
+    }`)
+    if (run.lastPlan?.tasks?.length) {
+      lines.push('最近计划：')
+      for (const t of run.lastPlan.tasks.slice(0, 5)) {
+        lines.push(`  - ${t.agentHint ? `${t.agentHint}: ` : ''}${t.brief}`)
+      }
+    }
+  }
   lines.push(
     `Focus snapshot: ${run.focusSnapshot.slice(0, 200)}${run.focusSnapshot.length > 200 ? '…' : ''}`,
   )

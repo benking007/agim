@@ -35,11 +35,16 @@ describe('subagent helpers', () => {
     expect(formatSubagentLabel('claude-code')).toBe('claude-code')
   })
 
-  it('parseCallAgentTarget normalizes agim/native slash forms', () => {
+  it('parseCallAgentTarget normalizes agim/native and prefers backend over role', () => {
     expect(parseCallAgentTarget('agim/native')).toEqual({ agent: 'agim', isolate: true })
-    expect(parseCallAgentTarget('agim/cheap')).toEqual({ agent: 'agim', role: 'cheap', isolate: true })
     expect(parseCallAgentTarget('native')).toEqual({ agent: 'agim' })
     expect(parseCallAgentTarget('claude-code')).toEqual({ agent: 'claude-code' })
+    // Unconfigured cheap → treated as backend candidate (error lists real backends).
+    expect(parseCallAgentTarget('agim/cheap')).toEqual({
+      agent: 'agim',
+      backend: 'cheap',
+      isolate: true,
+    })
   })
 })
 
@@ -82,7 +87,7 @@ describe('resolveSubagentSpawn', () => {
     }
   })
 
-  it('maps agim/cheap slash form to role=cheap', () => {
+  it('maps agim/cheap slash form to role=cheap when role is configured', () => {
     saveSecret('deepseek-v4-pro', 'sk-pro')
     saveSecret('deepseek-v4-flash', 'sk-flash')
     loadFromConfig({
@@ -109,6 +114,60 @@ describe('resolveSubagentSpawn', () => {
       expect(r.role).toBe('cheap')
       expect(r.model).toBe('deepseek-v4-flash')
       expect(r.label).toBe('agim/cheap')
+    }
+  })
+
+  it('maps agim/<backend> and agim:<backend> to concrete backend names', () => {
+    saveSecret('deepseek-v4-flash', 'sk-flash')
+    loadFromConfig({
+      llmBackends: [
+        {
+          name: 'deepseek-v4-flash',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+        },
+      ],
+      llmRoles: {},
+    } as never)
+    const slash = resolveSubagentSpawn({ agent: 'agim/deepseek-v4-flash' }, 'agim')
+    expect(slash.ok).toBe(true)
+    if (slash.ok) {
+      expect(slash.model).toBe('deepseek-v4-flash')
+      expect(slash.role).toBeUndefined()
+      expect(slash.label).toBe('agim:deepseek-v4-flash')
+    }
+    const colon = resolveSubagentSpawn({ agent: 'agim:deepseek-v4-flash' }, 'agim')
+    expect(colon.ok).toBe(true)
+    if (colon.ok) expect(colon.model).toBe('deepseek-v4-flash')
+
+    const explicit = resolveSubagentSpawn(
+      { agent: 'agim', backend: 'deepseek-v4-flash' },
+      'agim',
+    )
+    expect(explicit.ok).toBe(true)
+    if (explicit.ok) expect(explicit.model).toBe('deepseek-v4-flash')
+  })
+
+  it('fails clearly when agim/cheap is used but cheap role is unbound', () => {
+    saveSecret('deepseek-v4-pro', 'sk-pro')
+    loadFromConfig({
+      llmBackends: [
+        {
+          name: 'deepseek-v4-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+        },
+      ],
+      llmRoles: {},
+    } as never)
+    const r = resolveSubagentSpawn({ agent: 'agim/cheap' }, 'agim')
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toMatch(/backend "cheap" not found/)
+      expect(r.error).toMatch(/Configured backends: deepseek-v4-pro/)
+      expect(r.error).toMatch(/Prefer call_agent/)
     }
   })
 

@@ -44,7 +44,8 @@ import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
 import { resolveSubagentSpawn } from '../subagent.js'
-import { CALL_AGENT_TOOL_DESCRIPTION } from '../subagent-heuristics.js'
+import { buildCallAgentToolDescription } from '../subagent-heuristics.js'
+import { describeRegistry, listProviders } from './registry.js'
 import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
 import { hashWorkspaceScope } from '../goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../agent-cwd.js'
@@ -335,16 +336,19 @@ export function getAgimTools(): ToolDef[] {
     },
     {
       name: 'mcp__agim__call_agent',
-      description: CALL_AGENT_TOOL_DESCRIPTION,
+      description: buildCallAgentToolDescription({
+        backends: listProviders().map((p) => p.name),
+        roles: Object.keys(describeRegistry().roles),
+      }),
       parameters: {
         type: 'object',
         properties: {
           agent: {
             type: 'string',
             description:
-              'Registry agent id: "agim" for same-family Subagent (also pass isolate:true or role/backend), '
-              + 'or another adapter id (claude-code, codex, …). '
-              + 'Accepts legacy "agim/native" and "agim/<role>" slash forms.',
+              'Registry agent id: "agim" for same-family Subagent, or another adapter (claude-code, codex, …). '
+              + 'For same-family prefer separate backend= field with a configured llmBackends name. '
+              + 'Also accepts "agim:<backend>" / "agim/<backend-or-role>" shorthand.',
           },
           prompt: {
             type: 'string',
@@ -352,20 +356,22 @@ export function getAgimTools(): ToolDef[] {
               'Self-contained Subagent brief: Objective + Output format + Boundaries + Done-when. '
               + 'Do not spawn for trivial one-step work; child does not see parent chat history.',
           },
-          role: {
-            type: 'string',
-            description:
-              'Optional llmRoles key for same-family Agim Subagent (e.g. "cheap"). Implies isolate.',
-          },
           backend: {
             type: 'string',
             description:
-              'Optional explicit llmBackends name for same-family Agim Subagent. Implies isolate. Wins over role.',
+              'Preferred: concrete llmBackends.name for same-family Agim Subagent (implies isolate). '
+              + 'Use a name from the configured backends list in the tool description.',
+          },
+          role: {
+            type: 'string',
+            description:
+              'Optional llmRoles alias (e.g. "cheap") only when that role is configured. '
+              + 'Prefer backend= over role= — unbound roles fail.',
           },
           isolate: {
             type: 'boolean',
             description:
-              'Allow same-agent nested Subagent with a fresh context (default model if role/backend omitted).',
+              'Allow same-agent nested Subagent with a fresh context (default model if backend/role omitted).',
           },
         },
         required: ['agent', 'prompt'],

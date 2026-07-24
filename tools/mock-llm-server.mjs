@@ -115,7 +115,33 @@ function decide(body) {
 
   // Nested Subagent sessions get a fresh transcript with our brief marker.
   if (/PHASE_A1_SUBAGENT_BRIEF/i.test(user)) {
+    if (/LONG_RESULT/i.test(user)) {
+      const lines = Array.from({ length: 80 }, (_, i) =>
+        `RESULT_LINE_${String(i + 1).padStart(3, '0')}: lorem detail for Subagent sheet scroll/expand — model=${model}`)
+      return textReply(['SUBAGENT_OK LONG_RESULT', ...lines].join('\n'))
+    }
     return textReply(`SUBAGENT_OK model=${model}`)
+  }
+
+  if (/PHASE_A_LONG_SHEET_TEST/i.test(user)) {
+    if (toolResults === 0) {
+      const promptLines = Array.from({ length: 60 }, (_, i) =>
+        `PROMPT_LINE_${String(i + 1).padStart(3, '0')}: parent brief filler for overflow testing of the docked sheet.`)
+      return toolCall('mcp__agim__call_agent', {
+        agent: 'agim',
+        isolate: true,
+        prompt: [
+          'PHASE_A1_SUBAGENT_BRIEF LONG_RESULT',
+          'Objective: reply with a long multi-line result for UI overflow',
+          'Output format: many lines',
+          'Boundaries: no tools',
+          'Done-when: printed SUBAGENT_OK LONG_RESULT',
+          '',
+          ...promptLines,
+        ].join('\n'),
+      }, 'call_long_sheet')
+    }
+    return textReply('PARENT_DONE long-sheet')
   }
 
   if (/PHASE_A1_ISOLATE_TEST/i.test(user)) {

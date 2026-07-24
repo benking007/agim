@@ -227,6 +227,31 @@ export function formatSubagentStoppedResult(partial: string): string {
   ].join('\n')
 }
 
+/** True when an AbortSignal reason looks like a wall-clock / turn timeout
+ *  (as opposed to an explicit user Stop). */
+export function isAbortReasonTimeout(reason: unknown): boolean {
+  if (reason == null) return false
+  if (typeof reason === 'string') {
+    return /timed?\s*out|timeout|超时/i.test(reason)
+  }
+  if (typeof reason !== 'object') return false
+  const name = 'name' in reason ? String((reason as { name: unknown }).name) : ''
+  const message = 'message' in reason ? String((reason as { message: unknown }).message) : ''
+  if (name === 'TimeoutError') return true
+  return /timed?\s*out|timeout|超时|native run timed out|a2a timed out/i.test(message)
+}
+
+function abortPreview(reason: unknown, timeoutMs: number): string {
+  if (isAbortReasonTimeout(reason)) {
+    const seconds = Math.max(1, Math.round(timeoutMs / 1000))
+    const detail = reason instanceof Error && reason.message.trim()
+      ? reason.message.trim().slice(0, 120)
+      : `timed out after ${seconds}s`
+    return detail
+  }
+  return 'Stopped by user'
+}
+
 function emitAgentActivity(
   opts: CallAgentOpts,
   ctx: RouteContext,
@@ -493,8 +518,16 @@ export async function callAgentByName(
     })
     result = await accumulateWithTimeout(gen, timeoutMs, abortController.signal)
     if (abortController.signal.aborted || opts.signal?.aborted || getJob(jobId)?.status === 'cancelled') {
-      outcome = 'cancelled'
-      errMsg = 'stopped by user'
+      const reason = abortController.signal.reason ?? opts.signal?.reason
+      // Parent-turn / tool-bridge / AbortSignal.timeout aborts used to be
+      // mis-labeled "Stopped by user" even when no human clicked Stop.
+      if (isAbortReasonTimeout(reason)) {
+        outcome = 'timeout'
+        errMsg = abortPreview(reason, timeoutMs)
+      } else {
+        outcome = 'cancelled'
+        errMsg = 'stopped by user'
+      }
     } else {
       const calleeOutcome = calleeOutcomes.at(-1)
       if (calleeOutcome && calleeOutcome.status !== 'success' && calleeOutcome.status !== 'partial') {
@@ -507,8 +540,14 @@ export async function callAgentByName(
       outcome = 'timeout'
       errMsg = err.message
     } else if (abortController.signal.aborted || opts.signal?.aborted) {
-      outcome = 'cancelled'
-      errMsg = 'stopped by user'
+      const reason = abortController.signal.reason ?? opts.signal?.reason ?? err
+      if (isAbortReasonTimeout(reason)) {
+        outcome = 'timeout'
+        errMsg = abortPreview(reason, timeoutMs)
+      } else {
+        outcome = 'cancelled'
+        errMsg = 'stopped by user'
+      }
     } else {
       outcome = 'failed'
       errMsg = err instanceof Error ? err.message : String(err)

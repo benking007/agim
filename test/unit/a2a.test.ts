@@ -230,3 +230,15 @@ describe('formatSubagentStoppedResult', () => {
     expect(out).toMatch(/Summarize|continue/i)
   })
 })
+
+describe('isAbortReasonTimeout', () => {
+  it('detects TimeoutError name and timed-out messages', () => {
+    const dom = new Error('The operation was aborted due to timeout')
+    dom.name = 'TimeoutError'
+    expect(a2a.isAbortReasonTimeout(dom)).toBe(true)
+    expect(a2a.isAbortReasonTimeout(new Error('native run timed out after 60000ms'))).toBe(true)
+    expect(a2a.isAbortReasonTimeout(new Error('工具 mcp__agim__call_agent 执行超过 60000ms 已超时'))).toBe(true)
+    expect(a2a.isAbortReasonTimeout(new Error('a2a aborted'))).toBe(false)
+    expect(a2a.isAbortReasonTimeout(undefined)).toBe(false)
+  })
+})

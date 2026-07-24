@@ -1111,6 +1111,8 @@ export function buildLoopSnippet(
       'VERIFY (R4): call loop_verdict with structured fields against Objective'
         + (view.acceptance ? '/Acceptance' : '')
         + ': met (boolean), summary, and if unmet: gaps[] + nextDirection. '
+        + 'HARD GATE: do NOT write the final user report until loop_verdict succeeds '
+        + '(AGIM_LOOP_VERIFY_GATE forces a follow-up hop if you skip it). '
         + 'met=true → decision=stop (objective_met). '
         + 'met=false → decision=continue|revise (reflect → replan). '
         + 'Exit truncates on maxRounds / maxWallMs. User can /loop stop.',

@@ -45,6 +45,12 @@ import {
 import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
 import { evaluateLoopDispatchGate } from '../../../core/loop-dispatch-gate.js'
+import {
+  isLoopVerdictToolName,
+  loopNeedsVerdict,
+  loopVerifyFollowUpPrompt,
+  loopVerifySteerText,
+} from '../../../core/loop-verify-gate.js'
 import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
@@ -892,11 +898,22 @@ export class NativeAgentAdapter implements AgentAdapter {
     let compactionCalls = 0
     /** At most one mid-turn transcript compact per user message. */
     let midTurnCompactDone = false
+    /** R4: successful loop_verdict this user turn (verify gate). */
+    let loopVerdictOkThisTurn = false
+    let loopVerifyFollowUpUsed = false
     const recentSigs: string[] = []
     const afterHookToolCallIds = new Set<string>()
     const toolRuns: NativeToolRun[] = []
     /** Substantive assistant text from hops that also emitted tool calls. */
     const midTurnTexts: string[] = []
+
+    const loopScope = opts?.platform && opts?.threadId
+      ? { platform: opts.platform, channelId: opts.channelId ?? '', threadId: opts.threadId }
+      : null
+    const loopStillNeedsVerdict = () =>
+      !!loopScope
+      && !loopVerdictOkThisTurn
+      && loopNeedsVerdict(loopScope.platform, loopScope.channelId, loopScope.threadId)
 
     const mergeProviderUsage = (usage: {
       promptTokens?: number
@@ -1326,6 +1343,18 @@ export class NativeAgentAdapter implements AgentAdapter {
             }
           }
         }
+        // Loop R4: after Subagent join, force VERIFY before a free-form answer.
+        if (
+          !stopReason
+          && loopStillNeedsVerdict()
+          && Array.isArray(event.toolResults)
+          && event.toolResults.some((r) => {
+            const n = (r.toolName ?? '').toLowerCase()
+            return n.includes('call_agent')
+          })
+        ) {
+          ephemeralSteer = [ephemeralSteer, loopVerifySteerText()].filter(Boolean).join('\n')
+        }
         // Mid-turn L2: after tools land, if emergency clearing still cannot
         // fit under window-reserve, summarize before the next model hop.
         if (
@@ -1382,6 +1411,13 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (ev.toolCallId) afterHookToolCallIds.add(ev.toolCallId)
       if (ev.toolName === PLAN_EXIT_TOOL_NAME && ev.isError !== true) {
         turnPlanMode = false
+      }
+      if (
+        ev.isError !== true
+        && ev.toolName
+        && isLoopVerdictToolName(ev.toolName)
+      ) {
+        loopVerdictOkThisTurn = true
       }
       const preview = previewToolResult(ev)
       const todoItems = todoItemsForActivity(
@@ -1500,6 +1536,19 @@ export class NativeAgentAdapter implements AgentAdapter {
       // Covers abort between the final pre-check and listener registration.
       if (turnSignal.aborted) onRunAbort()
       result = await promptPromise
+
+      // Loop R4 hard follow-up: model tried to answer without loop_verdict.
+      // One forced hop while hooks are still live; opt out via AGIM_LOOP_VERIFY_GATE=off.
+      if (
+        !stopReason
+        && !runController.signal.aborted
+        && !loopVerifyFollowUpUsed
+        && loopStillNeedsVerdict()
+      ) {
+        loopVerifyFollowUpUsed = true
+        ephemeralSteer = [ephemeralSteer, loopVerifySteerText()].filter(Boolean).join('\n')
+        result = await harness.prompt(loopVerifyFollowUpPrompt())
+      }
     } finally {
       if (timeoutTimer) clearTimeout(timeoutTimer)
       externalSignal?.removeEventListener('abort', forwardExternalAbort)

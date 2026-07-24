@@ -360,6 +360,7 @@ describe('loop-run R3 PLAN+DISPATCH', () => {
 
     const snip = buildLoopSnippet(base.platform, base.channelId, threadId)
     expect(snip).toContain('VERIFY (R4)')
+    expect(snip).toContain('HARD GATE')
     expect(snip).not.toContain('MUST decompose')
 
     const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {

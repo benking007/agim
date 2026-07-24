@@ -40,6 +40,7 @@ export default defineConfig({
       'test/unit/goals-migration.test.ts',
       'test/unit/todo-persist.test.ts',
       'test/unit/job-board-inline.test.ts',
+      'test/unit/jobs-api-get-auth.test.ts',
       'test/unit/job-recovery.test.ts',
       'test/unit/memo-rpc.test.ts',
       'test/unit/memory-dedup.test.ts',

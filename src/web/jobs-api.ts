@@ -24,8 +24,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registry } from '../core/registry.js'
 import { generateTraceId, createLogger } from '../core/logger.js'
-import { sendJson, readBody } from './http-utils.js'
-import { requireAdmin } from './auth.js'
+import { sendJson, readBody, sendError } from './http-utils.js'
+import {
+  requireAdmin,
+  isRequestAdmin,
+  extractToken,
+  verifyTokenSync,
+} from './auth.js'
 
 /**
  * Match-and-handle dispatcher. Returns `true` when the request was
@@ -57,8 +62,9 @@ export async function handleJobsApi(
 
   const jobIdMatch = p.match(/^\/api\/jobs\/(\d+)$/)
   if (jobIdMatch && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleGetJob(res, parseInt(jobIdMatch[1], 10)); return true
+    // Admin: full read. Chat/Portal (role=user): single-job read when the
+    // job belongs to their web thread (Subagent detail sheet).
+    await handleGetJob(req, res, url, parseInt(jobIdMatch[1], 10)); return true
   }
   const jobCancelMatch = p.match(/^\/api\/jobs\/(\d+)\/cancel$/)
   if (jobCancelMatch && m === 'POST') {
@@ -156,11 +162,47 @@ async function handleListJobs(res: ServerResponse, url: URL): Promise<void> {
   }
 }
 
-async function handleGetJob(res: ServerResponse, id: number): Promise<void> {
+const WEB_THREAD_ID_RE = /^web-[A-Za-z0-9_-]{4,64}$/
+
+/** Non-admin may read one job when it is scoped to their owned web thread. */
+async function canReadJobAsChatUser(
+  req: IncomingMessage,
+  url: URL,
+  job: { thread_key?: string | null },
+): Promise<boolean> {
+  const threadId = (url.searchParams.get('threadId') || '').trim()
+  if (!threadId || !WEB_THREAD_ID_RE.test(threadId)) return false
+  const expectedKey = `web:web:${threadId}`
+  if ((job.thread_key || '') !== expectedKey) return false
+  const tok = extractToken(req, url)
+  const tokenId = tok ? verifyTokenSync(tok) : null
+  if (!tokenId) return false
+  const { webThreadOwners } = await import('../core/web-thread-owners.js')
+  const owner = webThreadOwners.get(threadId)
+  // Mirror chat-media: unknown owner (fresh claim / race) allows; mismatch denies.
+  if (owner !== undefined && owner !== tokenId) return false
+  return true
+}
+
+async function handleGetJob(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  id: number,
+): Promise<void> {
   try {
     const { getJob } = await import('../core/job-board.js')
     const job = getJob(id)
     if (!job) { sendJson(res, 404, { error: 'Job not found' }); return }
+    if (!isRequestAdmin(req)) {
+      if (!(await canReadJobAsChatUser(req, url, job))) {
+        sendError(res, 403, 'AUTH_ADMIN_REQUIRED', {
+          message: 'admin role required',
+          extra: { loginUrl: '/login' },
+        })
+        return
+      }
+    }
     sendJson(res, 200, { job })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

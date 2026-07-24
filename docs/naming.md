@@ -33,11 +33,14 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | Name | Meaning | Typical knobs |
 |------|---------|---------------|
 | **ACP** | Remote agents plugged **into** Agim (`acpAgents[]`, discovery) | `acpPort`, `AGIM_ENABLE_REMOTE_AGENT` |
-| **A2A** | Agents calling each other **inside** Agim (`call_agent`) | `AGIM_A2A_*` |
+| **A2A** | Transport/guardrails for calling **another registered** `AgentAdapter` (`callAgentByName` / `call_agent`) | `AGIM_A2A_*` |
 | **Agim ACP endpoint** | Agim speaking ACP **outward** on `:9090` | `~/.agim` access-token / legacy `acp-token` |
+| **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend) **or** cross-adapter via A2A | See [`architecture/subagent.md`](./architecture/subagent.md) |
+| **Handoff / sticky switch** | User conversation control moves to another backend (`/cc`, `/oc`, …) — **not** a Subagent | session sticky |
 
-UI copy should say the full phrase (“Remote agents (ACP)”, “Agent
-handoffs (A2A)”), not bare “ACP” alone.
+UI copy should say the full phrase (“Remote agents (ACP)”, “Subagent”
+for nested workers, “A2A” only when discussing cross-adapter transport).
+Do not call sticky `/cc` a “subagent”.
 
 ## Workspace (two different words)
 

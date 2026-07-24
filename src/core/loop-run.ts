@@ -208,18 +208,23 @@ export function parseLoopStartText(text: string): {
   return { objective, exitDescription, maxRounds }
 }
 
-function resolveObjectiveDraft(
+function focusText(
   platform: string,
   channelId: string,
   threadId: string,
-  textObjective: string,
 ): string {
-  if (textObjective) return textObjective.slice(0, 500)
   const focus = getFocusOn(platform, channelId, threadId)
-  if (focus) {
-    return (focus.title + (focus.body ? `\n${focus.body}` : '')).slice(0, 500)
-  }
-  return ''
+  if (!focus) return ''
+  return (focus.title + (focus.body ? `\n${focus.body}` : '')).slice(0, 500)
+}
+
+/** Path A bare `/loop note` is a start note, not an objective override. */
+function isExplicitObjectiveText(raw: string, parsed: { objective: string; exitDescription: string }): boolean {
+  const t = raw.trim()
+  if (!t) return false
+  if (parsed.exitDescription) return true
+  if (/^(目标|objective)\s*[：:]/i.test(t)) return true
+  return false
 }
 
 export type StartLoopResult =
@@ -242,27 +247,25 @@ export function startLoop(input: {
     return { ok: false, error: 'already_running' }
   }
 
-  const parsed = parseLoopStartText(input.text ?? '')
+  const rawText = (input.text ?? '').trim()
+  const parsed = parseLoopStartText(rawText)
   const focus = getFocusOn(input.platform, input.channelId, input.threadId)
   let openedFocus = false
   let path: 'A' | 'B'
-
-  const objective = resolveObjectiveDraft(
-    input.platform, input.channelId, input.threadId, parsed.objective,
-  )
 
   if (focus) {
     path = 'A'
   } else {
     path = 'B'
-    if (!objective) return { ok: false, error: 'need_text' }
+    const seed = parsed.objective || rawText
+    if (!seed) return { ok: false, error: 'need_text' }
     const set = setFocus({
       platform: input.platform,
       channelId: input.channelId,
       threadId: input.threadId,
       userId: input.userId,
-      title: objective.split('\n')[0]!.slice(0, 200),
-      body: objective.includes('\n') ? objective.split('\n').slice(1).join('\n') : undefined,
+      title: seed.split('\n')[0]!.slice(0, 200),
+      body: seed.includes('\n') ? seed.split('\n').slice(1).join('\n') : undefined,
     })
     if (!set) return { ok: false, error: 'focus_set_failed' }
     openedFocus = true
@@ -270,6 +273,20 @@ export function startLoop(input: {
 
   const focusNow = getFocusOn(input.platform, input.channelId, input.threadId)
   if (!focusNow) return { ok: false, error: 'focus_required' }
+
+  const fromFocus = focusText(input.platform, input.channelId, input.threadId)
+  let objective = ''
+  let startNote: string | undefined
+  if (path === 'A') {
+    if (isExplicitObjectiveText(rawText, parsed)) {
+      objective = (parsed.objective || fromFocus).slice(0, 500)
+    } else {
+      objective = fromFocus
+      if (rawText) startNote = rawText.slice(0, 500)
+    }
+  } else {
+    objective = (parsed.objective || rawText).slice(0, 500)
+  }
 
   const exitDescription = parsed.exitDescription
   const maxRounds = parsed.maxRounds ?? defaultMaxRounds()
@@ -286,11 +303,7 @@ export function startLoop(input: {
     status: aligned ? 'planning' : 'aligning',
     round: aligned ? 1 : 0,
     maxRounds,
-    startNote: path === 'A' && parsed.objective && parsed.objective !== objective
-      ? parsed.objective
-      : (path === 'A' && (input.text ?? '').trim() && !parsed.exitDescription
-        ? (input.text ?? '').trim()
-        : undefined),
+    startNote,
     mission: aligned
       ? {
           objective,

@@ -62,6 +62,7 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.aligned).toBe(false)
     expect(started.run.status).toBe('aligning')
     expect(started.run.draftObjective).toContain('Keep me')
+    expect(started.run.startNote).toBe('note')
     expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('ALIGNING')
     expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('do NOT call')
 

@@ -15,11 +15,13 @@ export const SUBAGENT_HEURISTIC_KEYWORDS = [
   'same-family',
   'do not parallel-write',
   'synthesize',
+  'absolute path',
+  'see above',
 ] as const
 
 /**
  * Compact tool description for mcp__agim__call_agent.
- * Keep under ~900 chars so providers that truncate tool schemas stay usable.
+ * Keep under ~1100 chars so providers that truncate tool schemas stay usable.
  */
 export const CALL_AGENT_TOOL_DESCRIPTION = [
   'Spawn ONE Subagent (nested worker; you keep the user-facing reply).',
@@ -28,6 +30,9 @@ export const CALL_AGENT_TOOL_DESCRIPTION = [
   'isolate:true reuses the parent default model; role:"cheap" only when llmRoles.cheap is configured (optional alias).',
   '(2) another registered adapter (claude-code, codex, …) via A2A.',
   'Brief MUST be self-contained: Objective + Output format + Boundaries + Done-when.',
+  'Output format MUST require: key findings in the child FINAL message;',
+  'if the child also writes a file, it must cite the absolute path;',
+  'forbid empty「见上文」/「see above」with no substance.',
   'Scale: single-fact / short edit → do it yourself (do not spawn for trivial one-step work);',
   '2–3 independent research/verify lanes → call_agents; broad read-only search → fan-out with a cheaper backend when available;',
   'coding that writes the same file → do not parallel-write (serialize or split directories).',
@@ -40,6 +45,7 @@ export const CALL_AGENTS_TOOL_DESCRIPTION = [
   'Spawn MULTIPLE Subagents in one call (fan-out / join). You keep the user-facing reply.',
   'Use when 2–3 lanes are independent (research/verify/explore). Do not use for trivial one-step work.',
   'Each tasks[] item needs a self-contained brief (Objective + Output format + Boundaries + Done-when).',
+  'Output format: key findings in each child FINAL message; file writes must cite absolute path; no empty see above / 见上文.',
   'Do not parallel-write the same file — split directories or serialize writers.',
   'Failure mode: allSettled — one child fail/timeout/cancel does not kill siblings; synthesize all results.',
   'Same-family: prefer backend=; isolate:true reuses default model. Guardrails: depth, ACL, per-turn cap, parallel max.',
@@ -48,6 +54,7 @@ export const CALL_AGENTS_TOOL_DESCRIPTION = [
 /**
  * Parent system-prompt block (injected by buildSystemPrompt).
  * Complements the shorter tool description with decision heuristics.
+ * Also read by Subagents (same system prompt) — deliverable rules apply when YOU are the child.
  */
 export function buildSubagentDelegationGuidance(): string {
   return [
@@ -57,6 +64,9 @@ export function buildSubagentDelegationGuidance(): string {
     '    do not spawn for trivial one-step work.',
     '  - One lane → call_agent. Two or more independent lanes → call_agents (batch fan-out; join then synthesize).',
     '  - Brief four-piece (required in each `prompt`): Objective; Output format; Boundaries (what not to redo); Done-when.',
+    '  - Output format contract (parent MUST ask; child MUST deliver): key findings (tables/lists/numbers) in the child FINAL message;',
+    '    if also writing a file, cite the absolute path; never only「见上文」/「see above」/「见文件」without substance.',
+    '  - When YOU are a Subagent: your job.result / Portal「执行结果」IS your final message — put the answer there, not only in a file.',
     '  - Same-family: prefer backend:"<llmBackends.name>" (concrete). isolate:true reuses default model.',
     '    role:"cheap" is only an optional alias when llmRoles.cheap exists — do not assume it.',
     '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',

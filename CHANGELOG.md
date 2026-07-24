@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
   `verify_skipped`) defer while A2A child jobs are still
   pending/running; `/loop stop` cancels live Subagents; `loop_verdict`
   refuses with `live_subagents` until children settle.
+- **Subagent output contract**: child FINAL message must carry key
+  findings; file writes must cite absolute path; forbid empty
+  「见上文」/see above. Heuristics + Closure/IM guidance + Portal fill.
 - **Loop sim**: `tools/loop-gates-sim.mjs`; mock markers
   `LOOP_E2E_TEST` / `LOOP_SKIP_VERDICT_TEST` / `LOOP_SELF_RESEARCH_TEST`.
 - **Loop R4 VERIFY+REFLECT**: `loop_verdict` takes structured

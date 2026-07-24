@@ -358,6 +358,9 @@ describe('buildSystemPrompt — Subagent delegation heuristics (Phase A3)', () =
     expect(prompt).toMatch(/do not parallel-write/i)
     expect(prompt).toMatch(/Synthesize, don't delegate understanding/)
     expect(prompt).toMatch(/same-family/)
+    expect(prompt).toMatch(/When YOU are a Subagent/)
+    expect(prompt).toMatch(/absolute path/i)
+    expect(prompt).toMatch(/见上文/)
   })
 })
 
@@ -371,6 +374,8 @@ describe('buildSystemPrompt — IM / bgjob SOP', () => {
     expect(prompt).toContain(`${AGIM_BGJOB_WRAPPER_EXPR} start`)
     expect(prompt).not.toMatch(/\/home\/[^/\s]+\/\.agim/)
     expect(prompt).toMatch(/>10m MUST use bgjob/)
+    expect(prompt).toMatch(/file-only replies are forbidden/)
+    expect(prompt).toMatch(/见上文输出/)
   })
 })
 

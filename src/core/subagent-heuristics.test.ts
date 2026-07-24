@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   CALL_AGENT_TOOL_DESCRIPTION,
+  CALL_AGENTS_TOOL_DESCRIPTION,
   SUBAGENT_HEURISTIC_KEYWORDS,
   buildCallAgentToolDescription,
   buildSubagentDelegationGuidance,
@@ -27,6 +28,16 @@ describe('subagent heuristics (Phase A3)', () => {
     expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/do not parallel-write/i)
     expect(buildSubagentDelegationGuidance()).toMatch(/Brief four-piece/)
     expect(buildSubagentDelegationGuidance()).toMatch(/same-family/)
+  })
+
+  it('locks Subagent deliverable contract (findings in message + path + no empty see above)', () => {
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/absolute path/i)
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/see above/i)
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/见上文/)
+    expect(CALL_AGENTS_TOOL_DESCRIPTION).toMatch(/absolute path/i)
+    expect(buildSubagentDelegationGuidance()).toMatch(/When YOU are a Subagent/)
+    expect(buildSubagentDelegationGuidance()).toMatch(/执行结果/)
+    expect(buildSubagentDelegationGuidance()).toMatch(/absolute path/i)
   })
 
   it('prefers concrete backend over role:cheap alias in guidance', () => {

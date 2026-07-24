@@ -46,7 +46,7 @@ describe('todo-items helpers', () => {
     })).toEqual([{ content: 'from-input', status: 'pending' }])
   })
 
-  it('completeStickyInProgressItems closes a trailing in_progress row', () => {
+  it('completeStickyInProgressItems closes open rows on turn success', () => {
     const items = [
       { content: 'a', status: 'completed' as const },
       { content: 'b', status: 'completed' as const },
@@ -59,15 +59,26 @@ describe('todo-items helpers', () => {
     ])
   })
 
-  it('completeStickyInProgressItems leaves intentional pending work alone', () => {
-    expect(completeStickyInProgressItems([
-      { content: 'a', status: 'completed' },
-      { content: 'b', status: 'in_progress' },
-      { content: 'c', status: 'pending' },
-    ])).toBeNull()
+  it('completeStickyInProgressItems closes multi in_progress + pending (0/N stuck Plan)', () => {
     expect(completeStickyInProgressItems([
       { content: 'a', status: 'in_progress' },
       { content: 'b', status: 'in_progress' },
+      { content: 'c', status: 'in_progress' },
+      { content: 'd', status: 'in_progress' },
+      { content: 'e', status: 'pending' },
+    ])).toEqual([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'completed' },
+      { content: 'c', status: 'completed' },
+      { content: 'd', status: 'completed' },
+      { content: 'e', status: 'completed' },
+    ])
+  })
+
+  it('completeStickyInProgressItems no-ops when already all done', () => {
+    expect(completeStickyInProgressItems([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'completed' },
     ])).toBeNull()
   })
 })

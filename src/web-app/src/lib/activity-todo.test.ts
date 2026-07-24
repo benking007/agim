@@ -145,7 +145,7 @@ describe('summarizeTodoItems', () => {
 })
 
 describe('completeStickyInProgressItems', () => {
-  it('marks the last in_progress item completed', () => {
+  it('marks open items completed on turn success', () => {
     expect(completeStickyInProgressItems([
       { content: 'a', status: 'completed' },
       { content: 'b', status: 'in_progress' },
@@ -155,11 +155,15 @@ describe('completeStickyInProgressItems', () => {
     ])
   })
 
-  it('returns null when pending remains', () => {
+  it('closes 0/N stuck plans with pending + multiple in_progress', () => {
     expect(completeStickyInProgressItems([
-      { content: 'a', status: 'completed' },
+      { content: 'a', status: 'in_progress' },
       { content: 'b', status: 'in_progress' },
       { content: 'c', status: 'pending' },
-    ])).toBeNull()
+    ])).toEqual([
+      { content: 'a', status: 'completed' },
+      { content: 'b', status: 'completed' },
+      { content: 'c', status: 'completed' },
+    ])
   })
 })

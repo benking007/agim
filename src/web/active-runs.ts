@@ -108,19 +108,15 @@ function completeStickyTodoItemsOnStep<T extends {
 }>(st: T): T {
   const items = st.todoItems
   if (!items || items.length === 0) return st
-  let completed = 0
-  let inProgress = 0
-  let pending = 0
+  let open = 0
   for (const it of items) {
-    if (it.status === 'completed') completed += 1
-    else if (it.status === 'in_progress') inProgress += 1
-    else if (it.status === 'pending') pending += 1
+    if (it.status !== 'completed') open += 1
   }
-  if (pending > 0 || inProgress !== 1 || completed !== items.length - 1) return st
+  if (open === 0) return st
   const next = items.map((it) => (
-    it.status === 'in_progress'
-      ? { content: it.content, status: 'completed' as const }
-      : it
+    it.status === 'completed'
+      ? it
+      : { content: it.content, status: 'completed' as const }
   ))
   const preview = next.map((it, i) => `${i + 1}. ☑ ${it.content}`).join('\n')
   return { ...st, todoItems: next, preview }
@@ -144,8 +140,8 @@ export function finishActiveRun(
   if (outcome.finalText !== undefined) snap.partialText = outcome.finalText
   if (outcome.error) snap.error = outcome.error
   // Close any still-open steps so the accordion doesn't look stuck.
-  // On success, also flip a sticky trailing in_progress Plan item so the
-  // persisted activity matches a finished turn (N/N, not N-1/N).
+  // On success, also complete open Plan items so the persisted activity
+  // matches a finished turn (N/N, not stuck 0/N in progress).
   const finishedAt = outcome.finishedAt
   snap.steps = snap.steps.map((st) => {
     let next = st

@@ -174,9 +174,9 @@ export function clearTodoForThread(threadKey: string): void {
 }
 
 /**
- * On a successful agent turn, close a sticky last `in_progress` item so
- * Plan UI / complete_goal see an all-completed checklist. No-op when the
- * pattern does not match or the store is unavailable.
+ * On a successful agent turn, mark every open Plan item completed so the
+ * UI does not stay on "in progress" when the model skipped a final
+ * todo_write. No-op when already all-done or the store is unavailable.
  */
 export function reconcileTodoOnSuccessfulTurn(threadKey: string): TodoItem[] | null {
   if (!threadKey) return null
@@ -189,7 +189,7 @@ export function reconcileTodoOnSuccessfulTurn(threadKey: string): TodoItem[] | n
     event: 'todo.reconcile_turn_end',
     threadKey,
     count: next.length,
-  }, 'completed sticky in_progress checklist item on successful turn end')
+  }, 'completed open checklist items on successful turn end')
   return next
 }
 

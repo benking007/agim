@@ -106,27 +106,32 @@ export function renderMarkdownChecklist(items: TodoItem[]): string {
 }
 
 /**
- * Turn-end reconcile: models often leave the last item `in_progress`
- * (prompt says "mark done → set next in_progress") and never write a
- * final all-completed checklist. When every item is completed except
- * exactly one `in_progress` and there are no `pending` items, flip the
- * trailing in-progress row to completed.
+ * Turn-end reconcile: models often write the Plan once and never mark
+ * items completed (left as pending / in_progress while the final answer
+ * already landed). On a successful turn, close every open item so Plan
+ * shows N/N instead of stuck "in progress".
  *
- * Returns a new array, or null when the pattern does not match (so
- * intentional multi-turn leftovers are left alone).
+ * Returns a new array, or null when already all-completed / empty.
  */
-export function completeStickyInProgressItems(items: readonly TodoItem[]): TodoItem[] | null {
+export function completeOpenTodoItemsOnTurnSuccess(
+  items: readonly TodoItem[],
+): TodoItem[] | null {
   if (items.length === 0) return null
-  let completed = 0
-  let inProgress = 0
-  let pending = 0
+  let open = 0
   for (const it of items) {
-    if (it.status === 'completed') completed += 1
-    else if (it.status === 'in_progress') inProgress += 1
-    else if (it.status === 'pending') pending += 1
+    if (it.status !== 'completed') open += 1
   }
-  if (pending > 0 || inProgress !== 1 || completed !== items.length - 1) return null
+  if (open === 0) return null
   return items.map((it) => (
-    it.status === 'in_progress' ? { content: it.content, status: 'completed' as const } : { ...it }
+    it.status === 'completed'
+      ? { ...it }
+      : { content: it.content, status: 'completed' as const }
   ))
+}
+
+/** @deprecated Prefer completeOpenTodoItemsOnTurnSuccess */
+export function completeStickyInProgressItems(
+  items: readonly TodoItem[],
+): TodoItem[] | null {
+  return completeOpenTodoItemsOnTurnSuccess(items)
 }

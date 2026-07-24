@@ -80,13 +80,28 @@ export interface AssembledTools {
 // source that owns each name (so adding a tool can't forget to classify it).
 /** Zero-arg / side-effect-free builtins — also HITL-exempt under allow-list. */
 export const BUILTIN_SAFE = new Set(['agim_echo', 'agim_now', 'agim_random_uuid'])
-const FS_SAFE = new Set(['agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep'])
-const WEB_SAFE = new Set(['agim_web_fetch', 'agim_web_search'])
+/** Local read-only FS tools (parallel-safe + HITL-exempt under allow-list). */
+export const FS_SAFE = new Set(['agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep'])
+/**
+ * Outbound web tools. Parallel-safe + HITL-exempt under allow-list.
+ * SSRF still denied at the dispatcher (private/link-local/localhost blocked
+ * unless AGIM_URL_ALLOW_PRIVATE=1) — skipping the approval card does not
+ * bypass that guard. (Distinct from policy `read-only` mode, which still
+ * refuses bare `*fetch*` names via READ_ONLY_HINTS.)
+ */
+export const WEB_SAFE = new Set(['agim_web_fetch', 'agim_web_search'])
 const AGIM_SAFE = new Set([
   'mcp__agim__read_skill', 'mcp__agim__list_skills', 'mcp__agim__search_memos',
   'mcp__agim__memory_list', 'mcp__agim__memory_query',
 ])
 const EMPTY: ReadonlySet<string> = new Set()
+
+/** Default allow-list HITL skip set (deny-all / explicit deny-list still win). */
+export const NATIVE_HITL_EXEMPT: ReadonlySet<string> = new Set([
+  ...BUILTIN_SAFE,
+  ...FS_SAFE,
+  ...WEB_SAFE,
+])
 
 /** Explicit Plan Mode capability allowlist. Unknown/external tools fail closed;
  * side-effecting Agim tools (memo/reminder/goal/push/A2A) are intentionally

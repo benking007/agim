@@ -84,6 +84,11 @@ describe('parseLoopStartText', () => {
     const c = parseExitConstraints('卡住就停，超过 45 分钟')
     expect(c.maxWallMs).toBe(45 * 60_000)
   })
+
+  it('parseExitConstraints accepts 重复N轮 / N轮结束', () => {
+    expect(parseExitConstraints('找到合理箱体或重复3轮结束').maxRounds).toBe(3)
+    expect(parseExitConstraints('验收通过或 5 轮结束').maxRounds).toBe(5)
+  })
 })
 
 describe('loop-run R2 Mission persist', () => {
@@ -210,6 +215,7 @@ describe('loop-run R1 ALIGNING', () => {
     expect(snip).not.toContain('ALIGNING')
     expect(snip).toContain('MUST decompose')
     expect(snip).toContain('call_agents')
+    expect(snip).toContain('HARD GATE')
   })
 
   it('objective + exit + confirm leaves aligning', () => {

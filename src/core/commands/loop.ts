@@ -47,6 +47,9 @@ const HELP = [
   '验收：`loop_verdict` 声明 met=true 时，默认再用 cheap 角色做**独立验收**',
   '（`AGIM_LOOP_EVALUATOR=auto|on|off`）。',
   '',
+  '派工：本轮首次 `call_agents` 前，父 Agent 禁止自行 web_fetch/exec 做任务',
+  '（`AGIM_LOOP_DISPATCH_GATE=on|off`，默认 on）。',
+  '',
   '路径 A：先 `/focus …` 再 `/loop` → 结束不关 Focus',
   '路径 B：直接 `/loop <text>` → 代开 Focus，结束 Focus off',
 ].join('\n')
@@ -233,6 +236,7 @@ function formatConfirmed(run: LoopRun, path?: 'A' | 'B'): string {
     ...(view.acceptance ? [`**验收**：${view.acceptance}`] : []),
     `Round ${run.round}/${view.maxRounds}`,
     '',
+    '下一句普通消息后，Agent **须先 `call_agents` 派子代理**（派工前不能自己调研）。',
     '用 `/loop status` 查看；`/loop stop` 结束。',
   ].join('\n')
 }

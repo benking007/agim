@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, PendingApproval, PendingAsk } from '@/hooks/use-chat'
 import { useBgjobs } from '@/hooks/use-bgjobs'
+import type { LoopStatusDto } from '@/lib/api/loop'
 import type { BgjobSummary } from '@/types/api'
 import { displayAgentName } from './agent-visuals'
 import type { PetAnnounce, PetTaskItem } from './portal-pet'
@@ -14,6 +15,8 @@ interface UsePortalPetTasksOptions {
   pendingApprovals: PendingApproval[]
   pendingAsks: PendingAsk[]
   portalThreadId: string | null
+  /** Active Loop (if any) — shown as a pet progress task + bubble. */
+  loop?: LoopStatusDto | null
   demoPet: boolean
 }
 
@@ -32,9 +35,11 @@ export function usePortalPetTasks({
   pendingApprovals,
   pendingAsks,
   portalThreadId,
+  loop,
   demoPet,
 }: UsePortalPetTasksOptions): UsePortalPetTasksReturn {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const zh = i18n.language?.startsWith('zh')
   const [petAnnounce, setPetAnnounce] = useState<PetAnnounce | null>(null)
 
   const { data: bgjobData } = useBgjobs(
@@ -77,6 +82,29 @@ export function usePortalPetTasks({
 
   const petTasks = useMemo((): PetTaskItem[] => {
     const items: PetTaskItem[] = []
+    if (loop?.active) {
+      const label = loop.bucketLabel
+        || t(`chat.portal.pet.loopBucket.${loop.bucket}`, {
+          defaultValue: loop.bucket,
+        })
+      const obj = (loop.objective || '').trim()
+      const shortObj = obj.length > 36 ? `${obj.slice(0, 36)}…` : obj
+      const round = zh
+        ? `第 ${loop.round}/${loop.maxRounds} 轮`
+        : `R${loop.round}/${loop.maxRounds}`
+      const usage = loop.usage
+        ? (zh
+          ? `派工 ${loop.usage.dispatchCount} · 验收 ${loop.usage.evaluatorCount}`
+          : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} eval`)
+        : ''
+      const detail = [shortObj || undefined, round, usage].filter(Boolean).join(' · ')
+      items.push({
+        id: `loop-${loop.id}`,
+        kind: 'loop',
+        label,
+        detail: detail || undefined,
+      })
+    }
     for (const msg of chatMessages) {
       if (msg.role !== 'assistant' || !msg.activity) continue
       if (msg.activity.status !== 'running') continue
@@ -171,8 +199,10 @@ export function usePortalPetTasks({
     pendingAsks,
     threadBgjobs,
     agentId,
+    loop,
     demoPet,
     t,
+    zh,
   ])
 
   // Float a left-drifting bubble when a run finishes.

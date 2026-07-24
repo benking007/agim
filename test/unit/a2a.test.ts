@@ -202,3 +202,13 @@ describe('compressA2AResult (sub-output compression)', () => {
     expect(await a2a.compressA2AResult(770003, full)).toBe(full)
   })
 })
+
+
+describe('formatSubagentStoppedResult', () => {
+  it('includes partial output and parent continue instructions', () => {
+    const out = a2a.formatSubagentStoppedResult('half done findings')
+    expect(out).toContain('[Subagent stopped by user]')
+    expect(out).toContain('half done findings')
+    expect(out).toMatch(/Summarize|continue/i)
+  })
+})

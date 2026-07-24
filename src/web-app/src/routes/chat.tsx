@@ -75,7 +75,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function ChatRoute(): JSX.Element {
   const { t } = useTranslation()
   const {
-    state, send, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+    state, send, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
@@ -262,7 +262,10 @@ export default function ChatRoute(): JSX.Element {
                 )}
                 {m.role === 'assistant' && m.activity && (
                   <Suspense fallback={null}>
-                    <ChatSubagentCard activity={m.activity} />
+                    <ChatSubagentCard
+                      activity={m.activity}
+                      onStopSubagent={stopSubagent}
+                    />
                   </Suspense>
                 )}
                 <MessageBubble

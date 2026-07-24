@@ -270,10 +270,23 @@ export function useChat(): UseChat {
     }
   }
 
+  function stopSubagent(jobId: number): boolean {
+    const ok = wsRef.current.send({ type: 'stop-subagent', jobId })
+    if (!ok) {
+      dispatch({
+        kind: 'ERROR',
+        message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
+      })
+      return false
+    }
+    return true
+  }
+
   return {
     state,
     send,
     stop,
+    stopSubagent,
     switchAgent,
     approvalClick,
     choiceSubmit,

@@ -21,6 +21,8 @@ export type ChatOutgoing =
   | { type: 'new-conversation' }
   /** Abort the in-flight web chat run for this thread (Stop button). */
   | { type: 'stop' }
+  /** Cancel one live Subagent/A2A inline job; parent turn continues. */
+  | { type: 'stop-subagent'; jobId: number }
   /** Approval card button click. `data` MUST be the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router's
    *  `parseCallbackData` expects — v2 routes it through unchanged. */
@@ -62,6 +64,8 @@ export type ChatIncoming =
   | ActivityStepEvent
   | ActiveRunEvent
   | { type: 'error'; message: string }
+  /** Ack that a per-Subagent cancel was accepted (activity-step follows). */
+  | { type: 'subagent-stopped'; jobId: number }
   | { type: 'approval-text'; text: string }
   | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
   | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome }

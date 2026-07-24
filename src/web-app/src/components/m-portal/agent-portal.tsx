@@ -95,7 +95,9 @@ export function AgentPortal(): JSX.Element {
     prefs.setLang(next)
   }
 
-  const { state, send, stop, switchAgent, approvalClick, choiceSubmit, newConversation, clearError } = useChat()
+  const {
+    state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+  } = useChat()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
@@ -586,6 +588,7 @@ export function AgentPortal(): JSX.Element {
           portalThreadId={portalThreadId}
           listRef={messagesListRef}
           onFillComposer={fillComposer}
+          onStopSubagent={stopSubagent}
           emptySlot={
             <PortalEmptyChat
               dark={dark}

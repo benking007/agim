@@ -159,6 +159,8 @@ export interface UseChat {
   send: (text: string) => void
   /** Abort the in-flight web run (composer Stop button). */
   stop: () => void
+  /** Cancel one live Subagent/A2A job; parent turn continues with partial. */
+  stopSubagent: (jobId: number) => boolean
   switchAgent: (name: string) => void
   /** Approval card button click. The hook composes the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router expects;

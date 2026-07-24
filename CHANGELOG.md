@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Subagent Stop (chat)**: live Subagent rows expose a right-side **Stop** control (WS `stop-subagent`). Cancel keeps the parent turn alive and returns partial output plus summarize/continue instructions to the parent agent.
 - **Approval dock (chat)**: slightly smaller sheet, denser header/body, and compact buttons (`min-h-8` / `text-xs`) so it competes less with the composer.
 - **Plan + Subagent stacking**: when both cards are present, Plan renders above Subagents (desktop + Portal).
 - Portal hold-to-talk: recognized text fills the composer for review/edit instead of sending immediately.

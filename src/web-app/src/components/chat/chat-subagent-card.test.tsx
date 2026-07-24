@@ -84,6 +84,19 @@ describe('ChatSubagentCard', () => {
     expect(screen.getAllByText(/Waiting for subagent|等待子代理/).length).toBeGreaterThanOrEqual(1)
   })
 
+  it('exposes Stop on live rows and calls onStopSubagent with jobId', async () => {
+    const user = userEvent.setup()
+    const onStopSubagent = vi.fn(() => true)
+    render(<ChatSubagentCard activity={activity()} onStopSubagent={onStopSubagent} />)
+    const stopBtn = screen.getByRole('button', { name: /^(Stop|停止)$/ })
+    expect(stopBtn).toBeInTheDocument()
+    // Completed row must not show Stop.
+    expect(screen.getAllByRole('button', { name: /^(Stop|停止)$/ })).toHaveLength(1)
+    await user.click(stopBtn)
+    expect(onStopSubagent).toHaveBeenCalledWith(9)
+    expect(screen.getByRole('button', { name: /Stopping|停止中/ })).toBeInTheDocument()
+  })
+
   it('opens composer-docked sheet with parent prompt and result', async () => {
     const user = userEvent.setup()
     render(<ChatSubagentCard activity={activity({

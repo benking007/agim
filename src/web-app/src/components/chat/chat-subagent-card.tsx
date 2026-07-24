@@ -1,7 +1,7 @@
 /**
  * ChatSubagentCard — inline Subagent status card in the message list
  * (sibling of ChatTodoList / Plan). Shows live work state; click a row
- * to open prompt + result modal.
+ * to open prompt + result modal. Live rows expose Stop on the right.
  */
 
 import { useEffect, useState } from 'react'
@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   Loader2,
+  Square,
   X,
 } from 'lucide-react'
 
@@ -19,6 +20,7 @@ import {
   countLiveSubagents,
   isSubagentLive,
   listSubagentSteps,
+  resolveSubagentJobId,
 } from '@/lib/activity-subagent'
 import { cn } from '@/lib/utils'
 import { SubagentDetailDialog } from './subagent-detail-dialog'
@@ -27,6 +29,8 @@ export interface ChatSubagentCardProps {
   activity: ChatActivity
   dark?: boolean
   className?: string
+  /** Cancel one live Subagent job (WS `stop-subagent`). */
+  onStopSubagent?: (jobId: number) => boolean | void
 }
 
 function StatusIcon({
@@ -56,6 +60,9 @@ function statusLabel(
   if (isSubagentLive(step)) {
     return t('chat.activityWaitingSubagent', { defaultValue: 'Waiting for subagent' })
   }
+  if (step.preview === 'Stopped by user' || /stopped by user/i.test(step.preview || '')) {
+    return t('chat.subagentStopped', { defaultValue: 'stopped' })
+  }
   if (step.status === 'success') {
     return t('chat.activityAgentDone', { defaultValue: 'completed' })
   }
@@ -69,22 +76,27 @@ function SubagentRow({
   step,
   dark,
   onOpen,
+  onStop,
+  stopping,
 }: {
   step: ChatActivityStep
   dark?: boolean
   onOpen: () => void
+  onStop?: () => void
+  stopping?: boolean
 }): JSX.Element {
   const { t } = useTranslation()
   const live = isSubagentLive(step)
   const detail = (step.preview || '').trim()
+  const canStop = live && !!onStop
 
   return (
-    <li>
+    <li className="flex items-stretch gap-1 px-1">
       <button
         type="button"
         onClick={onOpen}
         className={cn(
-          'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition',
+          'flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition',
           dark ? 'hover:bg-zinc-900/80' : 'hover:bg-surface-2/80',
         )}
       >
@@ -132,6 +144,37 @@ function SubagentRow({
           </span>
         </p>
       </button>
+
+      {canStop && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onStop?.()
+          }}
+          disabled={stopping}
+          className={cn(
+            'my-1 mr-1 flex shrink-0 items-center gap-1 self-center rounded-full px-2.5 py-1',
+            'text-[11px] font-medium transition',
+            dark
+              ? 'bg-zinc-900 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50'
+              : 'bg-surface-2 text-text-dim hover:bg-border/60 hover:text-text disabled:opacity-50',
+          )}
+          aria-label={stopping
+            ? t('chat.subagentStopping', { defaultValue: 'Stopping…' })
+            : t('chat.subagentStop', { defaultValue: 'Stop' })}
+          title={t('chat.subagentStopTip', {
+            defaultValue: 'Stop this Subagent; parent will summarize partial progress',
+          })}
+        >
+          {stopping
+            ? <Loader2 className="h-3 w-3 animate-spin" />
+            : <Square className="h-2.5 w-2.5 fill-current" />}
+          {stopping
+            ? t('chat.subagentStopping', { defaultValue: 'Stopping…' })
+            : t('chat.subagentStop', { defaultValue: 'Stop' })}
+        </button>
+      )}
     </li>
   )
 }
@@ -140,6 +183,7 @@ export function ChatSubagentCard({
   activity,
   dark,
   className,
+  onStopSubagent,
 }: ChatSubagentCardProps): JSX.Element | null {
   const { t } = useTranslation()
   const steps = listSubagentSteps(activity)
@@ -149,12 +193,26 @@ export function ChatSubagentCard({
 
   const [open, setOpen] = useState(true)
   const [detailStep, setDetailStep] = useState<ChatActivityStep | null>(null)
+  const [stoppingIds, setStoppingIds] = useState<Set<number>>(() => new Set())
 
   useEffect(() => {
     if (!hasSteps) return
     if (running || liveCount > 0) setOpen(true)
     else setOpen(false)
   }, [running, hasSteps, liveCount])
+
+  // Clear local "Stopping…" once the step leaves the live states.
+  useEffect(() => {
+    setStoppingIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set<number>()
+      for (const id of prev) {
+        const step = steps.find((s) => resolveSubagentJobId(s) === id)
+        if (step && isSubagentLive(step)) next.add(id)
+      }
+      return next.size === prev.size ? prev : next
+    })
+  }, [steps])
 
   if (!hasSteps) return null
 
@@ -167,6 +225,20 @@ export function ChatSubagentCard({
         count: steps.length,
         defaultValue: 'Subagents · {{count}}',
       })
+
+  function handleStop(step: ChatActivityStep): void {
+    const jobId = resolveSubagentJobId(step)
+    if (jobId == null || !onStopSubagent) return
+    setStoppingIds((prev) => new Set(prev).add(jobId))
+    const ok = onStopSubagent(jobId)
+    if (ok === false) {
+      setStoppingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(jobId)
+        return next
+      })
+    }
+  }
 
   return (
     <div className={cn('w-full max-w-[85%] sm:max-w-[75%]', className)}>
@@ -221,18 +293,25 @@ export function ChatSubagentCard({
         {open && (
           <ul
             className={cn(
-              'space-y-0.5 border-t px-1 py-1.5',
+              'space-y-0.5 border-t py-1.5',
               dark ? 'border-zinc-800' : 'border-border/60',
             )}
           >
-            {steps.map((step) => (
-              <SubagentRow
-                key={step.id}
-                step={step}
-                dark={dark}
-                onOpen={() => setDetailStep(step)}
-              />
-            ))}
+            {steps.map((step) => {
+              const jobId = resolveSubagentJobId(step)
+              return (
+                <SubagentRow
+                  key={step.id}
+                  step={step}
+                  dark={dark}
+                  onOpen={() => setDetailStep(step)}
+                  onStop={onStopSubagent && jobId != null
+                    ? () => handleStop(step)
+                    : undefined}
+                  stopping={jobId != null && stoppingIds.has(jobId)}
+                />
+              )
+            })}
           </ul>
         )}
       </div>

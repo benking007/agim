@@ -882,16 +882,29 @@ export function findActiveJobByThread(threadKey: string): Job | null {
   ).get(threadKey) as Job | null
 }
 
-export function cancelJob(id: number, opts: OwnerOpts = {}): boolean {
+export function cancelJob(id: number, opts: OwnerOpts & { result?: string | null } = {}): boolean {
   const job = getJob(id, opts)
   if (!job || (job.status !== 'pending' && job.status !== 'running')) return false
   const ctrl = runningControllers.get(id)
   if (ctrl) {
     ctrl.abort()
   }
-  updateJob(id, { status: 'cancelled', completed_at: new Date().toISOString() })
+  updateJob(id, {
+    status: 'cancelled',
+    completed_at: new Date().toISOString(),
+    ...(opts.result !== undefined ? { result: opts.result } : {}),
+  })
   eventBus.publish({ type: 'job', phase: 'cancelled', jobId: id, agent: job.agent })
   return true
+}
+
+/** Persist partial text on an already-cancelled (or still-running) job after
+ *  the callee stream drains. No-op when the board / row is missing. */
+export function setJobResult(id: number, result: string | null): void {
+  if (id <= 0) return
+  const job = getJob(id)
+  if (!job) return
+  updateJob(id, { result })
 }
 
 /**

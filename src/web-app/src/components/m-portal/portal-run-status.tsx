@@ -42,6 +42,8 @@ export interface PortalRunStatusProps {
   /** True while this reply is still the live streaming target. */
   streaming?: boolean
   className?: string
+  /** Cancel one live Subagent job from the inline card. */
+  onStopSubagent?: (jobId: number) => boolean | void
 }
 
 function formatDuration(ms: number | undefined): string | null {
@@ -121,6 +123,7 @@ export function PortalRunStatus({
   activity,
   streaming = false,
   className,
+  onStopSubagent,
 }: PortalRunStatusProps): JSX.Element {
   const { t } = useTranslation()
   const running = streaming || activity?.status === 'running'
@@ -230,7 +233,12 @@ export function PortalRunStatus({
       )}
       {activity && (
         <Suspense fallback={null}>
-          <ChatSubagentCard activity={activity} dark={dark} className="max-w-full" />
+          <ChatSubagentCard
+            activity={activity}
+            dark={dark}
+            className="max-w-full"
+            onStopSubagent={onStopSubagent}
+          />
         </Suspense>
       )}
 

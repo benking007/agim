@@ -24,6 +24,7 @@ interface PortalMessageListProps {
   portalThreadId: string | null
   listRef: RefObject<HTMLDivElement>
   onFillComposer: (text: string) => void
+  onStopSubagent?: (jobId: number) => boolean | void
   emptySlot?: React.ReactNode
 }
 
@@ -41,6 +42,7 @@ export function PortalMessageList({
   portalThreadId,
   listRef,
   onFillComposer,
+  onStopSubagent,
   emptySlot,
 }: PortalMessageListProps): JSX.Element {
   const { t } = useTranslation()
@@ -105,6 +107,7 @@ export function PortalMessageList({
                           AgentIcon={MsgIcon}
                           activity={msg.activity}
                           streaming={isCurrent && (!msg.activity || msg.activity.status === 'running')}
+                          onStopSubagent={onStopSubagent}
                         />
                       )
                     }

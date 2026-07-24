@@ -704,6 +704,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // reset / quick timeout. Permanent failures (workspace ACL,
           // depth exceeded, model refusal) skip the retry.
           let result = await callAgentByName(spawn.agent, prompt, routeCtx, baseOpts)
+          // User Stop returns { ok:true, cancelled:true } — no retry.
           if (!signal.aborted && !result.ok && isTransientSubAgentError(result.error || '')) {
             log.warn({
               event: 'native.call_agent.retry',
@@ -726,6 +727,11 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           // blow the parent's context budget. The full text is spilled
           // into viewer-paste (when configured) so the model can still
           // cite the link.
+          // Stopped Subagents already carry summarize/continue instructions —
+          // do not truncate that guidance away.
+          if (result.cancelled) {
+            return ok(typeof result.result === 'string' ? result.result : safeJson(result))
+          }
           const raw = typeof result.result === 'string' ? result.result : safeJson(result)
           return ok(applyOutputCap(raw, spawn.label, result.jobId ?? null))
         }

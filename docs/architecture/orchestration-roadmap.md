@@ -223,20 +223,19 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 - [x] [`loop-engineering.md`](./loop-engineering.md) — L3 定义 / 状态机 / 与 L2 边界（2026-07-24 重写）  
 - [x] naming / README / current / goals / roadmap 交叉链接  
 
-#### C0→C5. 实现（详见 loop-engineering §7）
+#### 落地节奏（详见 loop-engineering §7）
 
-| 切片 | 内容 |
+| 节奏 | 内容 |
 |---|---|
-| C0 运行时 | Focus 存储/注入/on/off；`/goal` 兼容 — **已落地** |
-| C1壳 | `/loop` 路径 A/B + 状态注入 + `loop_verdict` — **已落地（占位）** |
-| C2 | PLANNING + DISPATCHING 强制走 `call_agents` |
-| C3 | VERIFYING 对照 mission；未达 REFLECT |
-| C4 | SPA：Loop 状态条 / 验收摘要 |
-| C5 | 可选触发器（Heartbeat/cron 仅负责 start） |
+| R0 | Focus + `/loop` 壳 — **已落地** |
+| **R1** | **ALIGNING**：目标 + 退出条件硬门禁；缺则 `ask_user` 对焦 |
+| R2 | `LoopMission` 持久化；status 展示两硬字段 |
+| R3 | PLANNING + DISPATCHING（强制 `call_agents`） |
+| R4 | VERIFYING + REFLECT（对照目标；exit 截断） |
+| R5 | SPA / 总结卡片 UX |
+| R6 | 可选触发器（仅 start，仍走对焦） |
 
-#### 验收（勾选在实现 PR 回写）
-
-见 [`focus.md`](./focus.md) §7 · [`loop-engineering.md`](./loop-engineering.md) §7。
+**下一刀：R1。**
 
 #### 非本阶段
 

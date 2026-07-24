@@ -8,8 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - **Loop Engineering 定义对齐三层图（L3）**: rewrite
   `docs/architecture/loop-engineering.md` — Loop = 自动调度层
-  （目标→拆解→子代理→验收→退出），明确 ≠ L2 Agent Loop；
-  现行 `/loop` 标为 C1 占位壳。Cross-links in naming / focus / roadmap.
+  （对焦目标+退出条件 → 拆解 → 子代理 → 验收 → 退出），明确 ≠ L2
+  Agent Loop；硬门禁 ALIGNING；落地节奏 R1–R6。现行 `/loop` 为占位壳。
 
 ### Added
 

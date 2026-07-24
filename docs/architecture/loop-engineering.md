@@ -50,36 +50,58 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 > 主控对照 XX **验收**；未达则反思换方向，直到完成。  
 > **退出条件**为 …  
 
-### 2.1 主流程
+### 2.1 两个硬输入（拍板）
+
+| 字段 | 是否必填 | 说明 |
+|------|----------|------|
+| **目标（objective）** | **必须** | 要达成什么；可同步写入 Focus |
+| **退出条件（exit）** | **必须** | 何时停：如「验收通过」+ 上限轮次/时限/失败判据等；用户须明确至少一项可判定的退出语义 |
+| 验收细则（acceptance） | 推荐 | 可并入目标讨论；缺省时用 objective 做验收锚 |
+
+**缺任一硬输入 → 不得进入 PLANNING / 派子代理。**  
+进入 **ALIGNING（对焦）**：用 `ask_user`（或等价对话）与用户讨论，直到目标和退出条件都确认。
+
+对焦示例问法：
+
+- 目标：「这次 Loop 要达成的结果是什么？怎么算做成？」  
+- 退出：「什么情况下结束？例如：验收通过 / 最多 N 轮 / 超过 T 小时 / 连续失败 K 次就停？」
+
+用户可一次给齐（`/loop 目标… ；退出：…`），也可分步补全。
+
+### 2.2 主流程
 
 ```text
-/loop 设定：目标 +（可选）验收标准 + 退出条件
+/loop …
         │
         ▼
-   ┌─ 规划 / 拆解任务 ──────────────────────────┐
-   │                                            │
-   │   调度子代理（call_agent / call_agents）      │
-   │         │                                  │
-   │         ▼                                  │
-   │   汇总结果 → 对照目标验收                     │
-   │         │                                  │
-   │    未达 ─┴─ 反思 / 改方向 / 再拆解 ──────────┘
-   │    已达 → 总结成果 → 结束 Loop
-   │
-   └─ 或触达退出条件（轮次/时限/用户 stop）→ 结束
+   ┌───────────┐  缺目标或退出条件
+   │ ALIGNING  │◄──────────────── ask_user / 讨论
+   └─────┬─────┘
+         │ 两者都确认
+         ▼
+   PLANNING 拆解
+         │
+         ▼
+   DISPATCHING 子代理
+         │
+         ▼
+   VERIFYING 对照目标
+         │
+         ├─ 已达 → SUMMARIZE → ENDED
+         ├─ 未达且未触达 exit → REFLECT → 再 PLANNING
+         └─ 触达 exit / 用户 stop → ENDED
 ```
 
-### 2.2 与现行薄实现的差距（诚实对照）
+### 2.3 与现行薄实现的差距
 
-| 能力 | 目标形态（本文） | 现行 `main` 上的 `/loop` |
-|------|------------------|-------------------------|
-| 目标 + 退出条件 | 一等字段 | 弱：多半靠 Focus 文案 |
-| 强制拆解 → 子代理 | **核心骨架** | 未强制；仅提示可调工具 |
-| 对照目标验收 | 硬门闸 / 结构化结果 | `loop_verdict` 软信号 |
-| 未达再规划 | 状态机内建 | 靠模型自觉 |
-| 达标总结结束 | 必做收尾 | `stop` 即可结束 |
+| 能力 | 目标形态 | 现行 `/loop` |
+|------|----------|--------------|
+| 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | 无；可空转启动 |
+| 对焦讨论 | `ask_user` | 无 |
+| 拆解 → 子代理 | 核心 | 未强制 |
+| 对照目标验收 | 硬门闸 | 软 `loop_verdict` |
 
-**结论**：现行代码是 **L3 占位壳**；需按本文演进，不能把「Focus + continue/revise/stop」误当成完整 Loop Engineering。
+**结论**：现行是占位壳；按下文节奏演进到 L3。
 
 ---
 
@@ -87,25 +109,30 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 
 ```ts
 type LoopMission = {
-  /** 要达成的目标（可与 Focus 正文同步或快照） */
-  objective: string;
-  /** 验收标准（可选但推荐） */
-  acceptance?: string;
-  /** 退出条件：轮次 / 墙钟 / 用户 stop / 显式失败 */
-  exit: {
-    maxRounds: number;
+  objective: string;                 // 必填（对焦确认后）
+  acceptance?: string;               // 推荐
+  exit: {                            // 必填（对焦确认后）
+    /** 用户自然语言退出条件（一等展示） */
+    description: string;
+    maxRounds: number;               // 从描述解析或对焦时确认
     maxWallMs?: number;
-    onFocusOff: "cancel"; // Focus off → 取消 Loop
+    onFocusOff: "cancel";
   };
 };
 
 type LoopRun = {
   id: string;
-  sessionKey: string; // platform+channel+thread
-  mission: LoopMission;
-  status: "planning" | "dispatching" | "verifying" | "reflecting" | "ended";
+  sessionKey: string;
+  mission: LoopMission | null;       // ALIGNING 期间可为部分填写
+  status:
+    | "aligning"
+    | "planning"
+    | "dispatching"
+    | "verifying"
+    | "reflecting"
+    | "ended";
   round: number;
-  openedFocus: boolean; // 路径 B 代开 Focus → 结束 off
+  openedFocus: boolean;
   lastPlan?: { tasks: Array<{ id: string; brief: string; agentHint?: string }> };
   lastVerification?: {
     met: boolean;
@@ -120,15 +147,13 @@ type LoopRun = {
 用户面（目标）：
 
 ```text
-/loop <objective>                 # 路径 B：代开 Focus + 启动
-/loop                             # 路径 A：Focus 已 on 时启动
-/loop start <objective|note>
-/loop status
-/loop stop
-/loop help                        # 始终打印用法
+/loop <objective> [；退出：…]     # 尽量一次给齐
+/loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
+/loop status | stop | help
 ```
 
-路径 A/B 与 Focus 的开法关系 **保留**（分步不关 Focus；直开结束 Focus off）——见 [focus.md](./focus.md)。
+路径 A/B 与 Focus 关系保留——见 [focus.md](./focus.md)。  
+**即使 Focus 已有文案，退出条件仍必须对焦确认**（不可静默默认「跑到爽」）。
 
 ---
 
@@ -138,33 +163,42 @@ type LoopRun = {
           start
             │
             ▼
+       ┌──────────┐
+       │ ALIGNING │ 目标 + 退出条件对焦（硬门禁）
+       └────┬─────┘
+            │ confirmed
+            ▼
        ┌─────────┐
-       │ PLANNING│ 拆解任务（可廉价模型）
+       │ PLANNING│
        └────┬────┘
-            │
             ▼
     ┌──────────────┐
-    │ DISPATCHING  │ call_agent / call_agents（子代理团队）
+    │ DISPATCHING  │ call_agents
     └──────┬───────┘
-           │ join
+           ▼
+     �            ▼
+    ┌──────────────┐
+    │ DISPATCHING  │ call_agents
+    └──────┬───────┘
            ▼
      ┌───────────┐
-     │ VERIFYING │ 对照 objective / acceptance
+     │ VERIFYING │
      └─────┬─────┘
            │
-     met? ─┬─ yes → SUMMARIZE → ENDED
+     met ──┼─ yes → SUMMARIZE → ENDED
            │
-           no → REFLECTING →（未超 exit）→ PLANNING
-                          └（超 exit / stop）→ ENDED
+           no → REFLECTING →（未触达 exit）→ PLANNING
+                          └（触达 exit / stop）→ ENDED
 ```
 
-| 阶段 | 谁做 | 硬约束 |
-|------|------|--------|
-| PLANNING | 主控（可 `role=cheap`） | 产出可派发的 task 列表；避免空拆解 |
-| DISPATCHING | Subagent fan-out | 复用 Phase B `call_agents`；预算 `MAX_PER_TURN` / parallel |
-| VERIFYING | 主控或只读观察角色 | **对照 mission**，不是只看「感觉做完了」 |
-| REFLECTING | 主控 | 写下 `nextDirection`；禁止无变更死循环 |
-| ENDED | 系统 | 可选总结；`openedFocus` 则 focus off |
+| 阶段 | 硬约束 |
+|------|--------|
+| ALIGNING | 无完整 objective+exit → **禁止**派子代理 |
+| PLANNING | 产出可派发 tasks |
+| DISPATCHING | 复用 Phase B；吃并行预算 |
+| VERIFYING | 对照 mission.objective（+ acceptance） |
+| REFLECTING | 写 nextDirection；防空转 |
+| ENDED | openedFocus → focus off |
 
 ---
 
@@ -180,51 +214,56 @@ type LoopRun = {
 
 ---
 
-## 6. 验收与退出（L3 一等公民）
+## 6. 验收与退出
 
-启动时尽量收集：
-
-1. **objective**（必填语义）  
-2. **acceptance**（可选；缺省则用 objective 自评）  
-3. **exit**：`maxRounds`（默认有限）、可选墙钟、用户 `/loop stop`、Focus off → cancel  
-
-VERIFYING 输出至少：
-
-```ts
-{ met: boolean; summary: string; gaps?: string[]; nextDirection?: string }
-```
-
-`met: true` → 总结并 ENDED；`met: false` 且未触达 exit → REFLECTING → 再 PLANNING。
+- **达标退出**：VERIFYING `met: true` → 总结 → ENDED  
+- **条件退出**：触达用户确认的 exit（轮次/时限/失败策略等）→ ENDED（可带「未完全达标」摘要）  
+- **用户退出**：`/loop stop`；Focus off → cancel  
+- VERIFYING 至少：`{ met, summary, gaps?, nextDirection? }`
 
 ---
 
-## 7. 分阶段落地（修订）
+## 7. 落地节奏（建议 PR 切片）
 
-| 阶段 | 内容 | 备注 |
-|------|------|------|
-| **C0** | Focus 运行时 | ✅ 已在 main |
-| **C1壳** | `/loop` 路径 A/B + 状态注入 + `loop_verdict` | ✅ 已在 main；**视为占位** |
-| **C2** | PLANNING + DISPATCHING 强制走 `call_agents`（可配串行） | 下一实现重点 |
-| **C3** | VERIFYING 对照 mission；未达 REFLECT | |
-| **C4** | SPA：Loop 状态条 / 验收摘要 | |
-| **C5** | 触发器（可选接 Heartbeat/cron **只负责 start**） | |
+原则：**先锁门禁（目标+退出），再调度，再验收自动化，最后体验与触发器。**  
+每一刀可单独合入、可演示；不把 L3 一次做完。
+
+| 节奏 | 切片 | 交付物 | 验收 |
+|------|------|--------|------|
+| **R0** ✅ | Focus + `/loop` 壳 | 已在 main | — |
+| **R1** | **对焦门禁** | `ALIGNING`；缺 objective/exit → `ask_user` 讨论；确认前禁止派工 | 无退出条件无法进入 planning |
+| **R2** | **Mission 持久化** | `LoopMission` 写入 loop store；`/loop status` 展示目标+退出 | status 可读两硬字段 |
+| **R3** | **PLAN + DISPATCH** | 确认后强制拆解 → `call_agents`（可先串行） | 无子代理调用则不算完成一轮 |
+| **R4** | **VERIFY + REFLECT** | 对照 objective 结构化验收；未达写 nextDirection 再规划 | 死循环有 exit 截断 |
+| **R5** | **收尾 UX** | 达标总结卡片；Portal Loop 状态条；菜单文案对齐 L3 | 用户能看懂「卡在对焦/派工/验收」 |
+| **R6** | **可选触发** | Heartbeat/cron **只负责 start**，仍走 ALIGNING | 不绕过对焦 |
+
+推荐合入顺序：**R1 → R2 → R3 → R4**（L3 最小闭环）；R5/R6 可并行或后置。
+
+```text
+R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──► R4 验收闭环
+                                                      │
+                                            R5 UX ◄───┘
+                                            R6 触发器（可选）
+```
 
 ---
 
 ## 8. 非目标
 
 - 把 L2 Agent Loop 再包一层皮叫 Loop  
-- 多团队互聊 swarm、自动开 PR/merge（可后置）  
-- 在 Focus 上做完成勾选 / evidence CAS  
+- 静默默认退出条件（禁止「没说就按 12 轮」不经确认）  
+- 多团队 swarm、自动开 PR/merge（后置）  
+- Focus 上做完成勾选 / evidence CAS  
 - Heartbeat 与 LoopRun 共用存储  
 
 ---
 
 ## 9. TL;DR
 
-> **Loop Engineering = L3 自动调度层：目标 → 拆解 → 调度子代理 → 验收 →（未达）反思再来 → 退出。**  
-> **Agent Loop = L2，单个工人怎么干活；Loop = 工头怎么排班和收工。**  
-> 现行 `/loop` 是壳；按本文 C2+ 演进。
+> **Loop = L3：先对焦（目标+退出条件）→ 拆解 → 子代理 → 验收 →（未达）再来 → 退出。**  
+> **两硬输入缺一不可；缺则 ALIGNING，不派工。**  
+> 落地节奏：R1 门禁 → R2 存储 → R3 调度 → R4 验收 → R5 UX → R6 触发。
 
 ---
 
@@ -233,4 +272,5 @@ VERIFYING 输出至少：
 | 日期 | 变更 |
 |------|------|
 | 2026-07-24 | 初稿（executor/observer 薄模型） |
-| 2026-07-24 | **按三层图 + 产品意图重写**：L3 调度/验收/子代理团队；标明与现行壳的差距 |
+| 2026-07-24 | 按三层图重写为 L3 |
+| 2026-07-24 | **目标+退出条件硬门禁 + ALIGNING；落地节奏 R1–R6** |

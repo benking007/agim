@@ -106,7 +106,7 @@ function AligningDock({
   useEffect(() => {
     setObjective(loop.objective || '')
     setExit(loop.exitDescription || '')
-  }, [loop.id, loop.objective, loop.exitDescription])
+  }, [loop.objective, loop.exitDescription])
 
   const canConfirm = objective.trim().length > 0 && exit.trim().length > 0
 

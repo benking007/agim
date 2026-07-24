@@ -36,6 +36,8 @@ export function usePortalLoop(
   }, [threadId, zh])
 
   useEffect(() => {
+    // refreshKey bumps after send / history so we re-poll immediately
+    void refreshKey
     void reload()
   }, [reload, refreshKey])
 

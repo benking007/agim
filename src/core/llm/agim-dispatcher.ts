@@ -531,6 +531,10 @@ export function getAgimTools(): ToolDef[] {
         },
         required: ['decision', 'summary'],
       },
+      // Independent cheap evaluator may nested-A2A for tens of seconds. Do not
+      // inherit the Native Agent tool-bridge 60s default — that aborts after the
+      // Loop already ended and the model retries into no_active_loop.
+      timeoutMs: 0,
     },
     {
       name: 'mcp__agim__long_task',

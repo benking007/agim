@@ -1575,8 +1575,10 @@ export class NativeAgentAdapter implements AgentAdapter {
         result = await harness.prompt(loopVerifyFollowUpPrompt())
       }
 
-      // Still no verdict after forced follow-up → hard-end (do not hang in 待验收).
-      if (loopScope && loopVerifyFollowUpUsed && loopStillNeedsVerdict()) {
+      // Still no verdict after the turn (and optional follow-up) → hard-end.
+      // Do not require loopVerifyFollowUpUsed: if the turn aborted before the
+      // follow-up hop, hanging in 待验收 is worse than a verify_skipped exit.
+      if (loopScope && !stopReason && loopStillNeedsVerdict()) {
         const forced = forceLoopExitSkippedVerify(
           loopScope.platform,
           loopScope.channelId,

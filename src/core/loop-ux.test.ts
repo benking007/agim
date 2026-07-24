@@ -35,22 +35,22 @@ function baseRun(over: Partial<LoopRun> = {}): LoopRun {
 }
 
 describe('loop UX buckets (R5)', () => {
-  it('maps statuses to 对焦/派工/验收', () => {
+  it('maps statuses to 待对焦/待派工/待验收', () => {
     expect(getLoopUxBucket(baseRun({ status: 'aligning' }))).toBe('aligning')
     expect(getLoopUxBucket(baseRun({ status: 'planning', dispatchesThisRound: 0 }))).toBe('dispatch')
     expect(getLoopUxBucket(baseRun({ status: 'dispatching', dispatchesThisRound: 0 }))).toBe('dispatch')
     expect(getLoopUxBucket(baseRun({ status: 'dispatching', dispatchesThisRound: 2 }))).toBe('verify')
     expect(getLoopUxBucket(baseRun({ status: 'verifying' }))).toBe('verify')
     expect(getLoopUxBucket(baseRun({ status: 'ended' }))).toBe('ended')
-    expect(loopUxBucketLabel('aligning')).toBe('对焦')
-    expect(loopUxBucketLabel('dispatch')).toBe('派工')
-    expect(loopUxBucketLabel('verify')).toBe('验收')
+    expect(loopUxBucketLabel('aligning')).toBe('待对焦')
+    expect(loopUxBucketLabel('dispatch')).toBe('待派工')
+    expect(loopUxBucketLabel('verify')).toBe('待验收')
   })
 
   it('toLoopStatusDto exposes bucket + mission fields', () => {
     const dto = toLoopStatusDto(baseRun({ dispatchesThisRound: 1, status: 'dispatching' }))
     expect(dto.bucket).toBe('verify')
-    expect(dto.bucketLabel).toBe('验收')
+    expect(dto.bucketLabel).toBe('待验收')
     expect(dto.objective).toBe('修好登录')
     expect(dto.active).toBe(true)
   })

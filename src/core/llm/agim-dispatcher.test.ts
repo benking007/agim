@@ -44,15 +44,17 @@ describe('getAgimTools', () => {
     }
   })
 
-  it('call_agent / call_agents / ask_user opt out of the Native 60s tool-bridge default', () => {
+  it('call_agent / call_agents / ask_user / loop_verdict opt out of the Native 60s tool-bridge default', () => {
     const tools = getAgimTools()
     const callAgent = tools.find((t) => t.name === 'mcp__agim__call_agent')
     const callAgents = tools.find((t) => t.name === 'mcp__agim__call_agents')
     const askUser = tools.find((t) => t.name === 'mcp__agim__ask_user')
-    // timeoutMs: 0 = no per-tool wall cap; A2A / ask_user own their clocks.
+    const loopVerdict = tools.find((t) => t.name === 'mcp__agim__loop_verdict')
+    // timeoutMs: 0 = no per-tool wall cap; A2A / ask_user / nested eval own their clocks.
     expect(callAgent?.timeoutMs).toBe(0)
     expect(callAgents?.timeoutMs).toBe(0)
     expect(askUser?.timeoutMs).toBe(0)
+    expect(loopVerdict?.timeoutMs).toBe(0)
   })
 
   it('call_agents tool description advertises fan-out / allSettled heuristics', () => {

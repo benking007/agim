@@ -119,6 +119,5 @@ describe('loop dispatch gate', () => {
     const r = evaluateLoopDispatchGate(platform, channelId, threadId, 'agim_web_fetch')
     expect(r.ok).toBe(true)
     stopLoop(platform, channelId, threadId, 'user_stop')
-    focusOff(platform, channelId, threadId)
   })
 })

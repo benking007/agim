@@ -7,6 +7,8 @@ import {
   findWaitingAgentStep,
   finishActivity,
   formatActivityKindSummaryParts,
+  formatWaitingSubagentLabels,
+  listWaitingAgentSteps,
   mergeToolActivityStep,
   resolveApprovalStep,
   resolveAskStep,
@@ -48,8 +50,10 @@ describe('chat-activity helpers', () => {
       label: 'claude-code',
       status: 'running',
       startedAt: 1200,
+      jobId: 9,
     })
     expect(findWaitingAgentStep(activity)?.label).toBe('claude-code')
+    expect(activity.steps[0]?.jobId).toBe(9)
     activity = mergeToolActivityStep(activity, {
       id: 'a2a-9',
       kind: 'agent',
@@ -59,6 +63,31 @@ describe('chat-activity helpers', () => {
       finishedAt: 2000,
     })
     expect(findWaitingAgentStep(activity)).toBeUndefined()
+    expect(activity.steps[0]?.jobId).toBe(9)
+  })
+
+  it('lists multiple waiting Subagent steps in order', () => {
+    let activity = createChatActivity('run-multi', 1000)
+    activity = mergeToolActivityStep(activity, {
+      id: 'a2a-1',
+      kind: 'agent',
+      label: 'agim/cheap',
+      status: 'running',
+      startedAt: 1100,
+      jobId: 1,
+    })
+    activity = mergeToolActivityStep(activity, {
+      id: 'a2a-2',
+      kind: 'agent',
+      label: 'claude-code',
+      status: 'running',
+      startedAt: 1200,
+      jobId: 2,
+    })
+    const waiting = listWaitingAgentSteps(activity)
+    expect(waiting.map((s) => s.label)).toEqual(['agim/cheap', 'claude-code'])
+    expect(findWaitingAgentStep(activity)?.label).toBe('claude-code')
+    expect(formatWaitingSubagentLabels(waiting)).toBe('agim/cheap, claude-code')
   })
 
   it('folds approval/ask dock events into steps', () => {

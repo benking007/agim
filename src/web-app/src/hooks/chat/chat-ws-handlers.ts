@@ -50,6 +50,7 @@ export function normalizeActivityStep(st: ActivityStepEvent['step']): ChatActivi
     finishedAt,
     preview: st.preview,
     ...(st.todoItems ? { todoItems: st.todoItems } : {}),
+    ...(typeof st.jobId === 'number' ? { jobId: st.jobId } : {}),
   }
 }
 

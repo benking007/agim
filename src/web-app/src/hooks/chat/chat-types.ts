@@ -59,6 +59,8 @@ export interface ChatActivityStep {
   preview?: string
   /** Structured checklist when this step is agim_todo_write. */
   todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+  /** Subagent / A2A inline job id when known. */
+  jobId?: number
 }
 
 /** Cursor-style "Worked ›" block bound to an assistant reply. */

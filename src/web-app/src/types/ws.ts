@@ -112,6 +112,8 @@ export interface ActivityStepEvent {
     preview?: string
     /** Structured checklist for agim_todo_write (chat Todo UI). */
     todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+    /** Subagent / A2A inline job id when known. */
+    jobId?: number
   }
 }
 

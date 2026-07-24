@@ -379,6 +379,7 @@ export async function callAgentByName(
     status: 'running',
     startedAt: activityStartedAt,
     preview: prompt.slice(0, 120).replace(/\s+/g, ' '),
+    jobId,
   })
 
   let result = ''
@@ -476,6 +477,7 @@ export async function callAgentByName(
       startedAt: activityStartedAt,
       finishedAt: Date.now(),
       preview: (errMsg || outcome).slice(0, 180),
+      jobId,
     })
     if (outcome === 'timeout') {
       void notifyA2ATimeout(ctx, nextDepth, { jobId, callee: target.name, durationMs })
@@ -516,6 +518,7 @@ export async function callAgentByName(
     startedAt: activityStartedAt,
     finishedAt: Date.now(),
     preview: `${Math.round(durationMs / 100) / 10}s · ${result.length} chars`,
+    jobId,
   })
   void notifyA2AComplete(ctx, nextDepth, {
     jobId,

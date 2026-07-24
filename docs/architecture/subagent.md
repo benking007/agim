@@ -277,11 +277,13 @@
 |---|---|---|
 | 2026-07-24 | 初稿：概念矩阵、同族/A2A 统一、拆解原则 | #223 |
 | 2026-07-24 | **A1**：`resolveSubagentSpawn`；`call_agent` 增加 `role`/`backend`/`isolate`；同族经 `callAgentByName`（job+activity）；自调用无差异仍拒 | #223 |
+| 2026-07-24 | **A2**：多 Subagent UI — activity `jobId`；桌面/Portal/TUI 多等待行；标签区分同族 (`agim/cheap`) 与跨 adapter | #223 |
 
 ### 落地差异（相对 §4.3）
 
 - 采用扩展 `mcp__agim__call_agent`，暂未新增 `spawn_subagent` 工具名。  
-- `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` 对同族 Subagent **不再走无 job 快路径**（打日志后仍走 A2A）。
+- `AGIM_NATIVE_CALL_AGENT_IN_PROCESS` 对同族 Subagent **不再走无 job 快路径**（打日志后仍走 A2A）。  
+- A2 UI 用既有 activity step 列表 + `jobId` 字段，未另开独立「Subagent 面板」组件树。
 
 ---
 

@@ -23,6 +23,7 @@ import {
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
 import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
+import { SubagentWaitingList } from '@/components/chat/subagent-waiting-list'
 
 const ChatTodoList = lazy(async () => {
   const module = await import('@/components/chat/chat-todo-list')
@@ -57,20 +58,23 @@ function countKinds(activity: ChatActivity): {
   tools: number
   skills: number
   asks: number
+  agents: number
   total: number
 } {
   let tools = 0
   let skills = 0
   let asks = 0
+  let agents = 0
   for (const step of activity.steps) {
     if (step.kind === 'skill') skills += 1
     else if (step.kind === 'ask') asks += 1
+    else if (step.kind === 'agent') agents += 1
     else if (step.kind === 'status') {
       // Status rows (e.g. compaction) are not tool calls.
     } else if (step.kind === 'tool') tools += 1
-    else if (step.kind !== 'agent' && step.kind !== 'approval') tools += 1
+    else if (step.kind !== 'approval') tools += 1
   }
-  return { tools, skills, asks, total: activity.steps.length }
+  return { tools, skills, asks, agents, total: activity.steps.length }
 }
 
 function StepIcon({ step, dark }: { step: ChatActivityStep; dark: boolean }): JSX.Element {
@@ -124,19 +128,24 @@ export function PortalRunStatus({
   const [open, setOpen] = useState(false)
 
   // Prefer the real work tool under RUNNING… — Plan has its own card.
+  // Subagent waiting uses SubagentWaitingList (can show N rows).
   const liveStep = activity
     ? [...activity.steps].reverse().find((s) => (
-        (s.status === 'running' || s.status === 'pending') && !isTodoActivityStep(s)
+        (s.status === 'running' || s.status === 'pending')
+        && !isTodoActivityStep(s)
+        && s.kind !== 'agent'
       ))
     : undefined
-  const waitingAgent = activity
-    ? [...activity.steps].reverse().find((s) => (
+  const waitingAgents = activity
+    ? activity.steps.filter((s) => (
         s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
       ))
-    : undefined
+    : []
 
   const duration = formatDuration(activity?.durationMs)
-  const counts = activity ? countKinds(activity) : { tools: 0, skills: 0, asks: 0, total: 0 }
+  const counts = activity
+    ? countKinds(activity)
+    : { tools: 0, skills: 0, asks: 0, agents: 0, total: 0 }
 
   let doneSummary = t('chat.activityWorked', { defaultValue: 'Worked' })
   if (failed) doneSummary = t('chat.activityFailed', { defaultValue: 'Failed' })
@@ -148,10 +157,13 @@ export function PortalRunStatus({
     if (counts.skills > 0) {
       parts.push(t('chat.activitySkillCount', { count: counts.skills, defaultValue: '{{count}} skills' }))
     }
+    if (counts.agents > 0) {
+      parts.push(t('chat.activityAgentCount', { count: counts.agents, defaultValue: '{{count}} agents' }))
+    }
     if (counts.asks > 0) {
       parts.push(t('chat.activityAskCount', { count: counts.asks, defaultValue: '{{count}} asks' }))
     }
-    if (counts.tools === 0 && counts.skills === 0 && counts.asks === 0) {
+    if (counts.tools === 0 && counts.skills === 0 && counts.asks === 0 && counts.agents === 0) {
       parts.push(t('chat.activityStepCount', { count: counts.total, defaultValue: '{{count}} steps' }))
     }
     if (duration) parts.push(duration)
@@ -197,23 +209,23 @@ export function PortalRunStatus({
         )}
       </div>
 
-      {/* Live tool / subagent status under RUNNING… */}
-      {running && (liveStep || waitingAgent) && (
+      {/* Live Subagent status under RUNNING… (supports N concurrent rows). */}
+      {running && waitingAgents.length > 0 && activity && (
+        <SubagentWaitingList
+          steps={activity.steps}
+          variant="portal"
+          dark={dark}
+        />
+      )}
+      {running && waitingAgents.length === 0 && liveStep && (
         <p className={cn(
           'truncate pl-1 text-[11px] leading-snug',
           dark ? 'text-zinc-500' : 'text-zinc-400',
         )}>
-          {waitingAgent
-            ? t('chat.activityWaitingSubagent', {
-                agent: waitingAgent.label,
-                defaultValue: 'Waiting for subagent',
-              })
-            : liveStep
-              ? t('chat.activityRunningStep', {
-                  step: stepLabel(liveStep, t),
-                  defaultValue: 'Running · {{step}}',
-                })
-              : null}
+          {t('chat.activityRunningStep', {
+            step: stepLabel(liveStep, t),
+            defaultValue: 'Running · {{step}}',
+          })}
         </p>
       )}
 
@@ -249,7 +261,7 @@ export function PortalRunStatus({
         </button>
       )}
 
-      {running && !liveStep && !waitingAgent && (
+      {running && !liveStep && waitingAgents.length === 0 && (
         <div className="flex items-center gap-1 py-0.5 pl-1.5">
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '0ms' }} />
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '150ms' }} />
@@ -297,6 +309,11 @@ export function PortalRunStatus({
                 {step.kind === 'skill' && (
                   <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
                     {t('chat.activitySkill')}
+                  </span>
+                )}
+                {step.kind === 'agent' && (
+                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+                    {t('chat.activitySubagentBadge', { defaultValue: 'subagent' })}
                   </span>
                 )}
               </div>

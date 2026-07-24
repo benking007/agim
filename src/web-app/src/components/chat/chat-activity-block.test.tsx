@@ -127,10 +127,41 @@ describe('ChatActivityBlock', () => {
     })}
     />)
     expect(screen.getByRole('button', { name: /Running|执行中/ })).toBeInTheDocument()
-    expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
+    expect(screen.getByText(/Waiting for subagent|等待子代理/)).toBeInTheDocument()
     // Collapsed: agent appears in the title, not as an expanded step row.
     expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
     expect(screen.queryByText(/^running$|^运行中$/)).not.toBeInTheDocument()
+  })
+
+  it('lists multiple waiting Subagents without expanding', () => {
+    render(<ChatActivityBlock activity={activity({
+      status: 'running',
+      finishedAt: undefined,
+      durationMs: undefined,
+      steps: [
+        {
+          id: 'a2a-1',
+          kind: 'agent',
+          label: 'agim/cheap',
+          status: 'running',
+          startedAt: 1,
+          jobId: 1,
+        },
+        {
+          id: 'a2a-2',
+          kind: 'agent',
+          label: 'claude-code',
+          status: 'running',
+          startedAt: 2,
+          jobId: 2,
+        },
+      ],
+    })}
+    />)
+    expect(screen.getByRole('button', { name: /Running · 2 subagents|执行中 · 2 个子代理/ })).toBeInTheDocument()
+    expect(screen.getByText(/Waiting for 2 subagents|等待 2 个子代理/)).toBeInTheDocument()
+    expect(screen.getByText('→ agim/cheap')).toBeInTheDocument()
+    expect(screen.getByText('→ claude-code')).toBeInTheDocument()
   })
 
   it('keeps Waiting for subagent even when an approval is also pending', () => {
@@ -156,7 +187,7 @@ describe('ChatActivityBlock', () => {
       ],
     })}
     />)
-    expect(screen.getByText(/Waiting for subagent|等待子 Agent/)).toBeInTheDocument()
+    expect(screen.getByText(/Waiting for subagent|等待子代理/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /→ claude-code/ })).toBeInTheDocument()
   })
 
@@ -177,6 +208,42 @@ describe('ChatActivityBlock', () => {
     expect(screen.getByText(/→ codex/)).toBeInTheDocument()
     const badges = screen.getAllByText(/^completed$|^已完成$/)
     expect(badges.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('keeps distinct final states for two Subagent steps', async () => {
+    const user = userEvent.setup()
+    render(<ChatActivityBlock activity={activity({
+      steps: [
+        {
+          id: 'a2a-1',
+          kind: 'agent',
+          label: 'agim/cheap',
+          status: 'success',
+          startedAt: 1,
+          finishedAt: 2,
+          jobId: 1,
+        },
+        {
+          id: 'a2a-2',
+          kind: 'agent',
+          label: 'claude-code',
+          status: 'error',
+          startedAt: 3,
+          finishedAt: 4,
+          jobId: 2,
+          preview: 'timeout',
+        },
+      ],
+    })}
+    />)
+    expect(screen.getByRole('button', { name: /2 agents|2 次协作/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Worked|已完成|Failed|失败/ }))
+    expect(screen.getByText('→ agim/cheap')).toBeInTheDocument()
+    expect(screen.getByText('→ claude-code')).toBeInTheDocument()
+    expect(screen.getAllByText(/^subagent$|^子代理$/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/^completed$|^已完成$/)).toBeInTheDocument()
+    expect(screen.getByText(/^failed$|^失败$/)).toBeInTheDocument()
+    expect(screen.getByText('timeout')).toBeInTheDocument()
   })
 
   it('localizes compacting-context status in the Running title', () => {

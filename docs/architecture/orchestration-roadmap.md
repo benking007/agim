@@ -121,9 +121,16 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 **验收**
 
-- [ ] 串行 2 个子代理，UI 两条终态正确。  
-- [ ] UI 能区分 `agim/cheap` vs `claude-code`。  
-- [ ] jobId 与 tree API 一致。  
+- [x] 串行 2 个子代理，UI 两条终态正确（desktop accordion 单测：success + error 分行）。  
+- [x] UI 能区分 `agim/cheap` vs `claude-code`（`activityLabel` / `formatSubagentLabel`；多等待行列表）。  
+- [x] activity step 携带 `jobId`（与 `a2a-${jobId}` / 既有 `GET /api/a2a/tree/:id` 对齐；本阶段未改 tree API）。  
+
+**落地（2026-07-24）：**
+
+- Core：`ToolActivityStep.jobId`；`listWaitingAgentSteps` / `formatWaitingSubagentLabels`。  
+- A2A `emitAgentActivity` 带上 `jobId` + `activityLabel`。  
+- 桌面 accordion / Portal run-status / TUI：≥2 个 running agent 时显示「等待 N 个子代理」+ 分行列表。  
+- i18n：`activityWaitingSubagents` / `activityRunningSubagents` / `activitySubagentBadge`。
 
 #### A3. 拆解启发式（prompt）
 

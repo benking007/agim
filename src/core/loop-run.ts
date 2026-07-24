@@ -563,7 +563,7 @@ export function formatAligningPrompt(run: LoopRun): string {
   if (obj && exit) {
     lines.push('两项草稿已齐，确认后开始：`/loop confirm`')
   } else {
-    lines.push('也可一次写齐：`/loop 目标描述；退出：验收通过或最多5轮`（会新开 Loop，请先 `/loop stop` 当前对焦若需重来）')
+    lines.push('也可一次写齐：`/loop 目标描述；退出条件为验收通过或最多5轮`（会新开 Loop，请先 `/loop stop` 当前对焦若需重来）')
   }
   lines.push('', '查看：`/loop status` · 放弃：`/loop stop`')
   return lines.join('\n')

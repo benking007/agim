@@ -8,7 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - **Loop R1 ALIGNING gate**: Loop requires **objective + exit** before
   planning/dispatch. Missing either → `status=aligning`; slash
-  `/loop objective|exit|confirm` (or `目标…；退出：…`); snippet steers
+  `/loop objective|exit|confirm` (or `目标…；退出条件为…` / `退出：…`);
+  snippet steers
   `ask_user`. Dispatcher refuses `call_agent` / `call_agents` /
   `loop_verdict` while aligning. Confirmed → `planning`.
 - **Focus runtime (C0)**: `/focus` (`set` / `on` / `off` / `clear` /

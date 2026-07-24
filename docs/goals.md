@@ -1,5 +1,10 @@
 # `/goal` — sustained-objective tracking
 
+> **DEPRECATED（设计已定，运行时迁移待实现）**  
+> 产品原语改为 **[Focus](./architecture/focus.md)**（`/focus`：自动注入 / on / off）。  
+> Phase C 工程闭环改为 **[Loop](./architecture/loop-engineering.md)**（`/loop`），**不**再挂在 goal 上。  
+> 下文保留为**现行代码行为**说明，直至 Focus 落地后删除或缩成迁移附录。
+
 One active goal per IM thread, injected into every prompt so the agent
 stays on-mission across many turns.
 
@@ -139,21 +144,19 @@ Each primitive serves a different lifecycle:
 - `/heartbeat` = autonomous periodic checks
 - `/memo` = scattered facts the agent should remember
 
-## Loop-engineering (planned)
+## Successor: Focus + Loop (planned)
 
-**Loop-engineering** (roadmap Phase C; design SSOT:
-[`architecture/loop-engineering.md`](./architecture/loop-engineering.md))
-binds an **EngineeringRun** to the thread's active goal: the executor
-works as today, and at checkpoints a **read-only observer Subagent**
-returns `continue | revise | stop`.
+| 旧 | 新 |
+|---|---|
+| `/goal` 注入 / pause | **[Focus](./architecture/focus.md)** — set / on / off / clear |
+| `complete_goal` 完成语义 | **废弃**（不迁到 Focus）；若需收尾属 **Loop** 另定 |
+| （曾设想的）goal 上 EngineeringRun | **[Loop](./architecture/loop-engineering.md)**（`/loop`）绑 **Focus on** |
 
 Boundaries that must not blur:
 
-- Observer **cannot** complete a goal — `complete_goal` evidence / epoch
-  gates still apply.
+- Focus **不是**任务完成系统；Loop observer 的 `stop` **不**等于旧 `complete_goal`。
 - Heartbeat stays a wall-clock “anything to do?” loop; it must **not**
-  share EngineeringRun storage or observer code paths.
-- `goal-critic` remains an in-process cheap on-track check, not the
-  observer Subagent.
+  share LoopRun storage or observer code paths.
+- `goal-critic`（代码名可暂留）仍是进程内廉价 on-track 检查，**不是** Loop observer。
 
-No runtime yet — document first; open decisions in loop-engineering §13.
+No Focus/Loop runtime yet beyond today’s `/goal` — design docs first.

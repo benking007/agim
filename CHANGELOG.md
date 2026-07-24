@@ -6,11 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Loop-engineering design SSOT (Phase C, docs-first)**: new
-  `docs/architecture/loop-engineering.md` defines the Goal-bound
-  executor↔observer loop, state machine, read-only observer JSON
-  contract (`continue|revise|stop`), cadence, and open decisions.
-  Cross-links in naming / goals / roadmap / README. **No runtime yet.**
+- **Focus + Loop design SSOT (Phase C, docs-first)**:
+  `docs/architecture/focus.md` (attention anchor: inject / on / off;
+  **deprecates `/goal`**) and `docs/architecture/loop-engineering.md`
+  (Focus-bound executor↔observer `/loop`, verdict
+  `continue|revise|stop`). Cross-links in naming / goals / roadmap /
+  README / current. **No runtime yet.**
 - **Phase B Subagent parallel fan-out**: new `mcp__agim__call_agents({ tasks[] })` joins multiple SubagentRuns in one tool call (`allSettled` — one lane fail/timeout/cancel does not kill siblings). Knobs: `AGIM_SUBAGENT_PARALLEL` (default **on**; `0/off` serializes the batch), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3). Per-lane activity step ids `${toolCallId}#i`. See `docs/architecture/orchestration-roadmap.md` Phase B.
 - **Inline Subagent card (message list)**: Desktop `/` and Portal `/m/chat` surface Subagent steps as a Todo-style card (live status + preview). Click a row opens a composer-docked half-sheet (max-height + scroll, expand/collapse) with parent prompt + result via `GET /api/jobs/:id`. Fixes live WS/`active-runs` dropping `jobId`.
 - **Phase A acceptance harness**: `tools/mock-llm-server.mjs` + `tools/phase-a-acceptance.mjs` exercise isolate / `role=cheap`→flash / vacuous refuse / cross-adapter / serial dual Subagent activity+jobId / A3 heuristic presence against a live Agim stack (see `docs/desktop-regression.md` §3).

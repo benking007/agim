@@ -37,9 +37,11 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | **Agim ACP endpoint** | Agim speaking ACP **outward** on `:9090` | `~/.agim` access-token / legacy `acp-token` |
 | **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` / `mcp__agim__call_agents` (`role`/`backend`/`isolate`); [`architecture/subagent.md`](./architecture/subagent.md) |
 | **Subagent parallel fan-out** | One parent turn joins multiple SubagentRuns (batch tool) | `AGIM_SUBAGENT_PARALLEL` (default on), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3), `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default 3) |
-| **Loop-engineering**（Phase C；历史名 Long-engineering） | Goal-bound executor↔observer loop; observer is a **read-only Subagent** returning `continue\|revise\|stop` | `AGIM_ENGINEERING_*`; SSOT [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) |
-| **goal-critic** | In-process cheap on-track check — **not** a Subagent / not Loop-engineering observer | `AGIM_NATIVE_CRITIC_*` |
-| **Heartbeat** | Wall-clock “anything to do?” — must **not** share EngineeringRun paths | `AGIM_HEARTBEAT_*` |
+| **Focus** | Per-thread attention anchor: auto-inject when **on**, stop inject when **off**, optional clear | `/focus`; replaces `/goal` (deprecated); SSOT [`architecture/focus.md`](./architecture/focus.md) |
+| **Loop**（Phase C；文档亦称 Loop-engineering；历史名 Long-engineering） | Focus-bound executor↔observer loop; observer **read-only**, verdict `continue\|revise\|stop` | `/loop`; `AGIM_ENGINEERING_*`（实现期可再对齐 `AGIM_LOOP_*`）; SSOT [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) |
+| **goal**（deprecated） | Legacy sustained-objective slash/tools — migrate to **Focus**; do **not** revive completion on Focus | `/goal`, `long_task`, `complete_goal` → see [`goals.md`](./goals.md) banner |
+| **goal-critic** | In-process cheap on-track check — **not** a Subagent / not Loop observer; product copy may say focus-critic | `AGIM_NATIVE_CRITIC_*` |
+| **Heartbeat** | Wall-clock “anything to do?” — must **not** share LoopRun paths | `AGIM_HEARTBEAT_*` |
 | **Handoff / sticky switch** | User conversation control moves to another backend (`/cc`, `/oc`, …) — **not** a Subagent | session sticky |
 
 UI copy should say the full phrase (“Remote agents (ACP)”, “Subagent”

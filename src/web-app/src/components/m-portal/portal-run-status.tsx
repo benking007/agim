@@ -132,14 +132,6 @@ export function PortalRunStatus({
   // Auto-hint expand when there are steps to inspect; default collapsed.
   const [open, setOpen] = useState(false)
 
-  // Prefer the real work tool under RUNNING… — Plan / Subagent have own cards.
-  const liveStep = activity
-    ? [...activity.steps].reverse().find((s) => (
-        (s.status === 'running' || s.status === 'pending')
-        && !isTodoActivityStep(s)
-        && s.kind !== 'agent'
-      ))
-    : undefined
   const waitingAgents = activity
     ? activity.steps.filter((s) => (
         s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
@@ -213,18 +205,6 @@ export function PortalRunStatus({
         )}
       </div>
 
-      {running && waitingAgents.length === 0 && liveStep && (
-        <p className={cn(
-          'truncate pl-1 text-[11px] leading-snug',
-          dark ? 'text-zinc-500' : 'text-zinc-400',
-        )}>
-          {t('chat.activityRunningStep', {
-            step: stepLabel(liveStep, t),
-            defaultValue: 'Running · {{step}}',
-          })}
-        </p>
-      )}
-
       {/* Plan first, then Subagents — both sit between run status and body. */}
       {activity && (
         <Suspense fallback={null}>
@@ -267,8 +247,9 @@ export function PortalRunStatus({
         </button>
       )}
 
-      {running && !liveStep && waitingAgents.length === 0 && (
-        <div className="flex items-center gap-1 py-0.5 pl-1.5">
+      {/* Live run: bouncing dots only (no duplicate "Running · tool" line). */}
+      {running && waitingAgents.length === 0 && (
+        <div className="flex items-center gap-1 py-0.5 pl-1.5" aria-hidden="true">
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '0ms' }} />
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '150ms' }} />
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" style={{ animationDelay: '300ms' }} />

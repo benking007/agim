@@ -99,7 +99,7 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 | 目标 + 退出条件硬门禁 | **必须**；缺则 ALIGNING | **R1**：ALIGNING + slash/`ask_user`；确认前禁派工 |
 | 对焦讨论 | `ask_user` + `/loop objective\|exit\|confirm` | **R1** 已接线 |
 | 拆解 → 子代理 | 核心 | **R3**：continue/revise 前本轮须 ≥1 次 call_agent(s) |
-| 对照目标验收 | 硬门闸 | R4（现行仍软 `loop_verdict`） |
+| 对照目标验收 | 硬门闸 | **R4**：`met`/`gaps`/`nextDirection`；exit 截断 |
 
 **结论**：R1 锁门禁；R3/R4 补齐调度与验收，才是完整 L3。
 
@@ -136,6 +136,7 @@ type LoopRun = {
   dispatchesThisRound: number;       // R3: 本轮已接受的子代理派工数
   lastPlan?: { at: number; tasks: Array<{ id: string; brief: string; agentHint?: string }> };
   lastVerification?: {
+    at: number;
     met: boolean;
     summary: string;
     gaps?: string[];
@@ -234,7 +235,7 @@ type LoopRun = {
 | **R1** ✅ | **对焦门禁** | `ALIGNING`；缺 objective/exit → slash + snippet→`ask_user`；确认前拒绝 `call_agent(s)`/`loop_verdict` | 无退出条件无法进入 planning |
 | **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出 | status / reload 可读两硬字段 |
 | **R3** ✅ | **PLAN + DISPATCH** | 确认后 snippet 强制拆解；`noteLoopDispatch` + `dispatchesThisRound`；`continue/revise` 无派工 → `no_dispatch` | 无子代理调用则不算完成一轮 |
-| **R4** | **VERIFY + REFLECT** | 对照 objective 结构化验收；未达写 nextDirection 再规划 | 死循环有 exit 截断 |
+| **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
 | **R5** | **收尾 UX** | 达标总结卡片；Portal Loop 状态条；菜单文案对齐 L3 | 用户能看懂「卡在对焦/派工/验收」 |
 | **R6** | **可选触发** | Heartbeat/cron **只负责 start**，仍走 ALIGNING | 不绕过对焦 |
 
@@ -277,3 +278,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-24 | **R1 落地**：ALIGNING 状态机 + slash 对焦 + dispatcher 门禁 |
 | 2026-07-24 | **R2 落地**：Mission SSOT（对焦期部分填写）+ sessionKey + acceptance/maxWallMs + status |
 | 2026-07-24 | **R3 落地**：PLAN+DISPATCH 门禁（本轮须派工才能 continue/revise） |
+| 2026-07-24 | **R4 落地**：VERIFY+REFLECT 结构化验收 + exit 截断 |

@@ -5,6 +5,7 @@
 // R1: ALIGNING gate — objective + exit required before planning/dispatch.
 // R2: LoopMission as persisted SSOT (partial while aligning; status shows both hard fields).
 // R3: PLAN + DISPATCH — continue/revise requires ≥1 subagent call this round.
+// R4: VERIFY + REFLECT — structured verification; unmet → nextDirection → replan; exit truncates.
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -37,11 +38,24 @@ export type LoopStatus =
 
 export type LoopDecision = 'continue' | 'revise' | 'stop'
 
+/** R4 structured verification against mission.objective (+ acceptance). */
+export interface LoopVerification {
+  met: boolean
+  summary: string
+  gaps?: string[]
+  nextDirection?: string
+}
+
 export interface LoopVerdict {
   decision: LoopDecision
   summary: string
   reasons?: string[]
+  /** @deprecated prefer verification.nextDirection; still accepted as alias */
   nextHint?: string
+  /** R4: required for continue/revise; optional on abandon stop */
+  met?: boolean
+  gaps?: string[]
+  nextDirection?: string
 }
 
 export interface LoopMission {
@@ -71,7 +85,14 @@ export interface LoopRun {
   focusSnapshot: string
   openedFocus: boolean
   status: LoopStatus
-  endReason?: 'stop_verdict' | 'user_stop' | 'limit' | 'focus_off' | 'error'
+  endReason?:
+    | 'stop_verdict'
+    | 'user_stop'
+    | 'limit'
+    | 'wall_limit'
+    | 'objective_met'
+    | 'focus_off'
+    | 'error'
   round: number
   /** Mirror of mission.exit.maxRounds when present; else provisional. */
   maxRounds: number
@@ -91,6 +112,8 @@ export interface LoopRun {
     at: number
     tasks: Array<{ id: string; brief: string; agentHint?: string }>
   }
+  /** R4: last structured verification */
+  lastVerification?: LoopVerification & { at: number }
   createdAt: number
   updatedAt: number
   lastVerdict?: LoopVerdict
@@ -282,6 +305,26 @@ export function isLoopAligning(run: LoopRun): boolean {
 export function isLoopDispatchAllowed(run: LoopRun): boolean {
   if (run.status === 'ended' || run.status === 'aligning') return false
   return !!run.mission?.objective && !!run.mission?.exit?.description
+}
+
+/** True when mission.exit.maxWallMs elapsed since run.createdAt. */
+export function isLoopWallExceeded(run: LoopRun, now = Date.now()): boolean {
+  const wall = run.mission?.exit?.maxWallMs
+  if (!wall || wall <= 0) return false
+  return now - run.createdAt >= wall
+}
+
+function resolveVerification(verdict: LoopVerdict): LoopVerification | null {
+  if (typeof verdict.met !== 'boolean') return null
+  const nextDirection = (verdict.nextDirection || verdict.nextHint || '').trim() || undefined
+  return {
+    met: verdict.met,
+    summary: (verdict.summary || '').slice(0, 500),
+    ...(verdict.gaps && verdict.gaps.length > 0
+      ? { gaps: verdict.gaps.map((g) => g.slice(0, 200)).slice(0, 8) }
+      : {}),
+    ...(nextDirection ? { nextDirection: nextDirection.slice(0, 500) } : {}),
+  }
 }
 
 /** Parse exit NL for round / wall-clock caps (fail-soft). */
@@ -717,38 +760,84 @@ export function applyLoopVerdict(
     return { ok: false, error: 'not_ready' }
   }
 
+  // Exit truncation: wall clock (R4)
+  if (isLoopWallExceeded(run)) {
+    endLoopInternal(run, 'wall_limit', `maxWallMs ${run.mission?.exit.maxWallMs}`)
+    return { ok: true, run }
+  }
+
+  const advancing = verdict.decision === 'continue' || verdict.decision === 'revise'
+
   // R3: continue/revise cannot complete a round without ≥1 subagent dispatch.
   // stop remains an exit hatch (user/observer may abandon without dispatch).
-  if (
-    (verdict.decision === 'continue' || verdict.decision === 'revise')
-    && (run.dispatchesThisRound || 0) < 1
-  ) {
+  if (advancing && (run.dispatchesThisRound || 0) < 1) {
     return { ok: false, error: 'no_dispatch' }
+  }
+
+  // R4: continue/revise require structured verification against objective.
+  let verification: LoopVerification | null = null
+  if (advancing) {
+    verification = resolveVerification(verdict)
+    if (!verification) {
+      return { ok: false, error: 'need_verification' }
+    }
+    if (verification.met) {
+      // Objective met → must stop, not continue another round.
+      return { ok: false, error: 'met_use_stop' }
+    }
+    if (!verification.nextDirection) {
+      return { ok: false, error: 'need_next_direction' }
+    }
+    run.status = 'verifying'
+  } else if (typeof verdict.met === 'boolean') {
+    // stop with optional verification
+    verification = resolveVerification(verdict)
   }
 
   run.lastVerdict = {
     decision: verdict.decision,
     summary: (verdict.summary || '').slice(0, 500),
     reasons: verdict.reasons?.map((r) => r.slice(0, 200)).slice(0, 8),
-    nextHint: verdict.nextHint?.slice(0, 500),
+    nextHint: (verdict.nextDirection || verdict.nextHint)?.slice(0, 500),
+    ...(typeof verdict.met === 'boolean' ? { met: verdict.met } : {}),
+    ...(verification?.gaps ? { gaps: verification.gaps } : {}),
+    ...(verification?.nextDirection ? { nextDirection: verification.nextDirection } : {}),
+  }
+  if (verification) {
+    run.lastVerification = { ...verification, at: Date.now() }
+    run.status = verification.met ? 'verifying' : (advancing ? 'reflecting' : run.status)
   }
   run.updatedAt = Date.now()
-  pushTimeline(run, 'observer', `${verdict.decision}: ${run.lastVerdict.summary}`)
+  pushTimeline(
+    run,
+    'observer',
+    verification
+      ? `${verdict.decision} met=${verification.met}: ${verification.summary}`
+      : `${verdict.decision}: ${run.lastVerdict.summary}`,
+  )
 
   if (verdict.decision === 'stop') {
-    endLoopInternal(run, 'stop_verdict', 'observer stop')
+    if (verification?.met) {
+      endLoopInternal(run, 'objective_met', 'objective met')
+    } else {
+      endLoopInternal(run, 'stop_verdict', 'observer stop')
+    }
     return { ok: true, run }
   }
 
+  // Exit truncation: max rounds (after a dispatched verify that did not meet)
   if (run.round >= run.maxRounds) {
     endLoopInternal(run, 'limit', `maxRounds ${run.maxRounds}`)
     return { ok: true, run }
   }
 
+  // REFLECT → next PLANNING
   run.round += 1
   run.dispatchesThisRound = 0
-  // Next round starts in PLANNING (R3); VERIFY/REFLECT automation is R4.
   run.status = 'planning'
+  if (verification?.nextDirection) {
+    pushTimeline(run, 'system', `reflect → plan: ${verification.nextDirection.slice(0, 160)}`)
+  }
   writeRun(run)
   return { ok: true, run }
 }
@@ -777,11 +866,20 @@ export function buildLoopSnippet(
     return lines.join('\n')
   }
 
-  lines.push(`Phase: ${run.status === 'dispatching' ? 'DISPATCHING' : 'PLANNING'} (R3)`)
+  const phase =
+    run.status === 'dispatching' ? 'DISPATCHING'
+      : run.status === 'verifying' ? 'VERIFYING'
+        : run.status === 'reflecting' ? 'REFLECTING'
+          : 'PLANNING'
+  lines.push(`Phase: ${phase} (R3/R4)`)
   lines.push(`Round: ${run.round}/${view.maxRounds}`)
   lines.push(`Objective: ${view.objective}`)
   lines.push(`Exit: ${view.exitDescription}`)
   if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
+  if (view.maxWallMs) {
+    const left = Math.max(0, run.createdAt + view.maxWallMs - Date.now())
+    lines.push(`Wall budget left: ${Math.round(left / 60_000)}m`)
+  }
   lines.push(`Dispatches this round: ${run.dispatchesThisRound || 0}`)
   if (run.lastPlan?.tasks?.length) {
     lines.push('Last plan:')
@@ -790,7 +888,17 @@ export function buildLoopSnippet(
     }
   }
   if (run.startNote) lines.push(`Start note: ${run.startNote}`)
-  if (run.lastVerdict) {
+  if (run.lastVerification) {
+    lines.push(
+      `Last verification: met=${run.lastVerification.met} — ${run.lastVerification.summary}`,
+    )
+    if (run.lastVerification.gaps?.length) {
+      lines.push(`Gaps: ${run.lastVerification.gaps.join('; ')}`)
+    }
+    if (run.lastVerification.nextDirection) {
+      lines.push(`Next direction: ${run.lastVerification.nextDirection}`)
+    }
+  } else if (run.lastVerdict) {
     lines.push(`Last verdict: ${run.lastVerdict.decision} — ${run.lastVerdict.summary}`)
     if (run.lastVerdict.nextHint) lines.push(`Next hint: ${run.lastVerdict.nextHint}`)
   }
@@ -802,8 +910,12 @@ export function buildLoopSnippet(
     )
   } else {
     lines.push(
-      'Dispatch recorded. You may synthesize results, then loop_verdict continue|revise|stop '
-        + 'against Objective/Exit. User can /loop stop.',
+      'VERIFY (R4): call loop_verdict with structured fields against Objective'
+        + (view.acceptance ? '/Acceptance' : '')
+        + ': met (boolean), summary, and if unmet: gaps[] + nextDirection. '
+        + 'met=true → decision=stop (objective_met). '
+        + 'met=false → decision=continue|revise (reflect → replan). '
+        + 'Exit truncates on maxRounds / maxWallMs. User can /loop stop.',
     )
   }
   lines.push('')
@@ -833,6 +945,19 @@ export function formatAligningPrompt(run: LoopRun): string {
   return lines.join('\n')
 }
 
+/** Test-only: backdate createdAt for wall-clock exit coverage. */
+export function _touchLoopCreatedAtForTests(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  createdAt: number,
+): void {
+  const run = readRun(platform, channelId, threadId)
+  if (!run) return
+  run.createdAt = createdAt
+  writeRun(run)
+}
+
 export function formatLoopStatus(run: LoopRun): string {
   const active = run.status !== 'ended'
   const view = getMissionView(run)
@@ -858,8 +983,27 @@ export function formatLoopStatus(run: LoopRun): string {
     `Focus snapshot: ${run.focusSnapshot.slice(0, 200)}${run.focusSnapshot.length > 200 ? '…' : ''}`,
   )
   if (run.startNote) lines.push(`Note: ${run.startNote}`)
-  if (run.lastVerdict) {
+  if (run.lastVerification) {
+    lines.push(
+      `最近验收：met=${run.lastVerification.met ? '✅' : '❌'} — ${run.lastVerification.summary}`,
+    )
+    if (run.lastVerification.gaps?.length) {
+      lines.push(`缺口：${run.lastVerification.gaps.join('；')}`)
+    }
+    if (run.lastVerification.nextDirection) {
+      lines.push(`下一方向：${run.lastVerification.nextDirection}`)
+    }
+  } else if (run.lastVerdict) {
     lines.push(`Last verdict: **${run.lastVerdict.decision}** — ${run.lastVerdict.summary}`)
+  }
+  if (view.maxWallMs) {
+    const exceeded = isLoopWallExceeded(run)
+    const left = Math.max(0, run.createdAt + view.maxWallMs - Date.now())
+    lines.push(
+      exceeded
+        ? '墙钟：已触达上限'
+        : `墙钟剩余：约 ${Math.round(left / 60_000)} 分钟`,
+    )
   }
   if (run.timeline.length) {
     lines.push('', 'Recent:')

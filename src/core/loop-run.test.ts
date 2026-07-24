@@ -13,6 +13,7 @@ import {
   getActiveLoop,
   getLoopRun,
   getMissionView,
+  isLoopWallExceeded,
   noteLoopDispatch,
   parseExitConstraints,
   parseLoopStartText,
@@ -21,6 +22,7 @@ import {
   setLoopObjective,
   startLoop,
   stopLoop,
+  _touchLoopCreatedAtForTests,
 } from './loop-run.js'
 
 const TMP = mkdtempSync(join(tmpdir(), 'agim-loop-'))
@@ -351,19 +353,149 @@ describe('loop-run R3 PLAN+DISPATCH', () => {
     expect(status).toContain('查日志')
 
     const snip = buildLoopSnippet(base.platform, base.channelId, threadId)
-    expect(snip).toContain('Dispatch recorded')
+    expect(snip).toContain('VERIFY (R4)')
     expect(snip).not.toContain('MUST decompose')
 
     const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
       decision: 'continue',
       summary: 'need another pass',
-      nextHint: 'focus on flaky test',
+      met: false,
+      gaps: ['flaky still red'],
+      nextDirection: 'focus on flaky test',
     })
     expect(cont.ok).toBe(true)
     if (!cont.ok) return
     expect(cont.run.round).toBe(2)
     expect(cont.run.dispatchesThisRound).toBe(0)
     expect(cont.run.status).toBe('planning')
+    expect(cont.run.lastVerification?.met).toBe(false)
+    expect(cont.run.lastVerification?.nextDirection).toContain('flaky')
+  })
+})
+
+describe('loop-run R4 VERIFY+REFLECT', () => {
+  it('continue without met/nextDirection is refused', () => {
+    reset()
+    const threadId = 'loop-r4-need-verify'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '验收闭环；退出条件为达标或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+
+    const noMet = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'tried',
+    })
+    expect(noMet.ok).toBe(false)
+    if (!noMet.ok) expect(noMet.error).toBe('need_verification')
+
+    const noDir = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'still gaps',
+      met: false,
+    })
+    expect(noDir.ok).toBe(false)
+    if (!noDir.ok) expect(noDir.error).toBe('need_next_direction')
+
+    const metContinue = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'looks done',
+      met: true,
+    })
+    expect(metContinue.ok).toBe(false)
+    if (!metContinue.ok) expect(metContinue.error).toBe('met_use_stop')
+  })
+
+  it('stop with met=true ends as objective_met', () => {
+    reset()
+    const threadId = 'loop-r4-met'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出条件为验收通过或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId, {
+      count: 1,
+      tasks: [{ id: '1', brief: 'fix timeout', agentHint: 'agim' }],
+    })
+
+    const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'stop',
+      summary: 'regression green; login ok',
+      met: true,
+    })
+    expect(stop.ok).toBe(true)
+    if (!stop.ok) return
+    expect(stop.run.status).toBe('ended')
+    expect(stop.run.endReason).toBe('objective_met')
+    expect(stop.run.lastVerification?.met).toBe(true)
+    expect(formatLoopStatus(stop.run)).toContain('met=✅')
+  })
+
+  it('maxRounds truncates after verify-unmet', () => {
+    reset()
+    const threadId = 'loop-r4-rounds'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '短跑；退出条件为最多 1 轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.run.maxRounds).toBe(1)
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    const r = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'not yet',
+      met: false,
+      nextDirection: 'try again',
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.run.status).toBe('ended')
+    expect(r.run.endReason).toBe('limit')
+  })
+
+  it('maxWallMs truncates on verdict', () => {
+    reset()
+    const threadId = 'loop-r4-wall'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '墙钟；退出条件为超过 1 分钟或最多 5 轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.run.mission?.exit.maxWallMs).toBe(60_000)
+    _touchLoopCreatedAtForTests(
+      base.platform, base.channelId, threadId, Date.now() - 120_000,
+    )
+    expect(isLoopWallExceeded(getLoopRun(base.platform, base.channelId, threadId)!)).toBe(true)
+
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    const r = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'still going',
+      met: false,
+      nextDirection: 'more',
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.run.endReason).toBe('wall_limit')
   })
 })
 

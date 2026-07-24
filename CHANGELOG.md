@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop R4 VERIFY+REFLECT**: `loop_verdict` takes structured
+  `met` / `gaps` / `nextDirection`. `continue|revise` require unmet
+  verification + nextDirection (reflect → planning). `stop` + `met=true`
+  ends as `objective_met`. Exit truncates on `maxRounds` / `maxWallMs`
+  (`wall_limit`). Snippet/status surface last verification.
 - **Loop R3 PLAN+DISPATCH**: After mission confirm, each round must
   `call_agents` / `call_agent` at least once before `loop_verdict`
   `continue|revise` (`no_dispatch` otherwise). `noteLoopDispatch` tracks

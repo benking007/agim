@@ -500,15 +500,32 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__loop_verdict',
       description:
-        'Report a Loop observer verdict while a /loop session is active (not during ALIGNING): ' +
-        'continue, revise, or stop. continue/revise require ≥1 call_agent(s) this round (R3); ' +
-        'stop may end without dispatch. Refused while aligning — finish objective+exit first.',
+        'Loop VERIFY/REFLECT verdict (not during ALIGNING). continue/revise require ≥1 '
+        + 'call_agent(s) this round (R3) AND structured verification (R4): met=false, '
+        + 'summary, nextDirection (gaps recommended). met=true must use decision=stop '
+        + '(ends as objective_met). stop without met abandons. Exit truncates on maxRounds/maxWallMs.',
       parameters: {
         type: 'object',
         properties: {
           decision: { type: 'string', enum: ['continue', 'revise', 'stop'] },
-          summary: { type: 'string', description: 'Short human-readable summary.' },
-          nextHint: { type: 'string', description: 'Hint for the next executor round (continue/revise).' },
+          summary: { type: 'string', description: 'Verification summary against Objective/Acceptance.' },
+          met: {
+            type: 'boolean',
+            description: 'Whether mission objective is met. Required for continue/revise.',
+          },
+          gaps: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'What is still missing when met=false.',
+          },
+          nextDirection: {
+            type: 'string',
+            description: 'Required when met=false for continue/revise — what to try next round.',
+          },
+          nextHint: {
+            type: 'string',
+            description: 'Deprecated alias of nextDirection.',
+          },
           reasons: { type: 'array', items: { type: 'string' } },
         },
         required: ['decision', 'summary'],
@@ -1170,7 +1187,12 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           const r = applyLoopVerdict(ctx.platform, ctx.channelId, ctx.threadId, {
             decision,
             summary,
+            met: typeof args.met === 'boolean' ? args.met : undefined,
+            nextDirection: typeof args.nextDirection === 'string' ? args.nextDirection : undefined,
             nextHint: typeof args.nextHint === 'string' ? args.nextHint : undefined,
+            gaps: Array.isArray(args.gaps)
+              ? args.gaps.filter((x): x is string => typeof x === 'string')
+              : undefined,
             reasons: Array.isArray(args.reasons)
               ? args.reasons.filter((x): x is string => typeof x === 'string')
               : undefined,
@@ -1184,6 +1206,24 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 + 'Use decision=stop to end without further dispatch.',
               )
             }
+            if (r.error === 'need_verification') {
+              return err(
+                'loop_verdict failed: need_verification — pass met=false, summary, and '
+                + 'nextDirection (gaps recommended) after comparing results to Objective.',
+              )
+            }
+            if (r.error === 'need_next_direction') {
+              return err(
+                'loop_verdict failed: need_next_direction — when met=false, set nextDirection '
+                + 'so the next planning round knows what to try.',
+              )
+            }
+            if (r.error === 'met_use_stop') {
+              return err(
+                'loop_verdict failed: met_use_stop — objective is met; call again with '
+                + 'decision=stop and met=true (ends as objective_met).',
+              )
+            }
             return err(`loop_verdict failed: ${r.error}`)
           }
           return ok(safeJson({
@@ -1191,6 +1231,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             round: r.run.round,
             endReason: r.run.endReason,
             lastVerdict: r.run.lastVerdict,
+            lastVerification: r.run.lastVerification,
             openedFocus: r.run.openedFocus,
             dispatchesThisRound: r.run.dispatchesThisRound,
           }))

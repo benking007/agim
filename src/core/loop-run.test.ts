@@ -42,6 +42,21 @@ describe('parseLoopStartText', () => {
     expect(p.maxRounds).toBe(5)
   })
 
+  it('accepts 退出条件为 / 退出条件是 (natural language)', () => {
+    const a = parseLoopStartText('修好登录超时；退出条件为验收通过或最多5轮')
+    expect(a.objective).toBe('修好登录超时')
+    expect(a.exitDescription).toBe('验收通过或最多5轮')
+    expect(a.maxRounds).toBe(5)
+
+    const b = parseLoopStartText('发版前压掉 flaky，退出条件是主分支绿')
+    expect(b.objective).toBe('发版前压掉 flaky')
+    expect(b.exitDescription).toBe('主分支绿')
+
+    const c = parseLoopStartText('修好登录 退出条件为验收通过')
+    expect(c.objective).toBe('修好登录')
+    expect(c.exitDescription).toBe('验收通过')
+  })
+
   it('strips labels', () => {
     const p = parseLoopStartText('目标：发版；退出：CI 绿')
     expect(p.objective).toBe('发版')

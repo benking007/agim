@@ -147,7 +147,7 @@ type LoopRun = {
 用户面：
 
 ```text
-/loop <objective> [；退出：…]     # 尽量一次给齐（齐 → planning）
+/loop <objective> [；退出条件为… / 退出：…]  # 尽量一次给齐（齐 → planning）
 /loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
 /loop objective <text>            # 对焦中补目标
 /loop exit <text>                 # 对焦中补退出条件

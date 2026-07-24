@@ -23,7 +23,7 @@ const HELP = [
   '  **目标** + **退出条件**',
   '',
   '用法：',
-  '  `/loop 目标…；退出：…`   尽量一次给齐（齐则直接 planning）',
+  '  `/loop 目标…；退出条件为…`  尽量一次给齐（也可用「退出：…」）',
   '  `/loop` / `/loop start`  Focus 已 on：用 Focus 作文稿，仍须补退出条件',
   '  `/loop start <note>`     Focus 已 on：附带说明启动对焦',
   '  `/loop objective <text>` 对焦中补目标',

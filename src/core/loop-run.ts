@@ -174,7 +174,7 @@ export function isLoopDispatchAllowed(run: LoopRun): boolean {
   return !!run.mission?.objective && !!run.mission?.exit?.description
 }
 
-/** Parse `/loop …` payload for objective + exit. */
+/** Parse `/loop …` payload for objective + exit (NL-friendly). */
 export function parseLoopStartText(text: string): {
   objective: string
   exitDescription: string
@@ -186,8 +186,17 @@ export function parseLoopStartText(text: string): {
   let objective = raw
   let exitDescription = ''
 
+  // Prefer natural phrases first, then short labels.
+  // Examples:
+  //   修好登录；退出条件为验收通过或最多5轮
+  //   修好登录，退出条件是 CI 绿
+  //   修好登录 退出条件为验收通过
+  //   修好登录；退出：验收通过
+  //   Fix auth; exit condition is PR green
   const m =
-    raw.match(/^(.*?)[；;]\s*退出\s*[：:]\s*(.+)$/s)
+    raw.match(/^(.*?)(?:[；;，,。]?\s*)退出条件\s*(?:为|是|[：:])\s*(.+)$/s)
+    || raw.match(/^(.*?)(?:[；;，,。]?\s*)exit\s*conditions?\s*(?:are|is|[：:])\s*(.+)$/is)
+    || raw.match(/^(.*?)[；;]\s*退出\s*[：:]\s*(.+)$/s)
     || raw.match(/^(.*?)[；;]\s*exit\s*[：:]\s*(.+)$/is)
   if (m) {
     objective = (m[1] ?? '').trim()
@@ -196,7 +205,9 @@ export function parseLoopStartText(text: string): {
 
   // Strip leading labels
   objective = objective.replace(/^(目标|objective)\s*[：:]\s*/i, '').trim()
-  exitDescription = exitDescription.replace(/^(退出|exit)\s*[：:]\s*/i, '').trim()
+  exitDescription = exitDescription
+    .replace(/^(退出条件\s*(?:为|是)|退出|exit\s*conditions?\s*(?:are|is)|exit)\s*[：:]?\s*/i, '')
+    .trim()
 
   let maxRounds: number | undefined
   const roundsHit = exitDescription.match(/最多\s*(\d+)\s*轮/) || exitDescription.match(/(\d+)\s*rounds?/i)

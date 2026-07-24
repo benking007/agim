@@ -58,8 +58,8 @@ function toPetTask(loop: LoopStatusDto, zh: boolean): PetTaskItem {
     : `R${loop.round}/${loop.maxRounds}`
   const usage = loop.usage
     ? (zh
-      ? `派工 ${loop.usage.dispatchCount} · 验收 ${loop.usage.evaluatorCount}`
-      : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} eval`)
+      ? `派工 ${loop.usage.dispatchCount} · 独立验收 ${loop.usage.evaluatorCount}`
+      : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} indep. eval`)
     : ''
   return {
     id: `loop-${loop.id}`,

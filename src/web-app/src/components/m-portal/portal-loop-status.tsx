@@ -55,7 +55,7 @@ const COPY = {
     dismiss: '关闭',
     hintAlign: '待对焦：请确认目标与退出条件',
     hintDispatch: '待派工：须 call_agents（父 Agent 不可自行调研）',
-    hintVerify: '待验收：须 loop_verdict（met / nextDirection）'
+    hintVerify: '待验收：须 loop_verdict（met / nextDirection）',
     bucket: {
       aligning: '对焦',
       dispatch: '派工',

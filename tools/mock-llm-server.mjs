@@ -166,6 +166,58 @@ function decide(body) {
     return textReply('LOOP_E2E_PARENT_DONE — mission closed (objective_met)')
   }
 
+  // Skip-verdict sim: dispatch once, then write a final report WITHOUT loop_verdict.
+  // Verify gate should force a follow-up; if still skipped → verify_skipped exit.
+  if (/LOOP_SKIP_VERDICT_TEST/i.test(user) || /VERIFY required|验收未完成/i.test(user)) {
+    if (/VERIFY required|验收未完成/i.test(user)) {
+      // Forced follow-up hop — still refuse to call loop_verdict (stress exit enforce).
+      return textReply('LOOP_SKIP_VERDICT_STILL_NO_VERDICT — pretending report is enough')
+    }
+    if (toolResults === 0) {
+      return toolCall('mcp__agim__call_agents', {
+        tasks: [
+          {
+            agent: 'agim',
+            role: 'cheap',
+            prompt:
+              'PHASE_A1_SUBAGENT_BRIEF lane=skip-verdict\n'
+              + 'Objective: reply SUBAGENT_OK\n'
+              + 'Output format: one line\n'
+              + 'Boundaries: no tools\n'
+              + 'Done-when: printed SUBAGENT_OK',
+          },
+        ],
+      }, 'loop_skip_verdict_dispatch')
+    }
+    return textReply(
+      'LOOP_SKIP_VERDICT_FAKE_REPORT — full analysis dumped without loop_verdict '
+      + '(should trigger verify follow-up / verify_skipped)',
+    )
+  }
+
+  // Parent tries to research alone before dispatch (dispatch-gate stress).
+  if (/LOOP_SELF_RESEARCH_TEST/i.test(user)) {
+    if (toolResults === 0) {
+      return toolCall('agim_web_fetch', { url: 'https://example.com/xauusd' }, 'loop_self_research')
+    }
+    // After gate refusal, spawn properly then verdict.
+    if (!hasToolResult(messages) || toolResults === 1) {
+      return toolCall('mcp__agim__call_agents', {
+        tasks: [{
+          agent: 'agim',
+          role: 'cheap',
+          prompt: 'PHASE_A1_SUBAGENT_BRIEF lane=gated\nObjective: SUBAGENT_OK\nOutput format: one line\nBoundaries: no tools\nDone-when: SUBAGENT_OK',
+        }],
+      }, 'loop_self_research_dispatch')
+    }
+    return toolCall('mcp__agim__loop_verdict', {
+      decision: 'stop',
+      met: true,
+      summary: 'LOOP_SELF_RESEARCH: after gate, dispatched and verified',
+      gaps: [],
+    }, 'loop_self_research_verdict')
+  }
+
   if (/PHASE_A1_SUBAGENT_BRIEF/i.test(user)) {
     if (/LONG_RESULT/i.test(user)) {
       const lines = Array.from({ length: 80 }, (_, i) =>

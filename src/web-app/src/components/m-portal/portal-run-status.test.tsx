@@ -30,7 +30,7 @@ function activity(over: Partial<ChatActivity> = {}): ChatActivity {
 }
 
 describe('PortalRunStatus', () => {
-  it('shows RUNNING… with live tool status and expandable steps', async () => {
+  it('shows RUNNING… with dots (no duplicate Running · tool line) and expandable steps', async () => {
     const user = userEvent.setup()
     render(
       <PortalRunStatus
@@ -42,10 +42,12 @@ describe('PortalRunStatus', () => {
         streaming
       />,
     )
-    expect(screen.getAllByText(/Running|执行中/i).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/web_search/i).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Running|执行中/i })).toBeTruthy()
+    // Collapsed live view: no secondary "Running · web_search" line.
+    expect(screen.queryByText(/Running · web_search|执行中 · web_search/i)).toBeNull()
+    expect(screen.queryByText('web_search')).toBeNull()
     await user.click(screen.getByRole('button', { name: /Running|执行中/i }))
-    expect(screen.getAllByText('web_search').length).toBeGreaterThan(0)
+    expect(screen.getByText('web_search')).toBeTruthy()
   })
 
   it('shows expandable Worked summary when finished', async () => {

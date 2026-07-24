@@ -115,12 +115,18 @@ Focus (on)  ──门禁──►  /loop start   （Phase C）
 | 还注什么？ | **再注** Loop 运行态（round、最近 verdict、`nextHint` 等）——互补，不是二选一。 |
 | `focusSnapshot`？ | 仅启动时审计/展示用；运行中用户改 Focus → **下一轮以当前 Focus 为准**。 |
 
-其它规则：
+### 4.1 开 Loop 的两种 UX（拍板）
 
-- `/loop` **要求**当前 thread Focus 为 **on** 且有内容。  
-- Focus **off** 时拒绝 start（产品倾向：**拒绝**，不隐式 on）。  
-- Loop **结束**不自动 `focus off`。  
-- Focus **clear/off** 时：活跃 Loop **cancel**（无孤儿）——见 [`loop-engineering.md`](./loop-engineering.md)。
+| 路径 | 用户怎么做 | Loop 结束时 Focus |
+|------|------------|-------------------|
+| **A · 分步** | 先 `/focus …`（已 on），再 `/loop [note]` | **保持**：不自动 off |
+| **B · 直开** | Focus 未 on 时直接 `/loop <text>` | **自动** `focus set+on` 用 `<text>`；结束时 **focus off**（内容可保留，仅停注入） |
+
+要点：
+
+- 不必每次都先 focus 再 loop；直开会代开 Focus。  
+- **谁开的谁收**：仅当本次 Loop **代开/代打开**了 Focus（`openedFocus`）时，结束才 off；用户事先设好的 Focus 不被 Loop 收走。  
+- Focus **clear/off**（用户主动）时：活跃 Loop **cancel**（无孤儿）——见 [`loop-engineering.md`](./loop-engineering.md)。
 
 ---
 

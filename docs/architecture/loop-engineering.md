@@ -30,7 +30,7 @@
 | D3 | **Phase C 叫 Loop** | 用户面 `/loop`；文档与 roadmap 统一用 Loop |
 | D4 | **双角色** | Executor（可写）+ Observer（只读） |
 | D5 | **Verdict** | `continue` \| `revise` \| `stop` |
-| D6 | **依赖 Focus on** | 无 Focus 或 off → 拒启 Loop |
+| D6 | **Focus 与 Loop 开法** | 分步：先 focus 再 loop，结束**不**关 focus；直开：`/loop <text>` 代开 focus，结束 **focus off** |
 | D7 | **与 Heartbeat 正交** | Loop 不复用 Heartbeat 调度 |
 
 ---
@@ -38,12 +38,20 @@
 ## 2. 用户面命令（目标形态）
 
 ```text
-/focus <text>          # 或 /focus on|off|clear|show —— 见 focus.md
-/loop start [note]     # 需要 Focus 已 on；可选补充本轮说明
+/focus …               # 见 focus.md
+/loop <text>           # 或 /loop start <text>
 /loop status
-/loop stop             # 用户强制结束
+/loop stop
 /loop pause | resume   # 可选，后置
 ```
+
+**开 Loop（两种合法路径）**
+
+| 当前 Focus | 命令 | 行为 | 结束时 Focus |
+|------------|------|------|--------------|
+| **已 on** | `/loop` 或 `/loop <note>` | 启动 Loop；`<note>` 只进 Loop 状态，**不改** Focus 正文 | **不** off（路径 A） |
+| **未 on**（无内容或 off） | `/loop <text>`（**必填**） | 自动 `focus set <text>` + on，`openedFocus=true`，再开 Loop | **focus off**（路径 B） |
+| **未 on** | `/loop` 无文本 | **拒绝**，提示补 `<text>` 或先 `/focus` |
 
 **斜杠解析约定（实现时）**：`/loop …` 优先匹配 Loop；不再用 `/goal` 驱动工程闭环。
 
@@ -71,24 +79,26 @@
 ### 3.1 「绑 Focus」是什么意思
 
 **不是**「Loop 有自己的 focus，和用户 Focus 比谁大」。  
-**是**「没有 Focus on，就不许开/续 Loop」——门禁 + 取消条件。
+**是**：Loop 运行期间必须有 Focus **on**（可事先设好，或由 `/loop <text>` 代开）；用户把 Focus off/clear → **取消 Loop**。
 
 | 层 | 注入什么 | SSOT |
 |----|----------|------|
 | Focus | title/body（盯什么） | thread 唯一 Focus 记录 |
 | Loop | round、status、最近 verdict、`nextHint`、可选 start note | `LoopRun` |
 
-同时存在时：**两层都注入**（Focus 正文 + Loop 状态）。没有「Focus 以 Loop 为准」或反过来的正文优先级——正文只有 Focus 一份。
+同时存在时：**两层都注入**（Focus 正文 + Loop 状态）。正文只有 Focus 一份。
 
 ### 3.2 Focus 在 Loop 中的规则
 
 | 规则 | 行为 |
 |------|------|
-| 启动 | `focus.enabled === true` 且内容非空 |
-| 运行中 Focus off | **取消 Loop**（避免无锚点空转）；倾向取消，简单可预期 |
-| 运行中改 Focus 文本 | 允许；下一轮以**当前 Focus**注入；记 timeline `focus_updated` |
+| 启动 · 路径 A | Focus 已 on → 直接开 Loop，`openedFocus=false` |
+| 启动 · 路径 B | Focus 未 on → `/loop <text>` 代开 Focus，`openedFocus=true` |
+| 运行中 Focus off/clear（用户） | **取消 Loop** |
+| 运行中改 Focus 文本 | 允许；下一轮以**当前 Focus**注入；记 `focus_updated` |
 | `focusSnapshot` | 启动时拷贝，供 status/审计；**不覆盖**实时 Focus 注入 |
-| Loop 结束 | **不**自动 Focus off |
+| Loop 结束 · `openedFocus=false` | **不**自动 Focus off（用户事先聚焦，继续聊） |
+| Loop 结束 · `openedFocus=true` | **Focus off**（代开的临时锚点收掉注入；内容可保留） |
 
 ### 3.3 为何不用 Goal 当 Loop 载体
 
@@ -177,6 +187,8 @@ type LoopRun = {
   sessionId: string;
   /** 启动时 Focus 正文快照（审计/status）；实时注入仍读 thread Focus */
   focusSnapshot: string;
+  /** true = 本次 Loop 代开/代打开了 Focus → 结束时 focus off */
+  openedFocus: boolean;
   status: "running" | "observing" | "paused" | "ended";
   endReason?: "stop_verdict" | "user_stop" | "limit" | "focus_off" | "error";
   round: number;
@@ -226,7 +238,7 @@ type LoopRun = {
 | 阶段 | 内容 | 验收 |
 |------|------|------|
 | **C0** | Focus 运行时（迁移 goal）+ 废弃提示 | 见 [focus.md §7](./focus.md) |
-| **C1** | `LoopRun` + `/loop start|status|stop` + Focus 校验 | 无 Focus on 拒启；status 可读 |
+| **C1** | `LoopRun` + `/loop` 路径 A/B + `openedFocus` 收尾 | 分步结束保留 focus；直开结束 focus off |
 | **C2** | Executor ↔ Observer 交替 + verdict 解析 | 三态驱动状态机 |
 | **C3** | Observer 只读强制（测试证明不能写） | 红队：observer 写文件失败 |
 | **C4** | SPA：Focus 控件 + Loop 状态条 | 与 slash 一致 |
@@ -251,7 +263,8 @@ type LoopRun = {
 1. Observer：同模型不同 prompt，还是允许 `observerModel`？  
 2. `revise` 是否强制插入用户确认？  
 3. Focus off 时：cancel vs pause（文档倾向 **cancel**）。  
-4. CLI 非 Web 会话是否完整支持 `/loop`。  
+4. 路径 B：结束时 focus off 是只停注入，还是顺带 clear？（倾向 **只 off**）  
+5. CLI 非 Web 会话是否完整支持 `/loop`。  
 
 ---
 

@@ -2,7 +2,7 @@
 // Auth: any authenticated token (server /api/* gate). Scoped by threadId.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { getLoopRun, toLoopStatusDto } from '../core/loop-run.js'
+import { getLoopRun, maybeEnforceLoopExit, toLoopStatusDto } from '../core/loop-run.js'
 import { sendJson } from './http-utils.js'
 
 /**
@@ -33,6 +33,8 @@ async function handleGetLoop(res: ServerResponse, url: URL): Promise<void> {
   const channelId = (url.searchParams.get('channelId') || 'web').trim().slice(0, 40) || 'web'
   const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'zh'
 
+  // Active wall truncate on poll — exit must not wait for loop_verdict.
+  maybeEnforceLoopExit(platform, channelId, threadId)
   const run = getLoopRun(platform, channelId, threadId)
   if (!run) {
     sendJson(res, 200, { ok: true, loop: null })

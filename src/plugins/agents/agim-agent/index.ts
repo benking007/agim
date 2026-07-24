@@ -51,6 +51,11 @@ import {
   loopVerifyFollowUpPrompt,
   loopVerifySteerText,
 } from '../../../core/loop-verify-gate.js'
+import {
+  forceLoopExitSkippedVerify,
+  formatLoopEndedSummary,
+  maybeEnforceLoopExit,
+} from '../../../core/loop-run.js'
 import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
@@ -1530,7 +1535,27 @@ export class NativeAgentAdapter implements AgentAdapter {
     }
     turnSignal.addEventListener('abort', onRunAbort, { once: true })
 
+    // Loop exit: wall clock must truncate even if the model never calls loop_verdict.
+    if (loopScope) {
+      const enforced = maybeEnforceLoopExit(
+        loopScope.platform,
+        loopScope.channelId,
+        loopScope.threadId,
+      )
+      if (enforced.ended && enforced.run) {
+        unsubscribeBeforeStart()
+        unsubscribeBudget()
+        if (timeoutTimer) clearTimeout(timeoutTimer)
+        externalSignal?.removeEventListener('abort', forwardExternalAbort)
+        runController.signal.removeEventListener('abort', onRunAbort)
+        emitOutcome({ status: 'success', providerFailure: false })
+        yield formatLoopEndedSummary(enforced.run)
+        return
+      }
+    }
+
     let result: Awaited<ReturnType<AgentHarness['prompt']>>
+    let loopForcedExitSummary: string | undefined
     try {
       const promptPromise = harness.prompt(prompt)
       // Covers abort between the final pre-check and listener registration.
@@ -1548,6 +1573,27 @@ export class NativeAgentAdapter implements AgentAdapter {
         loopVerifyFollowUpUsed = true
         ephemeralSteer = [ephemeralSteer, loopVerifySteerText()].filter(Boolean).join('\n')
         result = await harness.prompt(loopVerifyFollowUpPrompt())
+      }
+
+      // Still no verdict after forced follow-up → hard-end (do not hang in 待验收).
+      if (loopScope && loopVerifyFollowUpUsed && loopStillNeedsVerdict()) {
+        const forced = forceLoopExitSkippedVerify(
+          loopScope.platform,
+          loopScope.channelId,
+          loopScope.threadId,
+        )
+        if (forced.ended && forced.run) {
+          loopForcedExitSummary = formatLoopEndedSummary(forced.run)
+        }
+      } else if (loopScope) {
+        const wall = maybeEnforceLoopExit(
+          loopScope.platform,
+          loopScope.channelId,
+          loopScope.threadId,
+        )
+        if (wall.ended && wall.run) {
+          loopForcedExitSummary = formatLoopEndedSummary(wall.run)
+        }
       }
     } finally {
       if (timeoutTimer) clearTimeout(timeoutTimer)
@@ -1587,6 +1633,11 @@ export class NativeAgentAdapter implements AgentAdapter {
     const providerFailed = result.stopReason === 'error' && !providerAborted
 
     if (!hasText) {
+      if (loopForcedExitSummary) {
+        emitOutcome({ status: 'success', providerFailure: false })
+        yield loopForcedExitSummary
+        return
+      }
       if (runTimedOut) {
         emitOutcome({ status: 'timeout', providerFailure: false, error: `run timeout ${runTimeoutMs}ms` })
         yield composeRunTimeoutNotice(runTimeoutMs)
@@ -1694,6 +1745,9 @@ export class NativeAgentAdapter implements AgentAdapter {
         })
       }
       emitOutcome({ status: 'success', providerFailure: false })
+    }
+    if (loopForcedExitSummary) {
+      out = `${out.trimEnd()}\n\n---\n\n${loopForcedExitSummary}`
     }
     yield out
   }

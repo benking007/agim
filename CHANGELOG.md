@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop R2 Mission persistence**: `LoopMission` is the loop-store SSOT
+  (partial while ALIGNING); `sessionKey`; optional `acceptance` +
+  parsed `maxWallMs`; `/loop acceptance`; `/loop status` always shows
+  objective + exit (reload-safe via `getMissionView`).
 - **Loop R1 ALIGNING gate**: Loop requires **objective + exit** before
   planning/dispatch. Missing either → `status=aligning`; slash
   `/loop objective|exit|confirm` (or `目标…；退出条件为…` / `退出：…`);

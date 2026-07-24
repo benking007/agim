@@ -7,7 +7,9 @@ import {
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
+  getMissionView,
   parseLoopStartText,
+  setLoopAcceptance,
   setLoopExit,
   setLoopObjective,
   startLoop,
@@ -26,10 +28,11 @@ const HELP = [
   '  `/loop 目标…；退出条件为…`  尽量一次给齐（也可用「退出：…」）',
   '  `/loop` / `/loop start`  Focus 已 on：用 Focus 作文稿，仍须补退出条件',
   '  `/loop start <note>`     Focus 已 on：附带说明启动对焦',
-  '  `/loop objective <text>` 对焦中补目标',
+  '  `/loop objective <text>` 对焦中补目标（可含「；验收：…」）',
   '  `/loop exit <text>`      对焦中补退出条件',
+  '  `/loop acceptance <text>` 可选验收细则（写入 Mission）',
   '  `/loop confirm`          两硬字段齐后确认 → planning',
-  '  `/loop status`           查看状态',
+  '  `/loop status`           查看目标+退出（及验收）',
   '  `/loop stop`             强制结束',
   '  `/loop help`             本帮助',
   '',
@@ -72,6 +75,17 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
     const r = setLoopExit(ctx.platform, ctx.channelId, ctx.threadId, rest)
     if (!r.ok) return mapAlignError(r.error)
     return maybeConfirmOrPrompt(ctx, r.run)
+  }
+
+  if (sub === 'acceptance' || sub === 'accept' || sub === '验收') {
+    if (!rest) return '用法：`/loop acceptance <验收细则>`'
+    const r = setLoopAcceptance(ctx.platform, ctx.channelId, ctx.threadId, rest)
+    if (!r.ok) {
+      if (r.error === 'ended') return 'Loop 已结束，无法再改验收。'
+      return mapAlignError(r.error)
+    }
+    if (r.run.status === 'aligning') return formatAligningPrompt(r.run)
+    return formatLoopStatus(r.run)
   }
 
   if (sub === 'confirm' || sub === 'ok' || sub === '确认') {
@@ -139,9 +153,8 @@ function mapAlignError(error: string): string {
 }
 
 function maybeConfirmOrPrompt(ctx: RouteContext, run: LoopRun): string {
-  const obj = (run.draftObjective || '').trim()
-  const exit = (run.draftExitDescription || '').trim()
-  if (obj && exit) {
+  const view = getMissionView(run)
+  if (view.objective && view.exitDescription) {
     const confirmed = confirmLoopMission(ctx.platform, ctx.channelId, ctx.threadId)
     if (confirmed.ok) return formatConfirmed(confirmed.run)
   }
@@ -200,12 +213,14 @@ function formatConfirmed(run: LoopRun, path?: 'A' | 'B'): string {
       : (run.openedFocus
         ? '结束会 focus off'
         : '结束保留 Focus')
+  const view = getMissionView(run)
   return [
     `✅ Loop 使命已确认 → **planning** \`${run.id.slice(0, 8)}\``,
     pathNote,
-    `**目标**：${run.mission?.objective ?? ''}`,
-    `**退出**：${run.mission?.exit.description ?? ''}`,
-    `Round ${run.round}/${run.maxRounds}`,
+    `**目标**：${view.objective}`,
+    `**退出条件**：${view.exitDescription}`,
+    ...(view.acceptance ? [`**验收**：${view.acceptance}`] : []),
+    `Round ${run.round}/${view.maxRounds}`,
     '',
     '用 `/loop status` 查看；`/loop stop` 结束。',
   ].join('\n')

@@ -3,6 +3,7 @@
 // Persistence: ~/.agim/loops/<threadKey>.json (fail-soft).
 //
 // R1: ALIGNING gate — objective + exit required before planning/dispatch.
+// R2: LoopMission as persisted SSOT (partial while aligning; status shows both hard fields).
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -61,6 +62,8 @@ export interface LoopTimelineEntry {
 
 export interface LoopRun {
   id: string
+  /** Stable store key: platform__channel__thread (also the json basename). */
+  sessionKey: string
   platform: string
   channelId: string
   threadId: string
@@ -69,18 +72,32 @@ export interface LoopRun {
   status: LoopStatus
   endReason?: 'stop_verdict' | 'user_stop' | 'limit' | 'focus_off' | 'error'
   round: number
-  /** Mirror of mission.exit.maxRounds when confirmed; else provisional. */
+  /** Mirror of mission.exit.maxRounds when present; else provisional. */
   maxRounds: number
   startNote?: string
-  /** R1+ mission; null/partial while aligning */
+  /**
+   * Mission SSOT. While ALIGNING may be partial (empty objective and/or
+   * exit.description). After confirm both hard fields are non-empty.
+   */
   mission: LoopMission | null
-  /** Draft fields before confirm */
+  /** Legacy mirrors of mission fields (kept in sync for older readers). */
   draftObjective?: string
   draftExitDescription?: string
   createdAt: number
   updatedAt: number
   lastVerdict?: LoopVerdict
   timeline: LoopTimelineEntry[]
+}
+
+/** Readable mission view for status / snippet / aligning prompts. */
+export interface LoopMissionView {
+  objective: string
+  exitDescription: string
+  acceptance?: string
+  maxRounds: number
+  maxWallMs?: number
+  confirmed: boolean
+  partial: boolean
 }
 
 function threadKey(platform: string, channelId: string, threadId: string): string {
@@ -97,12 +114,94 @@ function ensureDir(): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
 }
 
+function emptyMission(maxRounds: number): LoopMission {
+  return {
+    objective: '',
+    exit: {
+      description: '',
+      maxRounds,
+      onFocusOff: 'cancel',
+    },
+  }
+}
+
+function syncMissionMirrors(run: LoopRun): void {
+  const maxRounds = run.maxRounds || defaultMaxRounds()
+  if (!run.mission) {
+    run.mission = emptyMission(maxRounds)
+  }
+  if (!run.mission.exit) {
+    run.mission.exit = { description: '', maxRounds, onFocusOff: 'cancel' }
+  }
+  // Prefer mission as SSOT; backfill from drafts when mission fields empty
+  if (!run.mission.objective.trim() && run.draftObjective?.trim()) {
+    run.mission.objective = run.draftObjective.trim().slice(0, 500)
+  }
+  if (!run.mission.exit.description.trim() && run.draftExitDescription?.trim()) {
+    run.mission.exit.description = run.draftExitDescription.trim().slice(0, 500)
+  }
+  // Mirror outward for legacy draft readers
+  if (run.mission.objective) run.draftObjective = run.mission.objective
+  if (run.mission.exit.description) run.draftExitDescription = run.mission.exit.description
+  if (run.mission.exit.maxRounds > 0) run.maxRounds = run.mission.exit.maxRounds
+  else run.mission.exit.maxRounds = maxRounds
+  run.mission.exit.onFocusOff = 'cancel'
+}
+
 function normalizeRun(raw: LoopRun): LoopRun {
-  // Migrate pre-R1 rows
+  if (!raw.sessionKey) {
+    raw.sessionKey = threadKey(raw.platform, raw.channelId, raw.threadId)
+  }
   if (raw.mission === undefined) {
     raw.mission = null
   }
+  if (!Array.isArray(raw.timeline)) raw.timeline = []
+  if (!raw.maxRounds || raw.maxRounds < 1) raw.maxRounds = defaultMaxRounds()
+  syncMissionMirrors(raw)
   return raw
+}
+
+/** Always-readable objective + exit (mission first, drafts as fallback). */
+export function getMissionView(run: LoopRun): LoopMissionView {
+  const maxRounds = run.mission?.exit?.maxRounds || run.maxRounds || defaultMaxRounds()
+  const objective = (
+    run.mission?.objective?.trim()
+    || run.draftObjective?.trim()
+    || ''
+  )
+  const exitDescription = (
+    run.mission?.exit?.description?.trim()
+    || run.draftExitDescription?.trim()
+    || ''
+  )
+  const confirmed = run.status !== 'aligning' && !!objective && !!exitDescription
+  return {
+    objective,
+    exitDescription,
+    acceptance: run.mission?.acceptance?.trim() || undefined,
+    maxRounds,
+    maxWallMs: run.mission?.exit?.maxWallMs,
+    confirmed,
+    partial: !confirmed && (!!objective || !!exitDescription),
+  }
+}
+
+/** Status / prompt lines for the two hard fields (+ optional acceptance). */
+export function formatMissionFields(run: LoopRun, opts?: { draftLabel?: boolean }): string[] {
+  const v = getMissionView(run)
+  const draft = opts?.draftLabel && run.status === 'aligning'
+  const objLabel = draft ? (v.objective ? '**目标**（草稿）' : '**目标**') : '**目标**'
+  const exitLabel = draft ? (v.exitDescription ? '**退出条件**（草稿）' : '**退出条件**') : '**退出条件**'
+  const lines = [
+    `${objLabel}：${v.objective || '❌ 未设定'}`,
+    `${exitLabel}：${v.exitDescription || '❌ 未设定'}`,
+  ]
+  if (v.acceptance) lines.push(`**验收**：${v.acceptance}`)
+  if (v.maxWallMs) {
+    const mins = Math.round(v.maxWallMs / 60_000)
+    lines.push(`墙钟上限：${mins >= 60 ? `${Math.round(mins / 60)}h` : `${mins}m`}`)
+  }
+  return lines
 }
 
 function readRun(platform: string, channelId: string, threadId: string): LoopRun | null {
@@ -174,11 +273,54 @@ export function isLoopDispatchAllowed(run: LoopRun): boolean {
   return !!run.mission?.objective && !!run.mission?.exit?.description
 }
 
+/** Parse exit NL for round / wall-clock caps (fail-soft). */
+export function parseExitConstraints(exitDescription: string): {
+  maxRounds?: number
+  maxWallMs?: number
+} {
+  const text = exitDescription.trim()
+  if (!text) return {}
+  let maxRounds: number | undefined
+  const roundsHit = text.match(/最多\s*(\d+)\s*轮/) || text.match(/(\d+)\s*rounds?/i)
+  if (roundsHit) {
+    const n = Number.parseInt(roundsHit[1]!, 10)
+    if (Number.isFinite(n) && n > 0) maxRounds = Math.min(n, 100)
+  }
+
+  let maxWallMs: number | undefined
+  const hoursHit = text.match(/超过\s*(\d+)\s*小时/) || text.match(/(\d+)\s*hours?\b/i)
+  if (hoursHit) {
+    const n = Number.parseInt(hoursHit[1]!, 10)
+    if (Number.isFinite(n) && n > 0) maxWallMs = Math.min(n, 168) * 3_600_000
+  } else {
+    const minsHit = text.match(/超过\s*(\d+)\s*分钟/) || text.match(/(\d+)\s*min(?:ute)?s?\b/i)
+    if (minsHit) {
+      const n = Number.parseInt(minsHit[1]!, 10)
+      if (Number.isFinite(n) && n > 0) maxWallMs = Math.min(n, 10_080) * 60_000
+    }
+  }
+  return { maxRounds, maxWallMs }
+}
+
+function splitAcceptance(objectiveSide: string): { objective: string; acceptance?: string } {
+  const t = objectiveSide.trim()
+  const m =
+    t.match(/^(.*?)[；;，,]\s*验收\s*[：:]\s*(.+)$/s)
+    || t.match(/^(.*?)[；;，,]\s*acceptance\s*[：:]\s*(.+)$/is)
+  if (!m) return { objective: t }
+  return {
+    objective: (m[1] ?? '').trim(),
+    acceptance: (m[2] ?? '').trim().slice(0, 500) || undefined,
+  }
+}
+
 /** Parse `/loop …` payload for objective + exit (NL-friendly). */
 export function parseLoopStartText(text: string): {
   objective: string
   exitDescription: string
+  acceptance?: string
   maxRounds?: number
+  maxWallMs?: number
 } {
   const raw = text.trim()
   if (!raw) return { objective: '', exitDescription: '' }
@@ -189,6 +331,7 @@ export function parseLoopStartText(text: string): {
   // Prefer natural phrases first, then short labels.
   // Examples:
   //   修好登录；退出条件为验收通过或最多5轮
+  //   修好登录；验收：有回归；退出条件为 CI 绿
   //   修好登录，退出条件是 CI 绿
   //   修好登录 退出条件为验收通过
   //   修好登录；退出：验收通过
@@ -209,14 +352,28 @@ export function parseLoopStartText(text: string): {
     .replace(/^(退出条件\s*(?:为|是)|退出|exit\s*conditions?\s*(?:are|is)|exit)\s*[：:]?\s*/i, '')
     .trim()
 
-  let maxRounds: number | undefined
-  const roundsHit = exitDescription.match(/最多\s*(\d+)\s*轮/) || exitDescription.match(/(\d+)\s*rounds?/i)
-  if (roundsHit) {
-    const n = Number.parseInt(roundsHit[1]!, 10)
-    if (Number.isFinite(n) && n > 0) maxRounds = Math.min(n, 100)
-  }
+  const split = splitAcceptance(objective)
+  objective = split.objective
+  const constraints = parseExitConstraints(exitDescription)
 
-  return { objective, exitDescription, maxRounds }
+  return {
+    objective,
+    exitDescription,
+    acceptance: split.acceptance,
+    maxRounds: constraints.maxRounds,
+    maxWallMs: constraints.maxWallMs,
+  }
+}
+
+function applyExitToMission(mission: LoopMission, exitDescription: string, parsed?: {
+  maxRounds?: number
+  maxWallMs?: number
+}): void {
+  const constraints = parsed ?? parseExitConstraints(exitDescription)
+  mission.exit.description = exitDescription.slice(0, 500)
+  if (constraints.maxRounds) mission.exit.maxRounds = constraints.maxRounds
+  if (constraints.maxWallMs) mission.exit.maxWallMs = constraints.maxWallMs
+  else delete mission.exit.maxWallMs
 }
 
 function focusText(
@@ -303,9 +460,20 @@ export function startLoop(input: {
   const maxRounds = parsed.maxRounds ?? defaultMaxRounds()
   const aligned = !!objective && !!exitDescription
 
+  const mission = emptyMission(maxRounds)
+  mission.objective = objective
+  if (parsed.acceptance) mission.acceptance = parsed.acceptance
+  if (exitDescription) {
+    applyExitToMission(mission, exitDescription, {
+      maxRounds: parsed.maxRounds,
+      maxWallMs: parsed.maxWallMs,
+    })
+  }
+
   const now = Date.now()
   const run: LoopRun = {
     id: randomUUID(),
+    sessionKey: threadKey(input.platform, input.channelId, input.threadId),
     platform: input.platform,
     channelId: input.channelId,
     threadId: input.threadId,
@@ -313,24 +481,16 @@ export function startLoop(input: {
     openedFocus,
     status: aligned ? 'planning' : 'aligning',
     round: aligned ? 1 : 0,
-    maxRounds,
+    maxRounds: mission.exit.maxRounds,
     startNote,
-    mission: aligned
-      ? {
-          objective,
-          exit: {
-            description: exitDescription,
-            maxRounds,
-            onFocusOff: 'cancel',
-          },
-        }
-      : null,
+    mission,
     draftObjective: objective || undefined,
     draftExitDescription: exitDescription || undefined,
     createdAt: now,
     updatedAt: now,
     timeline: [],
   }
+  syncMissionMirrors(run)
   pushTimeline(
     run,
     'user',
@@ -354,9 +514,14 @@ export function setLoopObjective(
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return { ok: false, error: 'no_active_loop' }
   if (run.status !== 'aligning') return { ok: false, error: 'not_aligning' }
-  const text = objective.trim().slice(0, 500)
+  const split = splitAcceptance(objective.trim())
+  const text = split.objective.slice(0, 500)
   if (!text) return { ok: false, error: 'empty' }
+  if (!run.mission) run.mission = emptyMission(run.maxRounds || defaultMaxRounds())
+  run.mission.objective = text
+  if (split.acceptance) run.mission.acceptance = split.acceptance
   run.draftObjective = text
+  syncMissionMirrors(run)
   run.updatedAt = Date.now()
   pushTimeline(run, 'user', `draft objective: ${text.slice(0, 120)}`)
   writeRun(run)
@@ -374,11 +539,34 @@ export function setLoopExit(
   if (run.status !== 'aligning') return { ok: false, error: 'not_aligning' }
   const text = exitDescription.trim().slice(0, 500)
   if (!text) return { ok: false, error: 'empty' }
+  if (!run.mission) run.mission = emptyMission(run.maxRounds || defaultMaxRounds())
+  applyExitToMission(run.mission, text)
   run.draftExitDescription = text
-  const parsed = parseLoopStartText(`x；退出：${text}`)
-  if (parsed.maxRounds) run.maxRounds = parsed.maxRounds
+  run.maxRounds = run.mission.exit.maxRounds
+  syncMissionMirrors(run)
   run.updatedAt = Date.now()
   pushTimeline(run, 'user', `draft exit: ${text.slice(0, 120)}`)
+  writeRun(run)
+  return { ok: true, run }
+}
+
+export function setLoopAcceptance(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  acceptance: string,
+): { ok: true; run: LoopRun } | { ok: false; error: string } {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return { ok: false, error: 'no_active_loop' }
+  // Allowed during aligning or after confirm (refine acceptance)
+  if (run.status === 'ended') return { ok: false, error: 'ended' }
+  const text = acceptance.trim().slice(0, 500)
+  if (!text) return { ok: false, error: 'empty' }
+  if (!run.mission) run.mission = emptyMission(run.maxRounds || defaultMaxRounds())
+  run.mission.acceptance = text
+  syncMissionMirrors(run)
+  run.updatedAt = Date.now()
+  pushTimeline(run, 'user', `acceptance: ${text.slice(0, 120)}`)
   writeRun(run)
   return { ok: true, run }
 }
@@ -392,24 +580,20 @@ export function confirmLoopMission(
   if (!run) return { ok: false, error: 'no_active_loop' }
   if (run.status !== 'aligning') return { ok: false, error: 'not_aligning' }
 
-  const objective = (run.draftObjective || '').trim()
-  const exitDescription = (run.draftExitDescription || '').trim()
-  if (!objective || !exitDescription) {
+  syncMissionMirrors(run)
+  const view = getMissionView(run)
+  if (!view.objective || !view.exitDescription) {
     return { ok: false, error: 'incomplete' }
   }
 
-  const maxRounds = run.maxRounds || defaultMaxRounds()
-  run.mission = {
-    objective,
-    exit: {
-      description: exitDescription,
-      maxRounds,
-      onFocusOff: 'cancel',
-    },
-  }
-  run.maxRounds = maxRounds
+  if (!run.mission) run.mission = emptyMission(view.maxRounds)
+  run.mission.objective = view.objective
+  applyExitToMission(run.mission, view.exitDescription)
+  if (view.acceptance) run.mission.acceptance = view.acceptance
+  run.maxRounds = run.mission.exit.maxRounds
   run.status = 'planning'
   run.round = 1
+  syncMissionMirrors(run)
   run.updatedAt = Date.now()
   pushTimeline(run, 'system', 'mission confirmed → planning')
   writeRun(run)
@@ -514,10 +698,12 @@ export function buildLoopSnippet(
   const lines: string[] = []
   lines.push(`[agim context — loop ACTIVE #${run.id.slice(0, 8)} status=${run.status}]`)
 
+  const view = getMissionView(run)
   if (run.status === 'aligning') {
     lines.push('Phase: ALIGNING (hard gate — do NOT call call_agent / call_agents / loop_verdict yet).')
-    lines.push(`Draft objective: ${run.draftObjective || '(missing)'}`)
-    lines.push(`Draft exit: ${run.draftExitDescription || '(missing)'}`)
+    lines.push(`Objective: ${view.objective || '(missing)'}`)
+    lines.push(`Exit: ${view.exitDescription || '(missing)'}`)
+    if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
     lines.push(
       'Ask the user (mcp__agim__ask_user) to confirm BOTH objective and exit condition. '
       + 'Suggest they can also reply with `/loop objective …` / `/loop exit …` then `/loop confirm`.',
@@ -526,11 +712,10 @@ export function buildLoopSnippet(
     return lines.join('\n')
   }
 
-  lines.push(`Round: ${run.round}/${run.maxRounds}`)
-  if (run.mission) {
-    lines.push(`Objective: ${run.mission.objective}`)
-    lines.push(`Exit: ${run.mission.exit.description}`)
-  }
+  lines.push(`Round: ${run.round}/${view.maxRounds}`)
+  lines.push(`Objective: ${view.objective}`)
+  lines.push(`Exit: ${view.exitDescription}`)
+  if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
   if (run.startNote) lines.push(`Start note: ${run.startNote}`)
   if (run.lastVerdict) {
     lines.push(`Last verdict: ${run.lastVerdict.decision} — ${run.lastVerdict.summary}`)
@@ -545,22 +730,20 @@ export function buildLoopSnippet(
 }
 
 export function formatAligningPrompt(run: LoopRun): string {
-  const obj = run.draftObjective?.trim() || ''
-  const exit = run.draftExitDescription?.trim() || ''
+  const view = getMissionView(run)
   const lines = [
     `🧭 Loop \`${run.id.slice(0, 8)}\` 进入 **对焦（ALIGNING）** — 确认前不会派子代理。`,
     '',
-    `**目标**：${obj || '❌ 未设定'}`,
-    `**退出条件**：${exit || '❌ 未设定'}`,
+    ...formatMissionFields(run, { draftLabel: true }),
     '',
   ]
-  if (!obj) {
+  if (!view.objective) {
     lines.push('请补充目标，例如：`/loop objective 完成登录超时修复并通过回归`')
   }
-  if (!exit) {
+  if (!view.exitDescription) {
     lines.push('请补充退出条件，例如：`/loop exit 验收通过，或最多 5 轮`')
   }
-  if (obj && exit) {
+  if (view.objective && view.exitDescription) {
     lines.push('两项草稿已齐，确认后开始：`/loop confirm`')
   } else {
     lines.push('也可一次写齐：`/loop 目标描述；退出条件为验收通过或最多5轮`（会新开 Loop，请先 `/loop stop` 当前对焦若需重来）')
@@ -571,18 +754,14 @@ export function formatAligningPrompt(run: LoopRun): string {
 
 export function formatLoopStatus(run: LoopRun): string {
   const active = run.status !== 'ended'
+  const view = getMissionView(run)
   const lines = [
     `🔁 Loop \`${run.id.slice(0, 8)}\` — ${active ? run.status : `ended (${run.endReason ?? 'done'})`}`,
-    `Round: ${run.round}/${run.maxRounds}`,
+    `session: \`${run.sessionKey || threadKey(run.platform, run.channelId, run.threadId)}\``,
+    `Round: ${run.round}/${view.maxRounds}`,
     `openedFocus: ${run.openedFocus ? 'yes（结束会 focus off）' : 'no（结束保留 focus）'}`,
+    ...formatMissionFields(run, { draftLabel: run.status === 'aligning' }),
   ]
-  if (run.mission) {
-    lines.push(`**目标**：${run.mission.objective}`)
-    lines.push(`**退出**：${run.mission.exit.description}`)
-  } else {
-    lines.push(`草稿目标：${run.draftObjective || '（无）'}`)
-    lines.push(`草稿退出：${run.draftExitDescription || '（无）'}`)
-  }
   lines.push(
     `Focus snapshot: ${run.focusSnapshot.slice(0, 200)}${run.focusSnapshot.length > 200 ? '…' : ''}`,
   )

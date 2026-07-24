@@ -9,8 +9,13 @@ import {
   buildLoopSnippet,
   cancelLoopForFocusOff,
   confirmLoopMission,
+  formatLoopStatus,
   getActiveLoop,
+  getLoopRun,
+  getMissionView,
+  parseExitConstraints,
   parseLoopStartText,
+  setLoopAcceptance,
   setLoopExit,
   setLoopObjective,
   startLoop,
@@ -61,6 +66,77 @@ describe('parseLoopStartText', () => {
     const p = parseLoopStartText('目标：发版；退出：CI 绿')
     expect(p.objective).toBe('发版')
     expect(p.exitDescription).toBe('CI 绿')
+  })
+
+  it('parses acceptance + wall clock from NL', () => {
+    const p = parseLoopStartText('修好登录；验收：补回归；退出条件为验收通过或最多3轮或超过2小时')
+    expect(p.objective).toBe('修好登录')
+    expect(p.acceptance).toBe('补回归')
+    expect(p.exitDescription).toContain('验收通过')
+    expect(p.maxRounds).toBe(3)
+    expect(p.maxWallMs).toBe(2 * 3_600_000)
+  })
+
+  it('parseExitConstraints minutes', () => {
+    const c = parseExitConstraints('卡住就停，超过 45 分钟')
+    expect(c.maxWallMs).toBe(45 * 60_000)
+  })
+})
+
+describe('loop-run R2 Mission persist', () => {
+  it('partial mission while aligning survives disk reload; status shows both hard fields', () => {
+    reset()
+    const threadId = 'loop-r2-partial'
+    const focus = setFocus({ ...base, threadId, title: 'Ship v2' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({ ...base, threadId })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    expect(started.run.status).toBe('aligning')
+    expect(started.run.sessionKey).toContain('loop-r2-partial')
+    expect(started.run.mission?.objective).toContain('Ship v2')
+
+    setLoopExit(base.platform, base.channelId, threadId, 'CI 绿，最多 4 轮')
+    const reloaded = getLoopRun(base.platform, base.channelId, threadId)
+    expect(reloaded).toBeTruthy()
+    if (!reloaded) return
+    const view = getMissionView(reloaded)
+    expect(view.objective).toContain('Ship v2')
+    expect(view.exitDescription).toContain('CI 绿')
+    expect(view.maxRounds).toBe(4)
+    expect(view.confirmed).toBe(false)
+
+    const status = formatLoopStatus(reloaded)
+    expect(status).toContain('Ship v2')
+    expect(status).toContain('CI 绿')
+    expect(status).toContain('**目标**')
+    expect(status).toContain('**退出条件**')
+  })
+
+  it('confirmed mission + acceptance round-trips; status readable after reload', () => {
+    reset()
+    const threadId = 'loop-r2-confirm'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好超时；验收：有单测；退出条件为验收通过或最多3轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.aligned).toBe(true)
+    expect(started.run.mission?.acceptance).toBe('有单测')
+    expect(started.run.mission?.exit.maxRounds).toBe(3)
+
+    setLoopAcceptance(base.platform, base.channelId, threadId, '单测 + 手工点一次登录')
+    const reloaded = getLoopRun(base.platform, base.channelId, threadId)
+    expect(reloaded?.status).toBe('planning')
+    const status = formatLoopStatus(reloaded!)
+    expect(status).toContain('修好超时')
+    expect(status).toContain('验收通过')
+    expect(status).toContain('单测 + 手工点一次登录')
+    expect(getMissionView(reloaded!).confirmed).toBe(true)
   })
 })
 

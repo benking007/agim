@@ -340,7 +340,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 **结案详细报告**（`POST /api/loop/generate-report` / `loop-report.ts`）：
 
 - 触发：Portal「确认结束」之后的底栏询问（不挡结案摘要本身）。
-- 内容：确定性拼装各子代理输出（优先读 `__a2a_result_full.md`），**不再调 LLM**。
+- 内容：确定性拼装**本 Loop**各轮子代理输出（`loopJobIds`；优先读 `__a2a_result_full.md`），**不再调 LLM**；不含同线程历史 Loop / 零散 `call_agent`。
 - 落盘：默认 **`<agim-cwd>/PROJECTS/loops/<sessionKey>-<loopId>.md`**  
   （通常即 `~/.agim-workspaces/agim/PROJECTS/loops/`，与工作区 `PROJECTS/` 主题档案同树）。
 - 聊天：报告正文（过长则截断）+ 绝对路径；Agent 可用 `read` / 相对路径 `PROJECTS/loops/…` 再读全文。

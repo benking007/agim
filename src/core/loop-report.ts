@@ -58,18 +58,53 @@ export function readJobResultBody(job: Job): string {
   return job.result || job.error || ''
 }
 
-function collectChildJobs(run: LoopRun): Job[] {
-  const threadKey = jobThreadKey(run.platform, run.channelId, run.threadId)
-  const byThread = listChildJobsByThread(threadKey, { limit: 40 })
-  if (byThread.length > 0) return byThread
-  // Fallback: last-round ids still on the ended run.
-  const ids = Array.isArray(run.roundJobIds) ? run.roundJobIds : []
+/** Soft upper bound after Loop end for late-completing Subagents (legacy filter). */
+const LOOP_WINDOW_TAIL_MS = 5 * 60_000
+
+/**
+ * Keep only jobs whose create time falls inside this Loop's lifetime.
+ * Used when older persisted runs lack `loopJobIds`.
+ */
+export function filterJobsByLoopWindow(jobs: Job[], run: LoopRun): Job[] {
+  const start = Number(run.createdAt) || 0
+  const end = (Number(run.updatedAt) || start) + LOOP_WINDOW_TAIL_MS
+  if (start <= 0) return []
+  return jobs.filter((j) => {
+    const t = Date.parse(j.created_at || '')
+    return Number.isFinite(t) && t >= start && t <= end
+  })
+}
+
+function jobsFromIds(ids: number[]): Job[] {
   const out: Job[] = []
+  const seen = new Set<number>()
   for (const id of ids) {
+    if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue
+    seen.add(id)
     const j = getJob(id)
     if (j) out.push(j)
   }
   return out
+}
+
+/**
+ * Subagent jobs that belong to **this Loop only** — not historical A2A on
+ * the same thread from earlier Loops or ad-hoc call_agent.
+ *
+ * Prefer cumulative `loopJobIds`; fall back to time-window filter on the
+ * thread list; last resort is the final round's `roundJobIds`.
+ */
+export function collectChildJobs(run: LoopRun): Job[] {
+  const loopIds = Array.isArray(run.loopJobIds) ? run.loopJobIds : []
+  if (loopIds.length > 0) return jobsFromIds(loopIds)
+
+  const threadKey = jobThreadKey(run.platform, run.channelId, run.threadId)
+  const byThread = listChildJobsByThread(threadKey, { limit: 80 })
+  const inWindow = filterJobsByLoopWindow(byThread, run)
+  if (inWindow.length > 0) return inWindow
+
+  const roundIds = Array.isArray(run.roundJobIds) ? run.roundJobIds : []
+  return jobsFromIds(roundIds)
 }
 
 export function countLoopChildJobs(
@@ -78,9 +113,7 @@ export function countLoopChildJobs(
   threadId: string,
 ): number {
   const run = getLoopRun(platform, channelId, threadId)
-  if (!run) {
-    return listChildJobsByThread(jobThreadKey(platform, channelId, threadId), { limit: 40 }).length
-  }
+  if (!run) return 0
   return collectChildJobs(run).length
 }
 
@@ -107,7 +140,7 @@ export function buildLoopDetailReport(run: LoopRun, jobs: Job[]): string {
   ]
 
   if (jobs.length === 0) {
-    lines.push('_本线程未找到子代理任务记录；报告仅含 Loop 摘要。_')
+    lines.push('_本 Loop 未找到子代理任务记录；报告仅含 Loop 摘要。_')
     lines.push('')
     return lines.join('\n')
   }

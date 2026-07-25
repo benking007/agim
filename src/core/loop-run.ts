@@ -124,6 +124,12 @@ export interface LoopRun {
    * Round-scoped live wait uses these — not all thread jobs forever.
    */
   roundJobIds: number[]
+  /**
+   * Cumulative Subagent job ids across **all rounds of this Loop**.
+   * Used by post-end detail reports so prior Loops on the same thread
+   * are not mixed in. Cleared only when a new Loop starts (new run).
+   */
+  loopJobIds: number[]
   /** R3: last decompose plan recorded from call_agents (or synthetic single). */
   lastPlan?: {
     at: number
@@ -404,6 +410,15 @@ function normalizeRun(raw: LoopRun): LoopRun {
       .filter((id) => Number.isFinite(id) && id > 0)
       .slice(-64)
   }
+  if (!Array.isArray(raw.loopJobIds)) {
+    // Backfill from last-round ids when upgrading older persisted runs.
+    raw.loopJobIds = raw.roundJobIds.length > 0 ? [...raw.roundJobIds] : []
+  } else {
+    raw.loopJobIds = raw.loopJobIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .slice(-128)
+  }
   if (!raw.usage || typeof raw.usage !== 'object') {
     raw.usage = emptyLoopUsage()
   } else {
@@ -614,6 +629,11 @@ export function noteLoopRoundJob(
   if (!run.roundJobIds.includes(jobId)) {
     run.roundJobIds.push(jobId)
     if (run.roundJobIds.length > 64) run.roundJobIds = run.roundJobIds.slice(-64)
+  }
+  if (!Array.isArray(run.loopJobIds)) run.loopJobIds = []
+  if (!run.loopJobIds.includes(jobId)) {
+    run.loopJobIds.push(jobId)
+    if (run.loopJobIds.length > 128) run.loopJobIds = run.loopJobIds.slice(-128)
   }
   run.updatedAt = Date.now()
   writeRun(run)
@@ -992,6 +1012,7 @@ export function startLoop(input: {
     draftExitDescription: exitDescription || undefined,
     dispatchesThisRound: 0,
     roundJobIds: [],
+    loopJobIds: [],
     usage: emptyLoopUsage(),
     createdAt: now,
     updatedAt: now,

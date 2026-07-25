@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   buildLoopDetailReport,
+  filterJobsByLoopWindow,
   generateLoopDetailReport,
   resolveLoopReportsDir,
 } from './loop-report.js'
@@ -31,6 +32,7 @@ function makeRun(overrides: Partial<LoopRun> = {}): LoopRun {
     },
     dispatchesThisRound: 0,
     roundJobIds: [],
+    loopJobIds: [],
     usage: emptyLoopUsage(),
     createdAt: Date.now() - 60_000,
     updatedAt: Date.now(),
@@ -140,5 +142,16 @@ describe('loop-report', () => {
       else process.env.AGIM_WORKSPACES_ROOT = prevWs
       process.env.AGIM_LOOP_REPORTS_DIR = join(tmp, 'reports')
     }
+  })
+
+  it('filterJobsByLoopWindow excludes jobs from earlier Loops on same thread', () => {
+    const now = Date.now()
+    const run = makeRun({ createdAt: now - 30_000, updatedAt: now })
+    const kept = makeJob(20, 'this loop')
+    kept.created_at = new Date(now - 10_000).toISOString()
+    const older = makeJob(19, 'previous loop')
+    older.created_at = new Date(now - 120_000).toISOString()
+    const filtered = filterJobsByLoopWindow([older, kept], run)
+    expect(filtered.map((j) => j.id)).toEqual([20])
   })
 })

@@ -28,6 +28,7 @@ function baseRun(over: Partial<LoopRun> = {}): LoopRun {
     },
     dispatchesThisRound: 0,
     roundJobIds: [],
+    loopJobIds: [],
     usage: emptyLoopUsage(),
     createdAt: Date.now(),
     updatedAt: Date.now(),

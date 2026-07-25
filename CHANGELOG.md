@@ -71,8 +71,9 @@ All notable changes to this project will be documented in this file.
   Agree → `POST /api/loop/generate-report` writes
   `<agim-cwd>/PROJECTS/loops/<thread>-<loopId>.md` (default
   `~/.agim-workspaces/agim/PROJECTS/loops/`) and posts the markdown into
-  chat; dismiss closes the dock. Deterministic assemble (no extra LLM).
-  Override path with `AGIM_LOOP_REPORTS_DIR`.
+  chat; dismiss closes the dock. Deterministic assemble (no extra LLM),
+  scoped to **this Loop's** `loopJobIds` (not all historical Subagents on
+  the thread). Override path with `AGIM_LOOP_REPORTS_DIR`.
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate
   allows `mcp__agim__ask_user` for uncertain / anomalous results; user
   reply then continues to `loop_verdict`. Pending asks defer VERIFY

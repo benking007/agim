@@ -2,11 +2,13 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
+  formatLoopEndedSummary,
   getLoopRun,
   maybeEnforceLoopExit,
   resolveLoopMetConfirm,
   toLoopStatusDto,
 } from '../core/loop-run.js'
+import { sessionManager } from '../core/session.js'
 import { readBody, sendJson } from './http-utils.js'
 
 /**
@@ -87,5 +89,28 @@ async function handleConfirmMet(req: IncomingMessage, res: ServerResponse): Prom
     sendJson(res, 409, { ok: false, error: r.error })
     return
   }
-  sendJson(res, 200, { ok: true, loop: toLoopStatusDto(r.run, lang) })
+
+  // After the user confirms end: post the Loop ended summary into chat.
+  // During pending_user_confirm the parent must NOT dump the full conclusion
+  // early — the dock owns the preview; the durable summary lands here.
+  let endedSummary: string | undefined
+  if (action === 'end' && r.run.status === 'ended') {
+    endedSummary = formatLoopEndedSummary(r.run)
+    try {
+      await sessionManager.addMessage(platform, channelId, threadId, {
+        role: 'assistant',
+        content: endedSummary,
+        agent: 'agim',
+        timestamp: new Date(),
+      })
+    } catch {
+      /* best-effort — dock already showed the claim summary */
+    }
+  }
+
+  sendJson(res, 200, {
+    ok: true,
+    loop: toLoopStatusDto(r.run, lang),
+    ...(endedSummary ? { endedSummary } : {}),
+  })
 }

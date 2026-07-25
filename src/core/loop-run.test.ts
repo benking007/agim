@@ -461,6 +461,10 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(stop.run.lastVerification?.met).toBe(true)
     expect(formatLoopStatus(stop.run)).toContain('待用户确认结案')
 
+    const snippet = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snippet).toMatch(/PENDING_USER_CONFIRM|NOT ended/i)
+    expect(snippet).toMatch(/do NOT dump the full conclusion|核心结论/i)
+
     const ended = resolveLoopMetConfirm(base.platform, base.channelId, threadId, {
       action: 'end',
       supplement: '同意结案',

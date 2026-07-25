@@ -1385,9 +1385,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           const notes: string[] = []
           if (r.run.status === 'pending_user_confirm') {
             notes.push(
-              'met=true accepted — wait for the user to confirm End/Continue '
-              + 'in the Portal dock. Do not call more tools; briefly tell the '
-              + 'user the conclusion is ready for their confirmation.',
+              'met=true accepted — Loop is PENDING_USER_CONFIRM (NOT ended). '
+              + 'HARD: do NOT write the full conclusion, core findings, tables, '
+              + 'investment advice, or end-of-loop report in chat yet. '
+              + 'Reply with ONE short sentence only, e.g. '
+              + '「结论已提交，请在底部浮窗选择确认结束或继续下一轮」. '
+              + 'The Portal dock already shows the summary; the Loop ends only '
+              + 'after the user clicks 确认结束 (then an ended summary is posted).',
             )
           }
           if (advancedRound) {

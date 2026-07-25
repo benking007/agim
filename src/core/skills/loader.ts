@@ -360,31 +360,32 @@ export function readSkillBody(name: string): string | null {
  * default-32 injection so the agent has the harness vocabulary front
  * of mind without burying it under alphabet order.
  *
- * Selection: 11 agent-harness skills + 9 cross-language methodology
- * skills. Excludes framework / language / industry specialties and
- * ECC-internal tooling. (django / kotlin / healthcare / content-engine /
- * security-review packs were pruned from the shipped builtin set.)
+ * Selection: the full curated ECC pack shipped with agim (26 skills).
+ * Everything else from the upstream ECC import was pruned; these names
+ * are both the installed set and the injection top-picks.
  *
  * Add / remove freely — this is a curated list, not a registry.
  */
 const ECC_TOP_PICKS_DEFAULT: ReadonlySet<string> = new Set([
-  // Agent harness engineering (11)
+  // Agent harness / eval / loops
   'agentic-engineering', 'agent-eval', 'agent-introspection-debugging',
   'agent-harness-construction', 'autonomous-agent-harness', 'autonomous-loops',
   'continuous-learning-v2', 'verification-loop', 'prompt-optimizer',
-  'cost-aware-llm-pipeline', 'context-budget',
-  // Cross-language methodology + content (9)
+  'cost-aware-llm-pipeline', 'context-budget', 'team-agent-orchestration',
+  // Methodology / product / security / content
   'blueprint', 'coding-standards', 'architecture-decision-records',
-  'backend-patterns', 'tdd-workflow', 'security-scan', 'benchmark',
-  'article-writing', 'api-design',
+  'backend-patterns', 'api-design', 'tdd-workflow', 'benchmark',
+  'code-tour', 'product-capability', 'product-lens',
+  'regex-vs-llm-structured-text', 'article-writing',
+  'security-scan', 'security-bounty-hunter',
 ])
 
 /**
  * v1.2.151 — Resolve the active ECC top-pick set. Operators can override
  * via `AGIM_SKILLS_ECC_PICKS=name1,name2,...`. An empty or unset value
- * falls back to the default 20-name list. Validation is intentionally
- * forgiving: unknown names pass through (they just become no-ops when
- * the named skill isn't installed).
+ * falls back to the default 26-name curated pack. Validation is
+ * intentionally forgiving: unknown names pass through (they just become
+ * no-ops when the named skill isn't installed).
  */
 export function resolveEccTopPicks(): ReadonlySet<string> {
   const raw = (process.env.AGIM_SKILLS_ECC_PICKS || '').trim()

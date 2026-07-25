@@ -37,7 +37,7 @@ Examples:
 | A one-off explanation in chat is enough | answer directly |
 | The user wants prose docs, not a `.tour` artifact | `documentation-lookup` or repo docs editing |
 | The task is implementation or refactoring | do the implementation work |
-| The task is broad codebase onboarding without a tour artifact | `codebase-onboarding` |
+| The task is broad codebase onboarding without a tour artifact | `code-tour` |
 
 ## Workflow
 
@@ -230,7 +230,7 @@ The tour should feel like a path, not an inventory.
 
 ## Related Skills
 
-- `codebase-onboarding`
+- `code-tour`
 - `coding-standards`
 - `council`
 - official upstream format: `microsoft/codetour`

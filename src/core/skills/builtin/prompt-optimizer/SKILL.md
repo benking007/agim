@@ -38,7 +38,7 @@ and output a complete optimized prompt the user can paste and run.
 
 - User wants the task done directly (just execute it)
 - User says "优化代码", "优化性能", "optimize this code", "optimize performance" — these are refactoring tasks, not prompt optimization
-- User is asking about ECC configuration (use `configure-ecc` instead)
+- User is asking about ECC configuration (use `agim-skill-discovery` instead)
 - User wants a skill inventory (use `agim-skill-discovery` instead)
 - User says "just do it" or "直接做"
 
@@ -388,9 +388,9 @@ Recommended: Opus 4.6 for blueprint planning, Sonnet 4.6 for phase execution.
 
 | Component | When to Reference |
 |-----------|------------------|
-| `configure-ecc` | User hasn't set up ECC yet |
+| `agim-skill-discovery` | User hasn't set up ECC yet |
 | `agim-skill-discovery` | Discover installed / available skills instead of a hardcoded catalog |
-| `search-first` | Research phase in optimized prompts |
+| `blueprint` | Research phase in optimized prompts |
 | `blueprint` | EPIC-scope optimized prompts (invoke as skill, not command) |
-| `strategic-compact` | Long session context management |
+| `context-budget` | Long session context management |
 | `cost-aware-llm-pipeline` | Token optimization recommendations |

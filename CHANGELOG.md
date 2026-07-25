@@ -6,15 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Prune unused builtin skills (59)**: drop framework/language/industry
-  specialty packs rarely used in the default Agim surface
-  (`django-*`, `frontend-*`, `healthcare-*`, `kotlin-*`, `laravel-*`,
-  `motion-*`, `network-*`, `orch-*`, `perl-*`, `quarkus-*`, `react-*`,
-  `springboot-*`, `swift-*`, plus `security-review`, `content-engine`,
-  `openclaw-persona-forge`, `skill-comply`/`scout`/`stocktake`). Keep
-  `skill-creator`, `security-scan`, `security-bounty-hunter`. ECC top-pick
-  list swaps `security-review`→`security-scan`, `content-engine`→
-  `api-design`, and the missing `code-review` stub→`backend-patterns`.
+- **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
+  harness/methodology/product/security set (`agent-*`, `autonomous-*`,
+  `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,
+  `security-scan`, `security-bounty-hunter`, `product-*`, `code-tour`, …).
+  Delete the remaining ECC specialty packs plus gray-zone community ports
+  (`click-path-audit`, `flox-environments`, `plankton-code-quality`,
+  `santa-method`). Agim-native builtins (12) stay. Builtin total **38**.
+  `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
 

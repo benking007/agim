@@ -56,6 +56,8 @@
 - API：`GET/PUT /api/policy/auto-approve`（**任意已登录** token，含 Portal QR；热写 `~/.agim/env` + `process.env`）
 - 与 Settings → Policy 同源；任一侧改动会互相刷新
 - **不**影响子代理：子代理始终代审免卡（见 [`architecture/subagent.md`](./architecture/subagent.md) §7.2）
+- **bwrap 沙箱开**：沙箱内 `agim_exec` 走全局自动放行
+- **bwrap 缺失/off + 目标进行中**：无隔离 `agim_exec` 的 pinnable 显式卡在「替我审批」有效时**同样自动放行**；关闭时仍可「本类自动放行」。`plan-exit` / `complete_goal` 仍需人工确认
 - 接开放 IM 且无严格 allowlist 时，环境层仍可能抑制 effective auto-approve（`AGIM_AUTO_APPROVE_OPEN_IM`）
 
 ### `@` — Workspace 与文件

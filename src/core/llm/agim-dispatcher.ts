@@ -43,6 +43,7 @@ import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
 import { callAgentByName } from '../a2a.js'
+import { shouldClearCallAgentHistoryForLoopRound } from '../loop-call-agent-cap.js'
 import { resolveSubagentSpawn } from '../subagent.js'
 import {
   buildCallAgentToolDescription,
@@ -674,19 +675,68 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
   // already asked claude-code, it returned OK; don't ask it again".
   const callAgentHistory: SubAgentCall[] = []
 
-  function capExceededError(requested: number): string {
+  function capExceededError(requested: number, loopHint?: string): string {
     const summary = callAgentHistory
       .map((h, i) => `  ${i + 1}. ${h.agent} ${h.ok ? '✓' : '✗'}: "${h.promptHead}…"`)
       .join('\n')
-    return (
+    const base =
       `call_agent refused: you have already delegated ${callAgentHistory.length} time(s) this turn `
       + `(cap=${callAgentMaxPerTurn}`
       + (requested > 1 ? `; this batch wanted +${requested}` : '')
       + `). Prior delegations:\n${summary || '  (none)'}\n\n`
+    if (loopHint) return base + loopHint
+    return (
+      base
       + `Use your own tools (agim_read_file, agim_grep, agim_list_dir, mcp__agim__* …) to `
       + `finish with what you already gathered, shrink the batch, or ask the user to switch `
       + `agents explicitly (/cc, /oc, …) — don't keep chaining call_agent / call_agents.`
     )
+  }
+
+  /** Belt-and-suspenders: new Loop round must not inherit R1 turn history. */
+  async function maybeClearCallAgentCapForLoopRound(): Promise<boolean> {
+    try {
+      const { getActiveLoop } = await import('../loop-run.js')
+      const run = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+      if (!shouldClearCallAgentHistoryForLoopRound(run)) return false
+      if (callAgentHistory.length === 0) return false
+      log.info({
+        event: 'native.call_agent.cap_reset_loop_round',
+        threadId: ctx.threadId,
+        cleared: callAgentHistory.length,
+        round: run?.round,
+        status: run?.status,
+      }, 'cleared per-turn call_agent history for new Loop round (dispatch-gate deadlock guard)')
+      callAgentHistory.length = 0
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function loopCapExceededHint(): Promise<string | undefined> {
+    try {
+      const { getActiveLoop } = await import('../loop-run.js')
+      const run = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+      if (!run || run.status === 'ended' || run.status === 'aligning') return undefined
+      if ((run.dispatchesThisRound || 0) >= 1) {
+        return (
+          'Active Loop: this round already dispatched — do NOT research yourself '
+          + '(dispatch/wait gates). Wait (agim_sleep_ms / agim_now) until live Subagents '
+          + 'finish, then mcp__agim__loop_verdict. decision=continue|revise resets the '
+          + 'per-turn call_agent cap so the next round can dispatch again.'
+        )
+      }
+      return (
+        'Active Loop: per-turn call_agent cap is exhausted and this round still has '
+        + '0 dispatches. Prefer mcp__agim__loop_verdict decision=continue|revise '
+        + '(resets cap) or decision=stop met=false to exit and finish outside the Loop. '
+        + 'Do NOT fall back to parent web_search/exec — loop-dispatch-gate will refuse '
+        + 'that and deadlock. Shrink the next batch, or set AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN=0.'
+      )
+    } catch {
+      return undefined
+    }
   }
 
   type SpawnOk = Extract<ReturnType<typeof resolveSubagentSpawn>, { ok: true }>
@@ -834,6 +884,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agent')
             if (gate) return err(gate)
           }
+          await maybeClearCallAgentCapForLoopRound()
           const agentName = typeof args.agent === 'string' ? args.agent : ''
           const prompt = typeof args.prompt === 'string' ? args.prompt : ''
           if (!agentName || !prompt) {
@@ -873,7 +924,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               history: callAgentHistory,
               threadId: ctx.threadId,
             }, `call_agent cap exceeded (${callAgentHistory.length}/${callAgentMaxPerTurn}) — refusing further delegation`)
-            return err(capExceededError(1))
+            return err(capExceededError(1, await loopCapExceededHint()))
           }
           const promptHead = prompt.slice(0, 60).replace(/\s+/g, ' ')
           log.info({
@@ -929,6 +980,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agents')
             if (gate) return err(gate)
           }
+          await maybeClearCallAgentCapForLoopRound()
           const rawTasks = Array.isArray(args.tasks) ? args.tasks : null
           if (!rawTasks || rawTasks.length === 0) {
             return err('call_agents requires a non-empty `tasks` array.')
@@ -980,7 +1032,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               history: callAgentHistory,
               threadId: ctx.threadId,
             }, `call_agents cap exceeded (${callAgentHistory.length}+${tasks.length}/${callAgentMaxPerTurn})`)
-            return err(capExceededError(tasks.length))
+            return err(capExceededError(tasks.length, await loopCapExceededHint()))
           }
 
           const prepared: Array<{

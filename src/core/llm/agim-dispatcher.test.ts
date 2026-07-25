@@ -8,7 +8,11 @@
 //     return an `isError: true` with `source: 'agim'` — the agent
 //     loop will surface the message to the model.
 
-import { describe, it, expect } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { buildAgimDispatcher, getAgimTools } from './agim-dispatcher.js'
 
 const NOOP_SIGNAL = new AbortController().signal
@@ -381,6 +385,187 @@ describe('buildAgimDispatcher', () => {
         expect(r.text).toMatch(/0\/2 succeeded/)
         expect(r.text).toMatch(/A2A disabled|disabled/i)
       } finally { restoreEnv() }
+    })
+  })
+
+  describe('Loop continue resets call_agent turn cap (R2 deadlock guard)', () => {
+    let dir: string
+    const SAVED = {
+      loops: process.env.AGIM_LOOPS_DIR,
+      a2a: process.env.AGIM_A2A_ENABLED,
+      cap: process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN,
+      parallel: process.env.AGIM_SUBAGENT_PARALLEL,
+    }
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'loop-cap-reset-'))
+      process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+      process.env.AGIM_A2A_ENABLED = '0'
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '3'
+      process.env.AGIM_SUBAGENT_PARALLEL = '1'
+    })
+
+    afterEach(() => {
+      if (SAVED.loops === undefined) delete process.env.AGIM_LOOPS_DIR
+      else process.env.AGIM_LOOPS_DIR = SAVED.loops
+      if (SAVED.a2a === undefined) delete process.env.AGIM_A2A_ENABLED
+      else process.env.AGIM_A2A_ENABLED = SAVED.a2a
+      if (SAVED.cap === undefined) delete process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN
+      else process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = SAVED.cap
+      if (SAVED.parallel === undefined) delete process.env.AGIM_SUBAGENT_PARALLEL
+      else process.env.AGIM_SUBAGENT_PARALLEL = SAVED.parallel
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    })
+
+    function seedPlanning(threadId: string, over: Record<string, unknown> = {}) {
+      const platform = 'test'
+      const channelId = 'c'
+      const sessionKey = `${platform}__${channelId}__${threadId}`
+      const now = Date.now()
+      mkdirSync(process.env.AGIM_LOOPS_DIR!, { recursive: true, mode: 0o700 })
+      writeFileSync(join(process.env.AGIM_LOOPS_DIR!, `${sessionKey}.json`), JSON.stringify({
+        id: 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee',
+        sessionKey,
+        platform,
+        channelId,
+        threadId,
+        focusSnapshot: '补数据',
+        openedFocus: false,
+        status: 'planning',
+        round: 1,
+        maxRounds: 6,
+        mission: {
+          objective: '补齐恒生科技指数数据',
+          exit: { description: '重复3轮', maxRounds: 6, minRounds: 1, onFocusOff: 'cancel' },
+        },
+        dispatchesThisRound: 0,
+        roundJobIds: [],
+        usage: { dispatchCount: 0, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+        createdAt: now,
+        updatedAt: now,
+        timeline: [],
+        ...over,
+      }), 'utf8')
+      return { platform, channelId, threadId }
+    }
+
+    it('continue|met=false resets cap; R2 call_agents is not refused', async () => {
+      const threadId = `t-cap-${Date.now()}`
+      seedPlanning(threadId)
+      const d = buildAgimDispatcher({ ...CTX, threadId, callerAgent: 'agim' })
+
+      const r1 = await d(
+        {
+          id: 'r1-batch',
+          name: 'mcp__agim__call_agents',
+          arguments: {
+            tasks: [
+              { agent: 'agim', prompt: 'lane A', isolate: true },
+              { agent: 'agim', prompt: 'lane B', isolate: true },
+              { agent: 'agim', prompt: 'lane C', isolate: true },
+            ],
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(r1.isError).toBe(false)
+
+      // Without reset, another batch of 3 would exceed cap=3.
+      const blocked = await d(
+        {
+          id: 'r1-again',
+          name: 'mcp__agim__call_agents',
+          arguments: {
+            tasks: [
+              { agent: 'agim', prompt: 'extra 1', isolate: true },
+              { agent: 'agim', prompt: 'extra 2', isolate: true },
+              { agent: 'agim', prompt: 'extra 3', isolate: true },
+            ],
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(blocked.isError).toBe(true)
+      expect(blocked.text).toMatch(/already delegated|cap=3/i)
+      expect(blocked.text).toMatch(/Active Loop|loop_verdict|continue/i)
+
+      const verdict = await d(
+        {
+          id: 'r1-verdict',
+          name: 'mcp__agim__loop_verdict',
+          arguments: {
+            decision: 'continue',
+            met: false,
+            summary: 'R1 缺数据，需补采',
+            nextDirection: 'R2 补齐缺失字段',
+            gaps: ['成交额', '市盈率'],
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(verdict.isError).toBe(false)
+      const parsed = JSON.parse(verdict.text) as { callAgentCapReset?: boolean; round?: number }
+      expect(parsed.callAgentCapReset).toBe(true)
+      expect(parsed.round).toBe(2)
+
+      const r2 = await d(
+        {
+          id: 'r2-batch',
+          name: 'mcp__agim__call_agents',
+          arguments: {
+            tasks: [
+              { agent: 'agim', prompt: 'R2 lane 1', isolate: true },
+              { agent: 'agim', prompt: 'R2 lane 2', isolate: true },
+              { agent: 'agim', prompt: 'R2 lane 3', isolate: true },
+            ],
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(r2.isError).toBe(false)
+      expect(r2.text).not.toMatch(/already delegated|cap exceeded/i)
+      expect(r2.text).toMatch(/call_agents join/i)
+    })
+
+    it('planning + 0 dispatches clears stale turn history before first R2 dispatch', async () => {
+      // Simulate "continue forgot to reset": exhaust cap with no Loop, then
+      // open a planning Loop round and dispatch — belt-and-suspenders clear.
+      const d = buildAgimDispatcher({ ...CTX, callerAgent: 'agim' })
+      const exhaust = await d(
+        {
+          id: 'pre-loop',
+          name: 'mcp__agim__call_agents',
+          arguments: {
+            tasks: [
+              { agent: 'agim', prompt: 'pre 1', isolate: true },
+              { agent: 'agim', prompt: 'pre 2', isolate: true },
+              { agent: 'agim', prompt: 'pre 3', isolate: true },
+            ],
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(exhaust.isError).toBe(false)
+
+      const threadId = CTX.threadId
+      seedPlanning(threadId, { round: 2, status: 'planning', dispatchesThisRound: 0 })
+
+      const r2 = await d(
+        {
+          id: 'r2-guard',
+          name: 'mcp__agim__call_agents',
+          arguments: {
+            tasks: [
+              { agent: 'agim', prompt: 'guard 1', isolate: true },
+              { agent: 'agim', prompt: 'guard 2', isolate: true },
+              { agent: 'agim', prompt: 'guard 3', isolate: true },
+            ],
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(r2.isError).toBe(false)
+      expect(r2.text).toMatch(/call_agents join/i)
     })
   })
 })

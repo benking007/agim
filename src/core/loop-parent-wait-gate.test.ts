@@ -63,7 +63,14 @@ describe('loop parent wait gate', () => {
   it('blocks research after dispatch; allows sleep, ask_user, and loop_verdict when idle', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'web_fetch').ok).toBe(false)
-    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__call_agents').ok).toBe(false)
+    const secondDispatch = evaluateLoopParentWaitGate(
+      a.platform, a.channelId, a.threadId, 'mcp__agim__call_agents',
+    )
+    expect(secondDispatch.ok).toBe(false)
+    if (!secondDispatch.ok) {
+      expect(secondDispatch.reason).toContain('loop-parent-wait')
+      expect(secondDispatch.reason).toMatch(/second call_agents|continue\|revise/i)
+    }
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'agim_sleep_ms').ok).toBe(true)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user').ok).toBe(true)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'ask_user').ok).toBe(true)

@@ -1,10 +1,10 @@
 // loop-report — assemble a detailed Loop analysis report from Subagent
 // job outputs after the user confirms met-end. Deterministic markdown
-// (no extra LLM). Persists under ~/.agim/loops/reports/.
+// (no extra LLM). Persists under `<agent-cwd>/PROJECTS/loops/`.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGIM_HOME } from './agim-paths.js'
+import { defaultAgentCwd } from './agent-cwd.js'
 import { getArtifactsDir } from './artifacts.js'
 
 /** Keep in sync with `A2A_FULL_RESULT_FILE` in a2a.ts (avoid import cycle). */
@@ -28,12 +28,17 @@ const log = rootLogger.child({ component: 'loop-report' })
 const PER_JOB_CHARS = 14_000
 const CHAT_BODY_CHARS = 72_000
 
-function reportsDir(): string {
-  return process.env.AGIM_LOOP_REPORTS_DIR ?? join(AGIM_HOME, 'loops', 'reports')
+/**
+ * Default: Agim workspace `PROJECTS/loops/` (alongside project archives).
+ * Override with `AGIM_LOOP_REPORTS_DIR` for tests / custom deployments.
+ */
+export function resolveLoopReportsDir(agentName = 'agim'): string {
+  if (process.env.AGIM_LOOP_REPORTS_DIR) return process.env.AGIM_LOOP_REPORTS_DIR
+  return join(defaultAgentCwd(agentName), 'PROJECTS', 'loops')
 }
 
 function ensureReportsDir(): string {
-  const dir = reportsDir()
+  const dir = resolveLoopReportsDir()
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
   return dir
 }

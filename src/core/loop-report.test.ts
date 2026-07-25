@@ -3,7 +3,11 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildLoopDetailReport, generateLoopDetailReport } from './loop-report.js'
+import {
+  buildLoopDetailReport,
+  generateLoopDetailReport,
+  resolveLoopReportsDir,
+} from './loop-report.js'
 import type { LoopRun } from './loop-run.js'
 import { emptyLoopUsage } from './loop-run.js'
 import type { Job } from './job-board.js'
@@ -121,5 +125,20 @@ describe('loop-report', () => {
     expect(gen.ok).toBe(false)
     if (gen.ok) return
     expect(gen.error).toBe('loop_not_ended')
+  })
+
+  it('default reports dir is <agent-cwd>/PROJECTS/loops', () => {
+    delete process.env.AGIM_LOOP_REPORTS_DIR
+    const prevWs = process.env.AGIM_WORKSPACES_ROOT
+    process.env.AGIM_WORKSPACES_ROOT = join(tmp, 'workspaces')
+    try {
+      expect(resolveLoopReportsDir()).toBe(
+        join(tmp, 'workspaces', 'agim', 'PROJECTS', 'loops'),
+      )
+    } finally {
+      if (prevWs === undefined) delete process.env.AGIM_WORKSPACES_ROOT
+      else process.env.AGIM_WORKSPACES_ROOT = prevWs
+      process.env.AGIM_LOOP_REPORTS_DIR = join(tmp, 'reports')
+    }
   })
 })

@@ -35,6 +35,7 @@
     ├── AGENTS.local.md    ← （可选）个人覆盖，拼在 AGENTS.md 之后
     ├── MEMORY.md          ← 工作区长期记忆（框架会注入）
     └── PROJECTS/          ← （建议）长期主题档案
+        └── loops/         ← Loop 结案详细报告（Portal「生成报告」写入）
 ```
 
 **隔离边界（项目级隔离，用户级共享）**：
@@ -147,7 +148,7 @@ Agim Agent（`/agim`）是 in-process LLM，没有外部 CLI。它会把
 - **im-ops 托管段**（所有 IM agent 共用）：
   - **对话逻辑**：Web / Portal / macOS 壳硬展开全文（禁止仅摘要）；IM 可在 Viewer 开启时发 4–8 KB 要点 + 落盘 / Viewer 链接
   - **bgjob**：估时 >10 分钟强制 `"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob" start <slug> -- <cmd...>`
-  - **记忆 / 路径**：`MEMORY.md` / `PROJECTS/<slug>.md` / 可选 `SESSIONS/`
+  - **记忆 / 路径**：`MEMORY.md` / `PROJECTS/<slug>.md` / `PROJECTS/loops/`（Loop 结案详细报告）/ 可选 `SESSIONS/`
 
 `<!-- agim:im-ops:start -->` … `end` 内是托管基线。每次 `agim start` bootstrap
 **不会整文件覆盖**已编辑的角色书：标记外人设永久保留，托管段仅在内容有差异时局部更新。

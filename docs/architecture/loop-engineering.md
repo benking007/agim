@@ -505,3 +505,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-26 | **Focus→body**：路径 A 已有 Focus 时写入正文并标注「当前 Agent 聚焦内容」，不再默认填入目标 |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问是否汇总子代理输出；同意则落盘工作区 `PROJECTS/loops/` + 回显聊天（`loop-report.ts` / `POST /api/loop/generate-report`） |
+| 2026-07-25 | **详细报告范围=本 Loop**：累计 `loopJobIds`（跨轮保留）；不再按线程拼历史子代理；旧 run 无该字段时按 Loop 时间窗过滤 |

@@ -35,7 +35,7 @@
     ├── AGENTS.local.md    ← （可选）个人覆盖，拼在 AGENTS.md 之后
     ├── MEMORY.md          ← 工作区长期记忆（框架会注入）
     └── PROJECTS/          ← （建议）长期主题档案
-        └── loops/         ← Loop 结案详细报告（Portal「生成报告」写入）
+        └── loops/         ← Loop 结案详细报告（Portal 同意后由 Agent 写入）
 ```
 
 **隔离边界（项目级隔离，用户级共享）**：

@@ -76,19 +76,3 @@ export function confirmLoopMet(body: {
   return client.post('/api/loop/confirm-met', { body })
 }
 
-/** After confirm-end: assemble Subagent outputs → disk + chat. */
-export function generateLoopReport(body: {
-  threadId: string
-  loopId?: string
-  platform?: string
-  channelId?: string
-}): Promise<{
-  ok: boolean
-  path?: string
-  jobCount?: number
-  loopId?: string
-  chars?: number
-  error?: string
-}> {
-  return client.post('/api/loop/generate-report', { body })
-}

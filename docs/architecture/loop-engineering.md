@@ -487,3 +487,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问是否汇总子代理输出；同意则落盘工作区 `PROJECTS/loops/` + 回显聊天（`loop-report.ts` / `POST /api/loop/generate-report`） |
+| 2026-07-25 | **详细报告范围=本 Loop**：累计 `loopJobIds`（跨轮保留）；不再按线程拼历史子代理；旧 run 无该字段时按 Loop 时间窗过滤 |

@@ -272,22 +272,29 @@ async function handlePutAutoApprove(req: IncomingMessage, res: ServerResponse): 
     }
     const value = parsed.enabled ? '1' : '0'
     const { updateEnvFile } = await import('../cli-ui/env-file.js')
-    updateEnvFile({ AGIM_AUTO_APPROVE: value })
-    process.env.AGIM_AUTO_APPROVE = value
+    // UI toggle = explicit open-IM ack (see applyAutoApprovePolicy).
+    updateEnvFile({
+      AGIM_AUTO_APPROVE: value,
+      AGIM_AUTO_APPROVE_OPEN_IM: value,
+    })
+    const { applyAutoApprovePolicy } = await import('../core/approval/policy.js')
+    const status = applyAutoApprovePolicy(parsed.enabled)
     try {
       const { logAuditEvent } = await import('../core/audit-log.js')
       logAuditEvent({
         eventType: 'env.put',
         actor: getRequestActor(req),
         outcome: 'ok',
-        details: { keys: ['AGIM_AUTO_APPROVE'], via: 'policy.auto-approve' },
+        details: {
+          keys: ['AGIM_AUTO_APPROVE', 'AGIM_AUTO_APPROVE_OPEN_IM'],
+          via: 'policy.auto-approve',
+        },
       })
     } catch { /* best-effort */ }
-    const { isAutoApproveEnabled, isAutoApproveEffective } = await import('../core/approval/policy.js')
     sendJson(res, 200, {
       ok: true,
-      enabled: isAutoApproveEnabled(),
-      effective: isAutoApproveEffective(),
+      enabled: status.enabled,
+      effective: status.effective,
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -406,6 +413,13 @@ async function handlePutEnv(req: IncomingMessage, res: ServerResponse): Promise<
     if (Object.keys(safe).length === 0) {
       sendError(res, 400, 'ENV_NO_EDITABLE_KEYS', { message: 'no editable keys in updates' })
       return
+    }
+    // Settings → Policy「替我审批」toggle: same open-IM ack as composer chip.
+    if (Object.prototype.hasOwnProperty.call(safe, 'AGIM_AUTO_APPROVE')) {
+      const raw = safe.AGIM_AUTO_APPROVE
+      const on = raw != null && raw !== '' && raw !== '0'
+        && raw.toLowerCase() !== 'off' && raw.toLowerCase() !== 'false' && raw.toLowerCase() !== 'no'
+      safe.AGIM_AUTO_APPROVE_OPEN_IM = on ? '1' : '0'
     }
     const { updateEnvFile } = await import('../cli-ui/env-file.js')
     updateEnvFile(safe)

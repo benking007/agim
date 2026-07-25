@@ -161,7 +161,9 @@ export function ComposerStatusBar({
   }
 
   const chip = cn(
-    'inline-flex h-7 max-w-[11rem] items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors',
+    // shrink-0 + nowrap: narrow Portal widths must not crush Chinese labels
+    // into a vertical stack ("思 / 考 / 开"). Overflow scrolls horizontally.
+    'inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs font-medium transition-colors',
     'disabled:opacity-40',
     dark
       ? 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
@@ -171,104 +173,110 @@ export function ComposerStatusBar({
   return (
     <div
       className={cn(
-        'relative flex items-center gap-1.5 px-1.5 pt-2',
+        'relative flex min-w-0 items-center gap-1 px-1.5 pt-2',
         className,
       )}
     >
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <button
-            type="button"
-            className={cn(chip, modelMissing && (dark ? 'text-amber-400' : 'text-amber-600'))}
-            title={t('chat.statusBar.modelHint', { defaultValue: 'Switch model or open LLM settings' })}
-          >
-            <span className="truncate">{modelLabel}</span>
-            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[12rem]">
-          {modelOptions.map((opt) => {
-            const active = opt.backendName === activeBackendName
-            return (
-              <DropdownMenuItem
-                key={opt.backendName}
-                onSelect={() => onSelectModel?.(opt.backendName)}
-                className="font-mono text-xs"
-              >
-                <Check className={cn('h-3.5 w-3.5', active ? 'opacity-100' : 'opacity-0')} />
-                <span className="truncate">{opt.model}</span>
-              </DropdownMenuItem>
-            )
-          })}
-          {modelOptions.length > 0 && <DropdownMenuSeparator />}
-          <DropdownMenuItem onSelect={() => onConfigureModel()}>
-            <Settings2 className="h-3.5 w-3.5" />
-            <span>{t('chat.statusBar.configureLlm', { defaultValue: 'Configure models…' })}</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild disabled={disabled}>
+            <button
+              type="button"
+              className={cn(
+                chip,
+                'max-w-[11rem]',
+                modelMissing && (dark ? 'text-amber-400' : 'text-amber-600'),
+              )}
+              title={t('chat.statusBar.modelHint', { defaultValue: 'Switch model or open LLM settings' })}
+            >
+              <span className="min-w-0 truncate">{modelLabel}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[12rem]">
+            {modelOptions.map((opt) => {
+              const active = opt.backendName === activeBackendName
+              return (
+                <DropdownMenuItem
+                  key={opt.backendName}
+                  onSelect={() => onSelectModel?.(opt.backendName)}
+                  className="font-mono text-xs"
+                >
+                  <Check className={cn('h-3.5 w-3.5', active ? 'opacity-100' : 'opacity-0')} />
+                  <span className="truncate">{opt.model}</span>
+                </DropdownMenuItem>
+              )
+            })}
+            {modelOptions.length > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuItem onSelect={() => onConfigureModel()}>
+              <Settings2 className="h-3.5 w-3.5" />
+              <span>{t('chat.statusBar.configureLlm', { defaultValue: 'Configure models…' })}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-      {showThinking && (
-        <>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild disabled={disabled}>
-              <button type="button" className={chip}>
-                <Brain className={cn('h-3 w-3', thinkingOn ? (dark ? 'text-teal-400' : 'text-teal-600') : 'opacity-50')} />
-                <span>
-                  {thinkingOn
-                    ? t('chat.statusBar.thinkingOn', { defaultValue: 'Thinking' })
-                    : t('chat.statusBar.thinkingOff', { defaultValue: 'Think off' })}
-                </span>
-                <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[8rem]">
-              <DropdownMenuItem onSelect={() => setThinking(true)}>
-                {t('chat.statusBar.thinkingOn', { defaultValue: 'Thinking' })}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setThinking(false)}>
-                {t('chat.statusBar.thinkingOff', { defaultValue: 'Think off' })}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {thinkingOn && (
+        {showThinking && (
+          <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild disabled={disabled}>
                 <button type="button" className={chip}>
-                  <span>{effort}</span>
+                  <Brain className={cn('h-3 w-3 shrink-0', thinkingOn ? (dark ? 'text-teal-400' : 'text-teal-600') : 'opacity-50')} />
+                  <span className="whitespace-nowrap">
+                    {thinkingOn
+                      ? t('chat.statusBar.thinkingOn', { defaultValue: 'Thinking' })
+                      : t('chat.statusBar.thinkingOff', { defaultValue: 'Think off' })}
+                  </span>
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[7rem]">
-                <DropdownMenuItem onSelect={() => setEffort('low')}>low</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setEffort('high')}>high</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setEffort('max')}>max</DropdownMenuItem>
+              <DropdownMenuContent align="start" className="min-w-[8rem]">
+                <DropdownMenuItem onSelect={() => setThinking(true)}>
+                  {t('chat.statusBar.thinkingOn', { defaultValue: 'Thinking' })}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setThinking(false)}>
+                  {t('chat.statusBar.thinkingOff', { defaultValue: 'Think off' })}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </>
-      )}
 
-      <Suspense
-        fallback={(
-          <button
-            type="button"
-            className={chip}
-            disabled
-            title={t('chat.statusBar.autoApproveHint', {
-              defaultValue: 'Main agent tool approvals — auto-approve on your behalf, or ask each time',
-            })}
-          >
-            <span>{t('chat.statusBar.autoApproveOff', { defaultValue: 'Ask to approve' })}</span>
-            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-          </button>
+            {thinkingOn && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={disabled}>
+                  <button type="button" className={chip}>
+                    <span className="whitespace-nowrap">{effort}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-[7rem]">
+                  <DropdownMenuItem onSelect={() => setEffort('low')}>low</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setEffort('high')}>high</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setEffort('max')}>max</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </>
         )}
-      >
-        <ComposerAutoApproveChip dark={dark} disabled={disabled} chipClassName={chip} />
-      </Suspense>
 
-      <div className="ml-auto flex items-center">
+        <Suspense
+          fallback={(
+            <button
+              type="button"
+              className={chip}
+              disabled
+              title={t('chat.statusBar.autoApproveHint', {
+                defaultValue: 'Main agent tool approvals — auto-approve on your behalf, or ask each time',
+              })}
+            >
+              <span className="whitespace-nowrap">{t('chat.statusBar.autoApproveOff', { defaultValue: 'Ask to approve' })}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+            </button>
+          )}
+        >
+          <ComposerAutoApproveChip dark={dark} disabled={disabled} chipClassName={chip} />
+        </Suspense>
+      </div>
+
+      <div className="ml-0.5 flex shrink-0 items-center">
         <ContextRing ratio={ratio} dark={dark} onClick={() => setContextOpen(true)} />
       </div>
 

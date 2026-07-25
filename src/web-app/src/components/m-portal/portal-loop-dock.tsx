@@ -53,19 +53,26 @@ function actNowPrompt(loop: LoopStatusDto, zh: boolean): string {
 function toPetTask(loop: LoopStatusDto, zh: boolean): PetTaskItem {
   const obj = (loop.objective || '').trim()
   const shortObj = obj.length > 36 ? `${obj.slice(0, 36)}…` : obj
+  const min = loop.minRounds && loop.minRounds > 1 ? `≥${loop.minRounds}` : ''
   const round = zh
-    ? `第 ${loop.round}/${loop.maxRounds} 轮`
-    : `R${loop.round}/${loop.maxRounds}`
+    ? `第 ${loop.round}/${loop.maxRounds} 轮${min ? `（最少 ${loop.minRounds}）` : ''}`
+    : `R${loop.round}/${loop.maxRounds}${min ? ` (min ${loop.minRounds})` : ''}`
+  const live = (loop.liveSubagents ?? 0) > 0
+    ? (zh ? `子代理进行中 ${loop.liveSubagents}` : `${loop.liveSubagents} subagent(s) live`)
+    : ''
   const usage = loop.usage
     ? (zh
       ? `派工 ${loop.usage.dispatchCount} · 独立验收 ${loop.usage.evaluatorCount}`
       : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} indep. eval`)
     : ''
+  const label = live
+    ? (zh ? '子代理进行中' : 'Subagents running')
+    : loop.bucketLabel
   return {
     id: `loop-${loop.id}`,
     kind: 'loop',
-    label: loop.bucketLabel,
-    detail: [shortObj || undefined, round, usage].filter(Boolean).join(' · ') || undefined,
+    label,
+    detail: [shortObj || undefined, round, live || undefined, usage].filter(Boolean).join(' · ') || undefined,
   }
 }
 
@@ -106,6 +113,9 @@ export function PortalLoopDock({
     )
   }
   if (busy || hasBlockingDock) return null
+  // HARD: while Subagents are live, do not nudge verify (or re-dispatch).
+  // Main loop polls status; evaluation starts only when liveSubagents=0.
+  if ((loop.liveSubagents ?? 0) > 0) return null
   if (loop.bucket === 'dispatch' || loop.bucket === 'verify') {
     return (
       <ActNowDock

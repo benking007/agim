@@ -12,11 +12,16 @@ export type LoopStatusDto = {
   bucketLabel: string
   active: boolean
   round: number
+  minRounds?: number
   maxRounds: number
   objective: string
   exitDescription: string
   acceptance?: string
   dispatchesThisRound: number
+  /** In-flight Subagent jobs (pending|running). */
+  liveSubagents?: number
+  /** Ready for loop_verdict (dispatched, no live children). */
+  canVerify?: boolean
   endReason?: string
   lastVerification?: {
     met: boolean

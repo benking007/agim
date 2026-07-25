@@ -8,7 +8,7 @@
  * Opt out: AGIM_LOOP_VERIFY_GATE=off|0|false|no|disable
  */
 
-import { getActiveLoop, getLoopUxBucket } from './loop-run.js'
+import { getActiveLoop, getLoopUxBucket, threadHasLiveSubagents } from './loop-run.js'
 
 /** Default ON when a Loop round is waiting on structured verification. */
 export function isLoopVerifyGateOn(): boolean {
@@ -21,7 +21,10 @@ function isLoopVerdictTool(toolName: string): boolean {
   return n === 'loop_verdict' || n.endsWith('__loop_verdict')
 }
 
-/** True when an active Loop has dispatched this round and still awaits verdict. */
+/**
+ * True when an active Loop has dispatched this round and still awaits verdict.
+ * HARD: false while any Subagent is still pending/running — do not start evaluation.
+ */
 export function loopNeedsVerdict(
   platform: string,
   channelId: string,
@@ -33,6 +36,7 @@ export function loopNeedsVerdict(
   if (!run) return false
   if (run.status === 'aligning' || run.status === 'ended') return false
   if ((run.dispatchesThisRound || 0) < 1) return false
+  if (threadHasLiveSubagents(platform, channelId, threadId)) return false
   return getLoopUxBucket(run) === 'verify'
 }
 

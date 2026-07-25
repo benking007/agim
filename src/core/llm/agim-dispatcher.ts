@@ -1266,6 +1266,19 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 + 'to finish (or Stop them) before calling loop_verdict.',
               )
             }
+            if (r.error === 'need_more_rounds') {
+              const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+              const min = active?.mission?.exit?.minRounds
+              const round = active?.round
+              return err(
+                'loop_verdict failed: need_more_rounds — exit floor minRounds'
+                + (min != null ? `=${min}` : '')
+                + (round != null ? ` (current round=${round})` : '')
+                + '. met=true stop is refused until the floor is reached; '
+                + 'use decision=continue|revise with met=false, or abandon with '
+                + 'decision=stop and met=false / omit met.',
+              )
+            }
             if (r.error === 'need_verification') {
               return err(
                 'loop_verdict failed: need_verification — pass met=false, summary, and '

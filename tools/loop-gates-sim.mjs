@@ -151,7 +151,17 @@ const channelId = 'sim'
 // --- Case 5: maxRounds parse 重复3轮 ---
 {
   const p = loopRun.parseExitConstraints('找到合理箱体或重复3轮结束')
-  record('parse.重复3轮', p.maxRounds === 3, `maxRounds=${p.maxRounds}`)
+  record(
+    'parse.重复3轮',
+    p.maxRounds === 3 && p.minRounds === 3,
+    `maxRounds=${p.maxRounds} minRounds=${p.minRounds}`,
+  )
+  const minP = loopRun.parseExitConstraints('验收通过或至少 3 轮')
+  record(
+    'parse.至少3轮',
+    minP.minRounds === 3 && minP.maxRounds === undefined,
+    `minRounds=${minP.minRounds} maxRounds=${minP.maxRounds}`,
+  )
 }
 
 const passed = cases.filter((c) => c.ok).length

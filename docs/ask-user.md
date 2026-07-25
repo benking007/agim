@@ -169,12 +169,29 @@ TUI 已将审批与 `ask_user` 统一为“决策交互”：
 
 ---
 
-## 9. 可观测性
+## 9. Loop Engineering 中的用法
+
+Loop 生命周期里 `ask_user` 有两处硬鼓励场景（契约见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6）：
+
+| 阶段 | 何时问 | 问完之后 |
+|------|--------|----------|
+| **ALIGNING（对焦）** | 缺目标或退出条件 | 用户确认 / `/loop confirm` 后再派工 |
+| **VERIFYING（中间评审）** | 结论不确定、有疑问、或子代理数据异常 | 用户回复后继续 `loop_verdict` |
+
+验收前父侧等待门禁（`loop-parent-wait-gate`）**放行** `mcp__agim__ask_user`，仍禁止调研 / 再派工。  
+线程上若仍有 pending ask（`threadHasPendingAsk`），VERIFY follow-up 与 `verify_skipped` **推迟**，避免人还没答就把 Loop 强行收尾。
+
+结案确认（`met=true` → Portal「结论已就绪」）走 `POST /api/loop/confirm-met`，**不是** `ask_user`。
+
+---
+
+## 10. 可观测性
 
 `ask-user-rpc` 关键日志：
 
 - `ask.opened`（含 `selectionMode` / `minSelections` / `maxSelections` / `allowCustomInput`）
 - `ask.resolved.text`
 - `ask.resolved.button`
+- Loop 推迟收尾：`loop.exit_deferred_pending_ask`
 
 可结合 `/tasks/asks` 观察挂起问题，定位超时与平台投递异常。

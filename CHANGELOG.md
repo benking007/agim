@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate
+  allows `mcp__agim__ask_user` for uncertain / anomalous results; user
+  reply then continues to `loop_verdict`. Pending asks defer VERIFY
+  follow-up and `verify_skipped` (`threadHasPendingAsk`).
+- **Loop hard exit + round wait + met confirm**: exit NL → `minRounds` /
+  `maxRounds` (「重复 N」→ min=N max=N×2); round-scoped `roundJobIds`
+  live wait before verify; `met=true` → Portal `pending_user_confirm`
+  (End / Continue); parent wait-only until verdict.
 - **Loop polish (Claude blog A/B/C)**: taxonomy对照表 in docs/`/loop help`;
   independent cheap evaluator before `stop`+`met=true`
   (`AGIM_LOOP_EVALUATOR=auto|on|off`); cumulative Loop usage
@@ -59,6 +67,9 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- **Loop VERIFY HITL + 硬约束文档**：`loop-engineering.md` 主流程/
+  状态机/`ask_user` 中途评审；`ask-user.md` § Loop Engineering；
+  `desktop-regression` §3.2 增 VERIFY 提问与结案浮窗场景。
 - **Loop Engineering SSOT 补齐**：`loop-engineering.md` §6 门禁/Portal/
   env/mock；`portal-composer` 小精灵+Loop 底栏；`desktop-regression` §3.2；
   orchestration-roadmap R5/加固行对齐。

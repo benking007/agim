@@ -86,8 +86,9 @@ node tools/phase-a-acceptance.mjs
 | `/loop`（空） | Portal **待对焦**底栏；小精灵气泡「待对焦」；填目标+退出 →「确定并开始」后进入待派工 |
 | `LOOP_SELF_RESEARCH_TEST`（已确认使命） | 父侧不可自行调研；须 `call_agents`；小精灵/底栏「待派工」→「立即行动」可推进 |
 | `LOOP_E2E_TEST` | 派工后验收；`loop_verdict` stop+met；结束总结；**不**残留待验收条 |
-| `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死 |
+| `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死（无 pending ask / live 子代理时） |
 | 子代理进行中 | 本轮 `liveSubagents>0` 时小精灵「子代理进行中」；**不**弹出待验收；单子代理结束不触发评审 |
+| VERIFY 中途提问 | 结论不确定 / 数据异常时父侧可 `ask_user`；用户回复后继续 `loop_verdict`；pending ask 期间不 `verify_skipped` |
 | `met=true` 结案 | Portal「结论已就绪」浮窗；可补充 →「确认结束」或「继续下一轮」 |
 | 退出「至少 N 轮」 | 第 1 轮 `stop`+`met=true` → `need_more_rounds`；须继续到 N 或放弃 `stop`+`met=false` |
 | 「重复 N 轮」 | min=N、max=N×2 |

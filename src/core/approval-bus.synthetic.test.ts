@@ -129,8 +129,29 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(decisions).toEqual([{ behavior: 'deny', message: 'explicit approval timeout' }])
   })
 
+  it('pinnable explicit: 替我审批 (AGIM_AUTO_APPROVE) auto-allows without a card', async () => {
+    process.env.AGIM_AUTO_APPROVE = '1'
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
+    const decisions: Decision[] = []
+
+    await bus.registerSyntheticPending({
+      runId: 'exec-aa-1',
+      reqId: 'unconfined-aa-1',
+      toolName: 'agim_exec',
+      input: { command: 'curl -s http://example.com/a' },
+      requiresExplicitDecision: true,
+      allowSessionPin: true,
+      ctx: RUN_CTX,
+      dispatch: (d) => decisions.push(d),
+    })
+    expect(notifications).toEqual([])
+    expect(decisions).toEqual([{ behavior: 'allow' }])
+    expect(bus.hasPendingFor(KEY)).toBe(false)
+  })
+
   it('pinnable explicit: Auto-for-similar seeds a rule; next match enters grace', async () => {
-    process.env.AGIM_AUTO_APPROVE = '1' // must still show the first card
+    process.env.AGIM_AUTO_APPROVE = '0' // session pin path (no global auto-approve)
     const notifications: ApprovalNotification[] = []
     bus.setNotifier(async (n) => { notifications.push(n) })
     const decisions: Decision[] = []

@@ -264,10 +264,14 @@ export function isPlanModeOn(threadKey?: string): boolean {
 }
 
 /**
- * Explicit one-shot approval when `agim_exec` would run unconfined
- * (no bwrap) while a versioned goal is active. Must not inherit
- * AGIM_AUTO_APPROVE / remembered allow rules — same posture as plan-exit
- * and complete_goal.
+ * One-shot approval when `agim_exec` would run unconfined (no bwrap)
+ * while a versioned goal is active.
+ *
+ * Honors composer「替我审批」(`AGIM_AUTO_APPROVE` effective) via
+ * `allowSessionPin` on the approval bus — same as ordinary tools.
+ * When auto-approve is off, still bypasses allow-on-timeout (deny on
+ * timeout) and offers session「本类自动放行». plan-exit / complete_goal
+ * stay hard-explicit (no session pin).
  */
 export async function confirmUnconfinedGoalExec(opts: {
   runId: string
@@ -292,7 +296,7 @@ export async function confirmUnconfinedGoalExec(opts: {
     command: opts.command,
     reason:
       '目标进行中且未启用 bwrap 沙箱：批准后将在无进程隔离下执行此命令'
-      + '（不会继承全局自动批准；可选「本类自动放行」记住本会话同类命令）',
+      + '（「替我审批」开启时自动放行；否则可选手动批准或「本类自动放行」）',
   }
   if (opts.timeoutMs != null) input.timeout_ms = opts.timeoutMs
   if (opts.cwd) input.cwd = opts.cwd
@@ -316,8 +320,8 @@ export async function confirmUnconfinedGoalExec(opts: {
       reqId,
       toolName: 'agim_exec',
       input,
-      // Still bypass AGIM_AUTO_APPROVE / allow-on-timeout, but let the
-      // operator pin "Auto for similar" for this thread's command family.
+      // Pinnable explicit: bus honors AGIM_AUTO_APPROVE when effective;
+      // otherwise still requires a click (or session pin / deny-on-timeout).
       requiresExplicitDecision: true,
       allowSessionPin: true,
       // Human round-trip budget — same as complete_goal confirmation.

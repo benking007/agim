@@ -74,7 +74,7 @@ node tools/phase-a-acceptance.mjs
 | 运行中卡片右侧 **Stop** | 子代理停止；父 turn 收到阶段性摘要并继续（非整 turn 硬失败） |
 | `AGIM_AUTO_APPROVE=0` + 需审批工具 | 主 turn 弹审批卡；**子代理（depth>0）免审代批**；Settings 未配置时显示 OFF |
 | `AGIM_AUTO_APPROVE=1` | 主 turn 也自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
-| Composer「替我审批 / 请求审批」 | 输入框下状态栏可切换；默认「请求审批」；切到「替我审批」后主 Agent 不再弹工具审批卡 |
+| Composer「替我审批 / 请求审批」 | 输入框下状态栏可切换；默认「请求审批」；切到「替我审批」后主 Agent 不再弹工具审批卡（含无 bwrap 时目标中的 unconfined `agim_exec`；plan-exit / complete_goal 仍需确认） |
 
 生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。
 

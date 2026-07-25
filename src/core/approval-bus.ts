@@ -827,7 +827,15 @@ export class ApprovalBus {
     // (inline below). Skips the notifier entirely so we must run
     // self-protect here rather than relying on approval-router.
     // isAutoApproveEffective() also gates open-IM + empty allowlist.
-    if (!args.requiresExplicitDecision && isAutoApproveEffective()) {
+    //
+    // Pinnable explicit tools (unconfined goal `agim_exec` when bwrap is
+    // missing/off) also honor「替我审批」— the operator already opted into
+    // proxy-approve. Hard explicit tools without allowSessionPin
+    // (plan-exit / complete_goal) still require a human click.
+    if (
+      (!args.requiresExplicitDecision || allowSessionPin)
+      && isAutoApproveEffective()
+    ) {
       try {
         const { checkToolUse } = await import('./self-protect.js')
         const selfGuard = checkToolUse(args.toolName, args.input)
@@ -855,6 +863,7 @@ export class ApprovalBus {
         reqId: args.reqId,
         runId: args.runId,
         compositeKey: cKey,
+        pinnableExplicit: allowSessionPin && args.requiresExplicitDecision === true,
       })
       const decision: Decision = { behavior: 'allow' }
       if ('socket' in args.transport) {
@@ -869,8 +878,8 @@ export class ApprovalBus {
 
     const ruleKey = autoAllowRuleKey(args.toolName, fingerprint)
     // Remembered rules may apply even for explicit-decision tools when the
-    // caller opted into session pinning (e.g. unconfined agim_exec). Global
-    // AGIM_AUTO_APPROVE still cannot skip the first card.
+    // caller opted into session pinning (e.g. unconfined agim_exec). With
+    // AGIM_AUTO_APPROVE effective, the block above already skipped the card.
     const isAutoAllow = (
       !args.requiresExplicitDecision
       || allowSessionPin

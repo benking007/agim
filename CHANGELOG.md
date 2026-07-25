@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **「替我审批」also covers unconfined goal `agim_exec`**: when Focus/goal
+  is active and bwrap sandbox is missing/off, the pinnable explicit
+  approval card used to bypass `AGIM_AUTO_APPROVE`. With composer
+  「替我审批」effective it now auto-allows (self-protect / sensitive-path
+  still apply). plan-exit / complete_goal stay hard-explicit. With bwrap
+  on, sandboxed exec already followed global auto-approve.
 - **Loop parent wait gate no longer blocks Subagents**: dispatch/wait
   gates apply only at `callDepth=0`. Children share the parent
   `threadId` and were incorrectly forced into sleep/`ask_user` hollow

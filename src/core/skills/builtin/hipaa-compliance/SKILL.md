@@ -9,9 +9,9 @@ version: "1.0.0"
 
 Use this as the HIPAA-specific entrypoint when a task is clearly about US healthcare compliance. This skill intentionally stays thin and canonical:
 
-- `healthcare-phi-compliance` remains the primary implementation skill for PHI/PII handling, data classification, audit logging, encryption, and leak prevention.
-- `healthcare-reviewer` remains the specialized reviewer when code, architecture, or product behavior needs a healthcare-aware second pass.
-- `security-review` still applies for general auth, input-handling, secrets, API, and deployment hardening.
+- `hipaa-compliance` remains the primary implementation skill for PHI/PII handling, data classification, audit logging, encryption, and leak prevention.
+- healthcare-aware review remains the specialized reviewer when code, architecture, or product behavior needs a healthcare-aware second pass.
+- `security-scan` still applies for general auth, input-handling, secrets, API, and deployment hardening.
 
 ## When to Use
 
@@ -24,14 +24,14 @@ Use this as the HIPAA-specific entrypoint when a task is clearly about US health
 
 Treat HIPAA as an overlay on top of the broader healthcare privacy skill:
 
-1. Start with `healthcare-phi-compliance` for the concrete implementation rules.
+1. Start with `hipaa-compliance` for the concrete implementation rules.
 2. Apply HIPAA-specific decision gates:
    - Is this data PHI?
    - Is this actor a covered entity or business associate?
    - Does a vendor or model provider require a BAA before touching the data?
    - Is access limited to the minimum necessary scope?
    - Are read/write/export events auditable?
-3. Escalate to `healthcare-reviewer` if the task affects patient safety, clinical workflows, or regulated production architecture.
+3. Escalate to healthcare-aware review if the task affects patient safety, clinical workflows, or regulated production architecture.
 
 ## HIPAA-Specific Guardrails
 
@@ -53,9 +53,9 @@ User request:
 Response pattern:
 
 - Activate `hipaa-compliance`
-- Use `healthcare-phi-compliance` to review PHI movement, logging, storage, and prompt boundaries
+- Use `hipaa-compliance` to review PHI movement, logging, storage, and prompt boundaries
 - Verify whether the summarization provider is covered by a BAA before any PHI is sent
-- Escalate to `healthcare-reviewer` if the summaries influence clinical decisions
+- Escalate to healthcare-aware review if the summaries influence clinical decisions
 
 ### Example 2: Vendor/tooling decision
 
@@ -71,8 +71,5 @@ Response pattern:
 
 ## Related Skills
 
-- `healthcare-phi-compliance`
-- `healthcare-reviewer`
-- `healthcare-emr-patterns`
-- `healthcare-eval-harness`
-- `security-review`
+- `security-scan` — general auth, secrets, API, and deployment hardening
+- healthcare-aware second-pass review when clinical / regulated architecture is in scope

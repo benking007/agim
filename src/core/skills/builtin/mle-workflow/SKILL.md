@@ -31,7 +31,7 @@ Use only the lanes that fit the system in front of you. This skill is useful for
 - `pytorch-patterns` for deep learning models, data loaders, device handling, and training loops
 - `eval-harness` and `ai-regression-testing` for promotion gates and agent-assisted regression checks
 - `database-migrations`, `postgres-patterns`, and `clickhouse-io` for data storage and analytics surfaces
-- `deployment-patterns`, `docker-patterns`, and `security-review` for serving, secrets, containers, and production hardening
+- `deployment-patterns`, `docker-patterns`, and `security-scan` for serving, secrets, containers, and production hardening
 
 ## Reuse the SWE Surface
 
@@ -54,7 +54,7 @@ The recommended `minimal --with capability:machine-learning` install keeps the c
 | `database-migrations` / `postgres-patterns` / `clickhouse-io` | Version labels, feature snapshots, prediction logs, experiment metrics, and drift analytics |
 | `deployment-patterns` / `docker-patterns` | Package reproducible training and serving images with health checks, resource limits, and rollback |
 | `canary-watch` / `dashboard-builder` | Make rollout health visible with model-version, slice, drift, latency, cost, and delayed-label dashboards |
-| `security-review` / `security-scan` | Check model artifacts, notebooks, prompts, datasets, and logs for secrets, PII, unsafe deserialization, and supply-chain risk |
+| `security-scan` / `security-scan` | Check model artifacts, notebooks, prompts, datasets, and logs for secrets, PII, unsafe deserialization, and supply-chain risk |
 | `e2e-testing` / `browser-qa` / `accessibility` | Test critical product flows that consume predictions, including explainability and fallback UI states |
 | `benchmark` / `performance-optimizer` | Measure throughput, p95 latency, memory, GPU utilization, and cost per prediction or retrain |
 | `cost-aware-llm-pipeline` / `token-budget-advisor` | Route LLM/embedding workloads by quality, latency, and budget instead of defaulting to the largest model |
@@ -74,7 +74,7 @@ Use these simulations as coverage checks when planning or reviewing MLE work. A 
 | MLE-04 | Generate features from hypotheses about what separates outcomes | `python-patterns`, `pytorch-patterns`, `docker-patterns`, `deployment-patterns` | Feature plan and transform module covering signal source, missing values, outliers, correlations, leakage checks, and train/serve equivalence | feature pipeline, leakage, training, artifacts |
 | MLE-05 | Tune thresholds, configs, and model complexity under tradeoffs | `eval-harness`, `ai-regression-testing`, `quality-gate`, `test-coverage` | Threshold/config report comparing precision, recall, F1, AUC, calibration, group slices, latency, cost, complexity, and acceptable error classes | evaluation, threshold, promotion, regression |
 | MLE-06 | Run error analysis and turn mistakes into the next experiment | `eval-harness`, `ai-regression-testing`, `mle-reviewer`, `silent-failure-hunter` | Error cluster report for false positives, false negatives, ambiguous labels, stale features, missing signals, and bug traces with lessons captured | error analysis, bug trace, iteration, regression |
-| MLE-07 | Package a model artifact for batch or online inference | `api-design`, `backend-patterns`, `security-review`, `security-scan` | Versioned artifact bundle with preprocessing, config, dependency constraints, schema validation, safe loading, and PII-safe logs | artifact, security, inference contract |
+| MLE-07 | Package a model artifact for batch or online inference | `api-design`, `backend-patterns`, `security-scan`, `security-scan` | Versioned artifact bundle with preprocessing, config, dependency constraints, schema validation, safe loading, and PII-safe logs | artifact, security, inference contract |
 | MLE-08 | Ship online serving or batch scoring with feedback capture | `api-design`, `backend-patterns`, `e2e-testing`, `browser-qa`, `accessibility` | Prediction endpoint or batch job with response envelope, timeout, batching, fallback, model version, confidence, feedback logging, and product-flow tests | serving, batch inference, fallback, user workflow |
 | MLE-09 | Roll out a model with shadow traffic, canary, A/B test, or rollback | `canary-watch`, `dashboard-builder`, `verification-loop`, `performance-optimizer` | Rollout plan naming traffic split, dashboards, p95 latency, cost, quality guardrails, rollback artifact, and rollback trigger | deployment, canary, rollback |
 | MLE-10 | Operate, debug, and refresh a production model after launch | `silent-failure-hunter`, `dashboard-builder`, `mle-reviewer`, `doc-updater`, `github-ops` | Observation ledger and refresh plan with drift checks, delayed-label health, alert owners, runbook updates, retrain criteria, and PR evidence | monitoring, incident response, retraining |

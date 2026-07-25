@@ -13,7 +13,7 @@ Applies the "deterministic collection + LLM judgment" principle: scripts collect
 ## When to Use
 
 - Periodic rules maintenance (monthly or after installing new skills)
-- After a skill-stocktake reveals patterns that should be rules
+- After an `agim-skill-discovery` pass reveals patterns that should be rules
 - When rules feel incomplete relative to the skills being used
 
 ## How It Works

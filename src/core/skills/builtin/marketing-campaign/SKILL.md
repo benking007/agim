@@ -52,7 +52,7 @@ Produce in this order — each layer informs the next:
 
 1. **Landing page copy** (all sections: hero, problem, solution, features, how it works, proof, CTA)
 2. **Email sequence** (each email has one purpose; follow the arc: problem → education → agitation → solution → proof → urgency → final CTA)
-3. **Social posts** (platform-native via `content-engine`; LinkedIn and X are different formats, not the same copy resized)
+3. **Social posts** (platform-native via `article-writing`; LinkedIn and X are different formats, not the same copy resized)
 4. **Short-form video scripts** (timestamp-blocked; written for screen and ear, not the page)
 5. **Ad copy variants** (3–4 variants testing different angles or audience segments)
 6. **Content calendar** (day-by-day schedule with channel, type, timing, and dependencies)
@@ -107,7 +107,7 @@ Delete and rewrite any:
 ## Related Skills
 
 - `brand-voice` — source-derived voice capture (run before content production)
-- `content-engine` — platform-native content production
+- `article-writing` — platform-native content production
 - `crosspost` — multi-platform distribution
 - `market-research` — audience and competitive intelligence
 - `seo` — on-page optimisation for landing page copy

@@ -169,5 +169,5 @@ snippet and capture before/after evidence in the change record.
 ## See Also
 
 - Skill: `cisco-ios-patterns`
-- Skill: `network-config-validation`
-- Skill: `network-interface-health`
+- Skill: `cisco-ios-patterns`
+- Skill: `cisco-ios-patterns`

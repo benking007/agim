@@ -159,5 +159,5 @@ source rather than relying on a generic ping.
 
 - Agent: `network-config-reviewer`
 - Agent: `network-troubleshooter`
-- Skill: `network-config-validation`
-- Skill: `network-interface-health`
+- Skill: `cisco-ios-patterns`
+- Skill: `cisco-ios-patterns`

@@ -115,7 +115,7 @@ claude -p --allowedTools "Read,Write,Edit,Bash" "Implement the fixes from securi
 node scripts/claw.js
 
 # Named session with skill context
-CLAW_SESSION=my-project CLAW_SKILLS=tdd-workflow,security-review node scripts/claw.js
+CLAW_SESSION=my-project CLAW_SKILLS=tdd-workflow,security-scan node scripts/claw.js
 ```
 
 ### How It Works

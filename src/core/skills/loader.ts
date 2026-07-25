@@ -361,8 +361,9 @@ export function readSkillBody(name: string): string | null {
  * of mind without burying it under alphabet order.
  *
  * Selection: 11 agent-harness skills + 9 cross-language methodology
- * skills. Excludes framework / language / industry specialties (django,
- * kotlin, healthcare, …) and ECC-internal tooling.
+ * skills. Excludes framework / language / industry specialties and
+ * ECC-internal tooling. (django / kotlin / healthcare / content-engine /
+ * security-review packs were pruned from the shipped builtin set.)
  *
  * Add / remove freely — this is a curated list, not a registry.
  */
@@ -374,8 +375,8 @@ const ECC_TOP_PICKS_DEFAULT: ReadonlySet<string> = new Set([
   'cost-aware-llm-pipeline', 'context-budget',
   // Cross-language methodology + content (9)
   'blueprint', 'coding-standards', 'architecture-decision-records',
-  'code-tour', 'tdd-workflow', 'security-review', 'benchmark',
-  'article-writing', 'content-engine',
+  'backend-patterns', 'tdd-workflow', 'security-scan', 'benchmark',
+  'article-writing', 'api-design',
 ])
 
 /**

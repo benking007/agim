@@ -112,8 +112,8 @@ jq '.permissions.allow -= ["Bash(git push)"]' ~/.claude/settings.local.json.bak 
 
 ## Related Skills
 
-- `skill-stocktake` — audits skill *quality*; config-gc audits skill *existence*. Run stocktake on what survives GC.
+- `agim-skill-discovery` — audits skill *quality*; config-gc audits skill *existence*. Run stocktake on what survives GC.
 - `workspace-surface-audit` — the additive counterpart: recommends what to install. config-gc is the subtractive half of the same lifecycle.
 - `configure-ecc` — after installing skills with it, run config-gc to reconcile overlaps with your pre-existing setup.
 - `continuous-learning` — produces the memory files this skill later audits.
-- `security-review` — pairs well with the permissions channel.
+- `security-scan` — pairs well with the permissions channel.

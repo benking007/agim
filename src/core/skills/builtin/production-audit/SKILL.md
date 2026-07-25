@@ -25,7 +25,7 @@ third-party data sharing.
 ## When Not to Use
 
 - During active implementation when the right lens is line-level secure coding;
-  use `security-review` first.
+  use `security-scan` first.
 - For pure libraries, templates, docs-only repos, or scaffolds unless the user
   wants packaging/release readiness rather than application readiness.
 - When the user asks for a formal compliance audit. This skill is engineering
@@ -199,7 +199,7 @@ Next action: Want me to patch webhook idempotency first?
 
 ## See Also
 
-- Skill: `security-review`
+- Skill: `security-scan`
 - Skill: `deployment-patterns`
 - Skill: `e2e-testing`
 - Skill: `tdd-workflow`

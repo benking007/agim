@@ -140,7 +140,7 @@ Switch(
 
 ## Related Skills
 
-- `frontend-patterns`
+- `vite-patterns`
 - `design-system`
 - `liquid-glass-design`
 - `swiftui-patterns`

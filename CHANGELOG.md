@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Prune unused builtin skills (59)**: drop framework/language/industry
+  specialty packs rarely used in the default Agim surface
+  (`django-*`, `frontend-*`, `healthcare-*`, `kotlin-*`, `laravel-*`,
+  `motion-*`, `network-*`, `orch-*`, `perl-*`, `quarkus-*`, `react-*`,
+  `springboot-*`, `swift-*`, plus `security-review`, `content-engine`,
+  `openclaw-persona-forge`, `skill-comply`/`scout`/`stocktake`). Keep
+  `skill-creator`, `security-scan`, `security-bounty-hunter`. ECC top-pick
+  list swaps `security-review`→`security-scan` and `content-engine`→
+  `api-design`.
+
 ### Fixed
 
 - **Loop met confirm: no full conclusion before user decides**: on

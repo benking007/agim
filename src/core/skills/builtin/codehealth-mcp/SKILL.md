@@ -151,7 +151,7 @@ Drive-by cleanup across the module
 | `coding-standards` | Style/naming; Code Health = structure/complexity |
 | `plankton-code-quality` | Write-time lint/format; Code Health = pre/post edit structural gate |
 | `verification-loop` / `/quality-gate` | Add structural regression check before "done" |
-| `security-review` | Security vs maintainability — use both when relevant |
+| `security-scan` | Security vs maintainability — use both when relevant |
 | `tdd-workflow` | Tests pass ≠ healthy design — check score after refactors |
 
 **Context tip:** ECC recommends keeping MCP count low. Enable `codescene` when doing substantive edits; disable when not needed.
@@ -162,5 +162,5 @@ Drive-by cleanup across the module
 - `plankton-code-quality` — write-time lint/format hooks
 - `verification-loop` — build/test/lint gate
 - `tdd-workflow` — test-first development
-- `security-review` — security checklist
+- `security-scan` — security checklist
 - `documentation-lookup` — library docs via Context7 (orthogonal)

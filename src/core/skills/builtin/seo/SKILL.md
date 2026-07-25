@@ -149,6 +149,6 @@ Fix: Generate a unique title per product using the product name and primary cate
 ## Related Skills
 
 - `seo-specialist`
-- `frontend-patterns`
+- `vite-patterns`
 - `brand-voice`
 - `market-research`

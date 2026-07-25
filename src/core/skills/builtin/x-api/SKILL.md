@@ -217,10 +217,10 @@ else:
 
 ## Integration with Content Engine
 
-Use `brand-voice` plus `content-engine` to generate platform-native content, then post via X API:
+Use `brand-voice` plus `article-writing` to generate platform-native content, then post via X API:
 1. Pull recent original posts when voice matching matters
 2. Build or reuse a `VOICE PROFILE`
-3. Generate content with `content-engine` in X-native format
+3. Generate content with `article-writing` in X-native format
 4. Validate length and thread structure
 5. Return the draft for approval unless the user explicitly asked to post now
 6. Post via X API only after approval
@@ -229,6 +229,6 @@ Use `brand-voice` plus `content-engine` to generate platform-native content, the
 ## Related Skills
 
 - `brand-voice` — Build a reusable voice profile from real X and site/source material
-- `content-engine` — Generate platform-native content for X
+- `article-writing` — Generate platform-native content for X
 - `crosspost` — Distribute content across X, LinkedIn, and other platforms
 - `connections-optimizer` — Reorganize the X graph before drafting network-driven outreach

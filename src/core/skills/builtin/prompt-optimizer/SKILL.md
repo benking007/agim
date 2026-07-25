@@ -39,7 +39,7 @@ and output a complete optimized prompt the user can paste and run.
 - User wants the task done directly (just execute it)
 - User says "优化代码", "优化性能", "optimize this code", "optimize performance" — these are refactoring tasks, not prompt optimization
 - User is asking about ECC configuration (use `configure-ecc` instead)
-- User wants a skill inventory (use `skill-stocktake` instead)
+- User wants a skill inventory (use `agim-skill-discovery` instead)
 - User says "just do it" or "直接做"
 
 ## How It Works
@@ -122,7 +122,7 @@ Map intent + scope + tech stack (from Phase 0) to specific ECC components.
 | Refactor | /refactor-clean, /code-review, /verify | verification-loop | refactor-cleaner, code-reviewer |
 | Research | /plan | search-first, iterative-retrieval | — |
 | Testing | /tdd, /e2e, /test-coverage | tdd-workflow, e2e-testing | tdd-guide, e2e-runner |
-| Review | /code-review | security-review | code-reviewer, security-reviewer |
+| Review | /code-review | security-scan | code-reviewer, security-reviewer |
 | Documentation | /update-docs, /update-codemaps | — | doc-updater |
 | Infrastructure | /plan, /verify | docker-patterns, deployment-patterns, database-migrations | architect |
 | Design (MEDIUM-HIGH) | /plan | — | planner, architect |
@@ -132,15 +132,13 @@ Map intent + scope + tech stack (from Phase 0) to specific ECC components.
 
 | Tech Stack | Skills to Add | Agent |
 |------------|--------------|-------|
-| Python / Django | django-patterns, django-tdd, django-security, django-verification, python-patterns, python-testing | python-reviewer |
+| Python | python-patterns, python-testing | python-reviewer |
 | Go | golang-patterns, golang-testing | go-reviewer, go-build-resolver |
-| Spring Boot / Java | springboot-patterns, springboot-tdd, springboot-security, springboot-verification, java-coding-standards, jpa-patterns | java-reviewer |
-| Quarkus / Java | quarkus-patterns, quarkus-tdd, quarkus-security, quarkus-verification, java-coding-standards, jpa-patterns | java-reviewer |
-| Kotlin / Android | kotlin-coroutines-flows, compose-multiplatform-patterns, android-clean-architecture | kotlin-reviewer |
-| TypeScript / React | frontend-patterns, backend-patterns, coding-standards | code-reviewer |
-| Swift / iOS | swiftui-patterns, swift-concurrency-6-2, swift-actor-persistence, swift-protocol-di-testing | code-reviewer |
+| Java | java-coding-standards, jpa-patterns | java-reviewer |
+| Kotlin / Android | compose-multiplatform-patterns, android-clean-architecture | kotlin-reviewer |
+| TypeScript / frontend | vite-patterns, backend-patterns, coding-standards | code-reviewer |
+| Swift / iOS | swiftui-patterns | code-reviewer |
 | PostgreSQL | postgres-patterns, database-migrations | database-reviewer |
-| Perl | perl-patterns, perl-testing, perl-security | code-reviewer |
 | C++ | cpp-coding-standards, cpp-testing | code-reviewer |
 | Other / Unlisted | coding-standards (universal) | code-reviewer |
 
@@ -391,7 +389,7 @@ Recommended: Opus 4.6 for blueprint planning, Sonnet 4.6 for phase execution.
 | Component | When to Reference |
 |-----------|------------------|
 | `configure-ecc` | User hasn't set up ECC yet |
-| `skill-stocktake` | Audit which components are installed (use instead of hardcoded catalog) |
+| `agim-skill-discovery` | Discover installed / available skills instead of a hardcoded catalog |
 | `search-first` | Research phase in optimized prompts |
 | `blueprint` | EPIC-scope optimized prompts (invoke as skill, not command) |
 | `strategic-compact` | Long session context management |

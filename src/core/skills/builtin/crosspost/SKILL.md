@@ -1,6 +1,6 @@
 ---
 name: crosspost
-description: [ECC] Multi-platform content distribution across X, LinkedIn, Threads, and Bluesky. Adapts content per platform using content-engine patterns. Never posts identical content cross-platform. Use when the user wants to distribute content across social platforms.
+description: [ECC] Multi-platform content distribution across X, LinkedIn, Threads, and Bluesky. Adapts content per platform using article-writing patterns. Never posts identical content cross-platform. Use when the user wants to distribute content across social platforms.
 origin: ECC
 ---
 
@@ -33,7 +33,7 @@ Pick the strongest source version first:
 - the thread
 - the memo or changelog
 
-Use `content-engine` first if the source still needs voice shaping.
+Use `article-writing` first if the source still needs voice shaping.
 
 ### Step 2: Capture the Voice Fingerprint
 
@@ -107,5 +107,5 @@ Before delivering:
 ## Related Skills
 
 - `brand-voice` for reusable source-derived voice capture
-- `content-engine` for voice capture and source shaping
+- `article-writing` for voice capture and source shaping
 - `x-api` for X publishing workflows

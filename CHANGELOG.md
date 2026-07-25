@@ -23,6 +23,11 @@ All notable changes to this project will be documented in this file.
 - **Composer thinking chip merged**: one chip shows「思考 max」/
   「非思考 max」with cascade menus for on/off and low/high/max (saves a
   slot on mobile).
+- **「替我审批」now actually takes effect with open IM**: composer /
+  Settings toggle also sets `AGIM_AUTO_APPROVE_OPEN_IM=1` (explicit ack).
+  Previously `enabled=1` could stay `effective=false`, so unconfined
+  `agim_exec` cards (countdown / 本类自动放行) still appeared. Chip shows
+  amber「未生效」when suppressed.
 - **Loop met confirm: no full conclusion before user decides**: on
   `pending_user_confirm`, parent must only nudge the Portal dock (not dump
   核心结论/tables). Loop stays open until「确认结束」; that click posts

@@ -34,6 +34,28 @@ export function isAutoApproveEffective(): boolean {
   return false
 }
 
+/**
+ * Hot-apply composer / Settings「替我审批」.
+ *
+ * Turning ON also sets `AGIM_AUTO_APPROVE_OPEN_IM=1` — the UI toggle is the
+ * explicit open-IM acknowledgement. Without that ack, `isAutoApproveEnabled`
+ * can be true while `isAutoApproveEffective` stays false (IM messengers
+ * configured, no strict allowlist), and Portal still gets approval cards
+ * (incl. unconfined goal `agim_exec` countdown). Turning OFF clears both.
+ */
+export function applyAutoApprovePolicy(enabled: boolean): {
+  enabled: boolean
+  effective: boolean
+} {
+  const value = enabled ? '1' : '0'
+  process.env.AGIM_AUTO_APPROVE = value
+  process.env.AGIM_AUTO_APPROVE_OPEN_IM = value
+  return {
+    enabled: isAutoApproveEnabled(),
+    effective: isAutoApproveEffective(),
+  }
+}
+
 function hasConfiguredImMessengersSync(): boolean {
   try {
     const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as { messengers?: unknown }

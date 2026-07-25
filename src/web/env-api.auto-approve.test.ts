@@ -40,14 +40,18 @@ function mockReq(method: string, body = ''): IncomingMessage {
 
 describe('/api/policy/auto-approve', () => {
   const prevApprove = process.env.AGIM_AUTO_APPROVE
+  const prevOpenIm = process.env.AGIM_AUTO_APPROVE_OPEN_IM
 
   beforeEach(() => {
     process.env.AGIM_AUTO_APPROVE = '0'
+    delete process.env.AGIM_AUTO_APPROVE_OPEN_IM
   })
 
   afterEach(() => {
     if (prevApprove === undefined) delete process.env.AGIM_AUTO_APPROVE
     else process.env.AGIM_AUTO_APPROVE = prevApprove
+    if (prevOpenIm === undefined) delete process.env.AGIM_AUTO_APPROVE_OPEN_IM
+    else process.env.AGIM_AUTO_APPROVE_OPEN_IM = prevOpenIm
   })
 
   it('GET returns enabled=false by default', async () => {
@@ -63,7 +67,7 @@ describe('/api/policy/auto-approve', () => {
     expect(json.enabled).toBe(false)
   })
 
-  it('PUT enabled=true hot-sets AGIM_AUTO_APPROVE=1', async () => {
+  it('PUT enabled=true hot-sets AGIM_AUTO_APPROVE=1 and open-IM ack', async () => {
     const res = mockRes()
     const ok = await handleEnvApi(
       mockReq('PUT', JSON.stringify({ enabled: true })),
@@ -72,14 +76,17 @@ describe('/api/policy/auto-approve', () => {
     )
     expect(ok).toBe(true)
     expect(res.statusCode).toBe(200)
-    const json = JSON.parse(res.body) as { enabled: boolean; ok: boolean }
+    const json = JSON.parse(res.body) as { enabled: boolean; effective: boolean; ok: boolean }
     expect(json.ok).toBe(true)
     expect(json.enabled).toBe(true)
+    expect(json.effective).toBe(true)
     expect(process.env.AGIM_AUTO_APPROVE).toBe('1')
+    expect(process.env.AGIM_AUTO_APPROVE_OPEN_IM).toBe('1')
   })
 
-  it('PUT enabled=false restores request-approval mode', async () => {
+  it('PUT enabled=false restores request-approval mode and clears open-IM ack', async () => {
     process.env.AGIM_AUTO_APPROVE = '1'
+    process.env.AGIM_AUTO_APPROVE_OPEN_IM = '1'
     const res = mockRes()
     const ok = await handleEnvApi(
       mockReq('PUT', JSON.stringify({ enabled: false })),
@@ -87,8 +94,10 @@ describe('/api/policy/auto-approve', () => {
       new URL('http://localhost/api/policy/auto-approve'),
     )
     expect(ok).toBe(true)
-    const json = JSON.parse(res.body) as { enabled: boolean }
+    const json = JSON.parse(res.body) as { enabled: boolean; effective: boolean }
     expect(json.enabled).toBe(false)
+    expect(json.effective).toBe(false)
     expect(process.env.AGIM_AUTO_APPROVE).toBe('0')
+    expect(process.env.AGIM_AUTO_APPROVE_OPEN_IM).toBe('0')
   })
 })

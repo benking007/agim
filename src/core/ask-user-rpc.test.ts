@@ -12,6 +12,7 @@ import {
   tryResolvePendingAskByButton,
   handleAskButton,
   listPendingAsks,
+  threadHasPendingAsk,
   _resetAskBusForTests,
   type AskResult,
 } from './ask-user-rpc.js'
@@ -581,8 +582,10 @@ describe('listPendingAsks', () => {
     expect(list[0].platform).toBe('list-1')
     expect(list[0].choices).toBe(2)
     expect(list[0].ageMs).toBeLessThan(1_000)
+    expect(threadHasPendingAsk(ctx.platform, ctx.channelId, ctx.threadId)).toBe(true)
     tryResolvePendingAsk(ctx.platform, ctx.channelId, ctx.threadId, 'a')
     await p
     expect(listPendingAsks().length).toBe(0)
+    expect(threadHasPendingAsk(ctx.platform, ctx.channelId, ctx.threadId)).toBe(false)
   })
 })

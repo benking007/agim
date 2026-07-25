@@ -18,6 +18,7 @@ import {
   countActiveJobsByIds,
   jobThreadKey,
 } from './job-board.js'
+import { threadHasPendingAsk } from './ask-user-rpc.js'
 import {
   focusOff,
   getFocusOn,
@@ -683,6 +684,15 @@ export function forceLoopExitSkippedVerify(
       reason: 'verify_skipped',
       threadId,
     }, 'defer verify_skipped while Subagents still running')
+    return { ended: false, run }
+  }
+
+  if (threadHasPendingAsk(platform, channelId, threadId)) {
+    log.info({
+      event: 'loop.exit_deferred_pending_ask',
+      reason: 'verify_skipped',
+      threadId,
+    }, 'defer verify_skipped while ask_user awaits user reply')
     return { ended: false, run }
   }
 
@@ -1477,7 +1487,8 @@ export function buildLoopSnippet(
     lines.push(
       `HARD WAIT: ${live} Subagent job(s) still pending/running for THIS ROUND. `
         + 'Do NOT call loop_verdict / start evaluation until all round children finish. '
-        + 'Parent must only wait (sleep/now) — no research, no extra dispatch. '
+        + 'Parent must only wait (sleep/now) or ask_user on clarifying questions — '
+        + 'no research, no extra dispatch. '
         + 'A single child finishing is not enough.',
     )
   }
@@ -1504,7 +1515,8 @@ export function buildLoopSnippet(
   }
   if (live > 0) {
     lines.push(
-      'WAIT (not VERIFY yet): this round still has live Subagents — only wait/loop; '
+      'WAIT (not VERIFY yet): this round still has live Subagents — only wait/loop '
+        + '(ask_user allowed for clarifying questions); '
         + 'do not research or call loop_verdict until liveSubagents=0 for this round.',
     )
   } else if ((run.dispatchesThisRound || 0) < 1) {
@@ -1521,7 +1533,10 @@ export function buildLoopSnippet(
       'VERIFY (R4): call loop_verdict with structured fields against Objective'
         + (view.acceptance ? '/Acceptance' : '')
         + ': met (boolean), summary, and if unmet: gaps[] + nextDirection. '
-        + 'HARD GATE: before verdict, parent ONLY waits (no research/dispatch). '
+        + 'MID-REVIEW HITL: if conclusion is uncertain, you have a question, or '
+        + 'data looks anomalous — call mcp__agim__ask_user first; after the user '
+        + 'replies, continue with loop_verdict. '
+        + 'HARD GATE: before verdict, parent ONLY waits / ask_user (no research/dispatch). '
         + 'After loop_verdict succeeds you may summarize or do follow-up research. '
         + 'HARD: only after ALL Subagents for this round have finished. '
         + 'met=true → decision=stop → Portal user confirm (end|continue)'

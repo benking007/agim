@@ -663,6 +663,17 @@ export function listPendingAsks(): Array<{
   return out
 }
 
+/** True while this thread has an unresolved ask_user (awaiting user reply). */
+export function threadHasPendingAsk(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): boolean {
+  if (!platform || !threadId) return false
+  const set = PENDING_BY_THREAD.get(threadKey(platform, channelId || '', threadId))
+  return !!set && set.size > 0
+}
+
 /**
  * Cancel a single pending ask by reqId. Returns true iff something
  * was cancelled. Used by the admin panel's per-row Cancel button —

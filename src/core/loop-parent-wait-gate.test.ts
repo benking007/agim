@@ -60,19 +60,22 @@ describe('loop parent wait gate', () => {
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   })
 
-  it('blocks research after dispatch; allows sleep and loop_verdict when idle', () => {
+  it('blocks research after dispatch; allows sleep, ask_user, and loop_verdict when idle', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'web_fetch').ok).toBe(false)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__call_agents').ok).toBe(false)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'agim_sleep_ms').ok).toBe(true)
+    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user').ok).toBe(true)
+    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'ask_user').ok).toBe(true)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__loop_verdict').ok).toBe(true)
   })
 
-  it('blocks loop_verdict while round Subagents are live', () => {
+  it('blocks loop_verdict while round Subagents are live; still allows ask_user', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     _setTestLiveSubagents(true)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__loop_verdict').ok).toBe(false)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'agim_sleep_ms').ok).toBe(true)
+    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user').ok).toBe(true)
   })
 
   it('pending_user_confirm blocks research and verdict', () => {

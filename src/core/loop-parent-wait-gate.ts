@@ -1,8 +1,8 @@
 /**
  * Loop parent wait gate — after this round has dispatched, the parent must
- * only wait (and then call loop_verdict). No research / mutation / extra
- * dispatch until verification completes. After verdict, parent may summarize
- * or do follow-up research.
+ * only wait (ask_user when uncertain, then loop_verdict). No research /
+ * mutation / extra dispatch until verification completes. After verdict,
+ * parent may summarize or do follow-up research.
  *
  * Shares AGIM_LOOP_DISPATCH_GATE opt-out (same family of Loop hard gates).
  */
@@ -17,6 +17,7 @@ const WAIT_ONLY_BASE: readonly string[] = [
   'agim_now',
   'agim_random_uuid',
   'agim_sleep_ms',
+  'mcp__agim__ask_user',
   'mcp__agim__loop_verdict',
 ]
 
@@ -34,6 +35,7 @@ function isWaitOnlyTool(toolName: string): boolean {
   const lower = toolName.toLowerCase()
   return (
     lower === 'loop_verdict'
+    || lower === 'ask_user'
     || lower === 'agim_sleep_ms'
     || lower === 'sleep_ms'
     || lower === 'agim_now'
@@ -53,7 +55,8 @@ export type LoopParentWaitGateResult =
 
 /**
  * After ≥1 dispatch this round (status still in dispatch/verify), or while
- * pending_user_confirm: parent may only wait / (when live=0) call loop_verdict.
+ * pending_user_confirm: parent may only wait / ask_user / (when live=0)
+ * call loop_verdict.
  */
 export function evaluateLoopParentWaitGate(
   platform: string,
@@ -115,7 +118,8 @@ export function evaluateLoopParentWaitGate(
     ok: false,
     reason:
       'loop-parent-wait: after dispatch this round, parent must ONLY wait '
-      + '(agim_sleep_ms / agim_now) then call mcp__agim__loop_verdict — '
+      + '(agim_sleep_ms / agim_now), optionally mcp__agim__ask_user on '
+      + 'uncertain/anomalous results, then call mcp__agim__loop_verdict — '
       + 'no research, mutation, or further call_agent(s) until verification. '
       + 'After verdict you may summarize or do follow-up research. '
       + 'Set AGIM_LOOP_DISPATCH_GATE=off to disable.',

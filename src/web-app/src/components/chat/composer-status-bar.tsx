@@ -1,13 +1,14 @@
 /**
  * ComposerStatusBar — Cursor-like row under the chat input:
- *   [model ▾]  Thinking ▾  high ▾          (context ring)
+ *   [model ▾]  [思考 max ▾]  [审批 ▾]          (context ring)
  *
  * Model dropdown lists sibling backends under the same preset; last item
- * opens the LLM settings dialog. Thinking / effort send `/think …`.
+ * opens the LLM settings dialog. Thinking on/off + effort are one chip
+ * with cascade submenus (saves a slot on narrow Portal widths).
  * Context ring opens an approximate usage breakdown popover.
  */
 
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Brain, Check, ChevronDown, Settings2 } from 'lucide-react'
 
@@ -16,6 +17,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -145,7 +149,14 @@ export function ComposerStatusBar({
 }: ComposerStatusBarProps): JSX.Element {
   const { t } = useTranslation()
   const [contextOpen, setContextOpen] = useState(false)
-  const { on: thinkingOn, effort } = normalizeVariant(thinkVariant)
+  const { on: thinkingOn, effort: parsedEffort } = normalizeVariant(thinkVariant)
+  // `/think off` drops effort from the variant string — remember the last
+  // level so the merged chip can still show「非思考 max」and restore it.
+  const [rememberedEffort, setRememberedEffort] = useState<ThinkEffort>(parsedEffort)
+  useEffect(() => {
+    if (thinkingOn) setRememberedEffort(parsedEffort)
+  }, [thinkingOn, parsedEffort])
+  const effort = thinkingOn ? parsedEffort : rememberedEffort
   const windowSize = Math.max(1, contextWindow || 32_000)
   const used = Math.max(0, contextUsed)
   const ratio = used / windowSize
@@ -157,6 +168,7 @@ export function ComposerStatusBar({
 
   function setEffort(next: ThinkEffort): void {
     if (disabled) return
+    setRememberedEffort(next)
     onSendCommand(`/think ${next}`)
   }
 
@@ -216,45 +228,71 @@ export function ComposerStatusBar({
         </DropdownMenu>
 
         {showThinking && (
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild disabled={disabled}>
-                <button type="button" className={chip}>
-                  <Brain className={cn('h-3 w-3 shrink-0', thinkingOn ? (dark ? 'text-teal-400' : 'text-teal-600') : 'opacity-50')} />
-                  <span className="whitespace-nowrap">
-                    {thinkingOn
-                      ? t('chat.statusBar.thinkingOn', { defaultValue: 'Thinking' })
-                      : t('chat.statusBar.thinkingOff', { defaultValue: 'Think off' })}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild disabled={disabled}>
+              <button
+                type="button"
+                className={chip}
+                title={t('chat.statusBar.thinkingHint', {
+                  defaultValue: 'Thinking on/off and effort level',
+                })}
+              >
+                <Brain className={cn('h-3 w-3 shrink-0', thinkingOn ? (dark ? 'text-teal-400' : 'text-teal-600') : 'opacity-50')} />
+                <span className="whitespace-nowrap">
+                  {thinkingOn
+                    ? t('chat.statusBar.thinkingChipOn', {
+                      effort,
+                      defaultValue: 'Think {{effort}}',
+                    })
+                    : t('chat.statusBar.thinkingChipOff', {
+                      effort,
+                      defaultValue: 'No think {{effort}}',
+                    })}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[10rem]">
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <span className="flex-1">
+                    {t('chat.statusBar.thinkingToggle', { defaultValue: 'Deep thinking' })}
                   </span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[8rem]">
-                <DropdownMenuItem onSelect={() => setThinking(true)}>
-                  {t('chat.statusBar.thinkingOn', { defaultValue: 'Thinking' })}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setThinking(false)}>
-                  {t('chat.statusBar.thinkingOff', { defaultValue: 'Think off' })}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {thinkingOn && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild disabled={disabled}>
-                  <button type="button" className={chip}>
-                    <span className="whitespace-nowrap">{effort}</span>
-                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-[7rem]">
-                  <DropdownMenuItem onSelect={() => setEffort('low')}>low</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setEffort('high')}>high</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setEffort('max')}>max</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </>
+                  <span className="text-xs text-text-muted">
+                    {thinkingOn
+                      ? t('chat.statusBar.thinkingOnShort', { defaultValue: 'On' })
+                      : t('chat.statusBar.thinkingOffShort', { defaultValue: 'Off' })}
+                  </span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-[7rem]">
+                  <DropdownMenuItem onSelect={() => setThinking(true)}>
+                    <Check className={cn('h-3.5 w-3.5', thinkingOn ? 'opacity-100' : 'opacity-0')} />
+                    <span>{t('chat.statusBar.thinkingOnShort', { defaultValue: 'On' })}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setThinking(false)}>
+                    <Check className={cn('h-3.5 w-3.5', !thinkingOn ? 'opacity-100' : 'opacity-0')} />
+                    <span>{t('chat.statusBar.thinkingOffShort', { defaultValue: 'Off' })}</span>
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <span className="flex-1">
+                    {t('chat.statusBar.thinkingEffort', { defaultValue: 'Effort' })}
+                  </span>
+                  <span className="font-mono text-xs text-text-muted">{effort}</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-[7rem]">
+                  {(['low', 'high', 'max'] as const).map((level) => (
+                    <DropdownMenuItem key={level} onSelect={() => setEffort(level)}>
+                      <Check className={cn('h-3.5 w-3.5', effort === level ? 'opacity-100' : 'opacity-0')} />
+                      <span className="font-mono">{level}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         <Suspense

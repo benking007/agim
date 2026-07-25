@@ -15,6 +15,7 @@ import {
   getMissionView,
   isLoopWallExceeded,
   noteLoopDispatch,
+  noteLoopRoundJob,
   parseExitConstraints,
   parseLoopStartText,
   resolveLoopMetConfirm,
@@ -459,6 +460,38 @@ describe('loop-run R3 PLAN+DISPATCH', () => {
     expect(cont.run.status).toBe('planning')
     expect(cont.run.lastVerification?.met).toBe(false)
     expect(cont.run.lastVerification?.nextDirection).toContain('flaky')
+  })
+
+  it('loopJobIds accumulate across rounds (for detail report scope)', () => {
+    reset()
+    const threadId = `t-loop-jobs-${Date.now()}`
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '累计子代理；退出条件为有结论或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 2 })
+    noteLoopRoundJob(base.platform, base.channelId, threadId, 101)
+    noteLoopRoundJob(base.platform, base.channelId, threadId, 102)
+    const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'next round',
+      met: false,
+      nextDirection: 'more research',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.roundJobIds).toEqual([])
+    expect(cont.run.loopJobIds).toEqual([101, 102])
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    noteLoopRoundJob(base.platform, base.channelId, threadId, 103)
+    const again = getLoopRun(base.platform, base.channelId, threadId)
+    expect(again?.roundJobIds).toEqual([103])
+    expect(again?.loopJobIds).toEqual([101, 102, 103])
   })
 })
 

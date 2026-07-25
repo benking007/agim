@@ -17,6 +17,7 @@ import {
   noteLoopDispatch,
   parseExitConstraints,
   parseLoopStartText,
+  resolveLoopMetConfirm,
   setLoopAcceptance,
   setLoopExit,
   setLoopObjective,
@@ -87,8 +88,8 @@ describe('parseLoopStartText', () => {
 
   it('parseExitConstraints accepts 重复N轮 / N轮结束', () => {
     const repeat = parseExitConstraints('找到合理箱体或重复3轮结束')
-    expect(repeat.maxRounds).toBe(3)
     expect(repeat.minRounds).toBe(3)
+    expect(repeat.maxRounds).toBe(6) // min=N, max=N*2
     expect(parseExitConstraints('验收通过或 5 轮结束').maxRounds).toBe(5)
     expect(parseExitConstraints('验收通过或 5 轮结束').minRounds).toBeUndefined()
   })
@@ -432,7 +433,7 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     if (!metContinue.ok) expect(metContinue.error).toBe('met_use_stop')
   })
 
-  it('stop with met=true ends as objective_met', () => {
+  it('stop with met=true waits for user confirm; end/continue resolve', () => {
     reset()
     const threadId = 'loop-r4-met'
     const started = startLoop({
@@ -456,11 +457,53 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     })
     expect(stop.ok).toBe(true)
     if (!stop.ok) return
-    expect(stop.run.status).toBe('ended')
-    expect(stop.run.endReason).toBe('objective_met')
+    expect(stop.run.status).toBe('pending_user_confirm')
     expect(stop.run.lastVerification?.met).toBe(true)
-    expect(formatLoopStatus(stop.run)).toContain('达标结束')
-    expect(formatLoopStatus(stop.run)).toContain('regression green')
+    expect(formatLoopStatus(stop.run)).toContain('待用户确认结案')
+
+    const ended = resolveLoopMetConfirm(base.platform, base.channelId, threadId, {
+      action: 'end',
+      supplement: '同意结案',
+    })
+    expect(ended.ok).toBe(true)
+    if (!ended.ok) return
+    expect(ended.run.status).toBe('ended')
+    expect(ended.run.endReason).toBe('objective_met')
+    expect(formatLoopStatus(ended.run)).toContain('达标结束')
+  })
+
+  it('user confirm continue advances to next planning round', () => {
+    reset()
+    const threadId = 'loop-r4-met-continue'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出条件为验收通过或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'stop',
+      summary: 'looks done',
+      met: true,
+    })
+    expect(stop.ok).toBe(true)
+    if (!stop.ok) return
+    expect(stop.run.status).toBe('pending_user_confirm')
+
+    const cont = resolveLoopMetConfirm(base.platform, base.channelId, threadId, {
+      action: 'continue',
+      supplement: '再补一轮回归',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.status).toBe('planning')
+    expect(cont.run.round).toBe(2)
+    expect(cont.run.dispatchesThisRound).toBe(0)
+    expect(cont.run.lastVerification?.nextDirection).toContain('再补一轮回归')
   })
 
   it('minRounds hard floor refuses met=true stop before floor', () => {

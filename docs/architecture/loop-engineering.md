@@ -244,20 +244,22 @@ type LoopRun = {
 | **独立 cheap 验收** | `stop`+`met=true` 前可选再判 | Soft/auto（`AGIM_LOOP_EVALUATOR`） |
 | **R6 Heartbeat 触发** | 只负责 start，仍走 ALIGNING | 暂缓 |
 
-#### 待对焦（请确认）
+#### 已拍板（2026-07-25）
 
-| 问题 | 现行默认 | 需要你拍板 |
-|------|----------|------------|
-| 「重复 N 轮」语义 | **min=max=N**（做满 N 轮才允许达标结束；触达 N 也截断） | 是否改为仅 max？ |
-| `met=true` 早于 `minRounds` | **拒绝**，须 `continue/revise`；放弃可用 `stop`+`met=false` | 是否允许用户一键 override？ |
-| 串行多次 `call_agent`（非 batch） | 「本轮可验收」= **该线程 live 子代理数 = 0**（不按 wave） | 是否要按派工波次分组？ |
-| 子代理进行中父侧工具 | 仅挡 **verdict / 验收门禁 / Portal 立即行动**；其它工具未全挡 | 是否在 live 时也禁父侧调研类工具？ |
+| 问题 | 决议 |
+|------|------|
+| 「重复 N 轮」 | **min=N，max=N×2**（可多做，有上限） |
+| `met=true` | **不自动结案** → `pending_user_confirm`；Portal 底部浮窗展示结论，用户可补充后选 **结束 / 继续下一轮** |
+| 子代理守候粒度 | **按本轮**：`roundJobIds` live=0 才启动评审；评审后再开下一轮派工 |
+| 验收前父侧 | **只等待/循环**（sleep/now + 届时 `loop_verdict`）；验收后可总结或补充调研 |
+
+`至少/最少/不少于 N 轮` 仍为 `minRounds` only；`做满 N 轮` 仍为 min=max=N；`最多 N 轮` 仅为上限。
 
 ### 6.1 退出路径
 
 | 路径 | 条件 | `endReason`（示意） |
 |------|------|---------------------|
-| 达标 | `loop_verdict` `decision=stop` + `met=true`，且 `round ≥ minRounds`（若有）（可选独立验收同意） | `objective_met` |
+| 达标 | `loop_verdict` `stop`+`met=true`（且 `round≥minRounds`）→ 用户 Portal **确认结束** | `objective_met` |
 | 轮次/墙钟 | 触达 Mission 的 `maxRounds` / `maxWallMs` | `limit` / `wall_limit` |
 | 跳过验收 | 强制 follow-up 后仍无 verdict（或回合结束仍缺），且无 live 子代理 | `verify_skipped` |
 | 用户/Focus | `/loop stop`；Focus off/clear | `cancelled` / `focus_off` |
@@ -268,7 +270,8 @@ type LoopRun = {
 |------|--------|
 | `至少/最少/不少于 N 轮` | `minRounds=N` |
 | `最多 N 轮` / `N 轮结束` / `N rounds` | `maxRounds=N` |
-| `重复 N 轮` / `做满 N 轮` | `minRounds=maxRounds=N`（见上表待对焦） |
+| `重复 N 轮` | `minRounds=N`，`maxRounds=N×2` |
+| `做满 N 轮` | `minRounds=maxRounds=N` |
 | `超过 T 小时/分钟` | `maxWallMs` |
 
 VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。  
@@ -283,8 +286,10 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 |------|------|------|------|
 | **ALIGNING** | on | 确认前拒绝 `call_agent(s)` / `loop_verdict` | （核心，无关） |
 | **派工** | on | 本轮 `dispatchesThisRound===0` 时父侧拒绝调研类工具（`web_fetch`/`exec`/…），须先 `call_agents` | `AGIM_LOOP_DISPATCH_GATE`（`off` 关闭） |
-| **子代理守候** | on | live>0 → UX 保持待派工、`loopNeedsVerdict=false`、`loop_verdict`→`live_subagents` | （核心） |
+| **子代理守候** | on | **本轮** `roundJobIds` live>0 → 不进验收、`loop_verdict`→`live_subagents` | （核心） |
+| **父侧等待** | on | 本轮已派工后至 verdict 前：父侧仅 sleep/now/`loop_verdict` | 同 `AGIM_LOOP_DISPATCH_GATE` |
 | **验收** | on | 本轮已派工且 live=0 后须成功 `loop_verdict`；缺则 follow-up 一轮，仍缺 → `verify_skipped` | `AGIM_LOOP_VERIFY_GATE`（`off` 关闭） |
+| **结案确认** | on | `met=true` → `pending_user_confirm`；`POST /api/loop/confirm-met` | （核心） |
 | **退出下限** | on | `stop`+`met=true` 且 `round < minRounds` → `need_more_rounds` | （核心，由 exit NL 解析） |
 | **独立验收** | auto | `stop`+`met=true` 前用 `llmRoles.cheap` 再判（无 cheap / `off` 则 skip） | `AGIM_LOOP_EVALUATOR=auto\|on\|off` |
 
@@ -418,3 +423,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-24 | **文档**：§6 展开门禁/Portal/env/mock；与 orchestration / portal-composer / 回归清单对齐 |
 | 2026-07-24 | **子代理未完成不自动收尾**：wall/verify_skipped 推迟；`/loop stop` 取消子代理；`loop_verdict`→`live_subagents` |
 | 2026-07-25 | **退出硬字段 `minRounds` + 子代理守候不进验收**：§6.0 硬约束矩阵；`need_more_rounds`；DTO `liveSubagents`/`canVerify` |
+| 2026-07-25 | **拍板落地**：重复N→min/max=N/N×2；met 结案浮窗；本轮 `roundJobIds`；父侧验收前只等待 |

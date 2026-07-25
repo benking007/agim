@@ -357,8 +357,8 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/memos' || url.pathname.startsWith('/api/memos/')) {
       if (await handleMemosApi(req, res, url)) return
     }
-    // /api/loop — Portal Loop status chrome (R5).
-    if (url.pathname === '/api/loop') {
+    // /api/loop — Portal Loop status chrome + met confirm (R5).
+    if (url.pathname === '/api/loop' || url.pathname === '/api/loop/confirm-met') {
       if (await handleLoopApi(req, res, url)) return
     }
 

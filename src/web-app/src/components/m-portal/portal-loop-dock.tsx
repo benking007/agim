@@ -9,11 +9,11 @@
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Compass, Play, Target } from 'lucide-react'
+import { Check, Compass, Play, Target } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { LoopStatusDto } from '@/lib/api/loop'
+import { confirmLoopMet, type LoopStatusDto } from '@/lib/api/loop'
 import { usePortalLoop } from './use-portal-loop'
 import type { PetTaskItem } from './portal-pet'
 
@@ -65,9 +65,11 @@ function toPetTask(loop: LoopStatusDto, zh: boolean): PetTaskItem {
       ? `派工 ${loop.usage.dispatchCount} · 独立验收 ${loop.usage.evaluatorCount}`
       : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} indep. eval`)
     : ''
-  const label = live
-    ? (zh ? '子代理进行中' : 'Subagents running')
-    : loop.bucketLabel
+  const label = loop.bucket === 'confirm'
+    ? (zh ? '待确认结案' : 'Confirm conclusion')
+    : live
+      ? (zh ? '子代理进行中' : 'Subagents running')
+      : loop.bucketLabel
   return {
     id: `loop-${loop.id}`,
     kind: 'loop',
@@ -89,7 +91,7 @@ export function PortalLoopDock({
 }: PortalLoopDockProps): JSX.Element | null {
   const { i18n } = useTranslation()
   const zh = Boolean(i18n.language?.startsWith('zh'))
-  const { loop } = usePortalLoop(threadId, refreshKey)
+  const { loop, reload } = usePortalLoop(threadId, refreshKey)
 
   useEffect(() => {
     onLoopPetTask?.(loop?.active ? toPetTask(loop, zh) : null)
@@ -112,9 +114,21 @@ export function PortalLoopDock({
       />
     )
   }
+  if (loop.bucket === 'confirm') {
+    return (
+      <ConfirmMetDock
+        loop={loop}
+        threadId={threadId!}
+        dark={dark}
+        flush={flush}
+        zh={zh}
+        onResolved={() => { void reload() }}
+        className={className}
+      />
+    )
+  }
   if (busy || hasBlockingDock) return null
-  // HARD: while Subagents are live, do not nudge verify (or re-dispatch).
-  // Main loop polls status; evaluation starts only when liveSubagents=0.
+  // HARD: while Subagents are live this round, do not nudge verify.
   if ((loop.liveSubagents ?? 0) > 0) return null
   if (loop.bucket === 'dispatch' || loop.bucket === 'verify') {
     return (
@@ -129,6 +143,135 @@ export function PortalLoopDock({
     )
   }
   return null
+}
+
+function ConfirmMetDock({
+  loop,
+  threadId,
+  dark,
+  flush,
+  zh,
+  onResolved,
+  className,
+}: {
+  loop: LoopStatusDto
+  threadId: string
+  dark?: boolean
+  flush?: boolean
+  zh: boolean
+  onResolved: () => void
+  className?: string
+}): JSX.Element {
+  const pending = loop.pendingConfirmation
+  const summary = (pending?.summary || loop.lastVerification?.summary || '').trim()
+  const [supplement, setSupplement] = useState('')
+  const [busyAction, setBusyAction] = useState<'end' | 'continue' | null>(null)
+
+  async function submit(action: 'end' | 'continue') {
+    if (busyAction) return
+    setBusyAction(action)
+    try {
+      await confirmLoopMet({
+        threadId,
+        action,
+        supplement: supplement.trim() || undefined,
+        lang: zh ? 'zh' : 'en',
+      })
+      onResolved()
+    } catch {
+      setBusyAction(null)
+    }
+  }
+
+  return (
+    <div className={cn('relative z-20 pb-1 pt-0', flush ? 'px-0' : 'px-3 sm:px-4', className)}>
+      <section
+        className={cn(
+          'mx-auto flex w-full max-w-2xl flex-col',
+          'rounded-xl border shadow-[0_-6px_22px_rgba(15,23,42,0.10)] ring-1 ring-black/5',
+          'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
+          dark
+            ? 'border-teal-500/30 bg-zinc-950 text-zinc-100'
+            : 'border-teal-300/70 bg-white text-zinc-800',
+        )}
+        aria-label={zh ? '确认结案' : 'Confirm conclusion'}
+      >
+        <div className={cn(
+          'flex shrink-0 items-center gap-2 border-b px-3 py-2',
+          dark ? 'border-teal-500/20 bg-teal-500/10' : 'border-teal-200 bg-teal-50',
+        )}>
+          <span className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+            dark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-100 text-teal-700',
+          )}>
+            <Check className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold tracking-tight">
+              {zh ? '结论已就绪 — 请确认' : 'Conclusion ready — confirm'}
+            </p>
+            <p className={cn('truncate text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
+              {zh
+                ? `第 ${loop.round}/${loop.maxRounds} 轮 · 可补充后结束或继续`
+                : `R${loop.round}/${loop.maxRounds} · supplement, then end or continue`}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2.5 px-3 py-3">
+          <div className={cn(
+            'rounded-lg px-2.5 py-2 text-sm leading-relaxed',
+            dark ? 'bg-zinc-900 text-zinc-200' : 'bg-zinc-50 text-zinc-700',
+          )}>
+            {summary || (zh ? '（无摘要）' : '(no summary)')}
+          </div>
+          {pending?.gaps?.length ? (
+            <p className={cn('text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
+              {zh ? '缺口：' : 'Gaps: '}{pending.gaps.join(zh ? '；' : '; ')}
+            </p>
+          ) : null}
+          <label className="block space-y-1">
+            <span className={cn('text-[11px] font-medium', dark ? 'text-zinc-300' : 'text-zinc-600')}>
+              {zh ? '补充（可选）' : 'Supplement (optional)'}
+            </span>
+            <textarea
+              value={supplement}
+              onChange={(e) => setSupplement(e.target.value)}
+              rows={2}
+              placeholder={zh ? '例如：再核对一下持仓区间，或同意结案' : 'e.g. double-check range, or approve ending'}
+              className={cn(
+                'w-full resize-none rounded-lg border px-2.5 py-2 text-sm outline-none focus:border-teal-500',
+                dark
+                  ? 'border-zinc-700 bg-zinc-900 text-zinc-100 placeholder:text-zinc-500'
+                  : 'border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400',
+              )}
+            />
+          </label>
+          <div className="flex justify-end gap-2 pt-0.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!!busyAction}
+              onClick={() => void submit('continue')}
+            >
+              {zh ? '继续下一轮' : 'Continue'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!!busyAction}
+              onClick={() => void submit('end')}
+              className="gap-1.5"
+            >
+              <Check className="h-3.5 w-3.5" />
+              {zh ? '确认结束' : 'End Loop'}
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
 }
 
 function AligningDock({

@@ -153,7 +153,7 @@ const channelId = 'sim'
   const p = loopRun.parseExitConstraints('找到合理箱体或重复3轮结束')
   record(
     'parse.重复3轮',
-    p.maxRounds === 3 && p.minRounds === 3,
+    p.maxRounds === 6 && p.minRounds === 3,
     `maxRounds=${p.maxRounds} minRounds=${p.minRounds}`,
   )
   const minP = loopRun.parseExitConstraints('验收通过或至少 3 轮')

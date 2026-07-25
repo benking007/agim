@@ -35,6 +35,7 @@ export function loopNeedsVerdict(
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return false
   if (run.status === 'aligning' || run.status === 'ended') return false
+  if (run.status === 'pending_user_confirm') return false
   if ((run.dispatchesThisRound || 0) < 1) return false
   if (threadHasLiveSubagents(platform, channelId, threadId)) return false
   return getLoopUxBucket(run) === 'verify'

@@ -27,6 +27,7 @@ function baseRun(over: Partial<LoopRun> = {}): LoopRun {
       exit: { description: '验收通过', maxRounds: 5, onFocusOff: 'cancel' },
     },
     dispatchesThisRound: 0,
+    roundJobIds: [],
     usage: emptyLoopUsage(),
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -47,10 +48,12 @@ describe('loop UX buckets (R5)', () => {
     expect(getLoopUxBucket(baseRun({ status: 'dispatching', dispatchesThisRound: 0 }))).toBe('dispatch')
     expect(getLoopUxBucket(baseRun({ status: 'dispatching', dispatchesThisRound: 2 }))).toBe('verify')
     expect(getLoopUxBucket(baseRun({ status: 'verifying' }))).toBe('verify')
+    expect(getLoopUxBucket(baseRun({ status: 'pending_user_confirm' }))).toBe('confirm')
     expect(getLoopUxBucket(baseRun({ status: 'ended' }))).toBe('ended')
     expect(loopUxBucketLabel('aligning')).toBe('待对焦')
     expect(loopUxBucketLabel('dispatch')).toBe('待派工')
     expect(loopUxBucketLabel('verify')).toBe('待验收')
+    expect(loopUxBucketLabel('confirm')).toBe('待确认结案')
   })
 
   it('stays in dispatch while Subagents are live (no early verify)', () => {

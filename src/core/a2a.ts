@@ -377,6 +377,15 @@ export async function callAgentByName(
     parentId: opts.parentJobId ?? null,
     callDepth: nextDepth,
   })
+  // Round-scoped Loop wait: register job id as soon as the row exists.
+  if (jobId > 0) {
+    try {
+      const { noteLoopRoundJob } = await import('./loop-run.js')
+      noteLoopRoundJob(ctx.platform, ctx.channelId, ctx.threadId, jobId)
+    } catch {
+      /* Loop store optional — never break A2A */
+    }
+  }
   const abortController = new AbortController()
   const unbindJobController = bindJobController(jobId, abortController)
   const onOuterAbort = () => abortController.abort(opts.signal?.reason)

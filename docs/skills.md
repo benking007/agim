@@ -149,8 +149,10 @@ before sending the user's prompt to the agent:
 ```
 
 The wrapper text matches nanobot's pattern so models trained on its
-docs feel at home. Bounded to 32 injected skills; above the cap, the
-first 32 alphabetically are listed with an "and N more" note.
+docs feel at home. Bounded to 32 injected skills. Fill order is
+bucket-aware (`agim-*` → non-ECC builtin → workspace → ECC top-picks →
+ECC remainder clusters), not pure alphabetical — see
+`rankSkillBucket` in `src/core/skills/loader.ts`.
 
 ## Storage / packaging
 

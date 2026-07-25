@@ -10,7 +10,8 @@ Baseline coding conventions applicable across projects.
 
 This skill is the shared floor, not the detailed framework playbook.
 
-- Use `frontend-patterns` for React, state, forms, rendering, and UI architecture.
+- Use `coding-standards` / `coding-standards` (or workspace UI skills) for
+  framework-specific frontend patterns.
 - Use `backend-patterns` or `api-design` for repository/service layers, endpoint design, validation, and server-specific concerns.
 - Use `rules/common/coding-style.md` when you need the shortest reusable rule layer instead of a full skill walkthrough.
 

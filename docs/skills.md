@@ -149,8 +149,10 @@ before sending the user's prompt to the agent:
 ```
 
 The wrapper text matches nanobot's pattern so models trained on its
-docs feel at home. Bounded to 32 injected skills; above the cap, the
-first 32 alphabetically are listed with an "and N more" note.
+docs feel at home. Bounded to 32 injected skills. Fill order is
+bucket-aware (`agim-*` → non-ECC builtin → workspace → ECC top-picks →
+ECC remainder clusters), not pure alphabetical — see
+`rankSkillBucket` in `src/core/skills/loader.ts`.
 
 ## Storage / packaging
 
@@ -161,6 +163,67 @@ first 32 alphabetically are listed with an "and N more" note.
   set.
 - Workspace skills are not packaged — operators drop them into
   `~/.agim/skills/` after install.
+
+## Bundled pack (curated)
+
+The install ships **38** builtins:
+
+| Bucket | Count | Examples |
+|---|---|---|
+| **Agim-native** | 12 | `agim-self`, `agim-memory`, `skill-creator`, `github`, `tmux`, `weather`, … |
+| **ECC curated** | 26 | harness / methodology / product / security (see below) |
+
+Attribution for the ECC subset: `src/core/skills/builtin/ECC_NOTICE.md`
+(+ `ECC_LICENSE`). Disable the whole ECC pack with:
+
+```
+AGIM_INCLUDE_ECC_SKILLS=off
+```
+
+### ECC curated 26 (= default `ECC_TOP_PICKS`)
+
+These names are both the installed ECC directories and the system-prompt
+injection top-picks (`ECC_TOP_PICKS_DEFAULT` in `src/core/skills/loader.ts`).
+Override with `AGIM_SKILLS_ECC_PICKS=name1,name2,...`.
+
+**Harness / loops / eval**
+
+- `agent-eval` — 编码 Agent 横向对比（通过率 / 成本 / 时间）
+- `agent-harness-construction` — Agent 动作空间与工具定义优化
+- `agent-introspection-debugging` — Agent 失败的结构化自检与恢复
+- `agentic-engineering` — 评估驱动开发与成本感知路由
+- `autonomous-agent-harness` — 全自主 Agent 系统（持久记忆 / 定时任务）
+- `autonomous-loops` — 自主循环架构（顺序管道至多 Agent DAG）
+- `continuous-learning-v2` — 基于钩子的本能学习与技能演化
+- `verification-loop` — 会话综合验证系统
+- `prompt-optimizer` — 分析意图并输出优化后的提示词
+- `cost-aware-llm-pipeline` — API 成本优化（模型路由 / 缓存 / 重试）
+- `context-budget` — 上下文窗口占用审计与优化建议
+- `team-agent-orchestration` — 多 AI 代理团队编排
+
+**Methodology / product / content**
+
+- `architecture-decision-records` — 架构决策记录（ADR）捕获
+- `article-writing` — 长文 / 博客 / 教程 / 通讯写作
+- `benchmark` — 性能基线测量与回归检测
+- `blueprint` — 多会话多 Agent 工程项目分步蓝图
+- `code-tour` — 生成 CodeTour 分步代码导览
+- `coding-standards` — 跨项目编码规范
+- `tdd-workflow` — TDD 工作流
+- `api-design` — REST API 设计规范（命名 / 状态码 / 分页 / 限流）
+- `backend-patterns` — 后端架构与服务端最佳实践
+- `product-capability` — 产品功能范围与核心竞争力定义
+- `product-lens` — 多维产品分析透镜（技术 / 用户 / 商业）
+- `regex-vs-llm-structured-text` — 正则与 LLM 处理结构化文本对比
+
+**Security**
+
+- `security-scan` — 扫描 Claude Code 配置（CLAUDE.md / settings / MCP / hooks）找安全风险
+- `security-bounty-hunter` — 猎取可远程利用、适合赏金提交的高价值漏洞
+
+Framework / language / industry specialty ECC packs (django, kotlin,
+healthcare, media, Claude-Code ops tooling, …) were pruned from the
+default install. Re-add equivalents under `~/.agim/skills/` if needed.
 
 ## What's NOT in Stage 3
 

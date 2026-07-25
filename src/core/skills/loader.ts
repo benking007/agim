@@ -351,39 +351,33 @@ export function readSkillBody(name: string): string | null {
  * cap (priority bucket 2 below).
  *
  * Rationale: agim is a generic IM ↔ Agent bridge; the framework should
- * not assume the operator's business domain. So operator-authored
- * skills (workspace source) and the bundled ECC pack are NOT injected
- * by default — they're reachable via `mcp__agim__read_skill('name')`
- * when their description matches. But ECC ships 200+ skills covering
- * agent harness engineering and general-purpose dev methodology that
- * benefit every agim install; this list pins ~20 of those into the
- * default-32 injection so the agent has the harness vocabulary front
- * of mind without burying it under alphabet order.
- *
- * Selection: 11 agent-harness skills + 9 cross-language methodology
- * skills. Excludes framework / language / industry specialties (django,
- * kotlin, healthcare, …) and ECC-internal tooling.
+ * not assume the operator's business domain. Workspace skills stay
+ * on-demand via `mcp__agim__read_skill`. The shipped ECC pack is a
+ * curated 26-skill harness/methodology set — these names are both the
+ * installed ECC directories and the injection top-picks.
  *
  * Add / remove freely — this is a curated list, not a registry.
  */
 const ECC_TOP_PICKS_DEFAULT: ReadonlySet<string> = new Set([
-  // Agent harness engineering (11)
+  // Agent harness / eval / loops
   'agentic-engineering', 'agent-eval', 'agent-introspection-debugging',
   'agent-harness-construction', 'autonomous-agent-harness', 'autonomous-loops',
   'continuous-learning-v2', 'verification-loop', 'prompt-optimizer',
-  'cost-aware-llm-pipeline', 'context-budget',
-  // Cross-language methodology + content (9)
+  'cost-aware-llm-pipeline', 'context-budget', 'team-agent-orchestration',
+  // Methodology / product / security / content
   'blueprint', 'coding-standards', 'architecture-decision-records',
-  'code-tour', 'tdd-workflow', 'security-review', 'benchmark',
-  'article-writing', 'content-engine',
+  'backend-patterns', 'api-design', 'tdd-workflow', 'benchmark',
+  'code-tour', 'product-capability', 'product-lens',
+  'regex-vs-llm-structured-text', 'article-writing',
+  'security-scan', 'security-bounty-hunter',
 ])
 
 /**
  * v1.2.151 — Resolve the active ECC top-pick set. Operators can override
  * via `AGIM_SKILLS_ECC_PICKS=name1,name2,...`. An empty or unset value
- * falls back to the default 20-name list. Validation is intentionally
- * forgiving: unknown names pass through (they just become no-ops when
- * the named skill isn't installed).
+ * falls back to the default 26-name curated pack. Validation is
+ * intentionally forgiving: unknown names pass through (they just become
+ * no-ops when the named skill isn't installed).
  */
 export function resolveEccTopPicks(): ReadonlySet<string> {
   const raw = (process.env.AGIM_SKILLS_ECC_PICKS || '').trim()
@@ -497,10 +491,8 @@ export function deleteInjectionOverride(): boolean {
  *       weather). Curated by us specifically for the framework.
  *   2 — ECC recommended (the curated list above). Pinned harness / dev
  *       methodology essentials from the ECC pack.
- *   3 — Everything else: ECC remainder (210+) and operator workspace
- *       skills (the operator's business domain — fin-data, ash, etc.).
- *       Reachable via read_skill on description match; not strapped to
- *       the front of the prompt.
+ *   3 — Operator workspace skills (business domain — fin-data, ash,
+ *       etc.). Reachable via read_skill; not strapped to the prompt.
  *
  * Workspace skills land in 3 rather than 1 because operator-authored
  * content varies wildly per install — pinning them all means a finance
@@ -513,7 +505,7 @@ export function rankSkillBucket(s: SkillMeta): number {
   //   1  non-ECC builtin (agim's own small pack)
   //   2  ECC top picks (recommended, individual rows)
   //   3  workspace skills (operator-installed business — clustered when many)
-  //   4  ECC remainder (210 of them — always heavily clustered)
+  //   4  ECC remainder (only when operator re-adds ECC beyond top-picks)
   if (s.name.startsWith('agim-')) return 0
   // Detect bundled ECC pack. ECC's own SKILL.md files use multiple
   // `origin:` values (`ECC`, `community`, `ECC direct-port adaptation`,

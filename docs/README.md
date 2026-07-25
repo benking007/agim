@@ -49,7 +49,7 @@
 
 ## 能力专题
 
-- [`skills.md`](./skills.md)：Skills 机制
+- [`skills.md`](./skills.md)：Skills 机制（内置 38 = Agim 12 + ECC 精选 26）
 - [`portal-composer.md`](./portal-composer.md)：Portal（`/m/chat`）输入框 `/`·`@`、状态栏「替我审批」、chip、小精灵/Loop 底栏、长文折叠与附件预览
 - [`goals.md`](./goals.md)：`/goal` 现行实现（**已废弃设计** → Focus）
 - [`ask-user.md`](./ask-user.md)：结构化提问（ask_user）

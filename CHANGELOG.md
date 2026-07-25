@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
+  harness/methodology/product/security set (`agent-*`, `autonomous-*`,
+  `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,
+  `security-scan`, `security-bounty-hunter`, `product-*`, `code-tour`, …).
+  Delete the remaining ECC specialty packs plus gray-zone community ports
+  (`click-path-audit`, `flox-environments`, `plankton-code-quality`,
+  `santa-method`). Agim-native builtins (12) stay. Builtin total **38**.
+  `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
+
 ### Fixed
 
 - **Loop met confirm: no full conclusion before user decides**: on

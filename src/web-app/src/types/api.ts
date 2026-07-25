@@ -1153,6 +1153,17 @@ export interface ListAuditQuery {
  * Settings — env file, service control.
  * ============================================================ */
 
+/** GET/PUT /api/policy/auto-approve — main-agent tool auto-approve (composer chip). */
+export interface AutoApprovePolicyResponse {
+  enabled: boolean
+  effective: boolean
+  ok?: boolean
+}
+
+export interface UpdateAutoApprovePolicyBody {
+  enabled: boolean
+}
+
 export interface EnvResponse {
   /** Editable env-file values keyed by AGIM_*. Secrets are masked
    *  unless ?reveal=1 was passed (only last 4 chars visible). */

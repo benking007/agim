@@ -362,8 +362,12 @@ export async function startWebServer(options: {
       if (await handleLoopApi(req, res, url)) return
     }
 
-    // /api/env + /api/security/diagnostics — env var management + security badges.
-    if (url.pathname === '/api/env' || url.pathname === '/api/security/diagnostics') {
+    // /api/env + /api/security/diagnostics + /api/policy/auto-approve
+    if (
+      url.pathname === '/api/env'
+      || url.pathname === '/api/security/diagnostics'
+      || url.pathname === '/api/policy/auto-approve'
+    ) {
       if (await handleEnvApi(req, res, url)) return
     }
     // v1.2.126 — web_search provider introspection + ping.

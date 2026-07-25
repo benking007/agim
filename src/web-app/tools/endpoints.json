@@ -33,7 +33,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 122,
+  "count": 125,
   "endpoints": [
     {
       "method": "DELETE",
@@ -367,6 +367,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/policy/auto-approve",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/reminders",
       "source": "exact",
       "authRequired": true
@@ -595,6 +601,12 @@
     },
     {
       "method": "POST",
+      "path": "/api/loop/confirm-met",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
       "path": "/api/mcp/reload",
       "source": "exact",
       "authRequired": true
@@ -758,6 +770,12 @@
     {
       "method": "PUT",
       "path": "/api/memory/persona",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/policy/auto-approve",
       "source": "exact",
       "authRequired": true
     },

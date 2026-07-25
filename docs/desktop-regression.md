@@ -90,6 +90,7 @@ node tools/phase-a-acceptance.mjs
 | 子代理进行中 | 本轮 `liveSubagents>0` 时小精灵「子代理进行中」；**不**弹出待验收；单子代理结束不触发评审 |
 | VERIFY 中途提问 | **仅父侧**且子代理已齐；结论不确定时可 `ask_user`；子代理不得提问；`live>0` 父侧也不得提问解阻塞 |
 | 子代理调研 | 同线程子代理不被 `loop-parent-wait` 禁 `web_fetch`/`exec`（门禁仅 depth=0） |
+| 子代理审批 | `AGIM_AUTO_APPROVE=0` 时：主 turn 仍弹卡；子代理 exec/write **不弹卡**（代审） |
 | R2 再派工 | `continue/revise` 后同 turn 可再 `call_agents`（委托上限按轮重置） |
 | `met=true` 结案 | Portal「结论已就绪」浮窗；可补充 →「确认结束」或「继续下一轮」 |
 | 退出「至少 N 轮」 | 第 1 轮 `stop`+`met=true` → `need_more_rounds`；须继续到 N 或放弃 `stop`+`met=false` |

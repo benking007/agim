@@ -268,7 +268,19 @@
 | **Plan 叠放** | Todo/Plan 在 Subagent 卡片**上方**；`activityFollowSignal` 驱动中途刷新（不只看 `steps.length`） |
 | **Stop** | 运行中卡片右侧 Stop → WS `{ type: 'stop-subagent', jobId }` → `cancelJob`；保留 partial，格式化为 `formatSubagentStoppedResult`，以 **`ok: true, cancelled: true`** 交回父 turn，父继续 summarize / 推进 |
 
-**子代理免审（代用户批准）**：`callDepth>0` 时工具调用**不弹审批卡**，由系统代审放行（敏感路径硬拒绝 / self-protect / deny-all / denylist 仍生效）。主 turn（depth=0）仍受 `AGIM_AUTO_APPROVE` 控制。跨适配器 A2A 走同一条 ApprovalBus 规则。
+---
+
+## 7.2 审批与 HITL（父 / 子分工）
+
+| 角色 | 工具审批（exec / write …） | `ask_user` / `loop_verdict` |
+|------|---------------------------|----------------------------|
+| **父 turn**（`callDepth=0`） | 受 `AGIM_AUTO_APPROVE`；默认弹卡人工批 | 允许（对焦 / 中间评审） |
+| **子代理**（`callDepth>0`） | **代审免卡**（系统替用户批准） | **拒绝**；澄清写进 FINAL message |
+
+**代审仍拦截**：敏感路径硬拒绝、self-protect、`deny-all`、显式 denylist、`requiresExplicitDecision`（如 plan-exit）。  
+实现：原生 `buildPiApprovalGate` + ApprovalBus `_registerPending`（日志 `approval.bus.subagent_auto_approve`）。
+
+与 Loop 门禁配合：派工/等待门禁**仅父侧**；子代理共享 `threadId` 但可正常调研。详见 [`loop-engineering.md`](./loop-engineering.md) §6 · [`ask-user.md`](../ask-user.md) §9。
 
 ---
 
@@ -305,6 +317,7 @@
 | 2026-07-24 | **Subagent 消息流卡片**：Todo 级联可见；点击半浮层查看父提示词 + 结果（`GET /api/jobs/:id`） | #223 |
 | 2026-07-24 | **半浮层对齐 / 长内容滚动**；Plan 中途可见（`activityFollowSignal` + todo status 归一）；Plan 叠在 Subagent 上方 | #223 |
 | 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
+| 2026-07-25 | **子代理代审免卡**：`callDepth>0` 不弹工具审批；禁子代理 `ask_user`/`loop_verdict`；Loop 门禁仅 depth=0 | #249 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
@@ -326,5 +339,6 @@
 
 > **Subagent 是「父还在开会对用户负责」时的隔离子工人。**  
 > 同 Agim 换 pro/flash、或派 Claude/Codex，都是 Subagent；A2A 是跨 adapter 的管子。  
+> 子代理工具代审免卡；提问与 Loop 验收只归父侧。  
 > 难关在拆解与 brief，不在再写一个调度中台。  
 > 先打通同族 spawn + 统一观测，再并行，再 Focus + Loop（见 [`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)）。

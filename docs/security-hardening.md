@@ -75,7 +75,7 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | `AGIM_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
 | `AGIM_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
 | `AGIM_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
-| `AGIM_AUTO_APPROVE` | `0`（关） | 默认关闭；`=1` 时工具调用在安全检查后立即自动放行。接 IM 时还需严格 allowlist 或 `AGIM_AUTO_APPROVE_OPEN_IM=1` | v1.5.7 / hardened |
+| `AGIM_AUTO_APPROVE` | `0`（关） | **仅约束主 turn（depth=0）**；`=1` 时主 turn 工具在安全检查后立即自动放行。接 IM 时还需严格 allowlist 或 `AGIM_AUTO_APPROVE_OPEN_IM=1`。**子代理（depth>0）始终代审免卡**（与本开关无关） | v1.5.7 / hardened；子代理代审 #249 |
 | `AGIM_AUTO_APPROVE_OPEN_IM` | 未设 = 关 | `=1` 显式确认：即使 IM 开放且无严格 `AGIM_ALLOWED_USERS`，仍允许 auto-approve | hardened |
 | `AGIM_EXEC_ALLOW_ANY_CWD` | 未设 = 关 | `=1` 允许 `agim_exec` 的 cwd 落在 agent workspace 之外（默认 realpath 限制在 workspace 内） | hardened |
 | (已有) `AGIM_TIMEOUT_DEFAULT` | `allow` | 审批超时策略（仅 AUTO_APPROVE 关闭时生效）；设 `deny` 启用严格交互模式 | R13 G5 C1 |

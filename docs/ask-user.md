@@ -185,6 +185,8 @@ Loop 生命周期里 `ask_user` 有两处硬鼓励场景（契约见 [`architect
 - `live=0` 后父侧等待门禁放行 `ask_user` + `loop_verdict`，仍禁止调研 / 再派工。
 - 线程上若仍有 pending ask（`threadHasPendingAsk`），VERIFY follow-up 与 `verify_skipped` **推迟**。
 
+注意：`ask_user`（向用户提问）≠ 工具审批。子代理的 **exec/write 等工具审批** 已改为代审免卡，见 [`architecture/subagent.md`](./architecture/subagent.md) §7.2。
+
 结案确认（`met=true` → Portal「结论已就绪」）走 `POST /api/loop/confirm-met`，**不是** `ask_user`。
 
 ---

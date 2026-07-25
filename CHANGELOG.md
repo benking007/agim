@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
   `continue|revise` resets the per-turn `call_agent` cap so Round 2 can
   dispatch again.
 
+### Changed
+
+- **Subagent tools proxy-approved**: `callDepth>0` skips approval cards
+  (native gate + ApprovalBus) on the user's behalf. Sensitive-path deny,
+  self-protect, deny-all / denylist still apply. Parent turn unchanged.
+
 ### Added
 
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate

@@ -294,10 +294,12 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 | 触发 | 行为 |
 |------|------|
-| 子代理结果冲突 / 数据异常 / 验收标准不清 | 父侧调用 `mcp__agim__ask_user`（结构化选项） |
+| 子代理结果冲突 / 数据异常 / 验收标准不清 | **父侧**在 `live=0` 后调用 `mcp__agim__ask_user` |
 | 用户回复 | 工具返回后父侧再调 `loop_verdict` |
 | 有 pending ask | `loopNeedsVerdict=false`；不强制 follow-up；不 `verify_skipped` |
-| 仍禁止 | 调研类工具、`call_agent(s)`（验收完成前） |
+| `live>0` | 父侧 **不得** `ask_user`「解阻塞」；只 sleep/now |
+| 子代理 | `callerDepth>0` → `ask_user` / `loop_verdict` **拒绝** |
+| 仍禁止（父侧验收前） | 调研类工具、`call_agent(s)` |
 
 详见 [`ask-user.md`](../ask-user.md) § Loop Engineering。
 
@@ -308,7 +310,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 | **ALIGNING** | on | 确认前拒绝 `call_agent(s)` / `loop_verdict` | （核心，无关） |
 | **派工** | on | 本轮 `dispatchesThisRound===0` 时父侧拒绝调研类工具（`web_fetch`/`exec`/…），须先 `call_agents` | `AGIM_LOOP_DISPATCH_GATE`（`off` 关闭） |
 | **子代理守候** | on | **本轮** `roundJobIds` live>0 → 不进验收、`loop_verdict`→`live_subagents` | （核心） |
-| **父侧等待** | on | 本轮已派工后至 verdict 前：父侧仅 sleep/now/`ask_user`/`loop_verdict` | 同 `AGIM_LOOP_DISPATCH_GATE` |
+| **父侧等待** | on | 本轮已派工后至 verdict 前：**仅 depth=0**；`live>0` 仅 sleep/now；`live=0` 才可 `ask_user`/`loop_verdict` | 同 `AGIM_LOOP_DISPATCH_GATE` |
 | **验收** | on | 本轮已派工且 live=0 后须成功 `loop_verdict`；缺则 follow-up 一轮，仍缺 → `verify_skipped`（有 pending `ask_user` 时推迟） | `AGIM_LOOP_VERIFY_GATE`（`off` 关闭） |
 | **结案确认** | on | `met=true` → `pending_user_confirm`；`POST /api/loop/confirm-met` | （核心） |
 | **退出下限** | on | `stop`+`met=true` 且 `round < minRounds` → `need_more_rounds` | （核心，由 exit NL 解析） |
@@ -448,3 +450,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **退出硬字段 `minRounds` + 子代理守候不进验收**：§6.0 硬约束矩阵；`need_more_rounds`；DTO `liveSubagents`/`canVerify` |
 | 2026-07-25 | **拍板落地**：重复N→min/max=N/N×2；met 结案浮窗；本轮 `roundJobIds`；父侧验收前只等待 |
 | 2026-07-25 | **VERIFY 中途 ask_user**：父侧等待门禁放行提问；pending ask 推迟 `verify_skipped`；主流程/状态机/Portal/`ask-user.md` 对齐 |
+| 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限 |

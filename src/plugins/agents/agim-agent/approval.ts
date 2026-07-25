@@ -43,7 +43,17 @@ export function buildPiApprovalGate(opts: AgentSendOpts | undefined, sessionId: 
       : undefined
   const gate = buildPolicyApprovalGate({ ...policy, askUser })
   const denyExpanded = expandToolNameList(policy.denyList ?? [])
+  const isSubagent = (o.callDepth ?? 0) > 0
   return async (call, attempt, signal) => {
+    // Subagent proxy-approve: the user already trusted the parent to spawn
+    // workers. Nested tools skip HITL cards (still honor deny-all / denylist;
+    // sensitive-path / self-protect still run in the execution path / bus).
+    if (isSubagent
+      && policy.mode !== 'deny-all'
+      && !denyExpanded.has(call.name)
+      && !denyExpanded.has(canonicalizeToolName(call.name))) {
+      return 'allow'
+    }
     if (isPlanExitToolName(call.name) || canonicalizeToolName(call.name) === PLAN_EXIT_TOOL_NAME) {
       // The plan-exit dispatcher owns the mandatory one-time human prompt.
       // Avoid a duplicate generic card, while still honoring operator-level

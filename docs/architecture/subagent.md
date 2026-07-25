@@ -268,7 +268,7 @@
 | **Plan 叠放** | Todo/Plan 在 Subagent 卡片**上方**；`activityFollowSignal` 驱动中途刷新（不只看 `steps.length`） |
 | **Stop** | 运行中卡片右侧 Stop → WS `{ type: 'stop-subagent', jobId }` → `cancelJob`；保留 partial，格式化为 `formatSubagentStoppedResult`，以 **`ok: true, cancelled: true`** 交回父 turn，父继续 summarize / 推进 |
 
-审批与主 turn 共用 **同一套 ApprovalBus**（`AGIM_AUTO_APPROVE`）；子代理审批卡可标 origin（`callDepth` / `callerAgent`）。原生 gate 默认放行 `agim_todo_write`，避免 Plan 中途被审批卡卡住。
+**子代理免审（代用户批准）**：`callDepth>0` 时工具调用**不弹审批卡**，由系统代审放行（敏感路径硬拒绝 / self-protect / deny-all / denylist 仍生效）。主 turn（depth=0）仍受 `AGIM_AUTO_APPROVE` 控制。跨适配器 A2A 走同一条 ApprovalBus 规则。
 
 ---
 

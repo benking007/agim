@@ -38,6 +38,23 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     await bus.stop().catch(() => {})
   })
 
+  it('Subagent callDepth>0 proxy-approves without IM card (even when AUTO_APPROVE=0)', async () => {
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
+    const decisions: Decision[] = []
+    await bus.registerSyntheticPending({
+      runId: 'sub-1',
+      reqId: 'sub-perm-1',
+      toolName: 'Bash',
+      input: { command: 'echo hi' },
+      ctx: { ...RUN_CTX, callDepth: 1, callerAgent: 'agim' },
+      dispatch: (d) => { decisions.push(d) },
+    })
+    expect(notifications).toHaveLength(0)
+    expect(decisions).toEqual([{ behavior: 'allow' }])
+    expect(bus.hasPendingFor(KEY)).toBe(false)
+  })
+
   it('happy path: notifier fires, resolve(allow) dispatches once', async () => {
     const notifications: ApprovalNotification[] = []
     bus.setNotifier(async (n) => { notifications.push(n) })

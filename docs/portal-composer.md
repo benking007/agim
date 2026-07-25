@@ -35,6 +35,29 @@
 
 技能列表优先 `GET /api/agim-skills`（已认证可读）；失败时回退 `GET /api/skills`。
 
+### 状态栏（composer 下方）
+
+与桌面 `/` 共用 `ComposerStatusBar`：
+
+| 控件 | 作用 |
+|------|------|
+| 模型 | 切换当前 preset 下 backend / 打开 LLM 配置 |
+| 思考开 · low/high/max | `/think …`（会话级） |
+| **替我审批 / 请求审批** | 主 Agent 工具审批模式（见下） |
+| 上下文环 | 用量估算 / 压缩率 |
+
+**审批模式（主 Agent only）**
+
+| 选项 | `AGIM_AUTO_APPROVE` | 行为 |
+|------|---------------------|------|
+| **请求审批**（默认） | `0` | 遇 exec/write 等弹审批卡 |
+| **替我审批** | `1` | 系统代用户批准（安全检查仍先跑） |
+
+- API：`GET/PUT /api/policy/auto-approve`（**任意已登录** token，含 Portal QR；热写 `~/.agim/env` + `process.env`）
+- 与 Settings → Policy 同源；任一侧改动会互相刷新
+- **不**影响子代理：子代理始终代审免卡（见 [`architecture/subagent.md`](./architecture/subagent.md) §7.2）
+- 接开放 IM 且无严格 allowlist 时，环境层仍可能抑制 effective auto-approve（`AGIM_AUTO_APPROVE_OPEN_IM`）
+
 ### `@` — Workspace 与文件
 
 输入 `@` 弹出：
@@ -116,13 +139,16 @@ Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry�
 | Slash / @ 菜单 | `portal-composer-menus.tsx`、`portal-slash-commands.ts` |
 | Chip 输入 | `portal-composer-input.tsx`、`portal-mention-chip.tsx` |
 | 加号菜单 | `portal-composer-plus.tsx` |
+| 状态栏 | `composer-status-bar.tsx`、`use-composer-auto-approve.ts` |
 | 小精灵 / Loop 底栏 | `portal-pet.tsx`、`use-portal-pet-tasks.ts`、`portal-loop-dock.tsx`、`use-portal-loop.ts` |
 | 气泡渲染 | `portal-user-content.tsx`、`lib/parse-user-media.ts` |
 | 媒体 API | `src/core/web-media-upload.ts`、`src/web/chat-media-api.ts` |
 | Loop REST | `src/web/loop-api.ts`、`src/web-app/src/lib/api/loop.ts` |
+| 审批策略 API | `src/web/env-api.ts`（`/api/policy/auto-approve`） |
 
 ## 安全与权限摘要
 
 - Slash skill 列表 / workspace 浏览：任意已认证 token 可读（Portal 扫码用户可用）
+- **审批模式切换**（`/api/policy/auto-approve`）：任意已认证可读可写（单用户本机产品面）
 - Workspace / agim-skills **写入**：仍需 admin
 - 媒体文件读取：路径限制在 web media 根下

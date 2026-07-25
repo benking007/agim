@@ -320,6 +320,7 @@
 | 2026-07-24 | **半浮层对齐 / 长内容滚动**；Plan 中途可见（`activityFollowSignal` + todo status 归一）；Plan 叠在 Subagent 上方 | #223 |
 | 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
 | 2026-07-25 | **子代理代审免卡**：`callDepth>0` 不弹工具审批；禁子代理 `ask_user`/`loop_verdict`；Loop 门禁仅 depth=0 | #249 |
+| 2026-07-25 | **Composer「替我审批」**：主 Agent `AGIM_AUTO_APPROVE` 芯片 + `/api/policy/auto-approve` | #250 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |

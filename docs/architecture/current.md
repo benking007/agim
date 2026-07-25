@@ -246,6 +246,8 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 
 - Web token 鉴权；敏感 GET/写路径需 admin  
 - IM：无严格 sender allowlist 时抑制 auto-approve（见 `AGIM_AUTO_APPROVE*`）  
+- 主 Agent 审批：composer「替我审批 / 请求审批」或 Settings → Policy（`/api/policy/auto-approve`）；子代理始终代审  
+
 - `exec` cwd 限制在 workspace（除非显式放开）  
 - bwrap 掩蔽解析后的 `AGIM_HOME` / `~/.agim`  
 - 媒体下载 realpath + 非 admin 需 thread 归属  

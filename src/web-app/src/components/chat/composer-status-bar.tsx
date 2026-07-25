@@ -9,7 +9,9 @@
 
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Brain, Check, ChevronDown, Settings2, X } from 'lucide-react'
+import { Brain, Check, ChevronDown, Settings2, Shield, ShieldCheck, X } from 'lucide-react'
+import { useComposerAutoApprove } from '@/hooks/use-composer-auto-approve'
+import { toast } from 'sonner'
 
 import {
   DropdownMenu,
@@ -150,6 +152,7 @@ export function ComposerStatusBar({
 }: ComposerStatusBarProps): JSX.Element {
   const { t, i18n } = useTranslation()
   const [contextOpen, setContextOpen] = useState(false)
+  const autoApprove = useComposerAutoApprove()
   const { on: thinkingOn, effort } = normalizeVariant(thinkVariant)
   const windowSize = Math.max(1, contextWindow || 32_000)
   const used = Math.max(0, contextUsed)
@@ -299,6 +302,50 @@ export function ComposerStatusBar({
           )}
         </>
       )}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled || autoApprove.loading || autoApprove.setting}>
+          <button
+            type="button"
+            className={chip}
+            title={t('chat.statusBar.autoApproveHint', {
+              defaultValue: 'Main agent tool approvals — auto-approve on your behalf, or ask each time',
+            })}
+          >
+            {autoApprove.enabled
+              ? <ShieldCheck className={cn('h-3 w-3', dark ? 'text-teal-400' : 'text-teal-600')} />
+              : <Shield className="h-3 w-3 opacity-60" />}
+            <span>
+              {autoApprove.enabled
+                ? t('chat.statusBar.autoApproveOn', { defaultValue: 'Approve for me' })
+                : t('chat.statusBar.autoApproveOff', { defaultValue: 'Ask to approve' })}
+            </span>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[11rem]">
+          <DropdownMenuItem
+            onSelect={() => {
+              void autoApprove.setEnabled(true).catch((err: unknown) => {
+                toast.error(err instanceof Error ? err.message : String(err))
+              })
+            }}
+          >
+            <Check className={cn('h-3.5 w-3.5', autoApprove.enabled ? 'opacity-100' : 'opacity-0')} />
+            <span>{t('chat.statusBar.autoApproveOn', { defaultValue: 'Approve for me' })}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              void autoApprove.setEnabled(false).catch((err: unknown) => {
+                toast.error(err instanceof Error ? err.message : String(err))
+              })
+            }}
+          >
+            <Check className={cn('h-3.5 w-3.5', !autoApprove.enabled ? 'opacity-100' : 'opacity-0')} />
+            <span>{t('chat.statusBar.autoApproveOff', { defaultValue: 'Ask to approve' })}</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <div className="ml-auto flex items-center">
         <ContextRing ratio={ratio} dark={dark} onClick={() => setContextOpen(true)} />

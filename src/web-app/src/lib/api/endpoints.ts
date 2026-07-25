@@ -23,8 +23,10 @@ import type {
   AdminMutationResponse,
   AuditResponse,
   BatchJobBody,
+  AutoApprovePolicyResponse,
   EnvResponse,
   RemoveAdminBody,
+  UpdateAutoApprovePolicyBody,
   WechatQrStartResponse,
   WechatQrStatusResponse,
   WorkspaceConfig,
@@ -229,6 +231,14 @@ export const api = {
   /** PUT /api/env */
   updateEnv: (body: UpdateEnvBody) =>
     client.put<EnvResponse>('/api/env', { body }),
+
+  /** GET /api/policy/auto-approve — main-agent auto-approve (any auth / Portal). */
+  getAutoApprovePolicy: () =>
+    client.get<AutoApprovePolicyResponse>('/api/policy/auto-approve'),
+
+  /** PUT /api/policy/auto-approve */
+  updateAutoApprovePolicy: (body: UpdateAutoApprovePolicyBody) =>
+    client.put<AutoApprovePolicyResponse>('/api/policy/auto-approve', { body }),
 
   /** GET /api/health (public) */
   getHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>

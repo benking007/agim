@@ -3,11 +3,14 @@
 //
 // Endpoints exposed:
 //
-//   GET  /api/env                      → { env, secretKeys }
-//   PUT  /api/env                      body { updates }  → { ok, updated }
-//   GET  /api/security/diagnostics     → { diagnostics }
+//   GET  /api/env                      → { env, secretKeys }          (admin)
+//   PUT  /api/env                      body { updates }  → { ok, updated } (admin)
+//   GET  /api/security/diagnostics     → { diagnostics }              (admin)
+//   GET  /api/policy/auto-approve      → { enabled, effective }       (any auth)
+//   PUT  /api/policy/auto-approve      body { enabled } → same        (any auth)
 //
-// All routes require admin (same gates as the original server.ts route table).
+// Full /api/env stays admin-only. The narrow auto-approve pair is open to any
+// authenticated peer (incl. Portal QR user tokens) so the composer chip works.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isMasked, maskSecret } from './env-mask.js'
@@ -237,7 +240,58 @@ export async function handleEnvApi(
     if (!requireAdmin(req, res)) return true
     await handleSecurityDiagnostics(res); return true
   }
+  // Composer / Portal: main-agent auto-approve toggle (any authenticated peer).
+  if (p === '/api/policy/auto-approve' && m === 'GET') {
+    await handleGetAutoApprove(res); return true
+  }
+  if (p === '/api/policy/auto-approve' && m === 'PUT') {
+    await handlePutAutoApprove(req, res); return true
+  }
   return false
+}
+
+async function handleGetAutoApprove(res: ServerResponse): Promise<void> {
+  try {
+    const { isAutoApproveEnabled, isAutoApproveEffective } = await import('../core/approval/policy.js')
+    sendJson(res, 200, {
+      enabled: isAutoApproveEnabled(),
+      effective: isAutoApproveEffective(),
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function handlePutAutoApprove(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const body = await readBody(req, res)
+    const parsed = JSON.parse(body || '{}') as { enabled?: unknown }
+    if (typeof parsed.enabled !== 'boolean') {
+      sendError(res, 400, 'AUTO_APPROVE_ENABLED_REQUIRED', { message: 'enabled boolean required' })
+      return
+    }
+    const value = parsed.enabled ? '1' : '0'
+    const { updateEnvFile } = await import('../cli-ui/env-file.js')
+    updateEnvFile({ AGIM_AUTO_APPROVE: value })
+    process.env.AGIM_AUTO_APPROVE = value
+    try {
+      const { logAuditEvent } = await import('../core/audit-log.js')
+      logAuditEvent({
+        eventType: 'env.put',
+        actor: getRequestActor(req),
+        outcome: 'ok',
+        details: { keys: ['AGIM_AUTO_APPROVE'], via: 'policy.auto-approve' },
+      })
+    } catch { /* best-effort */ }
+    const { isAutoApproveEnabled, isAutoApproveEffective } = await import('../core/approval/policy.js')
+    sendJson(res, 200, {
+      ok: true,
+      enabled: isAutoApproveEnabled(),
+      effective: isAutoApproveEffective(),
+    })
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+  }
 }
 
 // ─── handlers ───────────────────────────────────────────────────────

@@ -277,6 +277,8 @@
 | **父 turn**（`callDepth=0`） | 受 `AGIM_AUTO_APPROVE`；默认弹卡人工批 | 允许（对焦 / 中间评审） |
 | **子代理**（`callDepth>0`） | **代审免卡**（系统替用户批准） | **拒绝**；澄清写进 FINAL message |
 
+**主 Agent 开关（Portal / 桌面 composer）**：输入框下方状态栏可选 **「替我审批」**（`AGIM_AUTO_APPROVE=1`）或 **「请求审批」**（默认 `=0`）。API：`GET/PUT /api/policy/auto-approve`（任意已登录 token，含 Portal QR）。与 Settings → Policy 同源热更新。
+
 **代审仍拦截**：敏感路径硬拒绝、self-protect、`deny-all`、显式 denylist、`requiresExplicitDecision`（如 plan-exit）。  
 实现：原生 `buildPiApprovalGate` + ApprovalBus `_registerPending`（日志 `approval.bus.subagent_auto_approve`）。
 
@@ -318,6 +320,7 @@
 | 2026-07-24 | **半浮层对齐 / 长内容滚动**；Plan 中途可见（`activityFollowSignal` + todo status 归一）；Plan 叠在 Subagent 上方 | #223 |
 | 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
 | 2026-07-25 | **子代理代审免卡**：`callDepth>0` 不弹工具审批；禁子代理 `ask_user`/`loop_verdict`；Loop 门禁仅 depth=0 | #249 |
+| 2026-07-25 | **Composer「替我审批」**：主 Agent `AGIM_AUTO_APPROVE` 芯片 + `/api/policy/auto-approve` | #250 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |

@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Composer auto-approve chip**: Portal / desktop status bar adds
+  「替我审批」/「请求审批」toggling `AGIM_AUTO_APPROVE` via
+  `GET/PUT /api/policy/auto-approve` (any authenticated peer, incl.
+  Portal QR). Default remains ask-to-approve.
 - **Subagent tools proxy-approved**: `callDepth>0` skips approval cards
   (native gate + ApprovalBus) on the user's behalf. Sensitive-path deny,
   self-protect, deny-all / denylist still apply. Parent turn unchanged.
@@ -83,6 +87,9 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- **Composer 审批芯片文档**：`portal-composer.md` 状态栏专节；
+  `security-hardening` / `subagent` / `current` 对齐「替我审批」与
+  `/api/policy/auto-approve`。
 - **Loop / Subagent 门禁与代审文档**：`subagent.md` §7.2 父/子审批分工；
   `loop-engineering` 拍板表；`ask-user` 区分提问 vs 工具审批；
   `security-hardening` 注明 `AGIM_AUTO_APPROVE` 仅主 turn；

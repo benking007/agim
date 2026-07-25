@@ -1,4 +1,5 @@
-// loop-api — GET /api/loop + POST /api/loop/confirm-met for Portal Loop chrome.
+// loop-api — GET /api/loop + POST /api/loop/confirm-met + generate-report
+// for Portal Loop chrome.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -8,6 +9,10 @@ import {
   resolveLoopMetConfirm,
   toLoopStatusDto,
 } from '../core/loop-run.js'
+import {
+  countLoopChildJobs,
+  generateLoopDetailReport,
+} from '../core/loop-report.js'
 import { sessionManager } from '../core/session.js'
 import { readBody, sendJson } from './http-utils.js'
 
@@ -28,6 +33,10 @@ export async function handleLoopApi(
   }
   if (p === '/api/loop/confirm-met' && m === 'POST') {
     await handleConfirmMet(req, res)
+    return true
+  }
+  if (p === '/api/loop/generate-report' && m === 'POST') {
+    await handleGenerateReport(req, res)
     return true
   }
   return false
@@ -94,8 +103,10 @@ async function handleConfirmMet(req: IncomingMessage, res: ServerResponse): Prom
   // During pending_user_confirm the parent must NOT dump the full conclusion
   // early — the dock owns the preview; the durable summary lands here.
   let endedSummary: string | undefined
+  let childJobCount = 0
   if (action === 'end' && r.run.status === 'ended') {
     endedSummary = formatLoopEndedSummary(r.run)
+    childJobCount = countLoopChildJobs(platform, channelId, threadId)
     try {
       await sessionManager.addMessage(platform, channelId, threadId, {
         role: 'assistant',
@@ -112,5 +123,63 @@ async function handleConfirmMet(req: IncomingMessage, res: ServerResponse): Prom
     ok: true,
     loop: toLoopStatusDto(r.run, lang),
     ...(endedSummary ? { endedSummary } : {}),
+    ...(action === 'end' ? { childJobCount, suggestReport: true } : {}),
+  })
+}
+
+async function handleGenerateReport(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: Record<string, unknown>
+  try {
+    const raw = await readBody(req, res)
+    body = raw ? JSON.parse(raw) as Record<string, unknown> : {}
+  } catch (err) {
+    const e = err as Error & { handled?: boolean }
+    if (e.handled) return
+    sendJson(res, 400, { error: 'Invalid JSON body' })
+    return
+  }
+
+  const threadId = typeof body.threadId === 'string' ? body.threadId.trim().slice(0, 120) : ''
+  if (!threadId) {
+    sendJson(res, 400, { error: 'threadId required' })
+    return
+  }
+  const platform = typeof body.platform === 'string' && body.platform.trim()
+    ? body.platform.trim().slice(0, 40)
+    : 'web'
+  const channelId = typeof body.channelId === 'string' && body.channelId.trim()
+    ? body.channelId.trim().slice(0, 40)
+    : 'web'
+  const loopId = typeof body.loopId === 'string' ? body.loopId.trim().slice(0, 80) : undefined
+
+  const gen = generateLoopDetailReport(platform, channelId, threadId, { loopId })
+  if (!gen.ok) {
+    sendJson(res, 409, { ok: false, error: gen.error })
+    return
+  }
+
+  try {
+    await sessionManager.addMessage(platform, channelId, threadId, {
+      role: 'assistant',
+      content: gen.chatMarkdown,
+      agent: 'agim',
+      timestamp: new Date(),
+    })
+  } catch (err) {
+    sendJson(res, 500, {
+      ok: false,
+      error: 'chat_post_failed',
+      path: gen.path,
+      detail: err instanceof Error ? err.message : String(err),
+    })
+    return
+  }
+
+  sendJson(res, 200, {
+    ok: true,
+    path: gen.path,
+    jobCount: gen.jobCount,
+    loopId: gen.loopId,
+    chars: gen.markdown.length,
   })
 }

@@ -2,6 +2,7 @@
  * Portal Loop docks (replaces the blocking status strip):
  * - Aligning: bottom sheet to fill objective + exit, then confirm
  * - Ready (dispatch/verify): "Act now" sheet like ApprovalDock
+ * - After confirm-end: offer a Subagent detail-report sheet
  *
  * Status chrome lives on the pet — these only ask for user action.
  * Polling + pet-task formatting stay in this lazy chunk (entry budget).
@@ -9,14 +10,25 @@
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Compass, Play, Target } from 'lucide-react'
+import { Check, Compass, FileText, Play, Target, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { confirmLoopMet, type LoopStatusDto } from '@/lib/api/loop'
+import {
+  confirmLoopMet,
+  generateLoopReport,
+  type LoopStatusDto,
+} from '@/lib/api/loop'
 import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
 import type { PetTaskItem } from './portal-pet'
+
+type ReportOffer = {
+  threadId: string
+  loopId: string
+  childJobCount: number
+}
 
 export interface PortalLoopDockProps {
   threadId: string | null | undefined
@@ -93,6 +105,8 @@ export function PortalLoopDock({
   const { i18n } = useTranslation()
   const zh = Boolean(i18n.language?.startsWith('zh'))
   const { loop, reload } = usePortalLoop(threadId, refreshKey)
+  // Survives loop.active → false after「确认结束」.
+  const [reportOffer, setReportOffer] = useState<ReportOffer | null>(null)
 
   useEffect(() => {
     onLoopPetTask?.(loop?.active ? toPetTask(loop, zh) : null)
@@ -101,6 +115,24 @@ export function PortalLoopDock({
   useEffect(() => () => {
     onLoopPetTask?.(null)
   }, [onLoopPetTask])
+
+  // Clear stale offer when switching threads.
+  useEffect(() => {
+    setReportOffer(null)
+  }, [threadId])
+
+  if (reportOffer && reportOffer.threadId === threadId) {
+    return (
+      <ReportOfferDock
+        offer={reportOffer}
+        dark={dark}
+        flush={flush}
+        zh={zh}
+        onDismiss={() => setReportOffer(null)}
+        className={className}
+      />
+    )
+  }
 
   if (!loop?.active) return null
   if (loop.bucket === 'aligning') {
@@ -124,6 +156,13 @@ export function PortalLoopDock({
         flush={flush}
         zh={zh}
         onResolved={() => { void reload() }}
+        onEnded={(info) => {
+          setReportOffer({
+            threadId: threadId!,
+            loopId: info.loopId,
+            childJobCount: info.childJobCount,
+          })
+        }}
         className={className}
       />
     )
@@ -153,6 +192,7 @@ function ConfirmMetDock({
   flush,
   zh,
   onResolved,
+  onEnded,
   className,
 }: {
   loop: LoopStatusDto
@@ -161,6 +201,7 @@ function ConfirmMetDock({
   flush?: boolean
   zh: boolean
   onResolved: () => void
+  onEnded: (info: { loopId: string; childJobCount: number }) => void
   className?: string
 }): JSX.Element {
   const pending = loop.pendingConfirmation
@@ -172,7 +213,7 @@ function ConfirmMetDock({
     if (busyAction) return
     setBusyAction(action)
     try {
-      await confirmLoopMet({
+      const res = await confirmLoopMet({
         threadId,
         action,
         supplement: supplement.trim() || undefined,
@@ -182,6 +223,13 @@ function ConfirmMetDock({
       // transcript — conclusion content is deferred until this click.
       if (action === 'end') {
         openChatWs().send({ type: 'get-history', threadId })
+        const loopId = res.loop?.id || loop.id
+        onEnded({
+          loopId,
+          childJobCount: typeof res.childJobCount === 'number'
+            ? res.childJobCount
+            : (loop.usage?.dispatchCount ?? 0),
+        })
       }
       onResolved()
     } catch {
@@ -272,6 +320,122 @@ function ConfirmMetDock({
             >
               <Check className="h-3.5 w-3.5" />
               {zh ? '确认结束' : 'End Loop'}
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ReportOfferDock({
+  offer,
+  dark,
+  flush,
+  zh,
+  onDismiss,
+  className,
+}: {
+  offer: ReportOffer
+  dark?: boolean
+  flush?: boolean
+  zh: boolean
+  onDismiss: () => void
+  className?: string
+}): JSX.Element {
+  const [busy, setBusy] = useState(false)
+  const n = offer.childJobCount
+
+  async function generate() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await generateLoopReport({
+        threadId: offer.threadId,
+        loopId: offer.loopId,
+      })
+      if (!res.ok) {
+        toast.error(zh
+          ? `生成失败：${res.error || 'unknown'}`
+          : `Report failed: ${res.error || 'unknown'}`)
+        setBusy(false)
+        return
+      }
+      openChatWs().send({ type: 'get-history', threadId: offer.threadId })
+      toast.success(zh
+        ? `详细报告已生成（${res.jobCount ?? n} 个子代理）`
+        : `Detail report ready (${res.jobCount ?? n} subagents)`)
+      onDismiss()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className={cn('relative z-20 pb-1 pt-0', flush ? 'px-0' : 'px-3 sm:px-4', className)}>
+      <section
+        className={cn(
+          'mx-auto flex w-full max-w-2xl flex-col',
+          'rounded-xl border shadow-[0_-6px_22px_rgba(15,23,42,0.10)] ring-1 ring-black/5',
+          'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
+          dark
+            ? 'border-teal-500/30 bg-zinc-950 text-zinc-100'
+            : 'border-teal-300/70 bg-white text-zinc-800',
+        )}
+        aria-label={zh ? '生成详细报告' : 'Generate detail report'}
+      >
+        <div className={cn(
+          'flex shrink-0 items-center gap-2 border-b px-3 py-2',
+          dark ? 'border-teal-500/20 bg-teal-500/10' : 'border-teal-200 bg-teal-50',
+        )}>
+          <span className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+            dark ? 'bg-teal-500/20 text-teal-300' : 'bg-teal-100 text-teal-700',
+          )}>
+            <FileText className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold tracking-tight">
+              {zh ? '是否生成详细分析报告？' : 'Generate a detailed report?'}
+            </p>
+            <p className={cn('truncate text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
+              {zh
+                ? `结合${n > 0 ? ` ${n} 个` : '各'}子代理输出汇总落盘，并显示在聊天中`
+                : `Combine ${n > 0 ? `${n} ` : ''}subagent outputs, save to disk, and show in chat`}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2.5 px-3 py-3">
+          <p className={cn('text-sm leading-relaxed', dark ? 'text-zinc-300' : 'text-zinc-600')}>
+            {zh
+              ? 'Loop 已结案。结束摘要偏短；可一键把各子代理的分析拼成一份详细报告（确定性汇总，无需再派工）。'
+              : 'Loop has ended. The summary card is brief — optionally assemble a detailed report from each Subagent’s output (deterministic, no new dispatch).'}
+          </p>
+          <div className="flex justify-end gap-2 pt-0.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={onDismiss}
+              className="gap-1.5"
+            >
+              <X className="h-3.5 w-3.5" />
+              {zh ? '不需要' : 'Not now'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => void generate()}
+              className="gap-1.5"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {busy
+                ? (zh ? '生成中…' : 'Generating…')
+                : (zh ? '生成报告' : 'Generate report')}
             </Button>
           </div>
         </div>

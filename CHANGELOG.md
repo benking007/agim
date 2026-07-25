@@ -66,6 +66,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop post-end detail report offer**: after Portal「确认结束」, a bottom
+  dock asks whether to assemble a detailed report from Subagent outputs.
+  Agree → `POST /api/loop/generate-report` writes
+  `~/.agim/loops/reports/<thread>-<loopId>.md` and posts the markdown into
+  chat; dismiss closes the dock. Deterministic assemble (no extra LLM).
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate
   allows `mcp__agim__ask_user` for uncertain / anomalous results; user
   reply then continues to `loop_verdict`. Pending asks defer VERIFY

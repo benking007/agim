@@ -333,6 +333,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 | **待派工 / 待验收**（Agent 空闲） | 底部「立即行动」条（类审批） | 代用户发推进指令（`call_agents` / `loop_verdict`） |
 | **中间评审提问** | 与全局一致：`ask_user` 选择卡（Portal / IM） | 点选或文本回复 → Agent 继续 `loop_verdict` |
 | **结论已就绪** | 底部结案浮窗（`pending_user_confirm`）；**聊天里不提前铺完整结论** | 可补充 →「确认结束」（此时才 `ended` + 写入结束摘要）或「继续下一轮」 |
+| **详细报告（可选）** | 确认结束后 Portal 再问：是否结合各子代理输出生成详细报告 | 「生成报告」→ `POST /api/loop/generate-report` 落盘 `~/.agim/loops/reports/` 并写入聊天；「不需要」关闭 |
 | **任意活跃阶段** | 小精灵气泡 + 任务面板 `loop` 行 | 展示桶名 · 轮次 · 派工/独立验收用量 |
 | **结束** | Markdown 结束总结；小精灵可短暂显示后消失 | — |
 
@@ -475,3 +476,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |
 | 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
+| 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问是否汇总子代理输出；同意则落盘 + 回显聊天（`loop-report.ts` / `POST /api/loop/generate-report`） |

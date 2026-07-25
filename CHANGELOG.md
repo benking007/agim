@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Loop R2 dispatch ↔ turn-cap deadlock hardening**: after R1 uses the
+  full `call_agent` turn budget (default 3), `continue|revise` already
+  resets the cap; now the first dispatch of a new Loop round
+  (`planning`/`reflecting` + `dispatchesThisRound=0`) also clears stale
+  history. Cap-exceeded errors under an active Loop no longer tell the
+  model to “use your own tools” (that hits dispatch-gate and deadlocks);
+  wait-gate explains that a second `call_agents` in the same round needs
+  `loop_verdict continue|revise`.
 - **Loop parent wait gate no longer blocks Subagents**: dispatch/wait
   gates apply only at `callDepth=0`. Children share the parent
   `threadId` and were incorrectly forced into sleep/`ask_user` hollow

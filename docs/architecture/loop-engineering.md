@@ -262,7 +262,7 @@ type LoopRun = {
 | 中间评审提问 | **仅父侧**；不确定结论 / 疑问 / 数据异常时先 `ask_user`，用户回复后再 `loop_verdict` |
 | 子代理与门禁 | 派工/等待门禁 **仅 depth=0**；子代理共享 threadId 但不得被 wait-gate 禁调研 |
 | 子代理工具审批 | **代审免卡**（`callDepth>0`）；主 turn 仍受 `AGIM_AUTO_APPROVE`；敏感路径仍硬拒 |
-| Turn 委托上限 | `continue/revise` 进入下一轮时 **重置** 本 turn 的 `call_agent` 计数 |
+| Turn 委托上限 | `continue/revise` 进入下一轮时 **重置** 本 turn 的 `call_agent` 计数；若未重置，新一轮 `planning`+`dispatches=0` 首次派工前再清一次（防 R1 用尽 cap=3 后与派工门死锁） |
 
 `至少/最少/不少于 N 轮` 仍为 `minRounds` only；`做满 N 轮` 仍为 min=max=N；`最多 N 轮` 仅为上限。
 

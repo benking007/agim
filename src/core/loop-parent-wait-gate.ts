@@ -157,7 +157,8 @@ export function evaluateLoopParentWaitGate(
       + '(agim_sleep_ms / agim_now), optionally mcp__agim__ask_user on '
       + 'uncertain/anomalous results, then call mcp__agim__loop_verdict — '
       + 'no research, mutation, or further call_agent(s) until verification. '
-      + 'After verdict you may summarize or do follow-up research. '
+      + 'A second call_agents in the same round is refused; use decision='
+      + 'continue|revise to open the next round (resets per-turn call_agent cap). '
       + 'Set AGIM_LOOP_DISPATCH_GATE=off to disable.',
   }
 }

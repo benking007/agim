@@ -99,6 +99,35 @@ describe('buildAgimDispatcher', () => {
     expect(r.text).toMatch(/question/i)
   })
 
+  it('ask_user refused for Subagents (callerDepth>0)', async () => {
+    const d = buildAgimDispatcher({ ...CTX, callerDepth: 1 })
+    const r = await d(
+      {
+        id: '4b',
+        name: 'mcp__agim__ask_user',
+        arguments: { question: '选哪个？', choices: ['A', 'B'] },
+      },
+      NOOP_SIGNAL,
+    )
+    expect(r.source).toBe('agim')
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/Subagents cannot ask|callerDepth/i)
+  })
+
+  it('loop_verdict refused for Subagents (callerDepth>0)', async () => {
+    const d = buildAgimDispatcher({ ...CTX, callerDepth: 1 })
+    const r = await d(
+      {
+        id: '4c',
+        name: 'mcp__agim__loop_verdict',
+        arguments: { decision: 'stop', summary: 'x', met: false },
+      },
+      NOOP_SIGNAL,
+    )
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/parent Loop orchestrator|callerDepth/i)
+  })
+
   // v1.2.59 A — per-turn call_agent cap. Validates that after the cap the
   // dispatcher refuses further delegation with a self-correcting message.
   it('call_agent cap refuses delegation after AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN', async () => {

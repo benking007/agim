@@ -82,12 +82,12 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
    PLANNING 拆解
          │
          ▼
-   DISPATCHING 子代理 ──（本轮 live>0：父侧只 wait / 可选 ask_user）──┐
-         │                                                          │
-         ▼                                                          │
-   VERIFYING 对照目标 ◄─────────────────────────────────────────────┘
+   DISPATCHING 子代理 ──（本轮 live>0：父侧只 wait，禁 ask_user）──┐
+         │                                                       │
+         ▼                                                       │
+   VERIFYING 对照目标 ◄──────────────────────────────────────────┘
          │
-         ├─ 不确定 / 疑问 / 数据异常 → ask_user →（用户回复）→ 再 VERIFY
+         ├─ live=0 且不确定 → 父侧 ask_user →（用户回复）→ 再 VERIFY
          ├─ met=true → PENDING_USER_CONFIRM（Portal 结案浮窗）→ 结束 / 继续
          ├─ met=false 且未触达 exit → REFLECT → 再 PLANNING
          └─ 触达 exit / 用户 stop → ENDED
@@ -244,7 +244,7 @@ type LoopRun = {
 | **PLAN → 首次派工** | 本轮 0 派工时父侧禁调研类工具，须先 `call_agents` | Hard ✅（`AGIM_LOOP_DISPATCH_GATE`） |
 | **DISPATCH 计数** | `continue/revise` 要求本轮 `dispatchesThisRound≥1` | Hard ✅（`no_dispatch`） |
 | **本轮子代理守候** | 仍有 pending/running 子代理 → **不进验收桶、不触发 VERIFY follow-up、拒绝 `loop_verdict`** | Hard ✅（`live_subagents` / `canVerify`） |
-| **VERIFY 中途 HITL** | 结论不确定 / 疑问 / 数据异常 → 允许 `ask_user`；用户回复后继续 `loop_verdict`；有 pending ask 时推迟 `verify_skipped` | Hard ✅（父侧等待门禁放行 + `threadHasPendingAsk`） |
+| **VERIFY 中途 HITL** | **仅父侧**；`live=0` 后结论不确定 → `ask_user` 再 `loop_verdict`；`live>0` 禁提问解阻塞；子代理禁 `ask_user`/`loop_verdict` | Hard ✅（父侧门禁 + `callerDepth`） |
 | **VERIFY** | 子代理全结束后须成功 `loop_verdict`；跳过 → follow-up → `verify_skipped` | Hard ✅（`AGIM_LOOP_VERIFY_GATE`） |
 | **退出下限 `minRounds`** | `stop`+`met=true` 在 `round < minRounds` 时拒绝 | Hard ✅（`need_more_rounds`） |
 | **退出上限 `maxRounds` / `maxWallMs`** | 触达即截断（可不经 verdict）；有 live 子代理时推迟 | Hard ✅ |
@@ -258,8 +258,11 @@ type LoopRun = {
 | 「重复 N 轮」 | **min=N，max=N×2**（可多做，有上限） |
 | `met=true` | **不自动结案** → `pending_user_confirm`；Portal 底部浮窗展示结论，用户可补充后选 **结束 / 继续下一轮** |
 | 子代理守候粒度 | **按本轮**：`roundJobIds` live=0 才启动评审；评审后再开下一轮派工 |
-| 验收前父侧 | **只等待/循环**（sleep/now + 可选 `ask_user` + 届时 `loop_verdict`）；验收后可总结或补充调研 |
-| 中间评审提问 | 不确定结论 / 疑问 / 数据异常时 **先 `ask_user`**，用户回复后再 `loop_verdict` |
+| 验收前父侧 | **live>0 只 wait**（sleep/now）；**live=0** 才可 `ask_user` / `loop_verdict`；验收后可总结或补充调研 |
+| 中间评审提问 | **仅父侧**；不确定结论 / 疑问 / 数据异常时先 `ask_user`，用户回复后再 `loop_verdict` |
+| 子代理与门禁 | 派工/等待门禁 **仅 depth=0**；子代理共享 threadId 但不得被 wait-gate 禁调研 |
+| 子代理工具审批 | **代审免卡**（`callDepth>0`）；主 turn 仍受 `AGIM_AUTO_APPROVE`；敏感路径仍硬拒 |
+| Turn 委托上限 | `continue/revise` 进入下一轮时 **重置** 本 turn 的 `call_agent` 计数 |
 
 `至少/最少/不少于 N 轮` 仍为 `minRounds` only；`做满 N 轮` 仍为 min=max=N；`最多 N 轮` 仅为上限。
 
@@ -292,10 +295,12 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 | 触发 | 行为 |
 |------|------|
-| 子代理结果冲突 / 数据异常 / 验收标准不清 | 父侧调用 `mcp__agim__ask_user`（结构化选项） |
+| 子代理结果冲突 / 数据异常 / 验收标准不清 | **父侧**在 `live=0` 后调用 `mcp__agim__ask_user` |
 | 用户回复 | 工具返回后父侧再调 `loop_verdict` |
 | 有 pending ask | `loopNeedsVerdict=false`；不强制 follow-up；不 `verify_skipped` |
-| 仍禁止 | 调研类工具、`call_agent(s)`（验收完成前） |
+| `live>0` | 父侧 **不得** `ask_user`「解阻塞」；只 sleep/now |
+| 子代理 | `callerDepth>0` → `ask_user` / `loop_verdict` **拒绝** |
+| 仍禁止（父侧验收前） | 调研类工具、`call_agent(s)` |
 
 详见 [`ask-user.md`](../ask-user.md) § Loop Engineering。
 
@@ -306,7 +311,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 | **ALIGNING** | on | 确认前拒绝 `call_agent(s)` / `loop_verdict` | （核心，无关） |
 | **派工** | on | 本轮 `dispatchesThisRound===0` 时父侧拒绝调研类工具（`web_fetch`/`exec`/…），须先 `call_agents` | `AGIM_LOOP_DISPATCH_GATE`（`off` 关闭） |
 | **子代理守候** | on | **本轮** `roundJobIds` live>0 → 不进验收、`loop_verdict`→`live_subagents` | （核心） |
-| **父侧等待** | on | 本轮已派工后至 verdict 前：父侧仅 sleep/now/`ask_user`/`loop_verdict` | 同 `AGIM_LOOP_DISPATCH_GATE` |
+| **父侧等待** | on | 本轮已派工后至 verdict 前：**仅 depth=0**；`live>0` 仅 sleep/now；`live=0` 才可 `ask_user`/`loop_verdict` | 同 `AGIM_LOOP_DISPATCH_GATE` |
 | **验收** | on | 本轮已派工且 live=0 后须成功 `loop_verdict`；缺则 follow-up 一轮，仍缺 → `verify_skipped`（有 pending `ask_user` 时推迟） | `AGIM_LOOP_VERIFY_GATE`（`off` 关闭） |
 | **结案确认** | on | `met=true` → `pending_user_confirm`；`POST /api/loop/confirm-met` | （核心） |
 | **退出下限** | on | `stop`+`met=true` 且 `round < minRounds` → `need_more_rounds` | （核心，由 exit NL 解析） |
@@ -446,3 +451,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **退出硬字段 `minRounds` + 子代理守候不进验收**：§6.0 硬约束矩阵；`need_more_rounds`；DTO `liveSubagents`/`canVerify` |
 | 2026-07-25 | **拍板落地**：重复N→min/max=N/N×2；met 结案浮窗；本轮 `roundJobIds`；父侧验收前只等待 |
 | 2026-07-25 | **VERIFY 中途 ask_user**：父侧等待门禁放行提问；pending ask 推迟 `verify_skipped`；主流程/状态机/Portal/`ask-user.md` 对齐 |
+| 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |

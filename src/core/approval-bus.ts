@@ -776,6 +776,52 @@ export class ApprovalBus {
       return
     }
 
+    // Subagent proxy-approve: callDepth>0 means a nested worker. The
+    // parent already owns the user turn — auto-allow on the user's behalf
+    // (after sensitive-path hard-deny above). Opt out of the card for
+    // requiresExplicitDecision tools still (e.g. plan-exit).
+    const subagentDepth = typeof args.ctx.callDepth === 'number' ? args.ctx.callDepth : 0
+    if (!args.requiresExplicitDecision && subagentDepth > 0) {
+      try {
+        const { checkToolUse } = await import('./self-protect.js')
+        const selfGuard = checkToolUse(args.toolName, args.input)
+        if (selfGuard) {
+          this.metricsSnapshot.totalRequests++
+          this.metricsSnapshot.totalResolved++
+          this.metricsSnapshot.totalDenied++
+          const decision: Decision = { behavior: 'deny', message: selfGuard.message }
+          if ('socket' in args.transport) {
+            this.sendDecision(args.transport.socket, args.reqId, decision)
+          } else {
+            try { args.transport.dispatch(decision) } catch (e) {
+              log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(e) })
+            }
+          }
+          return
+        }
+      } catch { /* self-protect best-effort; allow if import fails */ }
+      this.metricsSnapshot.totalRequests++
+      this.metricsSnapshot.totalResolved++
+      this.metricsSnapshot.totalAllowed++
+      log.info({
+        event: 'approval.bus.subagent_auto_approve',
+        toolName: args.toolName,
+        reqId: args.reqId,
+        runId: args.runId,
+        callDepth: subagentDepth,
+        compositeKey: cKey,
+      }, 'Subagent tool auto-approved on behalf of user')
+      const decision: Decision = { behavior: 'allow' }
+      if ('socket' in args.transport) {
+        this.sendDecision(args.transport.socket, args.reqId, decision)
+      } else {
+        try { args.transport.dispatch(decision) } catch (err) {
+          log.warn({ event: 'approval.bus.dispatch_failed', reqId: args.reqId, err: String(err) })
+        }
+      }
+      return
+    }
+
     // AGIM_AUTO_APPROVE — immediate allow without IM card or timeout.
     // Fires after sensitive-path hard-deny (above) and self-protect
     // (inline below). Skips the notifier entirely so we must run

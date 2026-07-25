@@ -99,4 +99,39 @@ describe('pi-native plan-exit approval routing', () => {
     expect(await gate({ id: 'n2', name: 'agim_now', arguments: {} }, 0)).toBe('deny')
     expect(await gate({ id: 'f2', name: 'agim_web_fetch', arguments: { url: 'https://example.com' } }, 0)).toBe('deny')
   })
+
+  it('Subagent (callDepth>0) proxy-approves mutation tools without HITL', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    delete process.env.AGIM_NATIVE_AGENT_DENYLIST
+    const gate = buildPiApprovalGate({ callDepth: 1, platform: 'web', threadId: 't1' }, 'session-sub')
+    expect(await gate({
+      id: 'w1',
+      name: 'agim_write_file',
+      arguments: { path: 'out.txt', content: 'x' },
+    }, 0)).toBe('allow')
+    expect(await gate({
+      id: 'x1',
+      name: 'agim_exec',
+      arguments: { command: 'echo hi' },
+    }, 0)).toBe('allow')
+  })
+
+  it('Subagent proxy-approve still honors deny-all / denylist', async () => {
+    process.env.AGIM_NATIVE_AGENT_MODE = 'deny-all'
+    let gate = buildPiApprovalGate({ callDepth: 1 }, 'session-sub-deny')
+    expect(await gate({
+      id: 'x1',
+      name: 'agim_exec',
+      arguments: { command: 'echo hi' },
+    }, 0)).toBe('deny')
+
+    process.env.AGIM_NATIVE_AGENT_MODE = 'allow-list'
+    process.env.AGIM_NATIVE_AGENT_DENYLIST = 'agim_exec'
+    gate = buildPiApprovalGate({ callDepth: 2 }, 'session-sub-deny-list')
+    expect(await gate({
+      id: 'x2',
+      name: 'agim_exec',
+      arguments: { command: 'echo hi' },
+    }, 0)).toBe('deny')
+  })
 })

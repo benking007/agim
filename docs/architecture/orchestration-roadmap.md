@@ -135,7 +135,7 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 - **消息流卡片 + 半浮层**：`chat-subagent-card` / `subagent-detail-dialog`；portal 到 composer sheet root，与内容列居中；长内容半高滚动。  
 - **Plan 并存**：`activityFollowSignal` 驱动中途 Todo 刷新；Plan 叠在 Subagent 上方。  
 - **Stop**：WS `stop-subagent` → `cancelJob`；`formatSubagentStoppedResult` 以 `ok:true, cancelled:true` 交回父 turn。  
-- **审批**：主/子共用 ApprovalBus + `AGIM_AUTO_APPROVE`；原生默认放行 `agim_todo_write`。
+- **审批**：主 turn 受 `AGIM_AUTO_APPROVE`；**子代理（depth>0）代审免卡**；敏感路径 / deny-all 仍拦截；原生默认放行 `agim_todo_write`。
 
 #### A3. 拆解启发式（prompt）
 

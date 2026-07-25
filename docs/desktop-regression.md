@@ -72,8 +72,8 @@ node tools/phase-a-acceptance.mjs
 | `PHASE_A_TODO_PROGRESS_TEST` | Todo/Plan **中途**出现并更新（不必等整 turn 结束） |
 | `PHASE_A_TODO_AND_SUBAGENT_TEST` | Plan 叠在 Subagent **上方**；二者同时可见 |
 | 运行中卡片右侧 **Stop** | 子代理停止；父 turn 收到阶段性摘要并继续（非整 turn 硬失败） |
-| `AGIM_AUTO_APPROVE=0` + 需审批工具 | 审批卡紧凑；子代理审批可标 origin；Settings 未配置时显示 OFF |
-| `AGIM_AUTO_APPROVE=1` | 主/子共用自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
+| `AGIM_AUTO_APPROVE=0` + 需审批工具 | 主 turn 弹审批卡；**子代理（depth>0）免审代批**；Settings 未配置时显示 OFF |
+| `AGIM_AUTO_APPROVE=1` | 主 turn 也自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
 
 生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。
 
@@ -88,7 +88,10 @@ node tools/phase-a-acceptance.mjs
 | `LOOP_E2E_TEST` | 派工后验收；`loop_verdict` stop+met；结束总结；**不**残留待验收条 |
 | `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死（无 pending ask / live 子代理时） |
 | 子代理进行中 | 本轮 `liveSubagents>0` 时小精灵「子代理进行中」；**不**弹出待验收；单子代理结束不触发评审 |
-| VERIFY 中途提问 | 结论不确定 / 数据异常时父侧可 `ask_user`；用户回复后继续 `loop_verdict`；pending ask 期间不 `verify_skipped` |
+| VERIFY 中途提问 | **仅父侧**且子代理已齐；结论不确定时可 `ask_user`；子代理不得提问；`live>0` 父侧也不得提问解阻塞 |
+| 子代理调研 | 同线程子代理不被 `loop-parent-wait` 禁 `web_fetch`/`exec`（门禁仅 depth=0） |
+| 子代理审批 | `AGIM_AUTO_APPROVE=0` 时：主 turn 仍弹卡；子代理 exec/write **不弹卡**（代审） |
+| R2 再派工 | `continue/revise` 后同 turn 可再 `call_agents`（委托上限按轮重置） |
 | `met=true` 结案 | Portal「结论已就绪」浮窗；可补充 →「确认结束」或「继续下一轮」 |
 | 退出「至少 N 轮」 | 第 1 轮 `stop`+`met=true` → `need_more_rounds`；须继续到 N 或放弃 `stop`+`met=false` |
 | 「重复 N 轮」 | min=N、max=N×2 |

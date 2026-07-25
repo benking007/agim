@@ -1486,9 +1486,9 @@ export function buildLoopSnippet(
   if (live > 0) {
     lines.push(
       `HARD WAIT: ${live} Subagent job(s) still pending/running for THIS ROUND. `
-        + 'Do NOT call loop_verdict / start evaluation until all round children finish. '
-        + 'Parent must only wait (sleep/now) or ask_user on clarifying questions — '
-        + 'no research, no extra dispatch. '
+        + 'Do NOT call loop_verdict / ask_user / start evaluation until all round '
+        + 'children finish. Parent must only wait (sleep/now) — '
+        + 'no research, no HITL, no extra dispatch. '
         + 'A single child finishing is not enough.',
     )
   }
@@ -1515,9 +1515,9 @@ export function buildLoopSnippet(
   }
   if (live > 0) {
     lines.push(
-      'WAIT (not VERIFY yet): this round still has live Subagents — only wait/loop '
-        + '(ask_user allowed for clarifying questions); '
-        + 'do not research or call loop_verdict until liveSubagents=0 for this round.',
+      'WAIT (not VERIFY yet): this round still has live Subagents — only wait '
+        + '(sleep/now). Do NOT ask_user to unblock; do not research or call '
+        + 'loop_verdict until liveSubagents=0 for this round.',
     )
   } else if ((run.dispatchesThisRound || 0) < 1) {
     lines.push(

@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Loop parent wait gate no longer blocks Subagents**: dispatch/wait
+  gates apply only at `callDepth=0`. Children share the parent
+  `threadId` and were incorrectly forced into sleep/`ask_user` hollow
+  loops. Subagents cannot call `ask_user` / `loop_verdict` (parent-only
+  HITL). While `liveSubagents>0`, parent cannot `ask_user` to "unblock".
+  `continue|revise` resets the per-turn `call_agent` cap so Round 2 can
+  dispatch again.
+
+### Changed
+
+- **Subagent tools proxy-approved**: `callDepth>0` skips approval cards
+  (native gate + ApprovalBus) on the user's behalf. Sensitive-path deny,
+  self-protect, deny-all / denylist still apply. Parent turn unchanged.
+
 ### Added
 
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate
@@ -67,6 +83,10 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- **Loop / Subagent 门禁与代审文档**：`subagent.md` §7.2 父/子审批分工；
+  `loop-engineering` 拍板表；`ask-user` 区分提问 vs 工具审批；
+  `security-hardening` 注明 `AGIM_AUTO_APPROVE` 仅主 turn；
+  `desktop-regression` §3.2 增代审与门禁场景。
 - **Loop VERIFY HITL + 硬约束文档**：`loop-engineering.md` 主流程/
   状态机/`ask_user` 中途评审；`ask-user.md` § Loop Engineering；
   `desktop-regression` §3.2 增 VERIFY 提问与结案浮窗场景。

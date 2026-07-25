@@ -17,7 +17,7 @@ agim **默认状态**偏「单人本机助手」合规友好，但**不是**面�
 | Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 | 公网暴露需运维主动确认 |
 | Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）| 全球 IM 默认不开 |
 | 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）| 远端执行默认不开 |
-| 工具审批 | **默认人工审批**（`AGIM_AUTO_APPROVE=0`）；显式 `=1` 才自动放行（安全检查仍先执行）。接 IM 且未配严格 `AGIM_ALLOWED_USERS` 时自动审批会被抑制，除非 `AGIM_AUTO_APPROVE_OPEN_IM=1` | **安全默认；单人自用可显式打开** |
+| 工具审批 | **默认人工审批**（`AGIM_AUTO_APPROVE=0`）；显式 `=1` 才自动放行（安全检查仍先执行）。接 IM 且未配严格 `AGIM_ALLOWED_USERS` 时自动审批会被抑制，除非 `AGIM_AUTO_APPROVE_OPEN_IM=1`。**子代理（`callDepth>0`）默认代审免卡**（敏感路径 / self-protect / deny-all 仍拦截） | **主 turn 安全默认；子代理代批以减少 Loop 打断** |
 | 审批超时 | 超时默认 **放行**（`AGIM_TIMEOUT_DEFAULT=allow`）；仅自动审批关闭时生效；设 `deny` 启用严格交互模式 | HITL 严格模式需显式改 |
 | IM 发送者 | 默认开放（未设 `AGIM_ALLOWED_USERS`）| 谁能私聊 bot 谁就能驱 agent |
 | 长期记忆 | 默认开（P3 opt-out，`AGIM_MEMORY_ENABLED=0` 关闭）；向量检索默认关 | — |
@@ -75,7 +75,7 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | `AGIM_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
 | `AGIM_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
 | `AGIM_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
-| `AGIM_AUTO_APPROVE` | `0`（关） | 默认关闭；`=1` 时工具调用在安全检查后立即自动放行。接 IM 时还需严格 allowlist 或 `AGIM_AUTO_APPROVE_OPEN_IM=1` | v1.5.7 / hardened |
+| `AGIM_AUTO_APPROVE` | `0`（关） | **仅约束主 turn（depth=0）**；`=1` 时主 turn 工具在安全检查后立即自动放行。接 IM 时还需严格 allowlist 或 `AGIM_AUTO_APPROVE_OPEN_IM=1`。**子代理（depth>0）始终代审免卡**（与本开关无关） | v1.5.7 / hardened；子代理代审 #249 |
 | `AGIM_AUTO_APPROVE_OPEN_IM` | 未设 = 关 | `=1` 显式确认：即使 IM 开放且无严格 `AGIM_ALLOWED_USERS`，仍允许 auto-approve | hardened |
 | `AGIM_EXEC_ALLOW_ANY_CWD` | 未设 = 关 | `=1` 允许 `agim_exec` 的 cwd 落在 agent workspace 之外（默认 realpath 限制在 workspace 内） | hardened |
 | (已有) `AGIM_TIMEOUT_DEFAULT` | `allow` | 审批超时策略（仅 AUTO_APPROVE 关闭时生效）；设 `deny` 启用严格交互模式 | R13 G5 C1 |

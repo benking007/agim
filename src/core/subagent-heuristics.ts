@@ -67,6 +67,8 @@ export function buildSubagentDelegationGuidance(): string {
     '  - Output format contract (parent MUST ask; child MUST deliver): key findings (tables/lists/numbers) in the child FINAL message;',
     '    if also writing a file, cite the absolute path; never only「见上文」/「see above」/「见文件」without substance.',
     '  - When YOU are a Subagent: your job.result / Portal「执行结果」IS your final message — put the answer there, not only in a file.',
+    '  - When YOU are a Subagent: do NOT call mcp__agim__ask_user or loop_verdict — HITL and Loop verdict are parent-only;',
+    '    put clarifying needs / blockers in your FINAL message and return.',
     '  - Same-family: prefer backend:"<llmBackends.name>" (concrete). isolate:true reuses default model.',
     '    role:"cheap" is only an optional alias when llmRoles.cheap exists — do not assume it.',
     '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',

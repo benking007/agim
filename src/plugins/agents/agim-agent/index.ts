@@ -1104,9 +1104,11 @@ export class NativeAgentAdapter implements AgentAdapter {
           })
           return { block: true, reason: todoGate.reason }
         }
-        // Loop R3: before first dispatch this round, parent must call_agents
-        // (not web_fetch / exec the mission alone).
-        if (opts?.platform && opts?.threadId) {
+        // Loop R3/R4 parent-only gates. Subagents share the parent threadId,
+        // so applying wait/dispatch gates at callDepth>0 would block their
+        // research tools and force hollow sleep/ask_user chains.
+        const isNestedSubagent = (opts?.callDepth ?? 0) > 0
+        if (opts?.platform && opts?.threadId && !isNestedSubagent) {
           const loopGate = evaluateLoopDispatchGate(
             opts.platform,
             opts.channelId ?? '',

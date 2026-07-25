@@ -4,6 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  _resetAskBusForTests,
+  handleAskOp,
+  tryResolvePendingAsk,
+} from './ask-user-rpc.js'
+import { registry } from './registry.js'
+import type { ChoiceCardPrompt, MessengerAdapter } from './types.js'
+import { _setTestLiveSubagents } from './loop-run.js'
+import {
   isLoopVerifyGateOn,
   isLoopVerdictToolName,
   loopNeedsVerdict,
@@ -60,9 +68,13 @@ describe('loop verify gate', () => {
     dir = mkdtempSync(join(tmpdir(), 'loop-verify-gate-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
     delete process.env.AGIM_LOOP_VERIFY_GATE
+    _setTestLiveSubagents(false)
+    _resetAskBusForTests()
   })
 
   afterEach(() => {
+    _setTestLiveSubagents(null)
+    _resetAskBusForTests()
     if (prevLoops === undefined) delete process.env.AGIM_LOOPS_DIR
     else process.env.AGIM_LOOPS_DIR = prevLoops
     if (prevGate === undefined) delete process.env.AGIM_LOOP_VERIFY_GATE
@@ -107,8 +119,42 @@ describe('loop verify gate', () => {
     expect(loopNeedsVerdict(a.platform, a.channelId, a.threadId)).toBe(false)
   })
 
-  it('steer + follow-up copy mention loop_verdict', () => {
+  it('does not need verdict while Subagents are still live', () => {
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    _setTestLiveSubagents(true)
+    expect(loopNeedsVerdict(a.platform, a.channelId, a.threadId)).toBe(false)
+    _setTestLiveSubagents(false)
+    expect(loopNeedsVerdict(a.platform, a.channelId, a.threadId)).toBe(true)
+  })
+
+  it('does not need verdict while ask_user awaits user reply', async () => {
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    const m: MessengerAdapter = {
+      name: a.platform,
+      async start() { /* noop */ },
+      async stop() { /* noop */ },
+      onMessage() { /* noop */ },
+      async sendMessage() { /* noop */ },
+      async sendChoiceCard(_threadId: string, _prompt: ChoiceCardPrompt) {
+        return { messageId: 'm-ask' }
+      },
+    }
+    registry.registerMessenger(m)
+    const pending = handleAskOp(
+      { question: '结论不确定，采用哪条？', choices: ['继续', '修订'], timeoutSec: 30 },
+      { platform: a.platform, channelId: a.channelId, threadId: a.threadId, userId: 'u1' },
+    )
+    await new Promise<void>((r) => setImmediate(r))
+    expect(loopNeedsVerdict(a.platform, a.channelId, a.threadId)).toBe(false)
+    tryResolvePendingAsk(a.platform, a.channelId, a.threadId, '继续')
+    await pending
+    expect(loopNeedsVerdict(a.platform, a.channelId, a.threadId)).toBe(true)
+  })
+
+  it('steer + follow-up copy mention loop_verdict and mid-review ask_user', () => {
     expect(loopVerifySteerText()).toContain('loop_verdict')
+    expect(loopVerifySteerText()).toContain('ask_user')
     expect(loopVerifyFollowUpPrompt()).toContain('loop_verdict')
+    expect(loopVerifyFollowUpPrompt()).toContain('ask_user')
   })
 })

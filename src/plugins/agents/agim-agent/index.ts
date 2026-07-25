@@ -45,6 +45,7 @@ import {
 import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
 import { evaluateLoopDispatchGate } from '../../../core/loop-dispatch-gate.js'
+import { evaluateLoopParentWaitGate } from '../../../core/loop-parent-wait-gate.js'
 import {
   isLoopVerdictToolName,
   loopNeedsVerdict,
@@ -1122,6 +1123,23 @@ export class NativeAgentAdapter implements AgentAdapter {
               preview: loopGate.reason,
             })
             return { block: true, reason: loopGate.reason }
+          }
+          const waitGate = evaluateLoopParentWaitGate(
+            opts.platform,
+            opts.channelId ?? '',
+            opts.threadId,
+            ev.toolName,
+          )
+          if (!waitGate.ok) {
+            emitToolActivity({
+              id: ev.toolCallId,
+              label: ev.toolName,
+              status: 'denied',
+              startedAt: Date.now(),
+              finishedAt: Date.now(),
+              preview: waitGate.reason,
+            })
+            return { block: true, reason: waitGate.reason }
           }
         }
         // Subagent: surface pending card(s) immediately (before HITL / A2A).

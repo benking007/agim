@@ -1266,6 +1266,25 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 + 'to finish (or Stop them) before calling loop_verdict.',
               )
             }
+            if (r.error === 'need_more_rounds') {
+              const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+              const min = active?.mission?.exit?.minRounds
+              const round = active?.round
+              return err(
+                'loop_verdict failed: need_more_rounds — exit floor minRounds'
+                + (min != null ? `=${min}` : '')
+                + (round != null ? ` (current round=${round})` : '')
+                + '. met=true stop is refused until the floor is reached; '
+                + 'use decision=continue|revise with met=false, or abandon with '
+                + 'decision=stop and met=false / omit met.',
+              )
+            }
+            if (r.error === 'pending_user_confirm') {
+              return err(
+                'loop_verdict failed: pending_user_confirm — a met=true claim is '
+                + 'already waiting for the user to End/Continue in the Portal dock.',
+              )
+            }
             if (r.error === 'need_verification') {
               return err(
                 'loop_verdict failed: need_verification — pass met=false, summary, and '
@@ -1297,6 +1316,15 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             dispatchesThisRound: r.run.dispatchesThisRound,
             usage: r.run.usage,
             evaluator: evaluatorNote,
+            ...(r.run.status === 'pending_user_confirm'
+              ? {
+                  pendingUserConfirm: true,
+                  note:
+                    'met=true accepted — wait for the user to confirm End/Continue '
+                    + 'in the Portal dock. Do not call more tools; briefly tell the '
+                    + 'user the conclusion is ready for their confirmation.',
+                }
+              : {}),
           }))
         }
         case 'long_task':

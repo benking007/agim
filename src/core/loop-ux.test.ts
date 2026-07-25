@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import {
+  _setTestLiveSubagents,
   emptyLoopUsage,
   formatLoopEndedSummary,
   getLoopUxBucket,
@@ -26,6 +27,7 @@ function baseRun(over: Partial<LoopRun> = {}): LoopRun {
       exit: { description: '验收通过', maxRounds: 5, onFocusOff: 'cancel' },
     },
     dispatchesThisRound: 0,
+    roundJobIds: [],
     usage: emptyLoopUsage(),
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -35,22 +37,47 @@ function baseRun(over: Partial<LoopRun> = {}): LoopRun {
 }
 
 describe('loop UX buckets (R5)', () => {
+  afterEach(() => {
+    _setTestLiveSubagents(null)
+  })
+
   it('maps statuses to 待对焦/待派工/待验收', () => {
+    _setTestLiveSubagents(false)
     expect(getLoopUxBucket(baseRun({ status: 'aligning' }))).toBe('aligning')
     expect(getLoopUxBucket(baseRun({ status: 'planning', dispatchesThisRound: 0 }))).toBe('dispatch')
     expect(getLoopUxBucket(baseRun({ status: 'dispatching', dispatchesThisRound: 0 }))).toBe('dispatch')
     expect(getLoopUxBucket(baseRun({ status: 'dispatching', dispatchesThisRound: 2 }))).toBe('verify')
     expect(getLoopUxBucket(baseRun({ status: 'verifying' }))).toBe('verify')
+    expect(getLoopUxBucket(baseRun({ status: 'pending_user_confirm' }))).toBe('confirm')
     expect(getLoopUxBucket(baseRun({ status: 'ended' }))).toBe('ended')
     expect(loopUxBucketLabel('aligning')).toBe('待对焦')
     expect(loopUxBucketLabel('dispatch')).toBe('待派工')
     expect(loopUxBucketLabel('verify')).toBe('待验收')
+    expect(loopUxBucketLabel('confirm')).toBe('待确认结案')
+  })
+
+  it('stays in dispatch while Subagents are live (no early verify)', () => {
+    _setTestLiveSubagents(true)
+    expect(getLoopUxBucket(baseRun({
+      status: 'dispatching',
+      dispatchesThisRound: 2,
+    }))).toBe('dispatch')
+    const dto = toLoopStatusDto(baseRun({
+      status: 'dispatching',
+      dispatchesThisRound: 2,
+    }))
+    expect(dto.bucket).toBe('dispatch')
+    expect(dto.liveSubagents).toBeGreaterThan(0)
+    expect(dto.canVerify).toBe(false)
   })
 
   it('toLoopStatusDto exposes bucket + mission fields', () => {
+    _setTestLiveSubagents(false)
     const dto = toLoopStatusDto(baseRun({ dispatchesThisRound: 1, status: 'dispatching' }))
     expect(dto.bucket).toBe('verify')
     expect(dto.bucketLabel).toBe('待验收')
+    expect(dto.canVerify).toBe(true)
+    expect(dto.liveSubagents).toBe(0)
     expect(dto.objective).toBe('修好登录')
     expect(dto.active).toBe(true)
   })

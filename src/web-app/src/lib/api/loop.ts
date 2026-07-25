@@ -8,21 +8,33 @@ import { client } from './client'
 export type LoopStatusDto = {
   id: string
   status: string
-  bucket: 'aligning' | 'dispatch' | 'verify' | 'ended'
+  bucket: 'aligning' | 'dispatch' | 'verify' | 'confirm' | 'ended'
   bucketLabel: string
   active: boolean
   round: number
+  minRounds?: number
   maxRounds: number
   objective: string
   exitDescription: string
   acceptance?: string
   dispatchesThisRound: number
+  /** In-flight Subagent jobs for this round (pending|running). */
+  liveSubagents?: number
+  /** Ready for loop_verdict (dispatched, no live children this round). */
+  canVerify?: boolean
   endReason?: string
   lastVerification?: {
     met: boolean
     summary: string
     gaps?: string[]
     nextDirection?: string
+  }
+  pendingConfirmation?: {
+    summary: string
+    gaps?: string[]
+    evaluatorReason?: string
+    minRounds?: number
+    belowMinRounds: boolean
   }
   usage?: {
     dispatchCount: number
@@ -40,4 +52,15 @@ export function getLoop(query: {
   lang?: 'zh' | 'en'
 }): Promise<{ ok: boolean; loop: LoopStatusDto | null }> {
   return client.get('/api/loop', { query })
+}
+
+export function confirmLoopMet(body: {
+  threadId: string
+  action: 'end' | 'continue'
+  supplement?: string
+  platform?: string
+  channelId?: string
+  lang?: 'zh' | 'en'
+}): Promise<{ ok: boolean; loop: LoopStatusDto | null; error?: string }> {
+  return client.post('/api/loop/confirm-met', { body })
 }

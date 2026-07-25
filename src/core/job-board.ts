@@ -914,6 +914,36 @@ export function countActiveChildJobsByThread(threadKey: string): number {
   }
 }
 
+/** Count how many of the given job ids are still pending|running (round-scoped). */
+export function countActiveJobsByIds(ids: number[]): number {
+  const d = getDb()
+  if (!d || !ids.length) return 0
+  const uniq = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
+  if (!uniq.length) return 0
+  try {
+    let n = 0
+    // Chunk to stay under SQLite variable limits.
+    for (let i = 0; i < uniq.length; i += 80) {
+      const chunk = uniq.slice(i, i + 80)
+      const placeholders = chunk.map(() => '?').join(',')
+      const row = d.prepare(
+        `SELECT COUNT(*) AS n FROM jobs
+           WHERE id IN (${placeholders})
+             AND status IN ('running', 'pending')`,
+      ).get(...chunk) as { n: number } | undefined
+      n += Number(row?.n) || 0
+    }
+    return n
+  } catch (err) {
+    rootLogger.debug({
+      component: 'job-board',
+      event: 'countActiveJobsByIds_failed',
+      err: String(err),
+    })
+    return 0
+  }
+}
+
 /** Cancel all in-flight Subagent jobs on a thread. Returns how many were cancelled. */
 export function cancelActiveChildJobsByThread(
   threadKey: string,

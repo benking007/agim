@@ -4,11 +4,32 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  _resetAskBusForTests,
+  handleAskOp,
+  tryResolvePendingAsk,
+} from './ask-user-rpc.js'
+import { registry } from './registry.js'
+import type { ChoiceCardPrompt, MessengerAdapter } from './types.js'
+import {
   _setTestLiveSubagents,
   forceLoopExitSkippedVerify,
   getActiveLoop,
   maybeEnforceLoopExit,
 } from './loop-run.js'
+
+function registerFakeMessenger(name: string): void {
+  const m: MessengerAdapter = {
+    name,
+    async start() { /* noop */ },
+    async stop() { /* noop */ },
+    onMessage() { /* noop */ },
+    async sendMessage() { /* noop */ },
+    async sendChoiceCard(_threadId: string, _prompt: ChoiceCardPrompt) {
+      return { messageId: 'm-ask' }
+    },
+  }
+  registry.registerMessenger(m)
+}
 
 function seed(dir: string, over: Record<string, unknown> = {}) {
   const platform = 'web'
@@ -55,10 +76,12 @@ describe('loop exit enforce (no verdict required)', () => {
     dir = mkdtempSync(join(tmpdir(), 'loop-exit-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
     _setTestLiveSubagents(null)
+    _resetAskBusForTests()
   })
 
   afterEach(() => {
     _setTestLiveSubagents(null)
+    _resetAskBusForTests()
     if (prev === undefined) delete process.env.AGIM_LOOPS_DIR
     else process.env.AGIM_LOOPS_DIR = prev
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
@@ -95,6 +118,24 @@ describe('loop exit enforce (no verdict required)', () => {
     const r = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
     expect(r.ended).toBe(false)
     expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
+  })
+
+  it('forceLoopExitSkippedVerify defers while ask_user awaits user reply', async () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    registerFakeMessenger(a.platform)
+    const pending = handleAskOp(
+      { question: '数据异常，采用哪组？', choices: ['A', 'B'], timeoutSec: 30 },
+      { platform: a.platform, channelId: a.channelId, threadId: a.threadId, userId: 'u1' },
+    )
+    await new Promise<void>((r) => setImmediate(r))
+    const deferred = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
+    expect(deferred.ended).toBe(false)
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
+    tryResolvePendingAsk(a.platform, a.channelId, a.threadId, 'A')
+    await pending
+    const after = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
+    expect(after.ended).toBe(true)
+    expect(after.reason).toBe('verify_skipped')
   })
 
   it('forceLoopExitSkippedVerify uses limit when round already at max', () => {

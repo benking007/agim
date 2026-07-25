@@ -15,8 +15,10 @@ import { logger as rootLogger } from './logger.js'
 import {
   cancelActiveChildJobsByThread,
   countActiveChildJobsByThread,
+  countActiveJobsByIds,
   jobThreadKey,
 } from './job-board.js'
+import { threadHasPendingAsk } from './ask-user-rpc.js'
 import {
   focusOff,
   getFocusOn,
@@ -36,6 +38,8 @@ export type LoopStatus =
   | 'dispatching'
   | 'verifying'
   | 'reflecting'
+  /** met=true claimed — waiting for Portal user confirm (end | continue). */
+  | 'pending_user_confirm'
   | 'running' // legacy / soft executor mode after confirm (pre-R3)
   | 'observing' // legacy
   | 'paused'
@@ -68,6 +72,8 @@ export interface LoopMission {
   acceptance?: string
   exit: {
     description: string
+    /** Hard floor: met=true stop refused while round < minRounds. */
+    minRounds?: number
     maxRounds: number
     maxWallMs?: number
     onFocusOff: 'cancel'
@@ -113,6 +119,11 @@ export interface LoopRun {
   draftExitDescription?: string
   /** R3: subagent spawns accepted this round (call_agent / call_agents). */
   dispatchesThisRound: number
+  /**
+   * Job-board ids of Subagents spawned in the current round.
+   * Round-scoped live wait uses these — not all thread jobs forever.
+   */
+  roundJobIds: number[]
   /** R3: last decompose plan recorded from call_agents (or synthetic single). */
   lastPlan?: {
     at: number
@@ -153,20 +164,30 @@ export interface LoopMissionView {
   objective: string
   exitDescription: string
   acceptance?: string
+  minRounds?: number
   maxRounds: number
   maxWallMs?: number
   confirmed: boolean
   partial: boolean
 }
 
-/** R5 UX buckets — user-facing waiting stage (待对焦 / 待派工 / 待验收). */
-export type LoopUxBucket = 'aligning' | 'dispatch' | 'verify' | 'ended'
+/** R5 UX buckets — user-facing waiting stage. */
+export type LoopUxBucket = 'aligning' | 'dispatch' | 'verify' | 'confirm' | 'ended'
 
+/**
+ * UX stage for Portal / status.
+ * HARD: while this round still has live Subagent jobs, stay in 待派工 —
+ * a single child finishing must NOT open 待验收 / evaluation.
+ */
 export function getLoopUxBucket(run: LoopRun): LoopUxBucket {
   if (run.status === 'ended') return 'ended'
   if (run.status === 'aligning') return 'aligning'
+  if (run.status === 'pending_user_confirm') return 'confirm'
+  if (countRoundLiveSubagents(run) > 0) {
+    return 'dispatch'
+  }
   if (run.status === 'verifying' || run.status === 'reflecting') return 'verify'
-  // After dispatch, waiting on structured verdict → 待验收
+  // After all round children settle + dispatch counted → 待验收
   if ((run.dispatchesThisRound || 0) > 0) return 'verify'
   return 'dispatch'
 }
@@ -177,6 +198,7 @@ export function loopUxBucketLabel(bucket: LoopUxBucket, lang: 'zh' | 'en' = 'zh'
       case 'aligning': return 'Awaiting align'
       case 'dispatch': return 'Awaiting dispatch'
       case 'verify': return 'Awaiting verify'
+      case 'confirm': return 'Confirm conclusion'
       case 'ended': return 'Ended'
     }
   }
@@ -184,6 +206,7 @@ export function loopUxBucketLabel(bucket: LoopUxBucket, lang: 'zh' | 'en' = 'zh'
     case 'aligning': return '待对焦'
     case 'dispatch': return '待派工'
     case 'verify': return '待验收'
+    case 'confirm': return '待确认结案'
     case 'ended': return '已结束'
   }
 }
@@ -197,15 +220,28 @@ export interface LoopStatusDto {
   bucketLabel: string
   active: boolean
   round: number
+  minRounds?: number
   maxRounds: number
   objective: string
   exitDescription: string
   acceptance?: string
   dispatchesThisRound: number
+  /** In-flight Subagent jobs for the current Loop round (pending|running). */
+  liveSubagents: number
+  /** True when dispatches≥1, no live children this round, and bucket is verify. */
+  canVerify: boolean
   endReason?: LoopRun['endReason']
   lastVerification?: LoopVerification & { at: number }
   lastEvaluator?: LoopRun['lastEvaluator']
   lastPlan?: LoopRun['lastPlan']
+  /** Present while status=pending_user_confirm (met=true awaiting user). */
+  pendingConfirmation?: {
+    summary: string
+    gaps?: string[]
+    evaluatorReason?: string
+    minRounds?: number
+    belowMinRounds: boolean
+  }
   usage: LoopUsage
   openedFocus: boolean
   createdAt: number
@@ -217,6 +253,8 @@ export function toLoopStatusDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopSta
   const view = getMissionView(run)
   const bucket = getLoopUxBucket(run)
   const usage = run.usage || emptyLoopUsage()
+  const liveSubagents = countRoundLiveSubagents(run)
+  const belowMin = !!(view.minRounds && run.round < view.minRounds)
   return {
     id: run.id,
     sessionKey: run.sessionKey || threadKey(run.platform, run.channelId, run.threadId),
@@ -225,15 +263,29 @@ export function toLoopStatusDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopSta
     bucketLabel: loopUxBucketLabel(bucket, lang),
     active: run.status !== 'ended',
     round: run.round,
+    minRounds: view.minRounds,
     maxRounds: view.maxRounds,
     objective: view.objective,
     exitDescription: view.exitDescription,
     acceptance: view.acceptance,
     dispatchesThisRound: run.dispatchesThisRound || 0,
+    liveSubagents,
+    canVerify: bucket === 'verify' && liveSubagents === 0 && (run.dispatchesThisRound || 0) > 0,
     endReason: run.endReason,
     lastVerification: run.lastVerification,
     lastEvaluator: run.lastEvaluator,
     lastPlan: run.lastPlan,
+    ...(run.status === 'pending_user_confirm' && run.lastVerification
+      ? {
+          pendingConfirmation: {
+            summary: run.lastVerification.summary,
+            ...(run.lastVerification.gaps?.length ? { gaps: run.lastVerification.gaps } : {}),
+            ...(run.lastEvaluator?.reason ? { evaluatorReason: run.lastEvaluator.reason } : {}),
+            minRounds: view.minRounds,
+            belowMinRounds: belowMin,
+          },
+        }
+      : {}),
     usage,
     openedFocus: run.openedFocus,
     createdAt: run.createdAt,
@@ -344,6 +396,14 @@ function normalizeRun(raw: LoopRun): LoopRun {
   if (typeof raw.dispatchesThisRound !== 'number' || raw.dispatchesThisRound < 0) {
     raw.dispatchesThisRound = 0
   }
+  if (!Array.isArray(raw.roundJobIds)) {
+    raw.roundJobIds = []
+  } else {
+    raw.roundJobIds = raw.roundJobIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .slice(-64)
+  }
   if (!raw.usage || typeof raw.usage !== 'object') {
     raw.usage = emptyLoopUsage()
   } else {
@@ -361,6 +421,11 @@ function normalizeRun(raw: LoopRun): LoopRun {
 /** Always-readable objective + exit (mission first, drafts as fallback). */
 export function getMissionView(run: LoopRun): LoopMissionView {
   const maxRounds = run.mission?.exit?.maxRounds || run.maxRounds || defaultMaxRounds()
+  const minRaw = run.mission?.exit?.minRounds
+  const minRounds =
+    typeof minRaw === 'number' && Number.isFinite(minRaw) && minRaw > 0
+      ? Math.min(Math.floor(minRaw), maxRounds)
+      : undefined
   const objective = (
     run.mission?.objective?.trim()
     || run.draftObjective?.trim()
@@ -376,6 +441,7 @@ export function getMissionView(run: LoopRun): LoopMissionView {
     objective,
     exitDescription,
     acceptance: run.mission?.acceptance?.trim() || undefined,
+    minRounds,
     maxRounds,
     maxWallMs: run.mission?.exit?.maxWallMs,
     confirmed,
@@ -394,6 +460,9 @@ export function formatMissionFields(run: LoopRun, opts?: { draftLabel?: boolean 
     `${exitLabel}：${v.exitDescription || '❌ 未设定'}`,
   ]
   if (v.acceptance) lines.push(`**验收**：${v.acceptance}`)
+  if (v.minRounds && v.minRounds > 1) {
+    lines.push(`最少轮次：${v.minRounds}（未满不可 met=true 达标结束）`)
+  }
   if (v.maxWallMs) {
     const mins = Math.round(v.maxWallMs / 60_000)
     lines.push(`墙钟上限：${mins >= 60 ? `${Math.round(mins / 60)}h` : `${mins}m`}`)
@@ -491,14 +560,67 @@ export function _setTestLiveSubagents(value: boolean | null): void {
   _testLiveSubagents = value
 }
 
-/** True while A2A Subagent jobs are still pending/running on this thread. */
+/**
+ * Live Subagent count for the active Loop's current round.
+ * Prefers `roundJobIds` (round-scoped); falls back to thread-wide child count
+ * for legacy runs that predate round job tracking.
+ */
+export function countRoundLiveSubagents(run: LoopRun): number {
+  if (_testLiveSubagents != null) return _testLiveSubagents ? 1 : 0
+  if (run.roundJobIds?.length) {
+    return countActiveJobsByIds(run.roundJobIds)
+  }
+  return countActiveChildJobsByThread(
+    jobThreadKey(run.platform, run.channelId, run.threadId),
+  )
+}
+
+/** Count of A2A Subagent jobs still pending/running for this Loop round. */
+export function countThreadLiveSubagents(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): number {
+  if (_testLiveSubagents != null) return _testLiveSubagents ? 1 : 0
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (run) return countRoundLiveSubagents(run)
+  return countActiveChildJobsByThread(jobThreadKey(platform, channelId, threadId))
+}
+
+/** True while this Loop round still has pending/running Subagent jobs. */
 export function threadHasLiveSubagents(
   platform: string,
   channelId: string,
   threadId: string,
 ): boolean {
-  if (_testLiveSubagents != null) return _testLiveSubagents
-  return countActiveChildJobsByThread(jobThreadKey(platform, channelId, threadId)) > 0
+  return countThreadLiveSubagents(platform, channelId, threadId) > 0
+}
+
+/**
+ * Register a Subagent job id on the active Loop's current round.
+ * Called when A2A createInlineJob succeeds so live wait is round-scoped.
+ */
+export function noteLoopRoundJob(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  jobId: number,
+): void {
+  if (!Number.isFinite(jobId) || jobId <= 0) return
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run || run.status === 'aligning' || run.status === 'ended') return
+  if (run.status === 'pending_user_confirm') return
+  if (!Array.isArray(run.roundJobIds)) run.roundJobIds = []
+  if (!run.roundJobIds.includes(jobId)) {
+    run.roundJobIds.push(jobId)
+    if (run.roundJobIds.length > 64) run.roundJobIds = run.roundJobIds.slice(-64)
+  }
+  run.updatedAt = Date.now()
+  writeRun(run)
+}
+
+function clearRoundJobs(run: LoopRun): void {
+  run.roundJobIds = []
 }
 
 /**
@@ -517,7 +639,10 @@ export function maybeEnforceLoopExit(
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return { ended: false, run: null }
   if (isLoopWallExceeded(run, now)) {
-    if (threadHasLiveSubagents(platform, channelId, threadId)) {
+    if (run.status === 'pending_user_confirm') {
+      return { ended: false, run }
+    }
+    if (countRoundLiveSubagents(run) > 0) {
       log.info({
         event: 'loop.exit_deferred_live_subagents',
         reason: 'wall_limit',
@@ -550,14 +675,24 @@ export function forceLoopExitSkippedVerify(
 
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return { ended: false, run: null }
+  if (run.status === 'pending_user_confirm') return { ended: false, run }
   if ((run.dispatchesThisRound || 0) < 1) return { ended: false, run }
 
-  if (threadHasLiveSubagents(platform, channelId, threadId)) {
+  if (countRoundLiveSubagents(run) > 0) {
     log.info({
       event: 'loop.exit_deferred_live_subagents',
       reason: 'verify_skipped',
       threadId,
     }, 'defer verify_skipped while Subagents still running')
+    return { ended: false, run }
+  }
+
+  if (threadHasPendingAsk(platform, channelId, threadId)) {
+    log.info({
+      event: 'loop.exit_deferred_pending_ask',
+      reason: 'verify_skipped',
+      threadId,
+    }, 'defer verify_skipped while ask_user awaits user reply')
     return { ended: false, run }
   }
 
@@ -592,22 +727,59 @@ function resolveVerification(verdict: LoopVerdict): LoopVerification | null {
   }
 }
 
-/** Parse exit NL for round / wall-clock caps (fail-soft). */
+/** Parse exit NL into hard round / wall-clock fields (fail-soft). */
 export function parseExitConstraints(exitDescription: string): {
+  minRounds?: number
   maxRounds?: number
   maxWallMs?: number
 } {
   const text = exitDescription.trim()
   if (!text) return {}
+  let minRounds: number | undefined
   let maxRounds: number | undefined
-  const roundsHit =
+
+  const clampRounds = (n: number): number | undefined => {
+    if (!Number.isFinite(n) || n < 1) return undefined
+    return Math.min(Math.floor(n), 100)
+  }
+
+  // Floor: 至少 / 最少 / 不少于 N 轮
+  const minHit = text.match(/(?:至少|最少|不少于)\s*(\d+)\s*轮/)
+  if (minHit) {
+    minRounds = clampRounds(Number.parseInt(minHit[1]!, 10))
+  }
+
+  // Exact window: 做满 N 轮 → min = max = N
+  const fillHit = text.match(/做满\s*(\d+)\s*轮/)
+  if (fillHit) {
+    const n = clampRounds(Number.parseInt(fillHit[1]!, 10))
+    if (n) {
+      minRounds = n
+      maxRounds = n
+    }
+  }
+
+  // 「重复 N 轮」→ min=N, max=N*2（可多做，但有上限）
+  const repeatHit = text.match(/重复\s*(\d+)\s*轮/)
+  if (repeatHit) {
+    const n = clampRounds(Number.parseInt(repeatHit[1]!, 10))
+    if (n) {
+      if (minRounds == null) minRounds = n
+      if (maxRounds == null) maxRounds = clampRounds(n * 2)
+    }
+  }
+
+  // Ceiling-only phrases
+  const maxHit =
     text.match(/最多\s*(\d+)\s*轮/)
-    || text.match(/重复\s*(\d+)\s*轮/)
     || text.match(/(\d+)\s*轮\s*结束/)
     || text.match(/(\d+)\s*rounds?/i)
-  if (roundsHit) {
-    const n = Number.parseInt(roundsHit[1]!, 10)
-    if (Number.isFinite(n) && n > 0) maxRounds = Math.min(n, 100)
+  if (maxHit && maxRounds == null) {
+    maxRounds = clampRounds(Number.parseInt(maxHit[1]!, 10))
+  }
+
+  if (minRounds != null && maxRounds != null && minRounds > maxRounds) {
+    maxRounds = minRounds
   }
 
   let maxWallMs: number | undefined
@@ -622,7 +794,7 @@ export function parseExitConstraints(exitDescription: string): {
       if (Number.isFinite(n) && n > 0) maxWallMs = Math.min(n, 10_080) * 60_000
     }
   }
-  return { maxRounds, maxWallMs }
+  return { minRounds, maxRounds, maxWallMs }
 }
 
 function splitAcceptance(objectiveSide: string): { objective: string; acceptance?: string } {
@@ -642,6 +814,7 @@ export function parseLoopStartText(text: string): {
   objective: string
   exitDescription: string
   acceptance?: string
+  minRounds?: number
   maxRounds?: number
   maxWallMs?: number
 } {
@@ -683,18 +856,25 @@ export function parseLoopStartText(text: string): {
     objective,
     exitDescription,
     acceptance: split.acceptance,
+    minRounds: constraints.minRounds,
     maxRounds: constraints.maxRounds,
     maxWallMs: constraints.maxWallMs,
   }
 }
 
 function applyExitToMission(mission: LoopMission, exitDescription: string, parsed?: {
+  minRounds?: number
   maxRounds?: number
   maxWallMs?: number
 }): void {
   const constraints = parsed ?? parseExitConstraints(exitDescription)
   mission.exit.description = exitDescription.slice(0, 500)
   if (constraints.maxRounds) mission.exit.maxRounds = constraints.maxRounds
+  if (constraints.minRounds) {
+    mission.exit.minRounds = Math.min(constraints.minRounds, mission.exit.maxRounds)
+  } else {
+    delete mission.exit.minRounds
+  }
   if (constraints.maxWallMs) mission.exit.maxWallMs = constraints.maxWallMs
   else delete mission.exit.maxWallMs
 }
@@ -788,6 +968,7 @@ export function startLoop(input: {
   if (parsed.acceptance) mission.acceptance = parsed.acceptance
   if (exitDescription) {
     applyExitToMission(mission, exitDescription, {
+      minRounds: parsed.minRounds,
       maxRounds: parsed.maxRounds,
       maxWallMs: parsed.maxWallMs,
     })
@@ -810,6 +991,7 @@ export function startLoop(input: {
     draftObjective: objective || undefined,
     draftExitDescription: exitDescription || undefined,
     dispatchesThisRound: 0,
+    roundJobIds: [],
     usage: emptyLoopUsage(),
     createdAt: now,
     updatedAt: now,
@@ -919,6 +1101,7 @@ export function confirmLoopMission(
   run.status = 'planning'
   run.round = 1
   run.dispatchesThisRound = 0
+  clearRoundJobs(run)
   syncMissionMirrors(run)
   run.updatedAt = Date.now()
   pushTimeline(run, 'system', 'mission confirmed → planning')
@@ -1072,14 +1255,17 @@ export function applyLoopVerdict(
   if (run.status === 'aligning') {
     return { ok: false, error: 'aligning' }
   }
+  if (run.status === 'pending_user_confirm') {
+    return { ok: false, error: 'pending_user_confirm' }
+  }
   if (!isLoopDispatchAllowed(run) && run.status !== 'running' && run.status !== 'observing'
       && run.status !== 'planning' && run.status !== 'dispatching'
       && run.status !== 'verifying' && run.status !== 'reflecting') {
     return { ok: false, error: 'not_ready' }
   }
 
-  // Do not close / advance the Loop while Subagents are still running.
-  if (threadHasLiveSubagents(platform, channelId, threadId)) {
+  // Do not evaluate until THIS ROUND's Subagents are all settled.
+  if (countRoundLiveSubagents(run) > 0) {
     return { ok: false, error: 'live_subagents' }
   }
 
@@ -1117,6 +1303,14 @@ export function applyLoopVerdict(
     verification = resolveVerification(verdict)
   }
 
+  // HARD exit floor: met=true stop refused before minRounds (abandon stop still ok).
+  if (verdict.decision === 'stop' && verification?.met) {
+    const minRounds = run.mission?.exit?.minRounds
+    if (typeof minRounds === 'number' && minRounds > 0 && run.round < minRounds) {
+      return { ok: false, error: 'need_more_rounds' }
+    }
+  }
+
   run.lastVerdict = {
     decision: verdict.decision,
     summary: (verdict.summary || '').slice(0, 500),
@@ -1141,10 +1335,13 @@ export function applyLoopVerdict(
 
   if (verdict.decision === 'stop') {
     if (verification?.met) {
-      endLoopInternal(run, 'objective_met', 'objective met')
-    } else {
-      endLoopInternal(run, 'stop_verdict', 'observer stop')
+      // HITL: do not auto-end — Portal dock lets user supplement + end/continue.
+      run.status = 'pending_user_confirm'
+      pushTimeline(run, 'system', 'met=true → pending user confirm (end|continue)')
+      writeRun(run)
+      return { ok: true, run }
     }
+    endLoopInternal(run, 'stop_verdict', 'observer stop')
     return { ok: true, run }
   }
 
@@ -1160,10 +1357,67 @@ export function applyLoopVerdict(
   if (verdict.decision === 'revise') run.usage.reviseCount += 1
   run.round += 1
   run.dispatchesThisRound = 0
+  clearRoundJobs(run)
   run.status = 'planning'
   if (verification?.nextDirection) {
     pushTimeline(run, 'system', `reflect → plan: ${verification.nextDirection.slice(0, 160)}`)
   }
+  writeRun(run)
+  return { ok: true, run }
+}
+
+/**
+ * User resolves met=true confirmation dock: end as objective_met, or continue
+ * another planning round (optional supplement → nextDirection).
+ */
+export function resolveLoopMetConfirm(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  input: { action: 'end' | 'continue'; supplement?: string },
+): { ok: true; run: LoopRun } | { ok: false; error: string } {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return { ok: false, error: 'no_active_loop' }
+  if (run.status !== 'pending_user_confirm') {
+    return { ok: false, error: 'not_pending_confirm' }
+  }
+  const supplement = (input.supplement || '').trim().slice(0, 500)
+
+  if (input.action === 'end') {
+    if (supplement) {
+      pushTimeline(run, 'user', `confirm end supplement: ${supplement}`)
+      if (run.lastVerification) {
+        run.lastVerification = {
+          ...run.lastVerification,
+          summary: `${run.lastVerification.summary}｜用户补充：${supplement}`.slice(0, 500),
+        }
+      }
+    }
+    endLoopInternal(run, 'objective_met', 'user confirmed objective met')
+    return { ok: true, run }
+  }
+
+  // continue → next planning round
+  if (run.round >= run.maxRounds) {
+    endLoopInternal(run, 'limit', `maxRounds ${run.maxRounds} (user continue at cap)`)
+    return { ok: true, run }
+  }
+  if (!run.usage) run.usage = emptyLoopUsage()
+  run.usage.continueCount += 1
+  run.round += 1
+  run.dispatchesThisRound = 0
+  clearRoundJobs(run)
+  run.status = 'planning'
+  const next = supplement || '用户要求继续；请基于上一轮结论深化或补缺口后再验收。'
+  if (run.lastVerification) {
+    run.lastVerification = {
+      ...run.lastVerification,
+      met: false,
+      nextDirection: next.slice(0, 500),
+    }
+  }
+  pushTimeline(run, 'user', `confirm continue → plan: ${next.slice(0, 160)}`)
+  run.updatedAt = Date.now()
   writeRun(run)
   return { ok: true, run }
 }
@@ -1192,21 +1446,52 @@ export function buildLoopSnippet(
     return lines.join('\n')
   }
 
+  if (run.status === 'pending_user_confirm') {
+    lines.push('Phase: PENDING_USER_CONFIRM (met=true — wait for Portal user End/Continue).')
+    lines.push(`Round: ${run.round}/${view.maxRounds}`)
+    lines.push(`Objective: ${view.objective}`)
+    if (run.lastVerification) {
+      lines.push(`Claimed conclusion: ${run.lastVerification.summary}`)
+    }
+    lines.push(
+      'HARD WAIT: do NOT call tools or write more research. '
+        + 'The user is confirming the conclusion in the Portal dock.',
+    )
+    lines.push('')
+    return lines.join('\n')
+  }
+
   const phase =
     run.status === 'dispatching' ? 'DISPATCHING'
       : run.status === 'verifying' ? 'VERIFYING'
         : run.status === 'reflecting' ? 'REFLECTING'
           : 'PLANNING'
   lines.push(`Phase: ${phase} (R3/R4)`)
-  lines.push(`Round: ${run.round}/${view.maxRounds}`)
+  const minPart = view.minRounds ? ` (min ${view.minRounds})` : ''
+  lines.push(`Round: ${run.round}/${view.maxRounds}${minPart}`)
   lines.push(`Objective: ${view.objective}`)
   lines.push(`Exit: ${view.exitDescription}`)
   if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
+  if (view.minRounds) {
+    lines.push(
+      `HARD exit floor: minRounds=${view.minRounds} — met=true stop is refused until round ≥ minRounds.`,
+    )
+  }
   if (view.maxWallMs) {
     const left = Math.max(0, run.createdAt + view.maxWallMs - Date.now())
     lines.push(`Wall budget left: ${Math.round(left / 60_000)}m`)
   }
   lines.push(`Dispatches this round: ${run.dispatchesThisRound || 0}`)
+  const live = countRoundLiveSubagents(run)
+  if (live > 0) {
+    lines.push(
+      `HARD WAIT: ${live} Subagent job(s) still pending/running for THIS ROUND. `
+        + 'Do NOT call loop_verdict / start evaluation until all round children finish. '
+        + 'Parent must only wait (sleep/now) or ask_user on clarifying questions — '
+        + 'no research, no extra dispatch. '
+        + 'A single child finishing is not enough.',
+    )
+  }
   if (run.lastPlan?.tasks?.length) {
     lines.push('Last plan:')
     for (const t of run.lastPlan.tasks.slice(0, 6)) {
@@ -1228,7 +1513,13 @@ export function buildLoopSnippet(
     lines.push(`Last verdict: ${run.lastVerdict.decision} — ${run.lastVerdict.summary}`)
     if (run.lastVerdict.nextHint) lines.push(`Next hint: ${run.lastVerdict.nextHint}`)
   }
-  if ((run.dispatchesThisRound || 0) < 1) {
+  if (live > 0) {
+    lines.push(
+      'WAIT (not VERIFY yet): this round still has live Subagents — only wait/loop '
+        + '(ask_user allowed for clarifying questions); '
+        + 'do not research or call loop_verdict until liveSubagents=0 for this round.',
+    )
+  } else if ((run.dispatchesThisRound || 0) < 1) {
     lines.push(
       'MUST decompose the objective into tasks and call mcp__agim__call_agents '
         + '(or call_agent) at least once this round before loop_verdict continue/revise. '
@@ -1242,10 +1533,16 @@ export function buildLoopSnippet(
       'VERIFY (R4): call loop_verdict with structured fields against Objective'
         + (view.acceptance ? '/Acceptance' : '')
         + ': met (boolean), summary, and if unmet: gaps[] + nextDirection. '
-        + 'HARD GATE: do NOT write the final user report until loop_verdict succeeds '
-        + '(AGIM_LOOP_VERIFY_GATE forces a follow-up hop if you skip it). '
-        + 'met=true → decision=stop (objective_met). '
-        + 'met=false → decision=continue|revise (reflect → replan). '
+        + 'MID-REVIEW HITL: if conclusion is uncertain, you have a question, or '
+        + 'data looks anomalous — call mcp__agim__ask_user first; after the user '
+        + 'replies, continue with loop_verdict. '
+        + 'HARD GATE: before verdict, parent ONLY waits / ask_user (no research/dispatch). '
+        + 'After loop_verdict succeeds you may summarize or do follow-up research. '
+        + 'HARD: only after ALL Subagents for this round have finished. '
+        + 'met=true → decision=stop → Portal user confirm (end|continue)'
+        + (view.minRounds ? `; requires round≥${view.minRounds}` : '')
+        + '. '
+        + 'met=false → decision=continue|revise (reflect → next round dispatch). '
         + 'Exit truncates on maxRounds / maxWallMs. User can /loop stop.',
     )
   }
@@ -1300,11 +1597,18 @@ export function formatLoopStatus(run: LoopRun): string {
     `🔁 Loop \`${run.id.slice(0, 8)}\` — ${run.status}`,
     `当前阶段：**${loopUxBucketLabel(bucket)}**（${run.status}）`,
     `session: \`${run.sessionKey || threadKey(run.platform, run.channelId, run.threadId)}\``,
-    `Round: ${run.round}/${view.maxRounds}`,
+    `Round: ${run.round}/${view.maxRounds}${view.minRounds ? `（最少 ${view.minRounds}）` : ''}`,
     `openedFocus: ${run.openedFocus ? 'yes（结束会 focus off）' : 'no（结束保留 focus）'}`,
     ...formatMissionFields(run, { draftLabel: run.status === 'aligning' }),
   ]
   if (run.status !== 'aligning') {
+    if (run.status === 'pending_user_confirm') {
+      lines.push('待用户确认结案（Portal 浮窗：结束 / 继续）')
+    }
+    const liveN = countRoundLiveSubagents(run)
+    if (liveN > 0) {
+      lines.push(`本轮子代理进行中：${liveN}（本轮全部结束后才进入验收）`)
+    }
     lines.push(`本轮派工：${run.dispatchesThisRound || 0}${
       (run.dispatchesThisRound || 0) < 1 ? '（continue/revise 前至少 1 次 call_agent(s)）' : ''
     }`)

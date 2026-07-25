@@ -13,8 +13,8 @@ All notable changes to this project will be documented in this file.
   `springboot-*`, `swift-*`, plus `security-review`, `content-engine`,
   `openclaw-persona-forge`, `skill-comply`/`scout`/`stocktake`). Keep
   `skill-creator`, `security-scan`, `security-bounty-hunter`. ECC top-pick
-  list swaps `security-review`→`security-scan` and `content-engine`→
-  `api-design`.
+  list swaps `security-review`→`security-scan`, `content-engine`→
+  `api-design`, and the missing `code-review` stub→`backend-patterns`.
 
 ### Fixed
 

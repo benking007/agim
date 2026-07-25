@@ -70,21 +70,27 @@ describe('loop parent wait gate', () => {
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__loop_verdict').ok).toBe(true)
   })
 
-  it('blocks loop_verdict while round Subagents are live; still allows ask_user', () => {
+  it('blocks loop_verdict AND ask_user while round Subagents are live', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     _setTestLiveSubagents(true)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__loop_verdict').ok).toBe(false)
+    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user').ok).toBe(false)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'agim_sleep_ms').ok).toBe(true)
-    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user').ok).toBe(true)
+    const denied = evaluateLoopParentWaitGate(
+      a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user',
+    )
+    expect(denied.ok).toBe(false)
+    if (!denied.ok) expect(denied.reason).toContain('Do NOT ask_user to unblock')
   })
 
-  it('pending_user_confirm blocks research and verdict', () => {
+  it('pending_user_confirm blocks research, verdict, and ask_user', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!, {
       status: 'pending_user_confirm',
       lastVerification: { met: true, summary: 'done', at: Date.now() },
     })
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'web_fetch').ok).toBe(false)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__loop_verdict').ok).toBe(false)
+    expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'mcp__agim__ask_user').ok).toBe(false)
     expect(evaluateLoopParentWaitGate(a.platform, a.channelId, a.threadId, 'agim_now').ok).toBe(true)
   })
 

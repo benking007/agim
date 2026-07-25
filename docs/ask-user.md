@@ -176,10 +176,14 @@ Loop 生命周期里 `ask_user` 有两处硬鼓励场景（契约见 [`architect
 | 阶段 | 何时问 | 问完之后 |
 |------|--------|----------|
 | **ALIGNING（对焦）** | 缺目标或退出条件 | 用户确认 / `/loop confirm` 后再派工 |
-| **VERIFYING（中间评审）** | 结论不确定、有疑问、或子代理数据异常 | 用户回复后继续 `loop_verdict` |
+| **VERIFYING（中间评审）** | **仅父侧**且 `liveSubagents=0`；结论不确定 / 数据异常 | 用户回复后继续 `loop_verdict` |
 
-验收前父侧等待门禁（`loop-parent-wait-gate`）**放行** `mcp__agim__ask_user`，仍禁止调研 / 再派工。  
-线程上若仍有 pending ask（`threadHasPendingAsk`），VERIFY follow-up 与 `verify_skipped` **推迟**，避免人还没答就把 Loop 强行收尾。
+硬约束：
+
+- **子代理禁止** `ask_user` / `loop_verdict`（`callerDepth>0` 直接拒绝）；澄清需求写进 FINAL message 交父侧。
+- **`live>0` 时父侧也禁止** `ask_user`（不得用提问「解阻塞」）；只能 `sleep`/`now` 等子代理结束。
+- `live=0` 后父侧等待门禁放行 `ask_user` + `loop_verdict`，仍禁止调研 / 再派工。
+- 线程上若仍有 pending ask（`threadHasPendingAsk`），VERIFY follow-up 与 `verify_skipped` **推迟**。
 
 结案确认（`met=true` → Portal「结论已就绪」）走 `POST /api/loop/confirm-met`，**不是** `ask_user`。
 

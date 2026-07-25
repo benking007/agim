@@ -800,6 +800,16 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           return ok(safeJson(r.result))
         }
         case 'ask_user': {
+          // HITL is parent-owned. Subagents share the IM thread; if they ask,
+          // the user sees "agent questions" that should have stayed with the
+          // orchestrator. Escalate via the Subagent FINAL message instead.
+          if ((ctx.callerDepth ?? 0) > 0) {
+            return err(
+              'ask_user refused: Subagents cannot ask the user directly '
+              + '(callerDepth>0). Put clarifying needs in your FINAL message '
+              + 'for the parent agent; the parent owns mcp__agim__ask_user.',
+            )
+          }
           const r = await handleAskOp(
             args as {
               question?: unknown
@@ -1191,6 +1201,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           }
         }
         case 'loop_verdict': {
+          if ((ctx.callerDepth ?? 0) > 0) {
+            return err(
+              'loop_verdict refused: only the parent Loop orchestrator may call '
+              + 'mcp__agim__loop_verdict (callerDepth>0). Finish your assigned '
+              + 'task and return findings in the FINAL message.',
+            )
+          }
           {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'loop_verdict')
             if (gate) return err(gate)
@@ -1305,6 +1322,28 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             }
             return err(`loop_verdict failed: ${r.error}`)
           }
+          // Loop continue/revise advances the round inside the same user turn;
+          // reset the per-turn call_agent cap so the next round can dispatch
+          // (otherwise R1 batch of 3 + R2 = deadlock with dispatch-gate).
+          const advancedRound =
+            (decision === 'continue' || decision === 'revise')
+            && r.run.status !== 'ended'
+            && r.run.status !== 'pending_user_confirm'
+          if (advancedRound) callAgentHistory.length = 0
+          const notes: string[] = []
+          if (r.run.status === 'pending_user_confirm') {
+            notes.push(
+              'met=true accepted — wait for the user to confirm End/Continue '
+              + 'in the Portal dock. Do not call more tools; briefly tell the '
+              + 'user the conclusion is ready for their confirmation.',
+            )
+          }
+          if (advancedRound) {
+            notes.push(
+              'Loop advanced to the next round — call_agent per-turn cap '
+              + 'was reset so you may dispatch again this turn.',
+            )
+          }
           return ok(safeJson({
             status: r.run.status,
             round: r.run.round,
@@ -1317,14 +1356,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             usage: r.run.usage,
             evaluator: evaluatorNote,
             ...(r.run.status === 'pending_user_confirm'
-              ? {
-                  pendingUserConfirm: true,
-                  note:
-                    'met=true accepted — wait for the user to confirm End/Continue '
-                    + 'in the Portal dock. Do not call more tools; briefly tell the '
-                    + 'user the conclusion is ready for their confirmation.',
-                }
+              ? { pendingUserConfirm: true }
               : {}),
+            ...(advancedRound ? { callAgentCapReset: true } : {}),
+            ...(notes.length ? { note: notes.join(' ') } : {}),
           }))
         }
         case 'long_task':

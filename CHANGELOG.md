@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Loop parent wait gate no longer blocks Subagents**: dispatch/wait
+  gates apply only at `callDepth=0`. Children share the parent
+  `threadId` and were incorrectly forced into sleep/`ask_user` hollow
+  loops. Subagents cannot call `ask_user` / `loop_verdict` (parent-only
+  HITL). While `liveSubagents>0`, parent cannot `ask_user` to "unblock".
+  `continue|revise` resets the per-turn `call_agent` cap so Round 2 can
+  dispatch again.
+
 ### Added
 
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate

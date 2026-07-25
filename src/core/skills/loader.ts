@@ -351,18 +351,10 @@ export function readSkillBody(name: string): string | null {
  * cap (priority bucket 2 below).
  *
  * Rationale: agim is a generic IM ↔ Agent bridge; the framework should
- * not assume the operator's business domain. So operator-authored
- * skills (workspace source) and the bundled ECC pack are NOT injected
- * by default — they're reachable via `mcp__agim__read_skill('name')`
- * when their description matches. But ECC ships 200+ skills covering
- * agent harness engineering and general-purpose dev methodology that
- * benefit every agim install; this list pins ~20 of those into the
- * default-32 injection so the agent has the harness vocabulary front
- * of mind without burying it under alphabet order.
- *
- * Selection: the full curated ECC pack shipped with agim (26 skills).
- * Everything else from the upstream ECC import was pruned; these names
- * are both the installed set and the injection top-picks.
+ * not assume the operator's business domain. Workspace skills stay
+ * on-demand via `mcp__agim__read_skill`. The shipped ECC pack is a
+ * curated 26-skill harness/methodology set — these names are both the
+ * installed ECC directories and the injection top-picks.
  *
  * Add / remove freely — this is a curated list, not a registry.
  */
@@ -499,10 +491,8 @@ export function deleteInjectionOverride(): boolean {
  *       weather). Curated by us specifically for the framework.
  *   2 — ECC recommended (the curated list above). Pinned harness / dev
  *       methodology essentials from the ECC pack.
- *   3 — Everything else: ECC remainder (210+) and operator workspace
- *       skills (the operator's business domain — fin-data, ash, etc.).
- *       Reachable via read_skill on description match; not strapped to
- *       the front of the prompt.
+ *   3 — Operator workspace skills (business domain — fin-data, ash,
+ *       etc.). Reachable via read_skill; not strapped to the prompt.
  *
  * Workspace skills land in 3 rather than 1 because operator-authored
  * content varies wildly per install — pinning them all means a finance
@@ -515,7 +505,7 @@ export function rankSkillBucket(s: SkillMeta): number {
   //   1  non-ECC builtin (agim's own small pack)
   //   2  ECC top picks (recommended, individual rows)
   //   3  workspace skills (operator-installed business — clustered when many)
-  //   4  ECC remainder (210 of them — always heavily clustered)
+  //   4  ECC remainder (only when operator re-adds ECC beyond top-picks)
   if (s.name.startsWith('agim-')) return 0
   // Detect bundled ECC pack. ECC's own SKILL.md files use multiple
   // `origin:` values (`ECC`, `community`, `ECC direct-port adaptation`,

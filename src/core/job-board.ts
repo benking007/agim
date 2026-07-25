@@ -888,6 +888,37 @@ export function jobThreadKey(platform: string, channelId: string, threadId: stri
 }
 
 /**
+ * List Subagent (A2A child) jobs on a thread — completed / failed / cancelled
+ * / running. Used by Loop detail-report assembly after confirm-end.
+ * Children have call_depth > 0 or parent_id set.
+ */
+export function listChildJobsByThread(
+  threadKey: string,
+  opts: { limit?: number } = {},
+): Job[] {
+  const d = getDb()
+  if (!d || !threadKey) return []
+  const limit = Math.max(1, Math.min(opts.limit ?? 40, 80))
+  try {
+    return d.prepare(
+      `SELECT * FROM jobs
+         WHERE thread_key = ?
+           AND (call_depth > 0 OR parent_id IS NOT NULL)
+         ORDER BY created_at ASC
+         LIMIT ?`,
+    ).all(threadKey, limit) as Job[]
+  } catch (err) {
+    rootLogger.debug({
+      component: 'job-board',
+      event: 'listChildJobsByThread_failed',
+      threadKey,
+      err: String(err),
+    })
+    return []
+  }
+}
+
+/**
  * Count in-flight Subagent (A2A child) jobs on a thread.
  * Children have call_depth > 0 or parent_id set — user-originated parent rows
  * (depth 0) are excluded so a live parent turn does not block Loop auto-exit.

@@ -200,7 +200,8 @@
 
 硬预算（已有 / 将加）：
 
-- `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`（每 turn 次数）  
+- `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`（默认 **3**；`call_agent` 次数 + `call_agents` 的 **tasks 条数** 均计入）  
+- Loop 多轮共用同一 user turn 时：`continue|revise`（及新一轮首派）会 **重置该计数**——只清内存预算，**不会**删除已完成子代理卡片 / job（见 [`loop-engineering.md`](./loop-engineering.md) §6.6）  
 - 深度 `AGIM_A2A_MAX_DEPTH`  
 - 并行门控见 roadmap Phase B  
 
@@ -279,8 +280,9 @@
 
 **主 Agent 开关（Portal / 桌面 composer）**：输入框下方状态栏可选 **「替我审批」**（`AGIM_AUTO_APPROVE=1`）或 **「请求审批」**（默认 `=0`）。API：`GET/PUT /api/policy/auto-approve`（任意已登录 token，含 Portal QR）。与 Settings → Policy 同源热更新。
 
-**代审仍拦截**：敏感路径硬拒绝、self-protect、`deny-all`、显式 denylist、`requiresExplicitDecision`（如 plan-exit）。  
-实现：原生 `buildPiApprovalGate` + ApprovalBus `_registerPending`（日志 `approval.bus.subagent_auto_approve`）。
+**代审仍拦截**：敏感路径硬拒绝、self-protect、`deny-all`、显式 denylist、硬显式 `requiresExplicitDecision`（如 plan-exit / complete_goal）。  
+主 turn「替我审批」另覆盖 pinnable 显式卡（目标进行中且无 bwrap 的 `agim_exec`）；bwrap 开启时沙箱 exec 走普通 auto-approve。  
+实现：原生 `buildPiApprovalGate` + ApprovalBus `_registerPending`（日志 `approval.bus.subagent_auto_approve` / `approval.bus.auto_approve`）。
 
 与 Loop 门禁配合：派工/等待门禁**仅父侧**；子代理共享 `threadId` 但可正常调研。详见 [`loop-engineering.md`](./loop-engineering.md) §6 · [`ask-user.md`](../ask-user.md) §9。
 
@@ -321,6 +323,8 @@
 | 2026-07-24 | **审批收紧体验**：紧凑审批卡；Settings 未设时显示 AUTO_APPROVE=OFF；子代理审批标 origin | #223 |
 | 2026-07-25 | **子代理代审免卡**：`callDepth>0` 不弹工具审批；禁子代理 `ask_user`/`loop_verdict`；Loop 门禁仅 depth=0 | #249 |
 | 2026-07-25 | **Composer「替我审批」**：主 Agent `AGIM_AUTO_APPROVE` 芯片 + `/api/policy/auto-approve` | #250 |
+| 2026-07-25 | **替我审批覆盖 unconfined `agim_exec`**（无 bwrap + 目标进行中）；plan-exit / complete_goal 仍硬显式 | #251 |
+| 2026-07-25 | **Loop R2 turn-cap 死锁加固**：新一轮首派清 stale history；重置 cap 不清 UI Agents | #252 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |

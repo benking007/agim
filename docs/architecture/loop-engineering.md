@@ -357,10 +357,31 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 
 | 变量 | 默认 | 含义 |
 |------|------|------|
-| `AGIM_LOOP_DISPATCH_GATE` | on | 派工前禁父侧调研 |
+| `AGIM_LOOP_DISPATCH_GATE` | on | 派工前禁父侧调研；亦控父侧等待门禁 |
 | `AGIM_LOOP_VERIFY_GATE` | on | 派工后强制 `loop_verdict` |
 | `AGIM_LOOP_EVALUATOR` | `auto` | `stop`+`met=true` 前独立 cheap 验收 |
 | `AGIM_LOOPS_DIR` | `~/.agim/loops` | Loop JSON 目录（测试可覆盖） |
+| `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | `3` | 每 **user turn** 的 `call_agent` + `call_agents` 任务预算（Loop 多轮共用同一 turn 时见 §6.6） |
+
+### 6.6 Turn 委托上限 × 派工门（防 R2 死锁）
+
+**症状（HKTECH 类）**：R1 `call_agents` 三路用尽 cap=3 → R2 再派被拒（`already delegated … cap=3`）→ 父侧改 `web_search`/`agim_exec` 又被 `loop-dispatch-gate` 拦住 → 只能 `loop_verdict stop`。
+
+| 错误前缀 | 含义 | 正确下一步 |
+|----------|------|------------|
+| `already delegated … (cap=N)` | 本 turn 委托预算用尽 | `loop_verdict continue\|revise`（重置 cap）后再派；**不要**改去父侧自研 |
+| `loop-dispatch-gate: … 0 dispatches` | 本轮还没派工，禁父侧调研 | 先 `call_agents` / `call_agent` |
+| `loop-parent-wait: after dispatch…` | **同轮**已派过工，禁再派 / 禁调研 | 等子代理结束 →（可选 `ask_user`）→ `loop_verdict`；下一轮才再派 |
+
+**重置 cap 做什么 / 不做什么**
+
+| 会清 | 不会清 |
+|------|--------|
+| dispatcher 闭包内的 `callAgentHistory`（仅计数「本 turn 已委托几次」） | Portal / 桌面 **Agents 列表、已完成子代理卡片、job 记录、activity** |
+
+实现：`loop_verdict` 的 `continue|revise` 成功推进后设 `callAgentCapReset: true`；若仍残留，新一轮 `planning`/`reflecting` 且 `dispatchesThisRound===0` 时首次派工前再清一次（`shouldClearCallAgentHistoryForLoopRound`）。
+
+软策略（非硬门禁）：R1 可只派 2 路预留配额；高失败率时可 `stop`+`met=false` 后 Loop 外落地；子代理 brief 嵌入具体命令减少空洞化。
 
 ---
 
@@ -452,3 +473,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **拍板落地**：重复N→min/max=N/N×2；met 结案浮窗；本轮 `roundJobIds`；父侧验收前只等待 |
 | 2026-07-25 | **VERIFY 中途 ask_user**：父侧等待门禁放行提问；pending ask 推迟 `verify_skipped`；主流程/状态机/Portal/`ask-user.md` 对齐 |
 | 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |
+| 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |

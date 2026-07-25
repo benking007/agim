@@ -74,7 +74,7 @@ node tools/phase-a-acceptance.mjs
 | 运行中卡片右侧 **Stop** | 子代理停止；父 turn 收到阶段性摘要并继续（非整 turn 硬失败） |
 | `AGIM_AUTO_APPROVE=0` + 需审批工具 | 主 turn 弹审批卡；**子代理（depth>0）免审代批**；Settings 未配置时显示 OFF |
 | `AGIM_AUTO_APPROVE=1` | 主 turn 也自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
-| Composer「替我审批 / 请求审批」 | 输入框下状态栏可切换；默认「请求审批」；切到「替我审批」后主 Agent 不再弹工具审批卡 |
+| Composer「替我审批 / 请求审批」 | 输入框下状态栏可切换；默认「请求审批」；切到「替我审批」后主 Agent 不再弹工具审批卡（含无 bwrap 时目标中的 unconfined `agim_exec`；plan-exit / complete_goal 仍需确认） |
 
 生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。
 
@@ -92,8 +92,8 @@ node tools/phase-a-acceptance.mjs
 | VERIFY 中途提问 | **仅父侧**且子代理已齐；结论不确定时可 `ask_user`；子代理不得提问；`live>0` 父侧也不得提问解阻塞 |
 | 子代理调研 | 同线程子代理不被 `loop-parent-wait` 禁 `web_fetch`/`exec`（门禁仅 depth=0） |
 | 子代理审批 | `AGIM_AUTO_APPROVE=0` 时：主 turn 仍弹卡；子代理 exec/write **不弹卡**（代审） |
-| R2 再派工 | `continue/revise` 后同 turn 可再 `call_agents`（委托上限按轮重置；`planning`+0 派工时也会清 stale history） |
-| 同轮二次派工 | 本轮已 `call_agents` 后再派 → `loop-parent-wait` 拒绝（须先 `loop_verdict`） |
+| R2 再派工 | `continue/revise` 后同 turn 可再 `call_agents`（委托上限按轮重置；`planning`+0 派工时也会清 stale history）；**已完成子代理卡片仍在** |
+| 同轮二次派工 | 本轮已 `call_agents` 后再派 → `loop-parent-wait` 拒绝（须先 `loop_verdict`）；勿与 turn-cap 错误混淆 |
 | `met=true` 结案 | Portal「结论已就绪」浮窗；可补充 →「确认结束」或「继续下一轮」 |
 | 退出「至少 N 轮」 | 第 1 轮 `stop`+`met=true` → `need_more_rounds`；须继续到 N 或放弃 `stop`+`met=false` |
 | 「重复 N 轮」 | min=N、max=N×2 |

@@ -269,7 +269,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 键（草案） | 阶段 | 默认 | 含义 |
 |---|---|---|---|
 | （复用）`AGIM_A2A_MAX_DEPTH` | A/B/C | 8 | 嵌套深度 |
-| （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B | **3** | 每 turn 委派上限（`call_agent` + `call_agents` 任务均计入） |
+| （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B/C | **3** | 每 turn 委派上限（`call_agent` + `call_agents` 任务均计入）；Loop `continue\|revise` / 新一轮首派会重置计数（不清 UI job） |
 | `AGIM_SUBAGENT_PARALLEL` | B | **on**（unset=on） | `call_agents` 是否并行；`0/off` 串行 |
 | `AGIM_SUBAGENT_PARALLEL_MAX` | B | `3` | 单次 batch 同时运行上限 |
 | `AGIM_ENGINEERING_MODE`（或实现期 `AGIM_LOOP_*`） | C | `off` | 是否允许进入 Loop（见 loop-engineering.md） |
@@ -289,6 +289,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 观察者与执行者抢写 | 观察者默认只读工具集（planMode 或 tool allowlist） |
 | 文档/实现双源 | Subagent→`subagent.md`；Focus→`focus.md`；Loop→`loop-engineering.md`；计划勾选以本文为准 |
 | 同族自调用变递归炸弹 | 无 role/backend/isolate 差异仍拒绝；深度与每 turn cap 保留 |
+| Loop R1 用尽 turn cap 后 R2 死锁 | `continue\|revise` 重置 cap；新一轮 `planning`+0 派工首派再清；错误文案禁止误导父侧自研 |
 
 ---
 

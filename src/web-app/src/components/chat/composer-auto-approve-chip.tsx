@@ -36,9 +36,9 @@ export function ComposerAutoApproveChip({
           })}
         >
           {autoApprove.enabled
-            ? <ShieldCheck className={cn('h-3 w-3', dark ? 'text-teal-400' : 'text-teal-600')} />
-            : <Shield className="h-3 w-3 opacity-60" />}
-          <span>
+            ? <ShieldCheck className={cn('h-3 w-3 shrink-0', dark ? 'text-teal-400' : 'text-teal-600')} />
+            : <Shield className="h-3 w-3 shrink-0 opacity-60" />}
+          <span className="whitespace-nowrap">
             {autoApprove.enabled
               ? t('chat.statusBar.autoApproveOn', { defaultValue: 'Approve for me' })
               : t('chat.statusBar.autoApproveOff', { defaultValue: 'Ask to approve' })}

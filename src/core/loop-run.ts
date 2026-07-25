@@ -1447,15 +1447,16 @@ export function buildLoopSnippet(
   }
 
   if (run.status === 'pending_user_confirm') {
-    lines.push('Phase: PENDING_USER_CONFIRM (met=true — wait for Portal user End/Continue).')
+    lines.push('Phase: PENDING_USER_CONFIRM (met=true — Loop NOT ended until user confirms).')
     lines.push(`Round: ${run.round}/${view.maxRounds}`)
     lines.push(`Objective: ${view.objective}`)
     if (run.lastVerification) {
-      lines.push(`Claimed conclusion: ${run.lastVerification.summary}`)
+      lines.push(`Claimed conclusion (dock only — do not restate in chat): ${run.lastVerification.summary}`)
     }
     lines.push(
-      'HARD WAIT: do NOT call tools or write more research. '
-        + 'The user is confirming the conclusion in the Portal dock.',
+      'HARD WAIT: do NOT call tools, do NOT research, and do NOT dump the full '
+        + 'conclusion / 核心结论 / tables into chat. Portal dock owns the summary; '
+        + 'user must pick 确认结束 or 继续下一轮. One short nudge sentence max.',
     )
     lines.push('')
     return lines.join('\n')

@@ -256,7 +256,7 @@ type LoopRun = {
 | 问题 | 决议 |
 |------|------|
 | 「重复 N 轮」 | **min=N，max=N×2**（可多做，有上限） |
-| `met=true` | **不自动结案** → `pending_user_confirm`；Portal 底部浮窗展示结论，用户可补充后选 **结束 / 继续下一轮** |
+| `met=true` | **不自动结案** → `pending_user_confirm`；浮窗预览摘要；父 Agent **禁止**在聊天写完整结论；用户点 **确认结束** 后才 `objective_met` 并写入结束摘要 |
 | 子代理守候粒度 | **按本轮**：`roundJobIds` live=0 才启动评审；评审后再开下一轮派工 |
 | 验收前父侧 | **live>0 只 wait**（sleep/now）；**live=0** 才可 `ask_user` / `loop_verdict`；验收后可总结或补充调研 |
 | 中间评审提问 | **仅父侧**；不确定结论 / 疑问 / 数据异常时先 `ask_user`，用户回复后再 `loop_verdict` |
@@ -332,7 +332,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 | **待对焦** | 底部浮层：目标 + 退出条件 | 「确定并开始」→ 发送 `/loop …；退出条件为…` |
 | **待派工 / 待验收**（Agent 空闲） | 底部「立即行动」条（类审批） | 代用户发推进指令（`call_agents` / `loop_verdict`） |
 | **中间评审提问** | 与全局一致：`ask_user` 选择卡（Portal / IM） | 点选或文本回复 → Agent 继续 `loop_verdict` |
-| **结论已就绪** | 底部结案浮窗（`pending_user_confirm`） | 可补充说明 →「确认结束」或「继续下一轮」 |
+| **结论已就绪** | 底部结案浮窗（`pending_user_confirm`）；**聊天里不提前铺完整结论** | 可补充 →「确认结束」（此时才 `ended` + 写入结束摘要）或「继续下一轮」 |
 | **任意活跃阶段** | 小精灵气泡 + 任务面板 `loop` 行 | 展示桶名 · 轮次 · 派工/独立验收用量 |
 | **结束** | Markdown 结束总结；小精灵可短暂显示后消失 | — |
 
@@ -474,3 +474,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **VERIFY 中途 ask_user**：父侧等待门禁放行提问；pending ask 推迟 `verify_skipped`；主流程/状态机/Portal/`ask-user.md` 对齐 |
 | 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |
 | 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |
+| 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |

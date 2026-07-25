@@ -14,6 +14,7 @@ import { Check, Compass, Play, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { confirmLoopMet, type LoopStatusDto } from '@/lib/api/loop'
+import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
 import type { PetTaskItem } from './portal-pet'
 
@@ -177,6 +178,11 @@ function ConfirmMetDock({
         supplement: supplement.trim() || undefined,
         lang: zh ? 'zh' : 'en',
       })
+      // Pull the durable ended summary (written by confirm-met) into the
+      // transcript — conclusion content is deferred until this click.
+      if (action === 'end') {
+        openChatWs().send({ type: 'get-history', threadId })
+      }
       onResolved()
     } catch {
       setBusyAction(null)
@@ -212,8 +218,8 @@ function ConfirmMetDock({
             </p>
             <p className={cn('truncate text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
               {zh
-                ? `第 ${loop.round}/${loop.maxRounds} 轮 · 可补充后结束或继续`
-                : `R${loop.round}/${loop.maxRounds} · supplement, then end or continue`}
+                ? `第 ${loop.round}/${loop.maxRounds} 轮 · Loop 尚未结束；确认后才会结案并写入结束摘要`
+                : `R${loop.round}/${loop.maxRounds} · Loop still open; end summary posts after you confirm`}
             </p>
           </div>
         </div>

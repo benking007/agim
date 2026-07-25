@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Loop met confirm: no full conclusion before user decides**: on
+  `pending_user_confirm`, parent must only nudge the Portal dock (not dump
+  核心结论/tables). Loop stays open until「确认结束」; that click posts
+  `formatLoopEndedSummary` into the transcript and refreshes history.
 - **Loop R2 dispatch ↔ turn-cap deadlock hardening**: after R1 uses the
   full `call_agent` turn budget (default 3), `continue|revise` already
   resets the cap; now the first dispatch of a new Loop round

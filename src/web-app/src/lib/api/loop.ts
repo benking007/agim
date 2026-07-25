@@ -61,6 +61,12 @@ export function confirmLoopMet(body: {
   platform?: string
   channelId?: string
   lang?: 'zh' | 'en'
-}): Promise<{ ok: boolean; loop: LoopStatusDto | null; error?: string }> {
+}): Promise<{
+  ok: boolean
+  loop: LoopStatusDto | null
+  error?: string
+  /** Present after action=end — durable Loop ended card posted to the transcript. */
+  endedSummary?: string
+}> {
   return client.post('/api/loop/confirm-met', { body })
 }

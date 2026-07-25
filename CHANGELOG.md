@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
 - **Composer status bar no longer wraps Chinese labels vertically** on
   narrow Portal widths: chips use `whitespace-nowrap` + `shrink-0`, and
   the chip row scrolls horizontally while the context ring stays pinned.
+- **Composer thinking chip merged**: one chip shows「思考 max」/
+  「非思考 max」with cascade menus for on/off and low/high/max (saves a
+  slot on mobile).
 - **Loop met confirm: no full conclusion before user decides**: on
   `pending_user_confirm`, parent must only nudge the Portal dock (not dump
   核心结论/tables). Loop stays open until「确认结束」; that click posts

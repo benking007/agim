@@ -67,13 +67,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Loop post-end detail report offer**: after Portal「确认结束」, a bottom
-  dock asks whether to assemble a detailed report from Subagent outputs.
-  Agree → `POST /api/loop/generate-report` writes
-  `<agim-cwd>/PROJECTS/loops/<thread>-<loopId>.md` (default
-  `~/.agim-workspaces/agim/PROJECTS/loops/`) and posts the markdown into
-  chat; dismiss closes the dock. Deterministic assemble (no extra LLM),
-  scoped to **this Loop's** `loopJobIds` (not all historical Subagents on
-  the thread). Override path with `AGIM_LOOP_REPORTS_DIR`.
+  dock asks whether to generate a detailed report. Agree → send one chat
+  prompt asking the Agent to synthesize **this Loop's** Subagent outputs,
+  save under `PROJECTS/loops/`, and show the full text in chat; dismiss
+  closes the dock. No server-side concatenation.
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate
   allows `mcp__agim__ask_user` for uncertain / anomalous results; user
   reply then continues to `loop_verdict`. Pending asks defer VERIFY

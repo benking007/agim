@@ -16,6 +16,7 @@ import {
   isLoopWallExceeded,
   noteLoopDispatch,
   noteLoopRoundJob,
+  countLoopChildJobs,
   parseExitConstraints,
   parseLoopStartText,
   resolveLoopMetConfirm,
@@ -424,6 +425,7 @@ describe('loop-run R3 PLAN+DISPATCH', () => {
     const again = getLoopRun(base.platform, base.channelId, threadId)
     expect(again?.roundJobIds).toEqual([103])
     expect(again?.loopJobIds).toEqual([101, 102, 103])
+    expect(countLoopChildJobs(base.platform, base.channelId, threadId)).toBe(3)
   })
 })
 

@@ -644,6 +644,23 @@ function clearRoundJobs(run: LoopRun): void {
 }
 
 /**
+ * Count Subagent jobs belonging to this Loop (for Portal report-offer copy).
+ * Prefers cumulative `loopJobIds`; falls back to the last round only.
+ */
+export function countLoopChildJobs(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): number {
+  const run = getLoopRun(platform, channelId, threadId)
+  if (!run) return 0
+  if (Array.isArray(run.loopJobIds) && run.loopJobIds.length > 0) {
+    return run.loopJobIds.length
+  }
+  return Array.isArray(run.roundJobIds) ? run.roundJobIds.length : 0
+}
+
+/**
  * Active exit truncation that does NOT wait for loop_verdict.
  * Currently: wall clock. Call at turn start / after dispatch join / status poll.
  *

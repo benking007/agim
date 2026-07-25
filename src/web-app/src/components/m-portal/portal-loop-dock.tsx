@@ -2,7 +2,7 @@
  * Portal Loop docks (replaces the blocking status strip):
  * - Aligning: bottom sheet to fill objective + exit, then confirm
  * - Ready (dispatch/verify): "Act now" sheet like ApprovalDock
- * - After confirm-end: offer a Subagent detail-report sheet
+ * - After confirm-end: offer to ask the Agent for a detail report
  *
  * Status chrome lives on the pet — these only ask for user action.
  * Polling + pet-task formatting stay in this lazy chunk (entry budget).
@@ -17,11 +17,11 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
   confirmLoopMet,
-  generateLoopReport,
   type LoopStatusDto,
 } from '@/lib/api/loop'
 import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
+import { buildLoopReportPrompt } from './portal-loop-report-prompt'
 import type { PetTaskItem } from './portal-pet'
 
 type ReportOffer = {
@@ -128,6 +128,7 @@ export function PortalLoopDock({
         dark={dark}
         flush={flush}
         zh={zh}
+        onSend={onSend}
         onDismiss={() => setReportOffer(null)}
         className={className}
       />
@@ -333,6 +334,7 @@ function ReportOfferDock({
   dark,
   flush,
   zh,
+  onSend,
   onDismiss,
   className,
 }: {
@@ -340,36 +342,19 @@ function ReportOfferDock({
   dark?: boolean
   flush?: boolean
   zh: boolean
+  onSend: (text: string) => void
   onDismiss: () => void
   className?: string
 }): JSX.Element {
-  const [busy, setBusy] = useState(false)
   const n = offer.childJobCount
 
-  async function generate() {
-    if (busy) return
-    setBusy(true)
-    try {
-      const res = await generateLoopReport({
-        threadId: offer.threadId,
-        loopId: offer.loopId,
-      })
-      if (!res.ok) {
-        toast.error(zh
-          ? `生成失败：${res.error || 'unknown'}`
-          : `Report failed: ${res.error || 'unknown'}`)
-        setBusy(false)
-        return
-      }
-      openChatWs().send({ type: 'get-history', threadId: offer.threadId })
-      toast.success(zh
-        ? `详细报告已生成（${res.jobCount ?? n} 个子代理）`
-        : `Detail report ready (${res.jobCount ?? n} subagents)`)
-      onDismiss()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
-      setBusy(false)
-    }
+  function askAgent() {
+    onSend(buildLoopReportPrompt({
+      loopId: offer.loopId,
+      childJobCount: n,
+      zh,
+    }))
+    onDismiss()
   }
 
   return (
@@ -401,8 +386,8 @@ function ReportOfferDock({
             </p>
             <p className={cn('truncate text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
               {zh
-                ? `结合${n > 0 ? ` ${n} 个` : '各'}子代理输出汇总落盘，并显示在聊天中`
-                : `Combine ${n > 0 ? `${n} ` : ''}subagent outputs, save to disk, and show in chat`}
+                ? `请 Agent 仅基于本 Loop${n > 0 ? `（约 ${n} 个子代理）` : ''}撰写并落盘`
+                : `Ask the Agent to write & save a report for this Loop${n > 0 ? ` (~${n} subagents)` : ''}`}
             </p>
           </div>
         </div>
@@ -410,15 +395,14 @@ function ReportOfferDock({
         <div className="space-y-2.5 px-3 py-3">
           <p className={cn('text-sm leading-relaxed', dark ? 'text-zinc-300' : 'text-zinc-600')}>
             {zh
-              ? 'Loop 已结案。结束摘要偏短；可一键把各子代理的分析拼成一份详细报告（确定性汇总，无需再派工）。'
-              : 'Loop has ended. The summary card is brief — optionally assemble a detailed report from each Subagent’s output (deterministic, no new dispatch).'}
+              ? 'Loop 已结案。结束摘要偏短；同意后会向 Agent 发送一句总结指令，由其基于本 Loop 产出撰写详细报告（落盘 PROJECTS/loops/ 并在聊天展示）。'
+              : 'Loop has ended. The summary is brief — agree to send the Agent one prompt to synthesize this Loop’s outputs into a detailed report (save under PROJECTS/loops/ and show in chat).'}
           </p>
           <div className="flex justify-end gap-2 pt-0.5">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              disabled={busy}
               onClick={onDismiss}
               className="gap-1.5"
             >
@@ -428,14 +412,11 @@ function ReportOfferDock({
             <Button
               type="button"
               size="sm"
-              disabled={busy}
-              onClick={() => void generate()}
+              onClick={askAgent}
               className="gap-1.5"
             >
               <FileText className="h-3.5 w-3.5" />
-              {busy
-                ? (zh ? '生成中…' : 'Generating…')
-                : (zh ? '生成报告' : 'Generate report')}
+              {zh ? '生成报告' : 'Generate report'}
             </Button>
           </div>
         </div>

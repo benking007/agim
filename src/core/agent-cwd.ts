@@ -161,6 +161,7 @@ ${AGIM_BGJOB_WRAPPER_EXPR} list --running
 |-----------|--------------------------------|------|
 | 工作区记忆 | \`MEMORY.md\` | 跨会话沉淀的用户偏好、事实信息 |
 | 项目档案 | \`PROJECTS/<slug>.md\` | 长期主题的**归档**（目标/进度/关键决定/待办/完整分析副本） |
+| Loop 详细报告 | \`PROJECTS/loops/<session>-<loopId>.md\` | Portal 结案后「生成报告」落盘；聊天会附路径，可用 read 打开 |
 | 会话摘要（可选） | \`SESSIONS/YYYY-MM-DD-<topic>.md\` | 重要会话的沉淀 |
 
 工作区根目录为 \`~/.agim-workspaces/${id}/\`，不同 agent 的工作区（\`~/.agim-workspaces/*/\`）之间互不读取。

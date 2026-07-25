@@ -61,7 +61,13 @@ export function useUpdateEnv() {
   const qc = useQueryClient()
   return useMutation<EnvResponse, Error, UpdateEnvBody>({
     mutationFn: (body) => api.updateEnv(body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'env'] }),
+    onSuccess: (_data, body) => {
+      void qc.invalidateQueries({ queryKey: ['settings', 'env'] })
+      // Composer「替我审批」chip shares AGIM_AUTO_APPROVE.
+      if (body.updates && Object.prototype.hasOwnProperty.call(body.updates, 'AGIM_AUTO_APPROVE')) {
+        void qc.invalidateQueries({ queryKey: ['policy', 'auto-approve'] })
+      }
+    },
   })
 }
 

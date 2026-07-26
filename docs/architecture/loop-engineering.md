@@ -174,7 +174,7 @@ type LoopRun = {
 
 ```text
 /loop <objective> [；验收：…] [；退出条件为… / 退出：…]  # 一次给齐
-/loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
+/loop                             # 有 Focus：聚焦内容写入正文（标注），目标仍须手填；退出条件仍须确认
 /loop objective <text>            # 对焦中补目标（可含「；验收：…」）
 /loop exit <text>                 # 对焦中补退出条件
 /loop body <text>                 # 可选正文/补充提示（软字段，注入 Agent 上下文）
@@ -184,7 +184,8 @@ type LoopRun = {
 ```
 
 路径 A/B 与 Focus 关系保留——见 [focus.md](./focus.md)。  
-**即使 Focus 已有文案，退出条件仍必须对焦确认**（不可静默默认「跑到爽」）。
+**即使 Focus 已有文案，目标与退出条件仍必须对焦确认**（不可静默默认「跑到爽」）。  
+路径 A（已有 Focus）启动时：Focus 标题/正文拼入 Mission.`body`，前缀 `【当前 Agent 聚焦内容】`；**不会**再默认塞进 `objective`。
 
 ---
 
@@ -340,7 +341,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 | 场景 | UI | 用户动作 |
 |------|-----|----------|
-| **待对焦** | 底部浮层：目标 + 退出条件 + 可选正文 | 「确定并开始」→ 发送 `/loop …；退出条件为…`（有正文则附 `；正文：…`） |
+| **待对焦** | 底部浮层：目标 + 退出条件 + 可选正文（已有 Focus 时正文预填聚焦内容） | 「确定并开始」→ 发送 `/loop …；退出条件为…`（有正文则附 `；正文：…`） |
 | **待派工 / 待验收**（Agent 空闲） | 底部「立即行动」条（类审批） | 代用户发推进指令（`call_agents` / `loop_verdict`） |
 | **中间评审提问** | 与全局一致：`ask_user` 选择卡（Portal / IM） | 点选或文本回复 → Agent 继续 `loop_verdict` |
 | **结论已就绪** | 底部结案浮窗（`pending_user_confirm`）；**聊天里不提前铺完整结论** | 可补充 →「确认结束」（此时才 `ended` + 写入结束摘要）或「继续下一轮」 |
@@ -497,5 +498,6 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |
 | 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |
 | 2026-07-26 | **Mission `body`**：对焦底栏可选正文；`/loop body` / `；正文：`；注入 Agent 上下文（非硬门禁） |
+| 2026-07-26 | **Focus→body**：路径 A 已有 Focus 时写入正文并标注「当前 Agent 聚焦内容」，不再默认填入目标 |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问是否汇总子代理输出；同意则落盘工作区 `PROJECTS/loops/` + 回显聊天（`loop-report.ts` / `POST /api/loop/generate-report`） |

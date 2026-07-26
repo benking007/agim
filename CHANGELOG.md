@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Loop history + Tasks audit**: every Loop run is archived under
+  `~/.agim/loops/history/<runId>.json` (thread snapshot still at
+  `<threadKey>.json`). Admin APIs `GET /api/loops` + `GET /api/loops/:id`
+  and Tasks → Review → **Loop 审计** (`/tasks/loops`) for browse/timeline
+  audit. Same-thread new Loops no longer erase prior runs from history.
 - **Loop path A Focus → body**: when Focus is already on, `/loop` no longer
   seeds `objective` from Focus. Focus title/body is appended to Mission
   `body` with the label `【当前 Agent 聚焦内容】` (Portal aligning dock

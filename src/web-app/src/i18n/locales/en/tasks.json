@@ -19,7 +19,8 @@
     "heartbeat": "Heartbeat",
     "goals": "Goals",
     "asks": "Ask User",
-    "plans": "Plans"
+    "plans": "Plans",
+    "loops": "Loops"
   },
   "overview": {
     "title": "Tasks overview",
@@ -412,6 +413,40 @@
       "rejected": "Rejected",
       "edited": "Edited",
       "expired": "Expired"
+    }
+  },
+  "loops": {
+    "title": "Loop audit",
+    "subtitle": "Persisted history of every Loop run (mission, verification, timeline, Subagent jobs). A new Loop on the same thread does not erase prior runs.",
+    "refresh": "Refresh",
+    "filterLabel": "Filter by thread id (optional)",
+    "statusFilter": "Status",
+    "statusAll": "All",
+    "statusActive": "Active",
+    "statusEnded": "Ended",
+    "applyFilter": "Apply",
+    "clearFilter": "Clear",
+    "empty": "No Loop runs yet.",
+    "emptyFiltered": "No Loops match this filter.",
+    "detailError": "Failed to load detail.",
+    "col": {
+      "status": "Status",
+      "objective": "Objective",
+      "thread": "Thread",
+      "round": "Round",
+      "jobs": "Subagents",
+      "updated": "Updated"
+    },
+    "detail": {
+      "objective": "Objective",
+      "exit": "Exit",
+      "body": "Body",
+      "session": "Session",
+      "jobs": "Subagent jobs",
+      "path": "History file",
+      "verification": "Last verification",
+      "endedSummary": "Ended summary",
+      "timeline": "Timeline"
     }
   }
 }

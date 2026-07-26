@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setFocus, getFocusOn } from './focus.js'
@@ -18,8 +18,10 @@ import {
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
+  getLoopRunById,
   getMissionView,
   isLoopWallExceeded,
+  listLoopRuns,
   noteLoopDispatch,
   noteLoopRoundJob,
   countLoopChildJobs,
@@ -31,6 +33,7 @@ import {
   setLoopObjective,
   startLoop,
   stopLoop,
+  _historyPathForTests,
   _touchLoopCreatedAtForTests,
 } from './loop-run.js'
 
@@ -760,6 +763,92 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.run.endReason).toBe('wall_limit')
+  })
+})
+
+describe('loop history audit persistence', () => {
+  it('writes history file and survives thread overwrite by a new Loop', () => {
+    reset()
+    const threadId = 'loop-history-overwrite'
+    const first = startLoop({
+      ...base,
+      threadId,
+      text: '第一轮目标；退出：验收通过或最多2轮',
+    })
+    if (!first.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(first.error)
+      return
+    }
+    const firstId = first.run.id
+    expect(existsSync(_historyPathForTests(firstId))).toBe(true)
+
+    stopLoop(base.platform, base.channelId, threadId, 'user_stop')
+    expect(getLoopRunById(firstId)?.status).toBe('ended')
+    expect(getLoopRunById(firstId)?.endReason).toBe('user_stop')
+
+    const second = startLoop({
+      ...base,
+      threadId,
+      text: '第二轮目标；退出：最多3轮',
+    })
+    if (!second.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(second.error)
+      return
+    }
+    expect(second.run.id).not.toBe(firstId)
+    // Thread snapshot is the new run…
+    expect(getLoopRun(base.platform, base.channelId, threadId)?.id).toBe(second.run.id)
+    // …but the first run remains in history for audit.
+    const archived = getLoopRunById(firstId)
+    expect(archived).not.toBeNull()
+    expect(archived?.mission?.objective).toContain('第一轮')
+    expect(archived?.status).toBe('ended')
+
+    const listed = listLoopRuns({ threadId, limit: 20 })
+    expect(listed.some((r) => r.id === firstId)).toBe(true)
+    expect(listed.some((r) => r.id === second.run.id)).toBe(true)
+  })
+
+  it('listLoopRuns / getLoopRunById read history JSON without Focus/sqlite', () => {
+    reset()
+    const histDir = join(TMP, 'loops', 'history')
+    mkdirSync(histDir, { recursive: true, mode: 0o700 })
+    const id1 = '11111111-1111-4111-8111-111111111111'
+    const id2 = '22222222-2222-4222-8222-222222222222'
+    const mk = (id: string, objective: string, updatedAt: number) => ({
+      id,
+      sessionKey: 'wechat__rest__loop-hist-list',
+      platform: 'wechat',
+      channelId: 'rest',
+      threadId: 'loop-hist-list',
+      focusSnapshot: objective,
+      openedFocus: false,
+      status: 'ended',
+      endReason: 'user_stop',
+      round: 1,
+      maxRounds: 3,
+      mission: {
+        objective,
+        exit: { description: '最多3轮', maxRounds: 3, onFocusOff: 'cancel' },
+      },
+      dispatchesThisRound: 0,
+      roundJobIds: [],
+      loopJobIds: [9, 10],
+      usage: { dispatchCount: 1, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+      createdAt: updatedAt - 1000,
+      updatedAt,
+      timeline: [{ at: updatedAt, kind: 'system', summary: 'ended' }],
+    })
+    writeFileSync(join(histDir, `${id1}.json`), JSON.stringify(mk(id1, '旧 Loop', 100), null, 2))
+    writeFileSync(join(histDir, `${id2}.json`), JSON.stringify(mk(id2, '新 Loop', 200), null, 2))
+
+    const byId = getLoopRunById(id1)
+    expect(byId?.mission?.objective).toBe('旧 Loop')
+    expect(byId?.loopJobIds).toEqual([9, 10])
+
+    const listed = listLoopRuns({ threadId: 'loop-hist-list', limit: 10 })
+    expect(listed.map((r) => r.id)).toEqual([id2, id1])
+    expect(existsSync(_historyPathForTests(id1))).toBe(true)
   })
 })
 

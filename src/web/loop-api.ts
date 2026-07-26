@@ -1,15 +1,29 @@
-// loop-api — GET /api/loop + POST /api/loop/confirm-met for Portal Loop chrome.
+// loop-api — Portal Loop chrome + Tasks audit list/detail.
+//
+// Portal (thread-scoped):
+//   GET  /api/loop
+//   POST /api/loop/confirm-met
+//
+// Tasks audit (admin):
+//   GET  /api/loops
+//   GET  /api/loops/:id
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   countLoopChildJobs,
   formatLoopEndedSummary,
   getLoopRun,
+  getLoopRunById,
+  listLoopRuns,
   maybeEnforceLoopExit,
   resolveLoopMetConfirm,
+  toLoopAuditDto,
+  toLoopListItemDto,
   toLoopStatusDto,
+  type LoopStatus,
 } from '../core/loop-run.js'
 import { sessionManager } from '../core/session.js'
+import { requireAdmin } from './auth.js'
 import { readBody, sendJson } from './http-utils.js'
 
 /**
@@ -29,6 +43,17 @@ export async function handleLoopApi(
   }
   if (p === '/api/loop/confirm-met' && m === 'POST') {
     await handleConfirmMet(req, res)
+    return true
+  }
+  if (p === '/api/loops' && m === 'GET') {
+    if (!requireAdmin(req, res)) return true
+    await handleListLoops(res, url)
+    return true
+  }
+  const detail = /^\/api\/loops\/([^/]+)$/.exec(p)
+  if (detail && m === 'GET') {
+    if (!requireAdmin(req, res)) return true
+    await handleGetLoopById(res, url, decodeURIComponent(detail[1]!))
     return true
   }
   return false
@@ -52,6 +77,46 @@ async function handleGetLoop(res: ServerResponse, url: URL): Promise<void> {
     return
   }
   sendJson(res, 200, { ok: true, loop: toLoopStatusDto(run, lang) })
+}
+
+async function handleListLoops(res: ServerResponse, url: URL): Promise<void> {
+  const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'zh'
+  const statusRaw = (url.searchParams.get('status') || '').trim()
+  const platform = (url.searchParams.get('platform') || '').trim().slice(0, 40) || undefined
+  const threadId = (url.searchParams.get('threadId') || '').trim().slice(0, 120) || undefined
+  const sessionKey = (url.searchParams.get('sessionKey') || '').trim().slice(0, 200) || undefined
+  const limitRaw = Number.parseInt(url.searchParams.get('limit') || '100', 10)
+  const limit = Number.isFinite(limitRaw) ? limitRaw : 100
+
+  let status: LoopStatus | 'active' | undefined
+  if (statusRaw === 'active') status = 'active'
+  else if (statusRaw) status = statusRaw as LoopStatus
+
+  const runs = listLoopRuns({ status, platform, threadId, sessionKey, limit })
+  sendJson(res, 200, {
+    ok: true,
+    count: runs.length,
+    loops: runs.map((r) => toLoopListItemDto(r, lang)),
+  })
+}
+
+async function handleGetLoopById(
+  res: ServerResponse,
+  url: URL,
+  runId: string,
+): Promise<void> {
+  const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'zh'
+  const id = (runId || '').trim().slice(0, 80)
+  if (!id) {
+    sendJson(res, 400, { error: 'id required' })
+    return
+  }
+  const run = getLoopRunById(id)
+  if (!run) {
+    sendJson(res, 404, { ok: false, error: 'not_found' })
+    return
+  }
+  sendJson(res, 200, { ok: true, loop: toLoopAuditDto(run, lang) })
 }
 
 async function handleConfirmMet(req: IncomingMessage, res: ServerResponse): Promise<void> {

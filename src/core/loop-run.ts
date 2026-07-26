@@ -1,6 +1,8 @@
 // loop-run — Phase C Loop session store (Focus-bound).
 // SSOT: docs/architecture/loop-engineering.md
-// Persistence: ~/.agim/loops/<threadKey>.json (fail-soft).
+// Persistence (fail-soft):
+//   - Live/thread snapshot: ~/.agim/loops/<threadKey>.json (one per thread; new Loop overwrites)
+//   - Append-by-id history: ~/.agim/loops/history/<runId>.json (each Loop run, for Tasks audit)
 //
 // R1: ALIGNING gate — objective + exit required before planning/dispatch.
 // R2: LoopMission as persisted SSOT (partial while aligning; status shows both hard fields).
@@ -8,7 +10,14 @@
 // R4: VERIFY + REFLECT — structured verification; unmet → nextDirection → replan; exit truncates.
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
 import { logger as rootLogger } from './logger.js'
@@ -29,6 +38,19 @@ const log = rootLogger.child({ component: 'loop-run' })
 
 function loopsDir(): string {
   return process.env.AGIM_LOOPS_DIR ?? join(AGIM_HOME, 'loops')
+}
+
+/** Per-run archive directory (survives thread snapshot overwrite). */
+function historyDir(): string {
+  return join(loopsDir(), 'history')
+}
+
+function safeRunId(id: string): string {
+  return (id || '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80)
+}
+
+function historyPathFor(runId: string): string {
+  return join(historyDir(), `${safeRunId(runId)}.json`)
 }
 
 /** L3 statuses; legacy 'running'|'observing' still read as active. */
@@ -518,6 +540,15 @@ function readRun(platform: string, channelId: string, threadId: string): LoopRun
   }
 }
 
+function writeHistoryRun(run: LoopRun): void {
+  const dir = historyDir()
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const hp = historyPathFor(run.id)
+  const tmp = `${hp}.${process.pid}.tmp`
+  writeFileSync(tmp, JSON.stringify(run, null, 2), { encoding: 'utf8', mode: 0o600 })
+  renameSync(tmp, hp)
+}
+
 function writeRun(run: LoopRun): boolean {
   try {
     ensureDir()
@@ -525,11 +556,209 @@ function writeRun(run: LoopRun): boolean {
     const tmp = `${p}.${process.pid}.tmp`
     writeFileSync(tmp, JSON.stringify(run, null, 2), { encoding: 'utf8', mode: 0o600 })
     renameSync(tmp, p)
+    // Always upsert per-run history so a later Loop on the same thread
+    // does not erase auditability of prior runs.
+    try {
+      writeHistoryRun(run)
+    } catch (histErr) {
+      log.warn({ event: 'loop.history_write_failed', runId: run.id, err: String(histErr) })
+    }
     return true
   } catch (err) {
     log.warn({ event: 'loop.write_failed', err: String(err) })
     return false
   }
+}
+
+function readRunFromPath(p: string): LoopRun | null {
+  if (!existsSync(p)) return null
+  try {
+    const raw = JSON.parse(readFileSync(p, 'utf8')) as LoopRun
+    if (!raw || typeof raw !== 'object' || !raw.id) return null
+    return normalizeRun(raw)
+  } catch (err) {
+    log.warn({ event: 'loop.read_failed', path: p, err: String(err) })
+    return null
+  }
+}
+
+/** Load one Loop by run id from history (falls back to thread snapshots). */
+export function getLoopRunById(runId: string): LoopRun | null {
+  const id = (runId || '').trim()
+  if (!id) return null
+  const fromHist = readRunFromPath(historyPathFor(id))
+  if (fromHist && fromHist.id === id) return fromHist
+  // Legacy / race: scan thread snapshots for matching id.
+  try {
+    ensureDir()
+    for (const name of readdirSync(loopsDir())) {
+      if (!name.endsWith('.json') || name === 'history') continue
+      const run = readRunFromPath(join(loopsDir(), name))
+      if (run?.id === id) {
+        try { writeHistoryRun(run) } catch { /* best-effort backfill */ }
+        return run
+      }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+export interface ListLoopRunsOpts {
+  status?: LoopStatus | 'active'
+  platform?: string
+  threadId?: string
+  sessionKey?: string
+  limit?: number
+}
+
+/**
+ * List Loop runs for Tasks audit — history first, merge thread snapshots
+ * (legacy files written before history existed). Newest `updatedAt` first.
+ */
+export function listLoopRuns(opts: ListLoopRunsOpts = {}): LoopRun[] {
+  const byId = new Map<string, LoopRun>()
+
+  const ingest = (run: LoopRun | null): void => {
+    if (!run?.id) return
+    const prev = byId.get(run.id)
+    if (!prev || (run.updatedAt || 0) >= (prev.updatedAt || 0)) {
+      byId.set(run.id, run)
+    }
+  }
+
+  try {
+    const hdir = historyDir()
+    if (existsSync(hdir)) {
+      for (const name of readdirSync(hdir)) {
+        if (!name.endsWith('.json')) continue
+        ingest(readRunFromPath(join(hdir, name)))
+      }
+    }
+  } catch (err) {
+    log.warn({ event: 'loop.history_list_failed', err: String(err) })
+  }
+
+  try {
+    ensureDir()
+    for (const name of readdirSync(loopsDir())) {
+      if (!name.endsWith('.json')) continue
+      // skip if somehow a file named history.json
+      if (name === 'history.json') continue
+      ingest(readRunFromPath(join(loopsDir(), name)))
+    }
+  } catch (err) {
+    log.warn({ event: 'loop.thread_list_failed', err: String(err) })
+  }
+
+  let rows = [...byId.values()]
+  if (opts.status === 'active') {
+    rows = rows.filter((r) => r.status !== 'ended')
+  } else if (opts.status) {
+    rows = rows.filter((r) => r.status === opts.status)
+  }
+  if (opts.platform) {
+    const p = opts.platform
+    rows = rows.filter((r) => r.platform === p)
+  }
+  if (opts.threadId) {
+    const t = opts.threadId
+    rows = rows.filter((r) => r.threadId === t)
+  }
+  if (opts.sessionKey) {
+    const sk = opts.sessionKey
+    rows = rows.filter((r) => (r.sessionKey || '') === sk)
+  }
+  rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
+  return rows.slice(0, limit)
+}
+
+/** Rich DTO for Tasks audit detail (includes timeline + job ids). */
+export interface LoopAuditDto extends LoopStatusDto {
+  platform: string
+  channelId: string
+  threadId: string
+  focusSnapshot?: string
+  loopJobIds: number[]
+  roundJobIds: number[]
+  timeline: LoopTimelineEntry[]
+  lastVerdict?: LoopRun['lastVerdict']
+  endedSummary?: string
+  historyPath?: string
+}
+
+export function toLoopAuditDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopAuditDto {
+  const base = toLoopStatusDto(run, lang)
+  const hist = historyPathFor(run.id)
+  return {
+    ...base,
+    platform: run.platform,
+    channelId: run.channelId,
+    threadId: run.threadId,
+    ...(run.focusSnapshot ? { focusSnapshot: run.focusSnapshot } : {}),
+    loopJobIds: Array.isArray(run.loopJobIds) ? [...run.loopJobIds] : [],
+    roundJobIds: Array.isArray(run.roundJobIds) ? [...run.roundJobIds] : [],
+    timeline: Array.isArray(run.timeline) ? [...run.timeline] : [],
+    ...(run.lastVerdict ? { lastVerdict: run.lastVerdict } : {}),
+    ...(run.status === 'ended' ? { endedSummary: formatLoopEndedSummary(run) } : {}),
+    ...(existsSync(hist) ? { historyPath: hist } : {}),
+  }
+}
+
+/** Compact list row for Tasks table. */
+export interface LoopListItemDto {
+  id: string
+  sessionKey: string
+  platform: string
+  channelId: string
+  threadId: string
+  status: LoopStatus
+  bucket: LoopUxBucket
+  bucketLabel: string
+  active: boolean
+  objective: string
+  exitDescription: string
+  round: number
+  maxRounds: number
+  endReason?: LoopRun['endReason']
+  dispatchCount: number
+  childJobCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export function toLoopListItemDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopListItemDto {
+  const view = getMissionView(run)
+  const bucket = getLoopUxBucket(run)
+  const usage = run.usage || emptyLoopUsage()
+  const childJobCount = Array.isArray(run.loopJobIds) && run.loopJobIds.length > 0
+    ? run.loopJobIds.length
+    : (Array.isArray(run.roundJobIds) ? run.roundJobIds.length : 0)
+  return {
+    id: run.id,
+    sessionKey: run.sessionKey || threadKey(run.platform, run.channelId, run.threadId),
+    platform: run.platform,
+    channelId: run.channelId,
+    threadId: run.threadId,
+    status: run.status,
+    bucket,
+    bucketLabel: loopUxBucketLabel(bucket, lang),
+    active: run.status !== 'ended',
+    objective: view.objective,
+    exitDescription: view.exitDescription,
+    round: run.round,
+    maxRounds: view.maxRounds,
+    endReason: run.endReason,
+    dispatchCount: usage.dispatchCount,
+    childJobCount,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+  }
+}
+
+/** @internal test helper — expose history path resolution. */
+export function _historyPathForTests(runId: string): string {
+  return historyPathFor(runId)
 }
 
 function defaultMaxRounds(): number {

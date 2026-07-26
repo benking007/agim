@@ -363,6 +363,16 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `bucketLabel` / `liveSubagents` / `canVerify` / `minRounds` / `usage` / `lastVerification`…）。  
 轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。
 
+### 6.3.1 落盘与 Tasks 审计
+
+| 路径 | 用途 |
+|------|------|
+| `~/.agim/loops/<threadKey>.json` | **线程快照**（当前/最近一次）；同线程新 Loop 会覆盖 |
+| `~/.agim/loops/history/<runId>.json` | **按次归档**；每次 `writeRun` 同步 upsert，供回溯 |
+
+- 管理端：`GET /api/loops`（列表）· `GET /api/loops/:id`（详情含 timeline / `loopJobIds` / 结束摘要）— admin。
+- UI：任务 → 审计 → **Loop 审计**（`/tasks/loops`）。
+
 **文案**：一律「待对焦 / 待派工 / 待验收」，不用「卡在…」。子代理进行中时小精灵可显示「子代理进行中」，且不弹出验收「立即行动」。  
 用量行写 **「独立验收 N」**（`usage.evaluatorCount`），**不要**读成「loop_verdict 次数」——独立验收 skip 时 N 可为 0，但 Loop 已通过 verdict 结束。
 

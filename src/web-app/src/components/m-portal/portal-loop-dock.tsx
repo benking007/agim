@@ -22,6 +22,7 @@ import {
 } from '@/lib/api/loop'
 import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
+import { buildAlignPayload } from './portal-loop-align-payload'
 import type { PetTaskItem } from './portal-pet'
 
 type ReportOffer = {
@@ -44,12 +45,6 @@ export interface PortalLoopDockProps {
   /** Send a chat/slash message on the user's behalf. */
   onSend: (text: string) => void
   className?: string
-}
-
-function buildAlignPayload(objective: string, exit: string): string {
-  const o = objective.trim()
-  const e = exit.trim()
-  return `/loop ${o}；退出条件为${e}`
 }
 
 function actNowPrompt(loop: LoopStatusDto, zh: boolean): string {
@@ -461,13 +456,21 @@ function AligningDock({
 }): JSX.Element {
   const [objective, setObjective] = useState(loop.objective || '')
   const [exit, setExit] = useState(loop.exitDescription || '')
+  const [body, setBody] = useState(loop.body || '')
 
   useEffect(() => {
     setObjective(loop.objective || '')
     setExit(loop.exitDescription || '')
-  }, [loop.objective, loop.exitDescription])
+    setBody(loop.body || '')
+  }, [loop.objective, loop.exitDescription, loop.body])
 
   const canConfirm = objective.trim().length > 0 && exit.trim().length > 0
+  const fieldClass = cn(
+    'w-full resize-none rounded-lg border px-2.5 py-2 text-sm outline-none focus:border-teal-500',
+    dark
+      ? 'border-zinc-700 bg-zinc-900 text-zinc-100 placeholder:text-zinc-500'
+      : 'border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400',
+  )
 
   return (
     <div className={cn('relative z-20 pb-1 pt-0', flush ? 'px-0' : 'px-3 sm:px-4', className)}>
@@ -497,7 +500,7 @@ function AligningDock({
               {zh ? '待对焦 — 补充目标与退出条件' : 'Aligning — set objective & exit'}
             </p>
             <p className={cn('truncate text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
-              {zh ? '确认后才会派子代理' : 'Subagents stay blocked until confirmed'}
+              {zh ? '正文可选；确认后才会派子代理' : 'Body optional; Subagents blocked until confirmed'}
             </p>
           </div>
         </div>
@@ -512,12 +515,7 @@ function AligningDock({
               onChange={(e) => setObjective(e.target.value)}
               rows={2}
               placeholder={zh ? '例如：修好登录超时并通过回归' : 'e.g. Fix login timeout and pass regression'}
-              className={cn(
-                'w-full resize-none rounded-lg border px-2.5 py-2 text-sm outline-none focus:border-teal-500',
-                dark
-                  ? 'border-zinc-700 bg-zinc-900 text-zinc-100 placeholder:text-zinc-500'
-                  : 'border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400',
-              )}
+              className={fieldClass}
             />
           </label>
           <label className="block space-y-1">
@@ -529,12 +527,21 @@ function AligningDock({
               onChange={(e) => setExit(e.target.value)}
               rows={2}
               placeholder={zh ? '例如：验收通过或最多3轮' : 'e.g. Acceptance pass or max 3 rounds'}
-              className={cn(
-                'w-full resize-none rounded-lg border px-2.5 py-2 text-sm outline-none focus:border-teal-500',
-                dark
-                  ? 'border-zinc-700 bg-zinc-900 text-zinc-100 placeholder:text-zinc-500'
-                  : 'border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400',
-              )}
+              className={fieldClass}
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className={cn('text-[11px] font-medium', dark ? 'text-zinc-300' : 'text-zinc-600')}>
+              {zh ? '正文（可选）' : 'Body (optional)'}
+            </span>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={3}
+              placeholder={zh
+                ? '例如：优先查超时日志；对照上周回归清单；不要改鉴权配置'
+                : 'e.g. Check timeout logs first; follow last week’s checklist; do not touch auth config'}
+              className={fieldClass}
             />
           </label>
           <div className="flex justify-end pt-0.5">
@@ -542,7 +549,7 @@ function AligningDock({
               type="button"
               size="sm"
               disabled={!canConfirm}
-              onClick={() => onSend(buildAlignPayload(objective, exit))}
+              onClick={() => onSend(buildAlignPayload(objective, exit, body))}
               className="gap-1.5"
             >
               <Compass className="h-3.5 w-3.5" />

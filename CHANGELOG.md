@@ -66,6 +66,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Loop mission `body`**: optional longer brief on the Portal aligning dock
+  (and `/loop body …` / `；正文：…` in start text). Soft field — not a hard
+  gate — injected into Loop Agent context alongside objective/exit.
 - **Loop post-end detail report offer**: after Portal「确认结束」, a bottom
   dock asks whether to assemble a detailed report from Subagent outputs.
   Agree → `POST /api/loop/generate-report` writes

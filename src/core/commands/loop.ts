@@ -11,6 +11,7 @@ import {
   getMissionView,
   parseLoopStartText,
   setLoopAcceptance,
+  setLoopBody,
   setLoopExit,
   setLoopObjective,
   startLoop,
@@ -38,6 +39,7 @@ const HELP = [
   '  `/loop start <note>`     Focus 已 on：附带说明启动对焦',
   '  `/loop objective <text>` 对焦中补目标（可含「；验收：…」）',
   '  `/loop exit <text>`      对焦中补退出条件',
+  '  `/loop body <text>`      可选正文/补充提示（写入 Mission，非硬门禁）',
   '  `/loop acceptance <text>` 可选验收细则（写入 Mission）',
   '  `/loop confirm`          两硬字段齐后确认 → planning',
   '  `/loop status`           查看阶段 / 目标+退出 / **用量**',
@@ -95,6 +97,17 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
     const r = setLoopExit(ctx.platform, ctx.channelId, ctx.threadId, rest)
     if (!r.ok) return mapAlignError(r.error)
     return maybeConfirmOrPrompt(ctx, r.run)
+  }
+
+  if (sub === 'body' || sub === 'brief' || sub === '正文' || sub === '补充') {
+    if (!rest) return '用法：`/loop body <正文或补充提示>`（可选，非硬门禁）'
+    const r = setLoopBody(ctx.platform, ctx.channelId, ctx.threadId, rest)
+    if (!r.ok) {
+      if (r.error === 'ended') return 'Loop 已结束，无法再改正文。'
+      return mapAlignError(r.error)
+    }
+    if (r.run.status === 'aligning') return formatAligningPrompt(r.run)
+    return formatLoopStatus(r.run)
   }
 
   if (sub === 'acceptance' || sub === 'accept' || sub === '验收') {
@@ -191,7 +204,11 @@ function applyAligningText(ctx: RouteContext, text: string): string {
     const r = setLoopExit(ctx.platform, ctx.channelId, ctx.threadId, parsed.exitDescription)
     if (!r.ok) return mapAlignError(r.error)
   }
-  if (!parsed.objective && !parsed.exitDescription) {
+  if (parsed.body) {
+    const r = setLoopBody(ctx.platform, ctx.channelId, ctx.threadId, parsed.body)
+    if (!r.ok) return mapAlignError(r.error)
+  }
+  if (!parsed.objective && !parsed.exitDescription && !parsed.body) {
     // Treat whole string as objective draft
     const r = setLoopObjective(ctx.platform, ctx.channelId, ctx.threadId, text)
     if (!r.ok) return mapAlignError(r.error)

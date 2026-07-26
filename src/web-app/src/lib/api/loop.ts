@@ -16,6 +16,8 @@ export type LoopStatusDto = {
   maxRounds: number
   objective: string
   exitDescription: string
+  /** Optional longer brief / hints for the Agent. */
+  body?: string
   acceptance?: string
   dispatchesThisRound: number
   /** In-flight Subagent jobs for this round (pending|running). */

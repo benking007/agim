@@ -131,23 +131,29 @@ describe('loop-run R2 Mission persist', () => {
     if (!started.ok) return
     expect(started.run.status).toBe('aligning')
     expect(started.run.sessionKey).toContain('loop-r2-partial')
-    expect(started.run.mission?.objective).toContain('Ship v2')
+    // Focus seeds body (labeled), not objective.
+    expect(started.run.mission?.objective || '').toBe('')
+    expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
+    expect(started.run.mission?.body).toContain('Ship v2')
 
+    setLoopObjective(base.platform, base.channelId, threadId, 'Ship v2 release')
     setLoopExit(base.platform, base.channelId, threadId, 'CI 绿，最多 4 轮')
     const reloaded = getLoopRun(base.platform, base.channelId, threadId)
     expect(reloaded).toBeTruthy()
     if (!reloaded) return
     const view = getMissionView(reloaded)
-    expect(view.objective).toContain('Ship v2')
+    expect(view.objective).toContain('Ship v2 release')
+    expect(view.body).toContain('Ship v2')
     expect(view.exitDescription).toContain('CI 绿')
     expect(view.maxRounds).toBe(4)
     expect(view.confirmed).toBe(false)
 
     const status = formatLoopStatus(reloaded)
-    expect(status).toContain('Ship v2')
+    expect(status).toContain('Ship v2 release')
     expect(status).toContain('CI 绿')
     expect(status).toContain('**目标**')
     expect(status).toContain('**退出条件**')
+    expect(status).toContain('**正文**')
   })
 
   it('confirmed mission + body round-trips into status/snippet', () => {
@@ -201,7 +207,7 @@ describe('loop-run R1 ALIGNING', () => {
   it('path A without exit stays aligning', () => {
     reset()
     const threadId = 'loop-a-align'
-    const focus = setFocus({ ...base, threadId, title: 'Keep me' })
+    const focus = setFocus({ ...base, threadId, title: 'Keep me', body: 'detail line' })
     if (!hasSqliteRow(focus)) return
     const started = startLoop({ ...base, threadId, text: 'note' })
     expect(started.ok).toBe(true)
@@ -209,10 +215,16 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.path).toBe('A')
     expect(started.aligned).toBe(false)
     expect(started.run.status).toBe('aligning')
-    expect(started.run.draftObjective).toContain('Keep me')
+    // Focus must not fill objective; it lands in labeled body.
+    expect(started.run.draftObjective || '').toBe('')
+    expect(started.run.mission?.objective || '').toBe('')
+    expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
+    expect(started.run.mission?.body).toContain('Keep me')
+    expect(started.run.mission?.body).toContain('detail line')
     expect(started.run.startNote).toBe('note')
     expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('ALIGNING')
     expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('do NOT call')
+    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('Keep me')
 
     // verdict blocked while aligning
     const blocked = applyLoopVerdict(base.platform, base.channelId, threadId, {
@@ -224,6 +236,27 @@ describe('loop-run R1 ALIGNING', () => {
 
     stopLoop(base.platform, base.channelId, threadId, 'user_stop')
     expect(getFocusOn(base.platform, base.channelId, threadId)?.title).toBe('Keep me')
+  })
+
+  it('path A with explicit objective keeps Focus in body only', () => {
+    reset()
+    const threadId = 'loop-a-focus-body'
+    const focus = setFocus({ ...base, threadId, title: 'Old focus title' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '新目标：修好超时；退出条件为最多3轮；正文：优先查日志',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    expect(started.path).toBe('A')
+    expect(started.aligned).toBe(true)
+    expect(started.run.mission?.objective).toContain('修好超时')
+    expect(started.run.mission?.objective).not.toContain('Old focus')
+    expect(started.run.mission?.body).toContain('优先查日志')
+    expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
+    expect(started.run.mission?.body).toContain('Old focus title')
   })
 
   it('path B without exit stays aligning; end focus off', () => {

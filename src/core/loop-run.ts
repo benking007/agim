@@ -933,7 +933,26 @@ function focusText(
 ): string {
   const focus = getFocusOn(platform, channelId, threadId)
   if (!focus) return ''
-  return (focus.title + (focus.body ? `\n${focus.body}` : '')).slice(0, 500)
+  return (focus.title + (focus.body ? `\n${focus.body}` : '')).trim()
+}
+
+/**
+ * Format pre-existing Focus as a Mission.body appendix.
+ * Path A must NOT seed objective from Focus — append here instead.
+ */
+export function formatFocusBodyAppendix(focusContent: string): string {
+  const content = focusContent.trim()
+  if (!content) return ''
+  return `【当前 Agent 聚焦内容】\n${content}`
+}
+
+function mergeMissionBody(userBody: string | undefined, focusAppendix: string): string | undefined {
+  const user = (userBody || '').trim()
+  const focus = focusAppendix.trim()
+  if (!user && !focus) return undefined
+  if (!user) return focus.slice(0, BODY_MAX)
+  if (!focus) return user.slice(0, BODY_MAX)
+  return `${user}\n\n${focus}`.slice(0, BODY_MAX)
 }
 
 /** Path A bare `/loop note` is a start note, not an objective override. */
@@ -995,12 +1014,14 @@ export function startLoop(input: {
   const fromFocus = focusText(input.platform, input.channelId, input.threadId)
   let objective = ''
   let startNote: string | undefined
+  // Path A: Focus already on — never seed objective from Focus.
+  // Append Focus into mission.body (labeled) so the aligning dock shows it
+  // under 正文, not 目标.
   if (path === 'A') {
     if (isExplicitObjectiveText(rawText, parsed)) {
-      objective = (parsed.objective || fromFocus).slice(0, 500)
-    } else {
-      objective = fromFocus
-      if (rawText) startNote = rawText.slice(0, 500)
+      objective = (parsed.objective || '').slice(0, 500)
+    } else if (rawText) {
+      startNote = rawText.slice(0, 500)
     }
   } else {
     objective = (parsed.objective || rawText).slice(0, 500)
@@ -1012,7 +1033,9 @@ export function startLoop(input: {
 
   const mission = emptyMission(maxRounds)
   mission.objective = objective
-  if (parsed.body) mission.body = parsed.body.slice(0, BODY_MAX)
+  const focusAppendix = path === 'A' ? formatFocusBodyAppendix(fromFocus) : ''
+  const mergedBody = mergeMissionBody(parsed.body, focusAppendix)
+  if (mergedBody) mission.body = mergedBody
   if (parsed.acceptance) mission.acceptance = parsed.acceptance
   if (exitDescription) {
     applyExitToMission(mission, exitDescription, {

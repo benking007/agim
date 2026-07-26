@@ -94,7 +94,7 @@ function SubagentRow({
   const canStop = live && !!onStop
 
   return (
-    <li className="flex items-stretch gap-1 px-1">
+    <li className="flex items-start gap-1 px-1">
       <button
         type="button"
         onClick={onOpen}
@@ -127,11 +127,12 @@ function SubagentRow({
         </div>
         {detail && (
           <p className={cn(
-            'truncate pl-5 text-[12px] leading-snug',
+            // Wrap inside the content column (left of Stop); do not single-line truncate.
+            'whitespace-normal break-words pl-5 text-[12px] leading-snug',
             dark ? 'text-zinc-500' : 'text-text-muted',
           )}
           >
-            {detail.length > 160 ? `${detail.slice(0, 160)}…` : detail}
+            {detail.length > 280 ? `${detail.slice(0, 280)}…` : detail}
           </p>
         )}
         <p className={cn(
@@ -157,7 +158,7 @@ function SubagentRow({
           }}
           disabled={stopping}
           className={cn(
-            'my-1 mr-1 flex shrink-0 items-center gap-1 self-center rounded-full px-2.5 py-1',
+            'mt-1.5 mr-1 flex shrink-0 items-center gap-1 self-start rounded-full px-2.5 py-1',
             'text-[11px] font-medium transition',
             dark
               ? 'bg-zinc-900 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50'

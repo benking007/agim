@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
   `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
+- **Subagent card Objective wrap**: long `Objective:` preview wraps in the content column left of Stop (no single-line truncate overflow).
 
 - **Composer status bar no longer wraps Chinese labels vertically** on
   narrow Portal widths: chips use `whitespace-nowrap` + `shrink-0`, and

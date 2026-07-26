@@ -417,24 +417,25 @@
   },
   "loops": {
     "title": "Loop audit",
-    "subtitle": "Per-run Loop history on disk; new Loops on a thread keep prior runs.",
+    "subtitle": "Per-run history; new Loops keep prior runs.",
     "refresh": "Refresh",
-    "filterLabel": "Thread id (optional)",
+    "filterLabel": "Thread id",
     "statusFilter": "Status",
     "statusAll": "All",
     "statusActive": "Active",
     "statusEnded": "Ended",
     "applyFilter": "Apply",
     "clearFilter": "Clear",
-    "empty": "No Loops yet.",
-    "emptyFiltered": "No matching Loops.",
-    "detailError": "Failed to load detail.",
+    "empty": "No Loops.",
+    "emptyFiltered": "No match.",
+    "detailError": "Load failed",
     "col": {
       "status": "Status",
       "objective": "Objective",
       "thread": "Thread",
       "round": "Round",
-      "jobs": "Subagents",
+      "jobs": "Jobs",
+      "report": "Report",
       "updated": "Updated"
     },
     "detail": {
@@ -442,10 +443,12 @@
       "exit": "Exit",
       "body": "Body",
       "session": "Session",
-      "jobs": "Subagent jobs",
-      "path": "History file",
-      "verification": "Verification",
-      "endedSummary": "Ended summary",
+      "jobs": "Jobs",
+      "path": "History",
+      "reportPath": "Report",
+      "report": "Report",
+      "verification": "Verify",
+      "endedSummary": "Summary",
       "timeline": "Timeline"
     }
   }

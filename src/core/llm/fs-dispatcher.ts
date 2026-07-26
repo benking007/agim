@@ -322,6 +322,8 @@ async function runWriteFile(args: Record<string, unknown>, ctx: FsContext): Prom
     if (mode === 'append') await fs.appendFile(p.abs, content, 'utf-8')
     else await fs.writeFile(p.abs, content, 'utf-8')
     const after = await fs.stat(p.abs)
+    // Link Loop detail reports written under PROJECTS/loops/<loopId>.md
+    void maybeLinkLoopReport(p.abs, typeof args.path === 'string' ? args.path : '')
     return {
       text: `wrote ${after.size} bytes to ${p.abs} (${mode})`,
       isError: false,
@@ -330,6 +332,25 @@ async function runWriteFile(args: Record<string, unknown>, ctx: FsContext): Prom
   } catch (err) {
     return { text: `write_file failed: ${errMsg(err)}`, isError: true, source: 'fs' }
   }
+}
+
+/** Best-effort: associate PROJECTS/loops/<loopId>.md writes with Loop history. */
+async function maybeLinkLoopReport(absPath: string, relPath: string): Promise<void> {
+  const probe = `${relPath} ${absPath}`.replace(/\\/g, '/')
+  if (!/PROJECTS\/loops\//i.test(probe) && !/\/PROJECTS\/loops\//i.test(absPath)) return
+  if (!/\.md$/i.test(absPath)) return
+  const base = absPath.split('/').pop() || ''
+  const stem = base.replace(/\.md$/i, '')
+  // `<loopId>.md` or `<session>-<loopId>.md` (UUID at end)
+  const uuid = stem.match(
+    /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+  )?.[1]
+  const loopId = uuid || stem
+  if (!loopId || loopId.length < 8) return
+  try {
+    const { noteLoopReportPath } = await import('../loop-run.js')
+    noteLoopReportPath(loopId, absPath)
+  } catch { /* ignore — Loop store optional at write time */ }
 }
 
 async function runListDir(args: Record<string, unknown>, ctx: FsContext): Promise<DispatcherResult> {

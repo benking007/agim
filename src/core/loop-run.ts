@@ -20,6 +20,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
+import { defaultAgentCwd } from './agent-cwd.js'
 import { logger as rootLogger } from './logger.js'
 import {
   cancelActiveChildJobsByThread,
@@ -51,6 +52,105 @@ function safeRunId(id: string): string {
 
 function historyPathFor(runId: string): string {
   return join(historyDir(), `${safeRunId(runId)}.json`)
+}
+
+/** Default: `<agim-cwd>/PROJECTS/loops`. Override: `AGIM_LOOP_REPORTS_DIR`. */
+export function resolveLoopReportsDir(agentName = 'agim'): string {
+  if (process.env.AGIM_LOOP_REPORTS_DIR) return process.env.AGIM_LOOP_REPORTS_DIR
+  return join(defaultAgentCwd(agentName), 'PROJECTS', 'loops')
+}
+
+/**
+ * Find detail-report markdown files for a Loop id under the reports dir.
+ * Matches `<loopId>.md` and `*-<loopId>.md` (session-prefixed convention).
+ */
+export function discoverLoopReportPaths(loopId: string): string[] {
+  const id = (loopId || '').trim()
+  if (!id) return []
+  const safe = safeRunId(id)
+  const dir = resolveLoopReportsDir()
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!/\.md$/i.test(name)) continue
+      const base = name.replace(/\.md$/i, '')
+      if (base === safe || base === id || base.endsWith(`-${safe}`) || base.endsWith(`-${id}`)) {
+        out.push(join(dir, name))
+      }
+    }
+  } catch (err) {
+    log.warn({ event: 'loop.reports_scan_failed', err: String(err) })
+  }
+  return out.sort()
+}
+
+/** Merge discovered + stored report paths; optionally persist onto history. */
+export function resolveLoopReportPaths(run: LoopRun, opts?: { persist?: boolean }): string[] {
+  const found = discoverLoopReportPaths(run.id)
+  const prev = Array.isArray(run.reportPaths) ? run.reportPaths.filter((p) => typeof p === 'string' && p) : []
+  const merged = [...new Set([...prev, ...found])].slice(0, 16)
+  run.reportPaths = merged
+  if (opts?.persist && merged.length > 0) {
+    try {
+      writeHistoryRun(run)
+    } catch { /* best-effort */ }
+  }
+  return merged
+}
+
+/**
+ * Register a report file for a Loop after Agent write_file.
+ * `filePath` may be absolute or workspace-relative (`PROJECTS/loops/…`).
+ */
+export function noteLoopReportPath(loopId: string, filePath: string): void {
+  const id = (loopId || '').trim()
+  const raw = (filePath || '').trim()
+  if (!id || !raw) return
+  const abs = raw.startsWith('/')
+    ? raw
+    : join(resolveLoopReportsDir(), raw.replace(/^PROJECTS\/loops\/?/i, ''))
+  const run = getLoopRunById(id)
+  if (!run) return
+  if (!Array.isArray(run.reportPaths)) run.reportPaths = []
+  if (run.reportPaths.includes(abs)) return
+  run.reportPaths.push(abs)
+  if (run.reportPaths.length > 16) run.reportPaths = run.reportPaths.slice(-16)
+  run.updatedAt = Date.now()
+  pushTimeline(run, 'system', `detail report: ${abs}`)
+  try {
+    writeHistoryRun(run)
+  } catch { /* ignore */ }
+  const snap = readRun(run.platform, run.channelId, run.threadId)
+  if (snap?.id === run.id) {
+    snap.reportPaths = run.reportPaths
+    snap.timeline = run.timeline
+    snap.updatedAt = run.updatedAt
+    writeRun(snap)
+  }
+  log.info({ event: 'loop.report_linked', loopId: id, path: abs })
+}
+
+/** Read the primary detail report markdown for a Loop (newest matching file). */
+export function readLoopReportMarkdown(loopId: string): {
+  ok: true
+  path: string
+  markdown: string
+} | { ok: false; error: string } {
+  const run = getLoopRunById(loopId)
+  const paths = run
+    ? resolveLoopReportPaths(run, { persist: true })
+    : discoverLoopReportPaths(loopId)
+  if (paths.length === 0) return { ok: false, error: 'no_report' }
+  // Prefer exact `<id>.md`, else last path.
+  const safe = safeRunId(loopId)
+  const preferred = paths.find((p) => p.endsWith(`/${safe}.md`)) || paths[paths.length - 1]!
+  try {
+    const markdown = readFileSync(preferred, 'utf8')
+    return { ok: true, path: preferred, markdown }
+  } catch (err) {
+    return { ok: false, error: `read_failed:${String(err)}` }
+  }
 }
 
 /** L3 statuses; legacy 'running'|'observing' still read as active. */
@@ -157,6 +257,12 @@ export interface LoopRun {
    * are not mixed in. Cleared only when a new Loop starts (new run).
    */
   loopJobIds: number[]
+  /**
+   * Absolute paths of detail reports written for this Loop
+   * (typically `PROJECTS/loops/<loopId>.md`). Discovered on disk and/or
+   * registered when `agim_write_file` lands under the reports dir.
+   */
+  reportPaths?: string[]
   /** R3: last decompose plan recorded from call_agents (or synthetic single). */
   lastPlan?: {
     at: number
@@ -455,6 +561,14 @@ function normalizeRun(raw: LoopRun): LoopRun {
       .filter((id) => Number.isFinite(id) && id > 0)
       .slice(-128)
   }
+  if (!Array.isArray(raw.reportPaths)) {
+    raw.reportPaths = []
+  } else {
+    raw.reportPaths = raw.reportPaths
+      .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+      .map((p) => p.trim())
+      .slice(0, 16)
+  }
   if (!raw.usage || typeof raw.usage !== 'object') {
     raw.usage = emptyLoopUsage()
   } else {
@@ -685,11 +799,15 @@ export interface LoopAuditDto extends LoopStatusDto {
   lastVerdict?: LoopRun['lastVerdict']
   endedSummary?: string
   historyPath?: string
+  /** Linked detail-report files (absolute paths). */
+  reportPaths: string[]
+  hasReport: boolean
 }
 
 export function toLoopAuditDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopAuditDto {
   const base = toLoopStatusDto(run, lang)
   const hist = historyPathFor(run.id)
+  const reportPaths = resolveLoopReportPaths(run, { persist: true })
   return {
     ...base,
     platform: run.platform,
@@ -702,6 +820,8 @@ export function toLoopAuditDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopAudi
     ...(run.lastVerdict ? { lastVerdict: run.lastVerdict } : {}),
     ...(run.status === 'ended' ? { endedSummary: formatLoopEndedSummary(run) } : {}),
     ...(existsSync(hist) ? { historyPath: hist } : {}),
+    reportPaths,
+    hasReport: reportPaths.length > 0,
   }
 }
 
@@ -723,6 +843,7 @@ export interface LoopListItemDto {
   endReason?: LoopRun['endReason']
   dispatchCount: number
   childJobCount: number
+  hasReport: boolean
   createdAt: number
   updatedAt: number
 }
@@ -734,6 +855,7 @@ export function toLoopListItemDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopL
   const childJobCount = Array.isArray(run.loopJobIds) && run.loopJobIds.length > 0
     ? run.loopJobIds.length
     : (Array.isArray(run.roundJobIds) ? run.roundJobIds.length : 0)
+  const reportPaths = resolveLoopReportPaths(run)
   return {
     id: run.id,
     sessionKey: run.sessionKey || threadKey(run.platform, run.channelId, run.threadId),
@@ -751,6 +873,7 @@ export function toLoopListItemDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopL
     endReason: run.endReason,
     dispatchCount: usage.dispatchCount,
     childJobCount,
+    hasReport: reportPaths.length > 0,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
   }
@@ -1332,6 +1455,7 @@ export function startLoop(input: {
     dispatchesThisRound: 0,
     roundJobIds: [],
     loopJobIds: [],
+    reportPaths: [],
     usage: emptyLoopUsage(),
     createdAt: now,
     updatedAt: now,

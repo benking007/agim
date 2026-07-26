@@ -5,6 +5,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getLoopById,
+  getLoopReport,
   listLoops,
   type LoopAuditDto,
   type LoopListItemDto,
@@ -43,6 +44,14 @@ export function useLoopDetail(id: string | null, lang: 'zh' | 'en' = 'zh') {
     queryKey: keys.detail(id || ''),
     queryFn: () => getLoopById(id!, { lang }),
     enabled: !!id,
+  })
+}
+
+export function useLoopReport(id: string | null, enabled = false) {
+  return useQuery<{ ok: boolean; path?: string; markdown?: string; error?: string }>({
+    queryKey: [...keys.detail(id || ''), 'report'],
+    queryFn: () => getLoopReport(id!),
+    enabled: !!id && enabled,
   })
 }
 

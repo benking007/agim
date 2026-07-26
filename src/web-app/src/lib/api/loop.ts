@@ -94,6 +94,7 @@ export type LoopListItemDto = {
   endReason?: string
   dispatchCount: number
   childJobCount: number
+  hasReport?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -122,6 +123,8 @@ export type LoopAuditDto = LoopStatusDto & {
   }
   endedSummary?: string
   historyPath?: string
+  reportPaths?: string[]
+  hasReport?: boolean
   createdAt?: number
 }
 
@@ -141,5 +144,15 @@ export function getLoopById(
   query: { lang?: 'zh' | 'en' } = {},
 ): Promise<{ ok: boolean; loop: LoopAuditDto; error?: string }> {
   return client.get(`/api/loops/${encodeURIComponent(id)}`, { query })
+}
+
+export function getLoopReport(id: string): Promise<{
+  ok: boolean
+  loopId?: string
+  path?: string
+  markdown?: string
+  error?: string
+}> {
+  return client.get(`/api/loops/${encodeURIComponent(id)}/report`)
 }
 

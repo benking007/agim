@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { StatusBadge } from '@/components/common/status-badge'
-import { useLoopDetail, useLoopsList } from '@/hooks/use-loops'
+import { useLoopDetail, useLoopReport, useLoopsList } from '@/hooks/use-loops'
 import { cn } from '@/lib/utils'
 
 function fmtTime(ms: number | undefined): string {
@@ -145,6 +145,7 @@ export default function TasksLoopsRoute(): JSX.Element {
                 <TableHead className="hidden md:table-cell">{t('loops.col.thread')}</TableHead>
                 <TableHead>{t('loops.col.round')}</TableHead>
                 <TableHead className="hidden sm:table-cell">{t('loops.col.jobs')}</TableHead>
+                <TableHead className="hidden sm:table-cell">{t('loops.col.report')}</TableHead>
                 <TableHead className="hidden lg:table-cell">{t('loops.col.updated')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -185,13 +186,20 @@ export default function TasksLoopsRoute(): JSX.Element {
                       <TableCell className="hidden tabular-nums text-text-dim sm:table-cell">
                         {r.childJobCount}
                       </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {r.hasReport ? (
+                          <Badge variant="success">{t('loops.hasReport', { defaultValue: '有报告' })}</Badge>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="hidden text-text-dim lg:table-cell">
                         {fmtTime(r.updatedAt)}
                       </TableCell>
                     </TableRow>
                     {open ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="bg-surface-2/40 p-4">
+                        <TableCell colSpan={8} className="bg-surface-2/40 p-4">
                           {detailQuery.isFetching && !detail ? (
                             <div className="flex items-center gap-2 text-sm text-text-dim">
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -222,6 +230,11 @@ function LoopDetailPanel({
   detail: NonNullable<ReturnType<typeof useLoopDetail>['data']>['loop']
 }): JSX.Element {
   const { t } = useTranslation('tasks')
+  const [showReport, setShowReport] = useState(false)
+  const reportQuery = useLoopReport(detail.id, showReport && !!detail.hasReport)
+  const reportMd = reportQuery.data?.markdown
+  const reportPath = reportQuery.data?.path || detail.reportPaths?.[0]
+
   return (
     <div className="space-y-3 text-sm">
       <div className="grid gap-2 sm:grid-cols-2">
@@ -243,7 +256,55 @@ function LoopDetailPanel({
         {detail.historyPath ? (
           <Field label={t('loops.detail.path')} value={detail.historyPath} mono wide />
         ) : null}
+        {(detail.reportPaths || []).length > 0 ? (
+          <Field
+            label={t('loops.detail.reportPath')}
+            value={detail.reportPaths!.join('\n')}
+            mono
+            wide
+          />
+        ) : null}
       </div>
+
+      {detail.hasReport ? (
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+              {t('loops.detail.report')}
+            </h3>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowReport((v) => !v)}
+            >
+              {showReport
+                ? t('loops.hideReport', { defaultValue: '收起' })
+                : t('loops.viewReport', { defaultValue: '查看' })}
+            </Button>
+          </div>
+          {showReport ? (
+            reportQuery.isFetching && !reportMd ? (
+              <div className="flex items-center gap-2 text-text-dim">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t('states.loading', { ns: 'common' })}
+              </div>
+            ) : reportMd ? (
+              <div className="space-y-1">
+                {reportPath ? (
+                  <p className="font-mono text-[11px] text-text-muted">{reportPath}</p>
+                ) : null}
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background p-3 text-xs leading-relaxed">
+                  {reportMd}
+                </pre>
+              </div>
+            ) : (
+              <p className="text-text-muted">
+                {t('loops.reportMissing', { defaultValue: '无报告文件' })}
+              </p>
+            )
+          ) : null}
+        </section>
+      ) : null}
 
       {detail.lastVerification ? (
         <section>

@@ -16,6 +16,7 @@ import {
   getLoopRunById,
   listLoopRuns,
   maybeEnforceLoopExit,
+  readLoopReportMarkdown,
   resolveLoopMetConfirm,
   toLoopAuditDto,
   toLoopListItemDto,
@@ -48,6 +49,12 @@ export async function handleLoopApi(
   if (p === '/api/loops' && m === 'GET') {
     if (!requireAdmin(req, res)) return true
     await handleListLoops(res, url)
+    return true
+  }
+  const report = /^\/api\/loops\/([^/]+)\/report$/.exec(p)
+  if (report && m === 'GET') {
+    if (!requireAdmin(req, res)) return true
+    await handleGetLoopReport(res, decodeURIComponent(report[1]!))
     return true
   }
   const detail = /^\/api\/loops\/([^/]+)$/.exec(p)
@@ -117,6 +124,28 @@ async function handleGetLoopById(
     return
   }
   sendJson(res, 200, { ok: true, loop: toLoopAuditDto(run, lang) })
+}
+
+async function handleGetLoopReport(
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const id = (runId || '').trim().slice(0, 80)
+  if (!id) {
+    sendJson(res, 400, { error: 'id required' })
+    return
+  }
+  const r = readLoopReportMarkdown(id)
+  if (!r.ok) {
+    sendJson(res, r.error === 'no_report' ? 404 : 500, { ok: false, error: r.error })
+    return
+  }
+  sendJson(res, 200, {
+    ok: true,
+    loopId: id,
+    path: r.path,
+    markdown: r.markdown,
+  })
 }
 
 async function handleConfirmMet(req: IncomingMessage, res: ServerResponse): Promise<void> {

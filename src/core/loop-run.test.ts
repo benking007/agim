@@ -33,6 +33,10 @@ import {
   setLoopObjective,
   startLoop,
   stopLoop,
+  discoverLoopReportPaths,
+  noteLoopReportPath,
+  readLoopReportMarkdown,
+  resolveLoopReportsDir,
   _historyPathForTests,
   _touchLoopCreatedAtForTests,
 } from './loop-run.js'
@@ -849,6 +853,60 @@ describe('loop history audit persistence', () => {
     const listed = listLoopRuns({ threadId: 'loop-hist-list', limit: 10 })
     expect(listed.map((r) => r.id)).toEqual([id2, id1])
     expect(existsSync(_historyPathForTests(id1))).toBe(true)
+  })
+
+  it('discovers and reads detail reports under PROJECTS/loops/<loopId>.md', () => {
+    reset()
+    const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    const reportsDir = join(TMP, 'reports-for-loop')
+    mkdirSync(reportsDir, { recursive: true, mode: 0o700 })
+    process.env.AGIM_LOOP_REPORTS_DIR = reportsDir
+    try {
+      expect(resolveLoopReportsDir()).toBe(reportsDir)
+      writeFileSync(join(reportsDir, `${id}.md`), '# Report\n\nhello from loop\n', 'utf8')
+      expect(discoverLoopReportPaths(id)).toEqual([join(reportsDir, `${id}.md`)])
+
+      // Persist a minimal history run so noteLoopReportPath / read can attach.
+      const histDir = join(TMP, 'loops', 'history')
+      mkdirSync(histDir, { recursive: true, mode: 0o700 })
+      writeFileSync(join(histDir, `${id}.json`), JSON.stringify({
+        id,
+        sessionKey: 'web__web__t-report',
+        platform: 'web',
+        channelId: 'web',
+        threadId: 't-report',
+        focusSnapshot: 'x',
+        openedFocus: false,
+        status: 'ended',
+        endReason: 'objective_met',
+        round: 1,
+        maxRounds: 3,
+        mission: {
+          objective: 'obj',
+          exit: { description: 'exit', maxRounds: 3, onFocusOff: 'cancel' },
+        },
+        dispatchesThisRound: 0,
+        roundJobIds: [],
+        loopJobIds: [],
+        reportPaths: [],
+        usage: { dispatchCount: 0, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+        timeline: [],
+      }, null, 2))
+
+      noteLoopReportPath(id, join(reportsDir, `${id}.md`))
+      const linked = getLoopRunById(id)
+      expect(linked?.reportPaths?.some((p) => p.endsWith(`${id}.md`))).toBe(true)
+
+      const md = readLoopReportMarkdown(id)
+      expect(md.ok).toBe(true)
+      if (!md.ok) return
+      expect(md.markdown).toContain('hello from loop')
+      expect(md.path).toContain(`${id}.md`)
+    } finally {
+      delete process.env.AGIM_LOOP_REPORTS_DIR
+    }
   })
 })
 

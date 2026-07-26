@@ -370,8 +370,9 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | `~/.agim/loops/<threadKey>.json` | **线程快照**（当前/最近一次）；同线程新 Loop 会覆盖 |
 | `~/.agim/loops/history/<runId>.json` | **按次归档**；每次 `writeRun` 同步 upsert，供回溯 |
 
-- 管理端：`GET /api/loops`（列表）· `GET /api/loops/:id`（详情含 timeline / `loopJobIds` / 结束摘要）— admin。
-- UI：任务 → 审计 → **Loop 审计**（`/tasks/loops`）。
+- 管理端：`GET /api/loops`（列表）· `GET /api/loops/:id`（详情含 timeline / `loopJobIds` / 结束摘要）· `GET /api/loops/:id/report`（详细报告 Markdown）— admin。
+- UI：任务 → 审计 → **Loop 审计**（`/tasks/loops`）；有报告时列表标「有报告」，详情可展开查看全文。
+- 结案详细报告约定落盘：`PROJECTS/loops/<loopId>.md`（`agim_write_file` 成功后写入 `reportPaths`；详情也会扫描该目录关联）。
 
 **文案**：一律「待对焦 / 待派工 / 待验收」，不用「卡在…」。子代理进行中时小精灵可显示「子代理进行中」，且不弹出验收「立即行动」。  
 用量行写 **「独立验收 N」**（`usage.evaluatorCount`），**不要**读成「loop_verdict 次数」——独立验收 skip 时 N 可为 0，但 Loop 已通过 verdict 结束。

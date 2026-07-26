@@ -11,7 +11,7 @@ describe('buildLoopReportPrompt', () => {
     })
     expect(text).toContain('loop-abc')
     expect(text).toContain('约 6 个')
-    expect(text).toContain('PROJECTS/loops/')
+    expect(text).toContain('PROJECTS/loops/loop-abc.md')
     expect(text).toContain('不要混入')
   })
 
@@ -22,7 +22,7 @@ describe('buildLoopReportPrompt', () => {
       zh: false,
     })
     expect(text).toContain('loop-abc')
-    expect(text).toContain('PROJECTS/loops/')
+    expect(text).toContain('PROJECTS/loops/loop-abc.md')
     expect(text).toMatch(/Do not mix/i)
   })
 })

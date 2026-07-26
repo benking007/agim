@@ -44,7 +44,11 @@ function StatusIcon({
   if (isSubagentLive(step)) {
     return <Loader2 className={cn(cls, 'animate-spin text-teal-500')} />
   }
-  if (step.status === 'error' || step.status === 'denied') {
+  if (step.status === 'denied') {
+    // Orchestration / policy block — not a crashed Subagent.
+    return <X className={cn(cls, 'text-amber-500')} />
+  }
+  if (step.status === 'error') {
     return <X className={cn(cls, 'text-danger')} />
   }
   if (step.status === 'success') {
@@ -69,7 +73,10 @@ function statusLabel(
   if (step.status === 'success') {
     return t('chat.activityAgentDone', { defaultValue: 'completed' })
   }
-  if (step.status === 'error' || step.status === 'denied') {
+  if (step.status === 'denied') {
+    return t('chat.activityAgentBlocked', { defaultValue: 'blocked' })
+  }
+  if (step.status === 'error') {
     return t('chat.activityAgentFailed', { defaultValue: 'failed' })
   }
   return step.status

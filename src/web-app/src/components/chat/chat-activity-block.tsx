@@ -134,7 +134,14 @@ function AgentStatusBadge({ step }: { step: ChatActivityStep }): JSX.Element | n
       </span>
     )
   }
-  if (step.status === 'error' || step.status === 'denied') {
+  if (step.status === 'denied') {
+    return (
+      <span className="shrink-0 text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400">
+        {t('chat.activityAgentBlocked', { defaultValue: 'blocked' })}
+      </span>
+    )
+  }
+  if (step.status === 'error') {
     return (
       <span className="shrink-0 text-[10px] uppercase tracking-wide text-danger">
         {t('chat.activityAgentFailed', { defaultValue: 'failed' })}

@@ -84,6 +84,40 @@ describe('ChatSubagentCard', () => {
     expect(screen.getAllByText(/Waiting for subagent|等待子代理/).length).toBeGreaterThanOrEqual(1)
   })
 
+  it('labels denied Subagent rows as blocked (not failed)', () => {
+    render(<ChatSubagentCard activity={activity({
+      steps: [{
+        id: 'a2a-9',
+        kind: 'agent',
+        label: 'agim',
+        status: 'denied',
+        startedAt: 1,
+        finishedAt: 2,
+        jobId: 9,
+        preview: 'denied by policy: agim_exec',
+      }],
+    })}
+    />)
+    expect(screen.getByText(/blocked|已拒绝|被阻止/)).toBeInTheDocument()
+    expect(screen.queryByText(/^failed$/i)).not.toBeInTheDocument()
+  })
+
+  it('does not list loop-parent-wait gate denials as Subagents', () => {
+    const { container } = render(<ChatSubagentCard activity={activity({
+      steps: [{
+        id: 'tc-1',
+        kind: 'agent',
+        label: 'mcp__agim__call_agents',
+        status: 'denied',
+        startedAt: 1,
+        finishedAt: 2,
+        preview: 'loop-parent-wait: after dispatch this round, parent must ONLY wait',
+      }],
+    })}
+    />)
+    expect(container.firstChild).toBeNull()
+  })
+
   it('wraps long Objective preview instead of single-line truncate', () => {
     const long = `Objective: ${'研究识别美股牛熊周期拐点的宏观与估值类指标，'.repeat(4)}用中文输出`
     render(<ChatSubagentCard activity={activity({
@@ -166,7 +200,8 @@ describe('ChatSubagentCard', () => {
     await user.click(header)
     await user.click(screen.getByRole('button', { name: /→ agim/ }))
     await waitFor(() => {
-      expect(api.getJob).toHaveBeenCalledWith(42)
+      const calls = vi.mocked(api.getJob).mock.calls
+      expect(calls.some((c) => c[0] === 42)).toBe(true)
       expect(screen.getByText('PARENT_PROMPT_FOR_42')).toBeInTheDocument()
     })
   })

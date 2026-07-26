@@ -597,14 +597,16 @@ export function _setTestLiveSubagents(value: boolean | null): void {
 
 /**
  * Live Subagent count for the active Loop's current round.
- * Prefers `roundJobIds` (round-scoped); falls back to thread-wide child count
- * for legacy runs that predate round job tracking.
+ * Prefers `roundJobIds` (round-scoped). When empty:
+ * - 0 dispatches this round → 0 (do not mix unrelated thread jobs)
+ * - ≥1 dispatch but missing ids (legacy / race) → thread-wide fallback
  */
 export function countRoundLiveSubagents(run: LoopRun): number {
   if (_testLiveSubagents != null) return _testLiveSubagents ? 1 : 0
   if (run.roundJobIds?.length) {
     return countActiveJobsByIds(run.roundJobIds)
   }
+  if ((run.dispatchesThisRound || 0) < 1) return 0
   return countActiveChildJobsByThread(
     jobThreadKey(run.platform, run.channelId, run.threadId),
   )
@@ -1347,6 +1349,19 @@ export function cancelLoopForFocusOff(
 ): LoopRun | null {
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return null
+  // Align with /loop stop: abort in-flight Subagents so UI/jobs do not
+  // linger after Focus off/clear ends the Loop.
+  const cancelled = cancelActiveChildJobsByThread(
+    jobThreadKey(platform, channelId, threadId),
+    'cancelled: Loop cancelled because focus off/clear',
+  )
+  if (cancelled > 0) {
+    log.info({
+      event: 'loop.focus_off_cancelled_subagents',
+      threadId,
+      cancelled,
+    }, `cancelled ${cancelled} live Subagent job(s) on focus off/clear`)
+  }
   run.status = 'ended'
   run.endReason = 'focus_off'
   run.updatedAt = Date.now()

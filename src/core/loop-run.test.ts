@@ -5,10 +5,16 @@ import { join } from 'node:path'
 import { setFocus, getFocusOn } from './focus.js'
 import { _truncateForTests } from './goals.js'
 import {
+  createInlineJob,
+  getJob,
+  jobThreadKey,
+} from './job-board.js'
+import {
   applyLoopVerdict,
   buildLoopSnippet,
   cancelLoopForFocusOff,
   confirmLoopMission,
+  countRoundLiveSubagents,
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
@@ -352,6 +358,57 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.ok).toBe(true)
     cancelLoopForFocusOff(base.platform, base.channelId, threadId)
     expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
+  })
+
+  it('focus off cancels in-flight Subagent jobs (like /loop stop)', () => {
+    reset()
+    const threadId = 'loop-focus-off-jobs'
+    const focus = setFocus({ ...base, threadId, title: 'X' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出：验收通过或最多3轮',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const jobId = createInlineJob({
+      agent: 'agim',
+      prompt: 'child work',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    if (jobId <= 0) return
+    noteLoopRoundJob(base.platform, base.channelId, threadId, jobId)
+    expect(getJob(jobId)?.status).toMatch(/pending|running/)
+    cancelLoopForFocusOff(base.platform, base.channelId, threadId)
+    expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
+    expect(getJob(jobId)?.status).toBe('cancelled')
+  })
+
+  it('countRoundLiveSubagents is 0 when round ids empty and no dispatch', () => {
+    reset()
+    const threadId = 'loop-live-empty-round'
+    const focus = setFocus({ ...base, threadId, title: '上下文' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出：验收通过或最多3轮',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    // Unrelated live children on the thread must not block a fresh round.
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const stray = createInlineJob({
+      agent: 'agim',
+      prompt: 'stray',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    expect(countRoundLiveSubagents(started.run)).toBe(0)
+    void stray
   })
 
   it('loop_verdict stop ends confirmed loop (path B focus off)', () => {

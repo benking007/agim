@@ -145,10 +145,14 @@ type LoopRun = {
     | "dispatching"
     | "verifying"
     | "reflecting"
+    | "pending_user_confirm"          // met=true 待 Portal 确认结案
     | "ended";
+  // 另有 legacy：running / observing / paused（读盘兼容，新路径不再写入）
   round: number;
   openedFocus: boolean;
   dispatchesThisRound: number;       // R3: 本轮已接受的子代理派工数
+  roundJobIds: number[];             // 本轮 Subagent job ids（live 守候）
+  loopJobIds: number[];              // 本 Loop 累计 job ids（结案报告范围）
   lastPlan?: { at: number; tasks: Array<{ id: string; brief: string; agentHint?: string }> };
   lastVerification?: {
     at: number;
@@ -167,8 +171,8 @@ type LoopRun = {
 };
 ```
 
-**UX 桶**（Portal / status，非 store status）：`待对焦` / `待派工` / `待验收` / `已结束`  
-（`getLoopUxBucket`：有本轮派工后即进「待验收」，直至 ENDED。）
+**UX 桶**（Portal / status，非 store status）：`待对焦` / `待派工` / `待验收` / `待确认结案` / `已结束`  
+（`getLoopUxBucket`：本轮仍有 live Subagent → 待派工；live=0 且已派工 → 待验收；`pending_user_confirm` → 待确认结案。）
 
 用户面：
 

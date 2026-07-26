@@ -159,6 +159,7 @@ export function evaluateLoopParentWaitGate(
       + 'no research, mutation, or further call_agent(s) until verification. '
       + 'A second call_agents in the same round is refused; use decision='
       + 'continue|revise to open the next round (resets per-turn call_agent cap). '
+      + '下一步：先 mcp__agim__loop_verdict（continue|revise），勿同轮再派工。 '
       + 'Set AGIM_LOOP_DISPATCH_GATE=off to disable.',
   }
 }

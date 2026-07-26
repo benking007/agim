@@ -4,8 +4,8 @@
 // (reminder text polish, reminder-intent detection, etc.) MUST NOT bake in
 // a specific provider (DeepSeek, OpenAI, …). agim is shipped as a
 // pluggable framework — every user's LLM access goes through the agent
-// they've already registered (claude-code / codex / opencode / any
-// future ACP-discovered remote). So all helper calls funnel through
+// they've already registered (claude-code / codex / opencode / agim).
+// So all helper calls funnel through
 // one of those adapters via AgentAdapter.sendPrompt.
 //
 // Selection rule (in order):

@@ -1,13 +1,13 @@
-// R9 — SSRF guard for ACP operator-supplied URLs. The unit covers the
+// R9 — SSRF guard for operator-supplied URLs. The unit covers the
 // six refusal categories + the success path, plus the IPv4-mapped-IPv6
 // quirk that bit us on the v4 prototype.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
-  assertSafeAcpUrl,
+  assertSafeUrl,
   isPrivateAddr,
-  UnsafeAcpUrlError,
-} from '../../src/plugins/agents/acp/url-guard'
+  UnsafeUrlError,
+} from '../../src/core/url-guard'
 
 describe('isPrivateAddr (IPv4)', () => {
   it.each([
@@ -58,7 +58,7 @@ describe('isPrivateAddr (IPv6)', () => {
   })
 })
 
-describe('assertSafeAcpUrl', () => {
+describe('assertSafeUrl', () => {
   const ALLOW = 'AGIM_ACP_ALLOW_LOOPBACK'
   const ALLOW_PRIVATE = 'AGIM_URL_ALLOW_PRIVATE'
   const publicLookup = async () => ({ address: '93.184.216.34', family: 4 })
@@ -76,76 +76,76 @@ describe('assertSafeAcpUrl', () => {
   })
 
   it('rejects non-http schemes', async () => {
-    await expect(assertSafeAcpUrl('file:///etc/passwd', { forwardsCredentials: false }))
-      .rejects.toThrow(UnsafeAcpUrlError)
-    await expect(assertSafeAcpUrl('ftp://example.com', { forwardsCredentials: false }))
+    await expect(assertSafeUrl('file:///etc/passwd', { forwardsCredentials: false }))
+      .rejects.toThrow(UnsafeUrlError)
+    await expect(assertSafeUrl('ftp://example.com', { forwardsCredentials: false }))
       .rejects.toThrow(/scheme/i)
-    await expect(assertSafeAcpUrl('javascript:alert(1)', { forwardsCredentials: false }))
-      .rejects.toThrow(UnsafeAcpUrlError)
+    await expect(assertSafeUrl('javascript:alert(1)', { forwardsCredentials: false }))
+      .rejects.toThrow(UnsafeUrlError)
   })
 
   it('rejects http when credentials would be forwarded', async () => {
     // 8.8.8.8 resolves to public — without forwardsCredentials this
     // would pass. With creds, the http variant fails.
     try {
-      await assertSafeAcpUrl('http://8.8.8.8/agent/card', { forwardsCredentials: true })
+      await assertSafeUrl('http://8.8.8.8/agent/card', { forwardsCredentials: true })
       throw new Error('should have rejected')
     } catch (err) {
-      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
-      expect((err as UnsafeAcpUrlError).reason).toBe('plaintext_credentials')
+      expect(err).toBeInstanceOf(UnsafeUrlError)
+      expect((err as UnsafeUrlError).reason).toBe('plaintext_credentials')
     }
   })
 
   it('rejects URLs with embedded userinfo', async () => {
-    await expect(assertSafeAcpUrl('https://user:pass@example.com/', { forwardsCredentials: false }))
+    await expect(assertSafeUrl('https://user:pass@example.com/', { forwardsCredentials: false }))
       .rejects.toThrow(/userinfo|embedded/i)
   })
 
   it('rejects RFC1918 hostnames after DNS resolve', async () => {
     // Literal IPs short-circuit DNS to the same value, so 192.168.x → fail.
     try {
-      await assertSafeAcpUrl('http://192.168.1.1/.well-known/acp', { forwardsCredentials: false })
+      await assertSafeUrl('http://192.168.1.1/.well-known/acp', { forwardsCredentials: false })
       throw new Error('should have rejected')
     } catch (err) {
-      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
-      expect((err as UnsafeAcpUrlError).reason).toBe('private_address')
+      expect(err).toBeInstanceOf(UnsafeUrlError)
+      expect((err as UnsafeUrlError).reason).toBe('private_address')
     }
   })
 
   it('rejects 169.254.169.254 (cloud metadata)', async () => {
     try {
-      await assertSafeAcpUrl('http://169.254.169.254/latest/meta-data/', { forwardsCredentials: false })
+      await assertSafeUrl('http://169.254.169.254/latest/meta-data/', { forwardsCredentials: false })
       throw new Error('should have rejected')
     } catch (err) {
-      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
-      expect((err as UnsafeAcpUrlError).reason).toBe('private_address')
+      expect(err).toBeInstanceOf(UnsafeUrlError)
+      expect((err as UnsafeUrlError).reason).toBe('private_address')
     }
   })
 
   it('rejects loopback by default', async () => {
     try {
-      await assertSafeAcpUrl('http://127.0.0.1:6379/.well-known/acp', { forwardsCredentials: false })
+      await assertSafeUrl('http://127.0.0.1:6379/.well-known/acp', { forwardsCredentials: false })
       throw new Error('should have rejected')
     } catch (err) {
-      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
-      expect((err as UnsafeAcpUrlError).reason).toBe('private_address')
+      expect(err).toBeInstanceOf(UnsafeUrlError)
+      expect((err as UnsafeUrlError).reason).toBe('private_address')
     }
   })
 
   it('allows loopback when AGIM_ACP_ALLOW_LOOPBACK=1 (dev path)', async () => {
     process.env[ALLOW] = '1'
-    const u = await assertSafeAcpUrl('http://127.0.0.1:8080/agent/card', { forwardsCredentials: false })
+    const u = await assertSafeUrl('http://127.0.0.1:8080/agent/card', { forwardsCredentials: false })
     expect(u.host).toBe('127.0.0.1:8080')
   })
 
   it('allows loopback when AGIM_URL_ALLOW_PRIVATE=1 (shared LLM/MCP hatch)', async () => {
     process.env[ALLOW_PRIVATE] = '1'
-    const u = await assertSafeAcpUrl('http://127.0.0.1:11434/v1', { forwardsCredentials: false })
+    const u = await assertSafeUrl('http://127.0.0.1:11434/v1', { forwardsCredentials: false })
     expect(u.port).toBe('11434')
   })
 
   it('accepts a public https URL without credentials', async () => {
-    const u = await assertSafeAcpUrl(
+    const u = await assertSafeUrl(
       'https://example.com/.well-known/acp',
       { forwardsCredentials: false },
       publicLookup,
@@ -154,7 +154,7 @@ describe('assertSafeAcpUrl', () => {
   })
 
   it('accepts a public https URL when credentials are forwarded', async () => {
-    const u = await assertSafeAcpUrl(
+    const u = await assertSafeUrl(
       'https://example.com/agent/card',
       { forwardsCredentials: true },
       publicLookup,
@@ -164,25 +164,25 @@ describe('assertSafeAcpUrl', () => {
 
   it('fails closed when DNS resolution fails', async () => {
     try {
-      await assertSafeAcpUrl(
+      await assertSafeUrl(
         'https://example.com/agent/card',
         { forwardsCredentials: false },
         async () => { throw new Error('resolver offline') },
       )
       throw new Error('should have rejected')
     } catch (err) {
-      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
-      expect((err as UnsafeAcpUrlError).reason).toBe('dns_failed')
+      expect(err).toBeInstanceOf(UnsafeUrlError)
+      expect((err as UnsafeUrlError).reason).toBe('dns_failed')
     }
   })
 
   it('garbage input throws url_parse', async () => {
     try {
-      await assertSafeAcpUrl('not a url', { forwardsCredentials: false })
+      await assertSafeUrl('not a url', { forwardsCredentials: false })
       throw new Error('should have rejected')
     } catch (err) {
-      expect(err).toBeInstanceOf(UnsafeAcpUrlError)
-      expect((err as UnsafeAcpUrlError).reason).toBe('url_parse')
+      expect(err).toBeInstanceOf(UnsafeUrlError)
+      expect((err as UnsafeUrlError).reason).toBe('url_parse')
     }
   })
 })

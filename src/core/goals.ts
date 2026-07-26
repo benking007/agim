@@ -6,16 +6,13 @@
 //   - `/heartbeat`  — periodic self-check that asks the agent if anything
 //                     is worth doing right now (binding body = what to
 //                     watch). Each tick is independent.
-//   - `/goal`       — sustained MULTI-TURN objective: "ship v1.3.0 by
-//                     Friday" / "research X over the next week". The
-//                     agent sees the active goal injected into EVERY
-//                     turn's prompt so it can keep the user on-mission
-//                     across many back-and-forths. Users / agent log
-//                     progress notes; on completion the row stays for
-//                     historical browsing.
+//   - Focus storage — sustained MULTI-TURN objective: "ship v1.3.0 by
+//                     Friday" / "research X over the next week". Focus
+//                     reads/writes retained rows so the thread can stay
+//                     on-mission across many back-and-forths.
 //
-// One ACTIVE goal per thread at a time. Older goals are kept on disk
-// for /goal list browsing but never injected into prompts.
+// One ACTIVE retained row per thread at a time. Older rows are kept on
+// disk for migration/audit use but are not the product surface.
 //
 // Storage: ~/.agim/goals.db (SQLite), same fail-soft helper as the
 // rest of agim's per-user state.
@@ -35,7 +32,7 @@ export const MAX_BODY_CHARS = 4_000
 export const MAX_PROGRESS_NOTE_CHARS = 500
 export const MAX_PROGRESS_NOTES_INJECTED = 5  // most recent
 
-/** Most-recent N progress notes shown in /goal show output. */
+/** Most-recent N progress notes shown in operator-facing summaries. */
 const MAX_PROGRESS_NOTES_LISTED = 20
 
 /** Goal lifecycle states.
@@ -256,9 +253,7 @@ function rowFromRaw(r: GoalRowRaw): GoalRow {
  * Set (or replace) the ACTIVE goal for a thread. Idempotent semantics:
  * if there's already an active goal, it's auto-paused first (kept in
  * the table) and a fresh row replaces it. This avoids accidental
- * silent drops of partially-tracked work — the operator can /goal
- * list to find paused predecessors and /goal resume <id> if they
- * changed their mind.
+ * silent drops of partially-tracked work.
  */
 export function setActiveGoal(input: {
   platform: string
@@ -314,9 +309,8 @@ export function setActiveGoal(input: {
   }
 }
 
-/** Append a progress note to a goal. Caller picks `by` (typically
- *  'user' for /goal progress, 'agent' for future MCP tool call,
- *  'system' for status transitions). */
+/** Append a progress note to a retained row. Caller picks `by`
+ *  ('user', 'agent', or 'system'). */
 export function appendProgress(goalId: number, by: ProgressNote['by'], text: string): boolean {
   const d = getDb()
   if (!d) return false
@@ -328,7 +322,7 @@ export function appendProgress(goalId: number, by: ProgressNote['by'], text: str
   if (!note.text) return false
   try {
     // Read-modify-write inside one transaction so two near-simultaneous
-    // /goal progress calls don't clobber each other.
+    // progress writes don't clobber each other.
     const tx = d.transaction((): boolean => {
       const row = d.prepare(`SELECT progress_log FROM goals WHERE id = ?`).get(goalId) as { progress_log: string } | undefined
       if (!row) return false
@@ -497,7 +491,7 @@ export function applyGoalTimeoutBoost(
   return Math.min(Math.floor(base * mult), HARD_CAP_MS)
 }
 
-/** All goals (any status) for a thread, newest first. Used by /goal list. */
+/** All retained rows (any status) for a thread, newest first. */
 export function listGoalsForThread(platform: string, channelId: string, threadId: string, limit = 20): GoalRow[] {
   const d = getDb()
   if (!d) return []
@@ -544,7 +538,6 @@ export function buildGoalSnippet(platform: string, channelId: string, threadId: 
   if (!goal) return ''
   const lines: string[] = []
   lines.push(`[agim context — active goal #${goal.id} for this thread]`)
-  lines.push(`Completion token: {"goalId":${goal.id},"goalVersion":${goal.version}}`)
   lines.push(`Mutation epoch: ${goal.mutationEpoch}`)
   lines.push(`Evidence required: ${goal.evidenceRequired ? 'yes' : 'no'}`)
   lines.push(`Title: ${goal.title}`)
@@ -562,12 +555,12 @@ export function buildGoalSnippet(platform: string, channelId: string, threadId: 
       lines.push(`  - ${t} (${note.by}) ${note.text}`)
     }
   }
-  lines.push(`Use this goal to keep replies on-mission. To complete it, pass this exact goalId/goalVersion${goal.evidenceRequired ? ' plus current server-issued evidence IDs' : ''} to complete_goal. Ignore if the user explicitly changes topic.`)
+  lines.push('Use this Focus-backed goal state to keep replies on-mission. Use Loop for closure and verification. Ignore if the user explicitly changes topic.')
   lines.push('')
   return lines.join('\n')
 }
 
-/** For /goal show — render an operator-facing summary including ALL
+/** Render an operator-facing summary including ALL
  *  retained progress notes (capped at MAX_PROGRESS_NOTES_LISTED so the
  *  IM bubble doesn't explode). */
 export function formatGoalShow(goal: GoalRow): string {

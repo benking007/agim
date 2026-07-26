@@ -72,13 +72,6 @@ export interface Config {
     }>
   }
   discord?: { botToken: string; channelId?: string; allowedGuilds?: string[]; allowedChannels?: string[] }
-  acpAgents?: Array<{
-    name: string
-    aliases?: string[]
-    endpoint: string
-    auth?: { type: 'none' | 'apikey' | 'bearer'; token?: string }
-    enabled?: boolean
-  }>
   [key: string]: unknown
 }
 

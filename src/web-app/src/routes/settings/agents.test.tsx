@@ -7,12 +7,7 @@
  *     AND online (eligibleDefaults invariant)
  *   * Disabling the current default clears the picker so Save can't
  *     ship an inconsistent {agents[], defaultAgent} pair
- *   * Save sends one PUT /api/config carrying agents + defaultAgent +
- *     acpAgents atomically
- *   * ACP "Add" form stages a new entry on Save; masked auth tokens
- *     in existing entries aren't shipped back on the wire
- *   * ACP "Test" against an entry whose token is masked nudges the
- *     operator to Save first instead of sending the mask to the server
+ *   * Save sends one PUT /api/config carrying agents + defaultAgent
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -61,13 +56,9 @@ function renderPage(): ReturnType<typeof render> {
 const CONFIG = {
   agents: ['claude-code', 'codex'],
   defaultAgent: 'claude-code',
-  acpAgents: [],
   defaultAgentDescription: '',
   messengers: [],
-  // R12 compliance gate — ACP card is rendered only when the server
-  // advertises features.remoteAgent. Tests cover the gated-on path;
-  // the gated-off path is exercised by R12's server tests.
-  features: { remoteAgent: true, globalIm: true },
+  features: { globalIm: true },
 }
 
 const STATUS = {
@@ -126,9 +117,7 @@ describe('/settings/agents — built-in adapters', () => {
     renderPage()
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
     // The select uses Radix; opening it surfaces SelectItem options.
-    // There are multiple Selects on the page (ACP add form has the
-    // auth-type select); scope to the default-agent picker via its
-    // input id.
+    // Scope to the default-agent picker via its input id.
     const defaultAgentTrigger = document.getElementById('default-agent')
     expect(defaultAgentTrigger).not.toBeNull()
     fireEvent.click(requireValue(defaultAgentTrigger, 'default agent trigger'))
@@ -177,74 +166,11 @@ describe('/settings/agents — built-in adapters', () => {
       const body = JSON.parse(String(request.body)) as {
         agents: string[]
         defaultAgent: string
-        acpAgents: unknown[]
       }
       // Both built-in changes and the existing defaultAgent travel
-      // together — single PUT, three fields.
+      // together in a single PUT.
       expect(body.agents).toContain('opencode')
       expect(body.defaultAgent).toBe('claude-code')
-      expect(Array.isArray(body.acpAgents)).toBe(true)
-    })
-  })
-})
-
-describe('/settings/agents — ACP card', () => {
-  it('renders the ACP empty-state when acpAgents is empty', async () => {
-    mockStandardFetch()
-    renderPage()
-    await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
-    expect(screen.getByText(/no remote agents|暂无远程/i)).toBeInTheDocument()
-  })
-
-  it('lists existing ACP agents with their auth-type badge', async () => {
-    mockStandardFetch({
-      acpAgents: [
-        {
-          name: 'weather-bot',
-          endpoint: 'https://example.com/agents/weather',
-          aliases: ['w'],
-          auth: { type: 'bearer', token: 'abcd****wxyz' }, // masked
-          enabled: true,
-        },
-      ],
-    })
-    renderPage()
-    await waitFor(() => expect(screen.getByText('weather-bot')).toBeInTheDocument())
-    // Endpoint mono-font visible
-    expect(screen.getByText('https://example.com/agents/weather')).toBeInTheDocument()
-    // Auth-type badge — i18n lookup ('Bearer' in en; should appear).
-    expect(screen.getAllByText(/bearer/i).length).toBeGreaterThan(0)
-  })
-
-  it('Add form stages a new entry; saves through PUT /api/config', async () => {
-    const fetchSpy = mockStandardFetch()
-    renderPage()
-    await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
-
-    // Fill the add form: name, endpoint, default auth=none → no token needed
-    const nameInput = screen.getByPlaceholderText('my-agent')
-    const endpointInput = screen.getByPlaceholderText(/https:\/\/example\.com\/agents/)
-    fireEvent.change(nameInput, { target: { value: 'new-agent' } })
-    fireEvent.change(endpointInput, { target: { value: 'https://acp.example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: /^add$/i }))
-    // After Add, the entry is staged + Save bar appears.
-    await waitFor(() => {
-      expect(screen.getByText('new-agent')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
-    await waitFor(() => {
-      const putCall = fetchSpy.mock.calls.find(
-        (c) => String(c[0]) === '/api/config' && (c[1] as RequestInit | undefined)?.method === 'PUT',
-      )
-      expect(putCall).toBeDefined()
-      const request = requireValue(putCall?.[1] as RequestInit | undefined, 'ACP config request')
-      const body = JSON.parse(String(request.body)) as {
-        acpAgents: Array<{ name: string; endpoint: string }>
-      }
-      const staged = body.acpAgents.find((a) => a.name === 'new-agent')
-      expect(staged).toBeDefined()
-      expect(staged?.endpoint).toBe('https://acp.example.com')
     })
   })
 })

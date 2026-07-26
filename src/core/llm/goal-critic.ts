@@ -33,8 +33,8 @@
 //     semantic second (LLM cost + latency).
 //
 // Cost model:
-//   - Default OFF unless the env switch is set OR an active long_task
-//     goal is present on the thread. Daily-driver short turns don't
+//   - Default OFF unless the env switch is set OR active Focus-backed
+//     goal state is present on the thread. Daily-driver short turns don't
 //     pay anything.
 //   - Throttled by a per-turn min-iteration gate (default 5) AND a
 //     per-turn max-call gate (default 2) so a single turn can't fire
@@ -113,8 +113,8 @@ const DEFAULT_SYSTEM_PROMPT =
  *    goal exists. Per-turn prompts alone don't trigger.
  *
  *  This matches the cost story documented in CHANGELOG: day-to-day
- *  single-turn chats pay nothing; the critic is reserved for the
- *  long-horizon work signalled by an explicit /long_task goal. */
+ *  single-turn chats pay nothing; the critic is reserved for
+ *  long-horizon work signalled by Focus-backed goal state. */
 export type CriticMode = 'off' | 'always' | 'goal-only'
 export function resolveCriticMode(): CriticMode {
   const raw = (process.env.AGIM_NATIVE_CRITIC || '').toLowerCase().trim()

@@ -1,28 +1,18 @@
 /**
- * Operator-supplied URL safety guard for the ACP REST endpoints.
+ * Operator-supplied URL safety guard for outbound HTTP integrations.
  *
- * Two operator-controlled paths reach `fetch()` in this codebase:
- *   1. POST /api/agents/acp/discover  → discoverAgents(baseUrl)         (no auth forwarded)
- *   2. POST /api/agents/acp/test      → new ACPClient({endpoint, auth}) (auth IS forwarded)
- *
- * Without validation, an authenticated operator (or someone holding a
- * leaked admin token) could:
- *   * SSRF: probe internal services via http://127.0.0.1:6379/...,
- *     http://169.254.169.254/latest/meta-data/, IPv6 ULA, link-local.
- *   * Credential exfil: send `auth.token` to an attacker-chosen host
- *     (via /test).
+ * Callers use this before persisting or fetching user-configured URLs
+ * that could otherwise probe internal services or leak credentials.
  *
  * The guard:
  *   * Enforces http/https scheme (rejects file:, gopher:, etc.).
  *   * For credentialed calls, requires https.
  *   * Resolves the hostname via DNS and refuses loopback, link-local,
- *     and RFC1918 / IPv6 ULA addresses. This catches both a literal IP
- *     (192.168.1.1) and a name that resolves to one
- *     (metadata.internal → 169.254.169.254).
+ *     and RFC1918 / IPv6 ULA addresses.
  *
  * Escape hatch (either env disables the private-address block):
- *   - AGIM_ACP_ALLOW_LOOPBACK=1 — historical ACP-specific name
- *   - AGIM_URL_ALLOW_PRIVATE=1  — shared name for LLM/MCP/ACP local URLs
+ *   - AGIM_ACP_ALLOW_LOOPBACK=1 — historical name kept for old setups
+ *   - AGIM_URL_ALLOW_PRIVATE=1  — shared name for LLM/MCP/local URLs
  * Intended for development against `localhost:<port>` / LAN Ollama etc.;
  * never set these in shared deployments.
  *
@@ -36,22 +26,23 @@ const ALLOW_LOOPBACK_ENV = 'AGIM_ACP_ALLOW_LOOPBACK'
 const ALLOW_PRIVATE_ENV = 'AGIM_URL_ALLOW_PRIVATE'
 
 export interface AssertSafeOptions {
-  /** When true, only https URLs are accepted (the request will carry a
-   *  bearer / apikey token). Drops the http allowance entirely so a
-   *  passive on-path observer can't sniff the token. */
+  /** When true, only https URLs are accepted because the request carries credentials. */
   forwardsCredentials: boolean
 }
 
 type LookupHost = (hostname: string) => Promise<{ address: string; family: number }>
 
-export class UnsafeAcpUrlError extends Error {
+export class UnsafeUrlError extends Error {
   constructor(message: string, public readonly reason: string) {
     super(message)
-    this.name = 'UnsafeAcpUrlError'
+    this.name = 'UnsafeUrlError'
   }
 }
 
-export async function assertSafeAcpUrl(
+/** @deprecated Use UnsafeUrlError. */
+export const UnsafeAcpUrlError = UnsafeUrlError
+
+export async function assertSafeUrl(
   raw: string,
   opts: AssertSafeOptions,
   lookupHost: LookupHost = lookup,
@@ -60,31 +51,28 @@ export async function assertSafeAcpUrl(
   try {
     u = new URL(raw)
   } catch {
-    throw new UnsafeAcpUrlError(`Not a valid URL: ${raw}`, 'url_parse')
+    throw new UnsafeUrlError(`Not a valid URL: ${raw}`, 'url_parse')
   }
 
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-    throw new UnsafeAcpUrlError(
+    throw new UnsafeUrlError(
       `Scheme '${u.protocol}' not allowed (use http: or https:)`,
       'scheme_blocked',
     )
   }
   if (opts.forwardsCredentials && u.protocol !== 'https:') {
-    throw new UnsafeAcpUrlError(
-      'https required for credentialed ACP calls',
+    throw new UnsafeUrlError(
+      'https required for credentialed HTTP calls',
       'plaintext_credentials',
     )
   }
   if (u.username || u.password) {
-    // Don't allow operator-supplied `user:pass@host` — we already pass
-    // creds via headers, and the URL form leaks into logs.
-    throw new UnsafeAcpUrlError(
+    throw new UnsafeUrlError(
       'URL must not embed userinfo',
       'embedded_userinfo',
     )
   }
 
-  // DNS resolve to detect names that point at private space.
   let address: string
   let family: 4 | 6
   try {
@@ -92,7 +80,7 @@ export async function assertSafeAcpUrl(
     address = r.address
     family = (r.family === 6 ? 6 : 4) as 4 | 6
   } catch (err) {
-    throw new UnsafeAcpUrlError(
+    throw new UnsafeUrlError(
       `DNS lookup failed for ${u.hostname}: ${err instanceof Error ? err.message : String(err)}`,
       'dns_failed',
     )
@@ -102,7 +90,7 @@ export async function assertSafeAcpUrl(
     process.env[ALLOW_LOOPBACK_ENV] === '1'
     || process.env[ALLOW_PRIVATE_ENV] === '1'
   if (isPrivateAddr(address, family) && !allowPrivate) {
-    throw new UnsafeAcpUrlError(
+    throw new UnsafeUrlError(
       `Address ${address} (${u.hostname}) not allowed — set ${ALLOW_PRIVATE_ENV}=1 `
       + `(or ${ALLOW_LOOPBACK_ENV}=1) if intentional`,
       'private_address',
@@ -112,27 +100,27 @@ export async function assertSafeAcpUrl(
   return u
 }
 
-/** RFC1918 + loopback + link-local + IPv6 ULA + 0.0.0.0. Exported for
- *  unit tests. */
+/** @deprecated Use assertSafeUrl. */
+export const assertSafeAcpUrl = assertSafeUrl
+
+/** RFC1918 + loopback + link-local + IPv6 ULA + 0.0.0.0. Exported for unit tests. */
 export function isPrivateAddr(ip: string, family: 4 | 6): boolean {
   if (family === 4) {
     if (ip === '0.0.0.0') return true
-    if (/^127\./.test(ip)) return true                       // loopback
-    if (/^10\./.test(ip)) return true                        // RFC1918
-    if (/^192\.168\./.test(ip)) return true                  // RFC1918
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true   // RFC1918
-    if (/^169\.254\./.test(ip)) return true                  // link-local (incl. AWS/GCP metadata 169.254.169.254)
+    if (/^127\./.test(ip)) return true
+    if (/^10\./.test(ip)) return true
+    if (/^192\.168\./.test(ip)) return true
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true
+    if (/^169\.254\./.test(ip)) return true
     return false
   }
-  // IPv6
   const lower = ip.toLowerCase()
   if (lower === '::' || lower === '::1') return true
   if (/^::ffff:/.test(lower)) {
-    // IPv4-mapped IPv6 — check the embedded v4
     const v4 = lower.slice(7)
     return isPrivateAddr(v4, 4)
   }
-  if (/^f[cd]/.test(lower)) return true   // ULA fc00::/7
-  if (/^fe[89ab]/.test(lower)) return true // link-local fe80::/10
+  if (/^f[cd]/.test(lower)) return true
+  if (/^fe[89ab]/.test(lower)) return true
   return false
 }

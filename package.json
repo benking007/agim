@@ -1,7 +1,7 @@
 {
   "name": "agim-cli",
   "version": "1.5.76",
-  "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Connect WeChat / Feishu / DingTalk / Telegram / Discord / Email to Claude Code, Codex, Copilot, Kimi Code, Qoder, PI, MiMo, native LLM, or any custom ACP agent.",
+  "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Connect WeChat / Feishu / DingTalk / Telegram / Discord / Email to Claude Code, Codex, Copilot, Kimi Code, Qoder, PI, MiMo, or Agim Agent.",
   "type": "module",
   "bin": {
     "agim": "dist/cli.js"
@@ -61,8 +61,7 @@
     "antigravity",
     "bot",
     "agent",
-    "bridge",
-    "acp"
+    "bridge"
   ],
   "author": "Jerry",
   "license": "MIT",

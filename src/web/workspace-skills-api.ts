@@ -7,7 +7,6 @@
 //
 // Endpoints:
 //   GET /api/skills              → list all installed skills   — any authenticated peer
-//   GET /api/skills/remote/hot   → top-50 from skillhub.cn    — any authenticated peer
 //   GET /api/skills/:slug        → full SKILL.md content       — any authenticated peer
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -29,9 +28,6 @@ export async function handleWorkspaceSkillsApi(
 
   if (p === '/api/skills' && m === 'GET') {
     await handleSkillsList(req, res); return true
-  }
-  if (p === '/api/skills/remote/hot' && m === 'GET') {
-    await handleSkillsRemoteHot(req, res); return true
   }
   const skillDetailMatch = p.match(/^\/api\/skills\/([A-Za-z0-9._-]+)$/)
   if (skillDetailMatch && m === 'GET') {
@@ -149,14 +145,6 @@ export function listSkills(): SkillMeta[] {
   })
 }
 
-export let remoteHotCache: { fetchedAt: number; data: unknown } | null = null
-const REMOTE_HOT_TTL_MS = 5 * 60_000
-
-export function isSkillhubEnabled(): boolean {
-  const v = (process.env.AGIM_SKILLHUB_ENABLED ?? '1').trim().toLowerCase()
-  return v !== '0' && v !== 'false' && v !== 'no' && v !== 'off'
-}
-
 async function handleSkillsList(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const skills = listSkills()
@@ -170,44 +158,6 @@ async function handleSkillsList(_req: IncomingMessage, res: ServerResponse): Pro
     })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
-  }
-}
-
-async function handleSkillsRemoteHot(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if (!isSkillhubEnabled()) {
-    sendJson(res, 200, { disabled: true, items: [], reason: 'AGIM_SKILLHUB_ENABLED=0' })
-    return
-  }
-  try {
-    if (remoteHotCache && Date.now() - remoteHotCache.fetchedAt < REMOTE_HOT_TTL_MS) {
-      sendJson(res, 200, { ...(remoteHotCache.data as Record<string, unknown>), cached: true, fetchedAt: remoteHotCache.fetchedAt })
-      return
-    }
-    const r = await fetch('https://api.skillhub.cn/api/v1/showcase/hot', {
-      signal: AbortSignal.timeout(8000),
-      headers: { accept: 'application/json' },
-    })
-    if (!r.ok) {
-      if (remoteHotCache) {
-        sendJson(res, 200, { ...(remoteHotCache.data as Record<string, unknown>), cached: true, fetchedAt: remoteHotCache.fetchedAt, stale: true, upstreamStatus: r.status })
-        return
-      }
-      sendJson(res, 502, { error: `skillhub upstream ${r.status}` })
-      return
-    }
-    const json = await r.json() as Record<string, unknown>
-    remoteHotCache = { fetchedAt: Date.now(), data: json }
-    sendJson(res, 200, { ...json, cached: false, fetchedAt: remoteHotCache.fetchedAt })
-  } catch (err) {
-    if (remoteHotCache) {
-      sendJson(res, 200, {
-        ...(remoteHotCache.data as Record<string, unknown>),
-        cached: true, fetchedAt: remoteHotCache.fetchedAt, stale: true,
-        upstreamError: err instanceof Error ? err.message : String(err),
-      })
-      return
-    }
-    sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) })
   }
 }
 

@@ -34,7 +34,6 @@
 // `source: 'unknown'` so `combineDispatchers(builtin, agim, mcp)`
 // can fall through to the next layer (external MCP servers).
 
-import { AGIM_AGENT_ID } from '../naming-migrate.js'
 import { logger as rootLogger } from '../logger.js'
 import type { ToolDispatcher, DispatcherResult } from './tool-dispatcher.js'
 import type { ToolDef } from './provider-base.js'
@@ -57,9 +56,6 @@ import {
   mapPool,
 } from '../subagent-parallel.js'
 import { describeRegistry, listProviders } from './registry.js'
-import { resolveCompleteGoalToolTimeoutMs } from '../goal-rpc.js'
-import { hashWorkspaceScope } from '../goal-evidence.js'
-import { defaultAgentCwd, resolveAgentCwd } from '../agent-cwd.js'
 import {
   createReminder,
   listReminders,
@@ -471,8 +467,7 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__focus_set',
       description:
-        'Set this thread\'s Focus (attention anchor) and turn injection ON. Prefer this over the ' +
-        'deprecated long_task tool. Focus is injected each turn while on; it is NOT a completion gate.',
+        'Set this thread\'s Focus (attention anchor) and turn injection ON. Focus is injected each turn while on; it is NOT a completion gate.',
       parameters: {
         type: 'object',
         properties: {
@@ -539,54 +534,6 @@ export function getAgimTools(): ToolDef[] {
       // inherit the Native Agent tool-bridge 60s default — that aborts after the
       // Loop already ended and the model retries into no_active_loop.
       timeoutMs: 0,
-    },
-    {
-      name: 'mcp__agim__long_task',
-      description:
-        'DEPRECATED — use mcp__agim__focus_set. Registers Focus (was: sustained goal) for this thread.',
-      parameters: {
-        type: 'object',
-        properties: {
-          goal: {
-            type: 'string',
-            description: 'Focus title (legacy field name `goal`).',
-          },
-          summary: {
-            type: 'string',
-            description: 'Optional body / notes.',
-          },
-          force: {
-            type: 'boolean',
-            description: 'Override existing Focus when true.',
-          },
-        },
-        required: ['goal'],
-      },
-    },
-    {
-      name: 'mcp__agim__complete_goal',
-      description:
-        'DEPRECATED — completion is not part of Focus. Prefer /loop (loop_verdict stop) for engineering ' +
-        'closure. Legacy CAS complete may still run for older goal rows.',
-      parameters: {
-        type: 'object',
-        properties: {
-          goalId: { type: 'number', description: 'Exact positive goalId from the active-goal Completion token.' },
-          goalVersion: { type: 'number', description: 'Exact positive goalVersion from the Completion token.' },
-          evidenceIds: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Current `[agim evidence ...]` capability IDs supporting completion.',
-          },
-          recap: { type: 'string', description: 'One-line honest summary of how the goal ended.' },
-          status: { type: 'string', enum: ['completed', 'cancelled'] },
-        },
-        required: ['goalId', 'goalVersion', 'recap'],
-        additionalProperties: false,
-      },
-      // Human confirmation can take minutes; do not inherit the 60s tool
-      // default. Budget = confirmation timeout + settle margin.
-      timeoutMs: resolveCompleteGoalToolTimeoutMs(),
     },
     {
       name: 'mcp__agim__create_reminder',
@@ -1417,53 +1364,6 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             ...(advancedRound ? { callAgentCapReset: true } : {}),
             ...(notes.length ? { note: notes.join(' ') } : {}),
           }))
-        }
-        case 'long_task':
-        case 'complete_goal': {
-          // Deprecated aliases — long_task → focus_set; complete_goal still CAS for legacy.
-          if (op === 'long_task') {
-            const focusMod = await import('../focus.js')
-            const title = typeof args.goal === 'string' ? args.goal.trim() : ''
-            if (!title) return err('long_task failed: goal required')
-            const existing = focusMod.getFocusOn(ctx.platform, ctx.channelId, ctx.threadId)
-            if (existing && args.force !== true) {
-              return err('long_task failed: focus already on (pass force:true); prefer mcp__agim__focus_set')
-            }
-            const row = focusMod.setFocus({
-              platform: ctx.platform,
-              channelId: ctx.channelId,
-              threadId: ctx.threadId,
-              userId: ctx.userId,
-              title,
-              body: typeof args.summary === 'string' ? args.summary : undefined,
-              replaceActive: true,
-            })
-            if (!row) return err('long_task failed: persist')
-            return ok(safeJson({
-              deprecated: true,
-              prefer: 'mcp__agim__focus_set',
-              focus: row,
-            }))
-          }
-          const { handleGoalOp } = await import('../goal-rpc.js')
-          const r = await handleGoalOp(op, args, {
-            platform: ctx.platform,
-            channelId: ctx.channelId,
-            threadId: ctx.threadId,
-            userId: ctx.userId,
-            callerAgent: ctx.callerAgent,
-            traceId: toolCtx?.traceId,
-            signal,
-            workspaceScope: hashWorkspaceScope(
-              resolveAgentCwd(AGIM_AGENT_ID, {
-                platform: ctx.platform,
-                channelId: ctx.channelId,
-                threadId: ctx.threadId,
-              }) || defaultAgentCwd(AGIM_AGENT_ID),
-            ),
-          })
-          if (!r.ok) return err(`${op} failed: ${r.error}`)
-          return ok(safeJson({ deprecated: true, prefer: '/loop or loop_verdict', ...((r.result && typeof r.result === 'object') ? r.result as object : { result: r.result }) }))
         }
         case 'create_reminder': {
           // v1.2.98 — wire reminder tools into native (was previously

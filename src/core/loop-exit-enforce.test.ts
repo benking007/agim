@@ -37,6 +37,9 @@ function seed(dir: string, over: Record<string, unknown> = {}) {
   const threadId = `t-exit-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`
   const sessionKey = `${platform}__${channelId}__${threadId}`
   const now = Date.now()
+  const fields = over.fields && typeof over.fields === 'object' && !Array.isArray(over.fields)
+    ? over.fields as Record<string, unknown>
+    : {}
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   writeFileSync(join(dir, `${sessionKey}.json`), JSON.stringify({
     id: 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -63,7 +66,7 @@ function seed(dir: string, over: Record<string, unknown> = {}) {
     createdAt: over.oldCreated ? now - 60_000 : now,
     updatedAt: now,
     timeline: [],
-    ...over.fields,
+    ...fields,
   }), 'utf8')
   return { platform, channelId, threadId }
 }

@@ -4,7 +4,6 @@
 //   Before this module, three subsystems captured `config.defaultAgent`
 //   at boot time as a value snapshot:
 //     - startWebServer(options.defaultAgent)
-//     - startACPServer(options.defaultAgent)
 //     - cli.ts onMessage → routeCtx.defaultAgent = config.defaultAgent
 //   The PUT /api/config endpoint persisted changes to disk but never
 //   refreshed those snapshots, so flipping the default Agent in the SPA

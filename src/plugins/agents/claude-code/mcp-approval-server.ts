@@ -48,12 +48,6 @@ interface PendingReminderRpc {
 type MemoResult = ReminderResult
 type PendingMemoRpc = PendingReminderRpc
 
-// Goal RPC (v1.2.63) — long_task / complete_goal. Same shape as
-// reminder/memo; separate channel so concurrent in-flight goal calls
-// don't fight other RPCs.
-type GoalResult = ReminderResult
-type PendingGoalRpc = PendingReminderRpc
-
 // A2A-L1 — Agent-to-Agent call result. Unlike reminder/memo, the wire
 // carries explicit jobId/agent/durationMs on success so the caller agent
 // can include them in its response to the user.
@@ -125,7 +119,6 @@ class ApprovalClient {
   private pendingMemory = new Map<string, PendingMemoryRpc>()
   private pendingAsk = new Map<string, PendingAskRpc>()
   private pendingSkill = new Map<string, PendingSkillRpc>()
-  private pendingGoal = new Map<string, PendingGoalRpc>()
   private pendingNativeTools = new Map<string, PendingNativeToolRpc>()
   private connectErr: Error | null = null
   private closed = false
@@ -227,21 +220,6 @@ class ApprovalClient {
       if (ok) {
         p.resolve({ ok: true, result: m.result })
       } else {
-        const error = typeof m.error === 'string' ? m.error : 'unknown error'
-        p.resolve({ ok: false, error })
-      }
-      return
-    }
-
-    if (m.type === 'goal.result') {
-      const reqId = typeof m.reqId === 'string' ? m.reqId : null
-      if (!reqId) return
-      const p = this.pendingGoal.get(reqId)
-      if (!p) return
-      this.pendingGoal.delete(reqId)
-      const ok = m.ok === true
-      if (ok) p.resolve({ ok: true, result: m.result })
-      else {
         const error = typeof m.error === 'string' ? m.error : 'unknown error'
         p.resolve({ ok: false, error })
       }
@@ -417,10 +395,6 @@ class ApprovalClient {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
     this.pendingSkill.clear()
-    for (const [, p] of this.pendingGoal) {
-      p.resolve({ ok: false, error: 'approval bus disconnected' })
-    }
-    this.pendingGoal.clear()
     for (const [, p] of this.pendingNativeTools) {
       p.resolve({ ok: false, error: 'approval bus disconnected' })
     }
@@ -612,32 +586,6 @@ class ApprovalClient {
       this.socket?.write(wire, (err) => {
         if (err) {
           this.pendingAsk.delete(reqId)
-          resolve({ ok: false, error: `write failed: ${err.message}` })
-        }
-      })
-    })
-  }
-
-  /** v1.2.63 — goal RPC. op ∈ 'long_task' | 'complete_goal'. */
-  async requestGoal(op: string, payload: Record<string, unknown>): Promise<GoalResult> {
-    await this.connectPromise
-    if (this.connectErr || this.closed || !this.socket) {
-      return { ok: false, error: `bus unavailable: ${this.connectErr?.message ?? 'closed'}` }
-    }
-    const reqId = randomUUID()
-    const wire = `${JSON.stringify({
-      v: 1,
-      type: 'goal',
-      runId: this.runId,
-      reqId,
-      op,
-      payload,
-    })}\n`
-    return new Promise<GoalResult>((resolve) => {
-      this.pendingGoal.set(reqId, { resolve })
-      this.socket?.write(wire, (err) => {
-        if (err) {
-          this.pendingGoal.delete(reqId)
           resolve({ ok: false, error: `write failed: ${err.message}` })
         }
       })
@@ -1451,7 +1399,7 @@ export function buildServer(client: ApprovalClient): McpServer {
         'success or {ok: false, error}.',
       inputSchema: {
         agent: z.string().describe(
-          'Target agent name or alias, for example claude-code, codex, copilot, opencode, kimi-code, qoder, pi, mimo, native, or a remote ACP agent. ' +
+          'Target agent name or alias, for example claude-code, codex, copilot, opencode, kimi-code, qoder, pi, mimo, or native. ' +
           'Must not be the calling agent itself.',
         ),
         prompt: z.string().describe(
@@ -1497,60 +1445,6 @@ export function buildServer(client: ApprovalClient): McpServer {
         ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
         ...(Array.isArray(args.inputs) ? { inputs: args.inputs as Parameters<typeof client.requestCallAgent>[0]['inputs'] } : {}),
         ...(Array.isArray(args.expectOutputs) ? { expectOutputs: args.expectOutputs as string[] } : {}),
-      })
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
-    },
-  )
-
-  // v1.2.63 — long_task / complete_goal MCP tools, parallel to the
-  // native side. Lets claude-code / cursor / antigravity self-register
-  // sustained objectives that agim's goals.ts then injects into future
-  // turn prompts.
-  server.registerTool(
-    'long_task',
-    {
-      title: 'Register a sustained multi-turn objective',
-      description:
-        'Register a multi-turn objective for this IM thread. Use when the user describes work ' +
-        'that should stay visible across many turns ("ship v1.3 this week", "track X for the next ' +
-        '3 days", "every morning send a market brief"). Auto-pauses any prior active goal on the ' +
-        'thread. Write the `goal` idempotent + bounded + self-contained. NOT for one-shot tasks.',
-      inputSchema: {
-        goal: z.string().describe('One-line objective. Idempotent, bounded, self-contained.'),
-        summary: z.string().optional().describe('Acceptance criteria / scope notes (≤ 4000 chars).'),
-      },
-    },
-    async (args) => {
-      const result = await client.requestGoal('long_task', {
-        goal: typeof args.goal === 'string' ? args.goal : '',
-        ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
-      })
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
-    },
-  )
-
-  server.registerTool(
-    'complete_goal',
-    {
-      title: 'Mark the active goal complete / cancelled',
-      description:
-        'Complete exactly the goal identified by the active-goal Completion token. Copy goalId and ' +
-        'goalVersion verbatim; stale tokens are rejected without touching a replacement goal.',
-      inputSchema: {
-        goalId: z.number().int().positive().describe('Exact goalId from the Completion token.'),
-        goalVersion: z.number().int().positive().describe('Exact goalVersion from the Completion token.'),
-        evidenceIds: z.array(z.string()).optional().describe('Server-issued evidence capabilities, when available.'),
-        recap: z.string().min(10).describe('One-line honest summary of how the goal ended.'),
-        status: z.enum(['completed', 'cancelled']).optional().describe('Default "completed".'),
-      },
-    },
-    async (args) => {
-      const result = await client.requestGoal('complete_goal', {
-        goalId: args.goalId,
-        goalVersion: args.goalVersion,
-        ...(Array.isArray(args.evidenceIds) ? { evidenceIds: args.evidenceIds } : {}),
-        recap: args.recap,
-        ...(typeof args.status === 'string' ? { status: args.status } : {}),
       })
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
     },

@@ -50,9 +50,6 @@ export async function loadAgentRuntime(config: Config): Promise<void> {
       // Keep CLI setup usable even if a partially-written LLM config fails
       // to load. The concrete error is surfaced by `agim diag llm`.
     }
-    if (config.acpAgents?.length) {
-      await registry.loadACPAgents(config.acpAgents)
-    }
   })
 }
 

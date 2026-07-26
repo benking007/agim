@@ -732,33 +732,6 @@ export interface SkillDetail extends SkillMeta {
   content: string
 }
 
-/** One entry in the skillhub.cn hot list. The upstream shape changes
- *  over time and not every field is guaranteed; everything is narrowed
- *  to `?` so a missing column doesn't crash the row renderer. */
-export interface RemoteSkill {
-  slug: string
-  name?: string
-  description?: string
-  version?: string
-  category?: string
-  stars?: number
-  installs?: number
-  downloads?: number
-}
-
-/** Response shape of GET /api/skills/remote/hot — proxy of
- *  https://api.skillhub.cn/api/v1/showcase/hot with 5-min server cache.
- *  `stale` is set when the upstream call failed and we returned the
- *  last cached payload anyway. */
-export interface RemoteHotSkillsResponse {
-  skills: RemoteSkill[]
-  cached: boolean
-  fetchedAt: number
-  stale?: boolean
-  upstreamStatus?: number
-  upstreamError?: string
-}
-
 /* ============================================================
  * Workspace files — agent CWD browser + editor.
  * ============================================================ */
@@ -836,7 +809,6 @@ export interface AppConfig {
   agents: string[]
   defaultAgent: string
   webPort?: number
-  acpPort?: number
   telegram?: { botToken?: string; channelId?: string }
   feishu?: { appId?: string; appSecret?: string; channelId?: string }
   dingtalk?: {
@@ -864,13 +836,10 @@ export interface AppConfig {
     }>
   }
   discord?: { botToken?: string; channelId?: string }
-  acpAgents?: ACPAgentConfig[]
   agentStatus?: Record<string, boolean>
-  /** Server-side compliance feature flags. The SPA reads these to hide
-   *  the corresponding tabs / cards when the deployment is gated. */
+  /** Server-side compliance feature flags. */
   features?: {
     globalIm?: boolean
-    remoteAgent?: boolean
     /** v1.2.71 — runtime AGIM_PLATFORM_BLACKLIST set, alias-expanded
      *  (e.g. ['wechat', 'wechat-ilink', 'telegram']). SPA hides the
      *  corresponding PlatformCard / nav entries. Empty array when the
@@ -879,50 +848,6 @@ export interface AppConfig {
   }
   /** Open-ended for forward-compat. */
   [key: string]: unknown
-}
-
-/* ============================================================
- * Remote ACP (Agent Communication Protocol) agents
- * ============================================================ */
-
-export type ACPAuthType = 'none' | 'apikey' | 'bearer'
-
-export interface ACPAuthConfig {
-  type: ACPAuthType
-  /** Masked in GET /api/config responses; client should treat strings
-   *  that look like masked tokens (`ab****yz`) as "leave unchanged". */
-  token?: string
-}
-
-export interface ACPAgentConfig {
-  name: string
-  endpoint: string
-  aliases?: string[]
-  auth?: ACPAuthConfig
-  enabled?: boolean
-}
-
-export interface ACPDiscoverBody {
-  baseUrl: string
-  /** When true, server hot-loads discovered agents into the registry. */
-  register?: boolean
-}
-
-export interface ACPDiscoverResponse {
-  ok: true
-  baseUrl: string
-  agents: ACPAgentConfig[]
-}
-
-export interface ACPTestBody {
-  endpoint: string
-  auth?: ACPAuthConfig
-}
-
-export interface ACPTestResponse {
-  ok: true
-  name: string
-  description?: string
 }
 
 /* ============================================================

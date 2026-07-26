@@ -21,7 +21,6 @@ import {
   type Config,
 } from '../core/onboarding.js'
 import { startWebServer } from '../web/server.js'
-import { startACPServer } from '../core/acp-server.js'
 import { AGIM_HOME } from '../core/agim-paths.js'
 import { handleMessage } from './handle-message.js'
 import { handleInboundMessage } from './messenger-inbound.js'
@@ -40,6 +39,20 @@ async function saveConfigChanges(base: Config, next: Config): Promise<Config> {
 
 export async function runStartForeground(): Promise<void> {
   console.log('🚀 Starting Agim (阿吉姆)…')
+
+  // Upgrade hygiene: drop retired ACP keys (acpPort / acpAgents / AGIM_ACP_BIND)
+  // left behind by older installs so port conflict hints never mention :9090.
+  try {
+    const { purgeRetiredAcpResidue } = await import('../cli-ui/retire-acp-residue.js')
+    const purged = await purgeRetiredAcpResidue()
+    if (purged.configKeysRemoved.length || purged.envKeysRemoved.length) {
+      const bits = [
+        ...purged.configKeysRemoved.map((k) => `config.${k}`),
+        ...purged.envKeysRemoved,
+      ]
+      console.log(`   Cleaned retired ACP settings: ${bits.join(', ')}`)
+    }
+  } catch { /* best-effort */ }
 
   // Process-level rejection guard. Without it, a stray Promise reject
   // (typically an in-flight undici fetch torn down during graceful
@@ -237,7 +250,7 @@ export async function runStartForeground(): Promise<void> {
   }
 
   // v1.2.103 — publish the in-memory config to the live-config singleton
-  // so registry filters + routeCtx + Web/ACP defaultAgent all see the same
+  // so registry filters + routeCtx + Web defaultAgent all see the same
   // values. PUT /api/config will republish on save, removing the need for
   // a service restart after toggling enabled agents / default agent in
   // the SPA.
@@ -360,17 +373,6 @@ export async function runStartForeground(): Promise<void> {
     const bootLang = resolveCliLang()
     console.warn(`⚠️ ${cliT(bootLang, 'start.workspace_boot_failed', { message: msg })}`)
     console.warn(`   ${cliT(bootLang, 'start.workspace_fallback')}`)
-  }
-
-  // Load ACP (remote) agents from config
-  if (config.acpAgents?.length) {
-    await registry.loadACPAgents(config.acpAgents)
-  }
-
-  // Discover ACP agents via .well-known/acp on configured base URLs
-  const discoveryUrls = (config as { acpDiscoveryUrls?: string[] }).acpDiscoveryUrls
-  if (discoveryUrls?.length) {
-    await registry.loadDiscoveredACPAgents(discoveryUrls)
   }
 
   // Start the scheduler (runs cron-due schedules every 30s)
@@ -678,7 +680,6 @@ export async function runStartForeground(): Promise<void> {
     shuttingDown: false,
     shutdownExitCode: 0,
     webServer: undefined,
-    acpServer: undefined,
   }
 
   let webServer: { close: () => void; port: number } | undefined
@@ -738,28 +739,9 @@ export async function runStartForeground(): Promise<void> {
     console.warn('Viewer tunnel start failed:', err instanceof Error ? err.message : String(err))
   }
 
-  // ============================================
-  // START ACP SERVER
-  // ============================================
-
-  const acpPort = (config as Record<string, unknown>).acpPort as number | undefined || undefined
-  try {
-    const acpServer = await startACPServer({
-      port: acpPort,
-      defaultAgent: config.defaultAgent,
-    })
-    ctx.acpServer = acpServer
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err)
-    console.warn(`⚠️ ACP server failed to start: ${errMsg}`)
-  }
-
   console.log('\n✅ IM hub is running!')
   if (ctx.webServer) {
     console.log(`   Chat UI: http://localhost:${ctx.webServer.port}`)
-  }
-  if (ctx.acpServer) {
-    console.log(`   ACP Endpoint: http://localhost:${ctx.acpServer.port}`)
   }
   console.log('Press Ctrl+C to stop')
 

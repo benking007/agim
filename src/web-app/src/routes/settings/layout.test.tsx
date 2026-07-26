@@ -61,7 +61,7 @@ describe('/settings layout', () => {
   })
 
   it('keeps nested routes active in the grouped navigation', () => {
-    renderAt('/settings/agim-skills/hot')
+    renderAt('/settings/agim-skills/injection')
 
     const skills = screen.getByRole('link', { name: /agim Skills/i })
     expect(skills.className).toContain('text-brand-600')

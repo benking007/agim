@@ -19,8 +19,6 @@ For the implementation checklist used when adding a new backend, see `agent-inte
 | `pi` | `/pi`, `/pi-agent` | Install PI CLI and complete auth. | Yes | Extension bridge + approval |
 | `mimo` | `/mo`, `/mimo-code` | Install MiMo Code, then `mimo auth login`. | Yes | MCP + approval |
 | `antigravity` | `/agy`, `/gemini`, `/ag` | Install Antigravity CLI, then run `agy` once to login. | CLI default | MCP + approval |
-| ACP remote | configured name | Add `acpAgents` in config. | Depends on endpoint | Depends on endpoint |
-
 `/models` and `/model` work only for agents with a model driver. If an agent is listed as `CLI default`, set the model in that CLI's own configuration.
 
 ## First setup flow

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Removed
+
+- **Goal residual UI/tooling retired**: removed SPA `/tasks/goals`, REST
+  `/api/goals*`, slash `/goal`/`/long_task`/`/complete_goal`, MCP
+  `long_task`/`complete_goal`, and sidecar goal RPC. Focus (`/focus`) +
+  Loop (`/loop`) remain; `goals.db` storage is kept for Focus rows.
+- **Skillhub Hot retired**: removed `/settings/agim-skills/hot`,
+  `GET /api/skills/remote/hot`, and the skillhub.cn hot-list proxy.
+  Local skills management stays.
+- **ACP retired**: removed the inbound ACP server on `:9090` and outbound
+  remote ACP agent registration/discovery. Legacy ACP config keys are ignored.
+  SSRF URL checks live in `src/core/url-guard.ts`.
+- **Install/upgrade ACP residue**: `agim go` / `start` / `doctor` / `config`
+  purge stale `acpPort`/`acpAgents` from `config.json` and
+  `AGIM_ACP_BIND`/`AGIM_ENABLE_REMOTE_AGENT` from `~/.agim/env`. Config
+  writes also strip those keys. `agim config acp` prints a retired hint
+  (use `config web` / `config agents`).
+
 ### Changed
 
 - **Loop history + Tasks audit**: every Loop run is archived under
@@ -194,8 +212,8 @@ All notable changes to this project will be documented in this file.
 ### Deprecated
 
 - **`/goal`**, `/long_task`, `mcp__agim__long_task`,
-  `mcp__agim__complete_goal` — prefer `/focus` + `/loop`. Slash `/goal`
-  forwards to Focus with a banner; `complete` is hard-deprecated.
+  `mcp__agim__complete_goal` — retired. Use `/focus` + `/loop`
+  and `mcp__agim__focus_*` + `mcp__agim__loop_verdict`.
 
 ### Changed
 
@@ -4509,8 +4527,9 @@ multi-hop research turn.
   pins IM turns to `~/.agim-workspaces/native/` (was `/` under
   systemd). AGENTS.md seeded with role-definition cues.
 - **Web admin: skills merged into Settings → 技能** — top-level
-  `/skills` nav entry retired. New layout has 2 subtabs (Installed +
-  skillhub 热门). Old URLs redirect.
+  `/skills` nav entry retired. New layout initially included Installed
+  plus a marketplace browse tab; that browse tab was retired later.
+  Old local-skill URLs redirect.
 
 ### Fixed
 
@@ -4877,8 +4896,9 @@ for the architectural stance + anti-patterns.
 - **⑤ `audit_events` 持久审计表** — 10 类事件 (approval / admin /
   config / env / token / workspace) 持久 180 天, details JSON 只放
   字段名 / 长度 / 哈希前缀. `GET /api/audit/events` 暴露. PR #48.
-- **⑥ `AGIM_SKILLHUB_ENABLED` 出网开关** — `=0` 关 skillhub
-  对外 fetch (气隙部署). PR #48.
+- **⑥ Marketplace egress switch** — early builds allowed disabling the
+  marketplace fetch for air-gapped deployments; that fetch path was
+  retired later. PR #48.
 - **Compliance visibility gates** — `AGIM_ENABLE_GLOBAL_IM` 控
   Discord+Telegram, `AGIM_ENABLE_REMOTE_AGENT` 控 ACP. 默认全关,
   三层都 gate (CLI 向导 / Web 设置 / 运行时). PR #48.

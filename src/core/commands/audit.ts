@@ -50,7 +50,7 @@ export async function handleAuditCommand(
   }
 
   // Default to caller's own userId. Leaves ctx.userId === undefined paths
-  // (REST / ACP / web) unrestricted, matching every other command's policy.
+  // (REST / web) unrestricted, matching every other command's policy.
   if (ctx.userId) {
     opts.userId = ctx.userId
   }

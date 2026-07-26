@@ -8,7 +8,7 @@ It is designed for production use: at-least-once persistent delivery, session co
 ## What matters
 
 - **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends.
-- **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, Agim Agent (in-process LLM), and ACP remote agents.
+- **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, and Agim Agent (in-process LLM).
 - **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
 - **Reliable runtime**: SQLite outbox (at-least-once delivery), restart recovery, job board, structured audit. Production requires native `better-sqlite3`; without it the outbox is unavailable.
 - **Safety by default**: token auth, sensitive-path denylist, optional global-IM disable. Tool auto-approve is **off** by default; opt in with `AGIM_AUTO_APPROVE=1` (and a strict sender allowlist when IM is enabled).
@@ -73,7 +73,6 @@ Common CLI entries:
 |---|---|
 | Strong coding agent loop | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
 | API-only, low-cost in-process mode | `agim` (alias `native`) + `llmBackends` |
-| Bring your own remote agent | ACP (`acpAgents`) |
 
 Agim Agent setup details: `docs/llm-backends.md`
 

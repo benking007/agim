@@ -43,7 +43,6 @@ function mockFetch(opts: {
   schedules?: Record<string, unknown>
   a2a?: Record<string, unknown>
   heartbeat?: Record<string, unknown>
-  goals?: Record<string, unknown>
   asks?: Record<string, unknown>
 } = {}) {
   const jobs = opts.jobs ?? {
@@ -75,13 +74,6 @@ function mockFetch(opts: {
       { platform: 'web', channelId: 'c', threadId: 't', userId: 'u', body: 'check', intervalMinutes: 60, enabled: true, lastTickAt: null, lastStatus: '', lastReason: '', lastTextPreview: '', createdAt: '2026-07-01T00:00:00Z' },
     ],
   }
-  const goals = opts.goals ?? {
-    count: 1,
-    scope: 'all-active',
-    goals: [
-      { id: 1, platform: 'web', channelId: 'c', threadId: 't', userId: 'u', title: 'ship', body: '', status: 'active', progressLog: [], progressCount: 0, createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-07-01T00:00:00Z', closedAt: null },
-    ],
-  }
   const asks = opts.asks ?? {
     count: 2,
     pending: [
@@ -97,7 +89,6 @@ function mockFetch(opts: {
     if (u.startsWith('/api/schedules')) return jsonResponse(schedules)
     if (u === '/api/a2a/stats') return jsonResponse(a2a)
     if (u === '/api/heartbeat/bindings') return jsonResponse(heartbeat)
-    if (u === '/api/goals') return jsonResponse(goals)
     if (u === '/api/asks/pending') return jsonResponse(asks)
     return jsonResponse({})
   })
@@ -111,7 +102,7 @@ describe('/tasks overview', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Tasks overview' })).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('2 ask_user pending')).toBeInTheDocument())
     expect(screen.getByText('2 running · 1 pending')).toBeInTheDocument()
-    expect(screen.getByText('1 schedules · 1 heartbeats · 1 goals')).toBeInTheDocument()
+    expect(screen.getByText('1 schedules · 1 heartbeats')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Answer pending questions/i })).toHaveAttribute('href', '/tasks/asks')
   })
 

@@ -35,7 +35,6 @@ export const LOG_FILE = join(AGIM_HOME, 'agim.log')
 /** Set by spawnBackground / restart helper when child stdio already is LOG_FILE. */
 export const LOG_REDIRECTED_ENV = 'AGIM_LOG_REDIRECTED'
 export const DEFAULT_WEB_PORT = 3000
-export const DEFAULT_ACP_PORT = 9090
 
 let logMirrorInstalled = false
 let stdoutWriteOrig: typeof process.stdout.write | null = null
@@ -377,22 +376,6 @@ export function readWebEndpoint(): { bind: string; port: number } | null {
         : DEFAULT_WEB_PORT
     return { bind, port }
   } catch { return null }
-}
-
-/** Get the configured ACP bind+port. ACP is optional for first-run Web
- *  chat, but its default 9090 collides with common local proxy tools, so
- *  quickstart/doctor need to make that conflict visible. */
-export function readAcpEndpoint(): TcpEndpoint {
-  const cfg = readConfigObject() as { acpPort?: number } | null
-  let bind = '127.0.0.1'
-  try {
-    const envFile = readEnvFile()
-    bind = (process.env.AGIM_ACP_BIND || envFile.AGIM_ACP_BIND || bind).trim() || bind
-  } catch { /* keep safe default */ }
-  return {
-    bind,
-    port: typeof cfg?.acpPort === 'number' ? cfg.acpPort : DEFAULT_ACP_PORT,
-  }
 }
 
 /** Best-effort owner for a listening TCP port. Used only for human-facing

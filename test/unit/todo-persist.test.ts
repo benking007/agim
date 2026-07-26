@@ -21,8 +21,7 @@ const {
   getTodoTools,
   _truncateTodosForTests,
 } = await import('../../src/core/llm/todo-dispatcher.js')
-const { resolveCompleteGoalToolTimeoutMs, resolveGoalConfirmationTimeoutMs } =
-  await import('../../src/core/goal-rpc.js')
+const { resolveGoalConfirmationTimeoutMs } = await import('../../src/core/approval-timeouts.js')
 
 afterAll(() => {
   closeTodoDbForTesting()
@@ -81,18 +80,10 @@ describe('todo completion gate', () => {
   })
 })
 
-describe('complete_goal confirmation timeout helpers', () => {
-  it('keeps the tool wall budget above the confirmation timeout', () => {
+describe('confirmation timeout helpers', () => {
+  it('resolves a positive human confirmation timeout', () => {
     const confirm = resolveGoalConfirmationTimeoutMs()
-    const tool = resolveCompleteGoalToolTimeoutMs()
-    expect(tool).toBe(confirm + 60_000)
-    expect(tool).toBeGreaterThan(60_000)
-  })
-
-  it('exposes mcp__agim__complete_goal with a raised timeoutMs', async () => {
-    const { getAgimTools } = await import('../../src/core/llm/agim-dispatcher.js')
-    const tool = getAgimTools().find((t) => t.name === 'mcp__agim__complete_goal')
-    expect(tool?.timeoutMs).toBe(resolveCompleteGoalToolTimeoutMs())
+    expect(confirm).toBeGreaterThan(0)
   })
 
   it('todo tool still advertises a short timeout', () => {

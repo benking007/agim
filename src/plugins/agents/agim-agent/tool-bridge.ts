@@ -49,7 +49,7 @@ function resolveToolResultMaxChars(): number {
 }
 
 /** Mirror agent-loop.ts: per-tool wall timeout. A ToolDef may pin its own
- *  (e.g. an explicitly slow long_task sets timeoutMs: 0 to opt out). Default
+ *  timeoutMs or set timeoutMs: 0 to opt out. Default
  *  60s; env override; 0 disables. */
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000
 function resolveToolTimeoutMs(perToolMs: number | undefined): number {
@@ -173,7 +173,7 @@ export interface ToolBridgeOptions {
   parallelSafe?: (toolName: string) => boolean
   /** Active goal snapshot captured for this turn. */
   goalEvidence?: GoalEvidenceContext
-  /** Dynamic lookup supports long_task followed by tools in the same run. */
+  /** Dynamic lookup reflects Focus-backed goal state during a run. */
   resolveGoalEvidence?: () => GoalEvidenceContext | null
   /** Fail closed for mutations when goal state cannot be read. */
   goalLedgerAvailable?: () => boolean

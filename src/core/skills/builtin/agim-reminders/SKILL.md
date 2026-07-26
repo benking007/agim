@@ -48,7 +48,7 @@ User: "把昨天那个 30 分钟一次的取消了"
 
 - **One-off "X 分钟后做 Y"**: yes, use this.
 - **Recurring task agim should execute, not just remind**: use `recurrence` + `promptMode: "llm"` and write the text as a task ("查 BTC 价格然后告诉我"). At each fire, agim wakes you up with that prompt.
-- **Sustained multi-turn objective**: not a reminder. Use `/goal set` (see the `long-goal` skill).
+- **Sustained multi-turn objective**: not a reminder. Use `/focus set` (see the `long-goal` skill).
 - **One-shot at exact time + nothing else**: still a reminder.
 
 ## Constraints

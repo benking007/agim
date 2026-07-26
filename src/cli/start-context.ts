@@ -8,6 +8,4 @@ export interface StartRuntimeContext {
   shutdownExitCode: number
   /** Set once startWebServer succeeds; undefined when the server failed to start. */
   webServer: { close: () => void; port: number } | undefined
-  /** Set once startACPServer succeeds; undefined when the server failed to start. */
-  acpServer: { close: () => void; port: number } | undefined
 }

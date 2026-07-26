@@ -117,7 +117,7 @@ describe('parseMessage', () => {
       expect(parseMessage('/stop')).toEqual({ type: 'service', action: 'stop', args: '' })
     })
 
-    describe('/focus + /loop + deprecated /goal aliases', () => {
+    describe('/focus + /loop', () => {
       it('parses /focus and aliases', () => {
         expect(parseMessage('/focus')).toEqual({ type: 'focus', args: '' })
         expect(parseMessage('/focus set foo')).toEqual({ type: 'focus', args: 'set foo' })
@@ -129,23 +129,25 @@ describe('parseMessage', () => {
         expect(parseMessage('/loop ship it')).toEqual({ type: 'loop', args: 'ship it' })
         expect(parseMessage('/loop status')).toEqual({ type: 'loop', args: 'status' })
       })
-      it('parses deprecated /goal as type: goal', () => {
-        expect(parseMessage('/goal')).toEqual({ type: 'goal', args: '' })
-        expect(parseMessage('/goal set foo')).toEqual({ type: 'goal', args: 'set foo' })
-        expect(parseMessage('/g set foo')).toEqual({ type: 'goal', args: 'set foo' })
-      })
-      it('parses /long_task as goal-set shortcut (→ focus via deprecated handler)', () => {
-        expect(parseMessage('/long_task ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
-        expect(parseMessage('/longtask ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
-        expect(parseMessage('/long-task ship v1.2')).toEqual({ type: 'goal', args: 'set ship v1.2' })
-      })
-      it('parses bare /long_task as empty args', () => {
-        expect(parseMessage('/long_task')).toEqual({ type: 'goal', args: '' })
-      })
-      it('parses /complete_goal as goal-complete shortcut', () => {
-        expect(parseMessage('/complete_goal')).toEqual({ type: 'goal', args: 'complete' })
-        expect(parseMessage('/completegoal')).toEqual({ type: 'goal', args: 'complete' })
-        expect(parseMessage('/complete-goal')).toEqual({ type: 'goal', args: 'complete' })
+      it('treats retired goal slash commands as unknown', () => {
+        for (const input of [
+          '/goal',
+          '/goal set foo',
+          '/g set foo',
+          '/目标 set foo',
+          '/long_task ship v1.2',
+          '/longtask ship v1.2',
+          '/long-task ship v1.2',
+          '/complete_goal',
+          '/completegoal',
+          '/complete-goal',
+        ]) {
+          const result = parseMessage(input)
+          expect(result.type).toBe('error')
+          if (result.type === 'error') {
+            expect(result.error).toContain('Unknown command')
+          }
+        }
       })
       it('parses /heartbeat as type: heartbeat (regression — was undefined)', () => {
         expect(parseMessage('/heartbeat')).toEqual({ type: 'heartbeat', args: '' })

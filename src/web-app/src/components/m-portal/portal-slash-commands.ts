@@ -57,7 +57,7 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     id: 'focus',
     label: 'Focus',
     description: 'Set attention focus (on/off)',
-    keywords: ['focus', '聚焦', 'goal', '目标', 'long_task'],
+    keywords: ['focus', '聚焦', 'goal', '目标'],
     priority: 2,
     action: { type: 'fill', text: '/focus ' },
   },

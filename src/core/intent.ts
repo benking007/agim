@@ -127,8 +127,8 @@ export function classifyIntent(
     }
   }
 
-  // Score per agent. Agents missing from PROFILES (e.g. user-installed
-  // custom ACP agents) get a default neutral weight so they remain
+  // Score per agent. Agents missing from PROFILES get a default neutral
+  // weight so they remain
   // selectable when no explicit signal favors a profiled agent.
   const DEFAULT_WEIGHT = 0.5
   const scores = new Map<string, { score: number; reasons: string[]; weight: number }>()

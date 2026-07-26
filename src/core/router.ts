@@ -24,7 +24,7 @@ import { handleCronCommand } from './commands/cron.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
 import { handleHeartbeatCommand } from './commands/heartbeat.js'
-import { handleFocusCommand, handleGoalCommandDeprecated } from './commands/focus.js'
+import { handleFocusCommand } from './commands/focus.js'
 import { handleLoopCommand } from './commands/loop.js'
 import { buildFocusSnippet } from './focus.js'
 import { buildLoopSnippet } from './loop-run.js'
@@ -207,14 +207,6 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'heartbeat') return { type: 'heartbeat', args: rest }
   if (cmd === 'focus' || cmd === 'f' || cmd === '聚焦') return { type: 'focus', args: rest }
   if (cmd === 'loop') return { type: 'loop', args: rest }
-  // Deprecated: /goal → Focus (compat). /long_task → focus set.
-  if (cmd === 'goal' || cmd === 'g' || cmd === '目标') return { type: 'goal', args: rest }
-  if (cmd === 'long_task' || cmd === 'longtask' || cmd === 'long-task') {
-    return { type: 'goal', args: rest ? `set ${rest}` : '' }
-  }
-  if (cmd === 'complete_goal' || cmd === 'completegoal' || cmd === 'complete-goal') {
-    return { type: 'goal', args: 'complete' }
-  }
   if (cmd === 'skill' || cmd === 'skills' || cmd === '技能') return { type: 'skill', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'outbox') return { type: 'outbox', args: rest }
@@ -329,9 +321,6 @@ export async function routeMessage(
     }
     case 'loop': {
       return handleLoopCommand(parsed.args, ctx)
-    }
-    case 'goal': {
-      return handleGoalCommandDeprecated(parsed.args, ctx)
     }
 
     case 'skill': {
@@ -760,7 +749,7 @@ export async function callAgentWithHistory(
   // A2A coverage: ensure EVERY top-level agent turn has a parent inline job,
   // regardless of entry point. The IM inbound path (cli.ts) pre-creates one
   // and stamps ctx.parentJobId; non-IM entry points (web /api/invoke, mobile
-  // web, cron, ACP, …) don't — without a parent id any A2A the agent fires
+  // web, cron, …) don't — without a parent id any A2A the agent fires
   // gets parent_id=NULL and is invisible in the web A2A views. Create one here
   // when missing so no channel silently drops A2A records. Idempotent (skips
   // when already set) and best-effort (a failed insert never blocks the turn).

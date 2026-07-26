@@ -51,7 +51,7 @@ function renderPage(): ReturnType<typeof render> {
 const RUNNING_STATUS = {
   mode: 'systemd', pid: 12345, uptimeSec: 3600, uptime: '1h 0m',
   web: { bind: '127.0.0.1', port: 3000 },
-  bootPhase: 'ready', bootMsSinceStart: 5000, bootPhaseTimings: { acp: 1200 },
+  bootPhase: 'ready', bootMsSinceStart: 5000, bootPhaseTimings: {},
 }
 const STOPPED_STATUS = {
   mode: 'none', pid: null, uptimeSec: null, uptime: null,

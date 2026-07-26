@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
-import { checkTcpListenAvailable, detectService, readAcpEndpoint, readWebEndpoint } from './service.js'
+import { detectService, readWebEndpoint } from './service.js'
 import { loadConfig } from '../core/onboarding.js'
 import { hasAnyToken, getWebBootstrapTokenFile, isAuthEnabled } from '../core/access-token.js'
 import { describeSecretSource } from '../core/llm/secrets.js'
@@ -58,6 +58,25 @@ function sqliteAddonAvailable(): boolean {
 
 export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<CheckRow[]> {
   const rows: CheckRow[] = []
+  try {
+    const { purgeRetiredAcpResidue } = await import('./retire-acp-residue.js')
+    const purged = await purgeRetiredAcpResidue()
+    if (purged.configKeysRemoved.length || purged.envKeysRemoved.length) {
+      const bits = [
+        ...purged.configKeysRemoved.map((k) => `config.${k}`),
+        ...purged.envKeysRemoved,
+      ]
+      rows.push({
+        level: 'info',
+        title: text(lang, 'ACP 残留', 'ACP residue'),
+        detail: text(
+          lang,
+          `已清理已退役设置：${bits.join(', ')}（ACP :9090 已移除，仅保留 Web 端口）`,
+          `cleaned retired settings: ${bits.join(', ')} (ACP :9090 removed; Web port only)`,
+        ),
+      })
+    }
+  } catch { /* best-effort */ }
   const config = await loadConfig()
 
   rows.push({
@@ -144,28 +163,6 @@ export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<
       ? `http://${web.bind === '0.0.0.0' ? '127.0.0.1' : web.bind}:${web.port}`
       : text(lang, '未找到 Web 端口配置，默认启动会使用 3000', 'no web port config found; startup defaults to 3000'),
   })
-
-  const acp = readAcpEndpoint()
-  if (st.mode === 'none') {
-    const acpCheck = await checkTcpListenAvailable(acp)
-    rows.push({
-      level: acpCheck.available ? 'ok' : 'warn',
-      title: 'ACP',
-      detail: acpCheck.available
-        ? `http://${acp.bind}:${acp.port}`
-        : text(
-          lang,
-          `端口 ${acp.bind}:${acp.port} 被占用${acpCheck.owner ? `（${acpCheck.owner}）` : ''}；Web-only 首次体验可继续，ACP 将不可用`,
-          `port ${acp.bind}:${acp.port} is occupied${acpCheck.owner ? ` (${acpCheck.owner})` : ''}; web-only first use can continue, ACP will be unavailable`,
-        ),
-    })
-  } else {
-    rows.push({
-      level: 'info',
-      title: 'ACP',
-      detail: text(lang, `随服务运行；配置端口 ${acp.bind}:${acp.port}`, `runs with the service; configured port ${acp.bind}:${acp.port}`),
-    })
-  }
 
   const bootstrapFile = getWebBootstrapTokenFile()
   if (!isAuthEnabled()) {

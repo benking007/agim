@@ -40,11 +40,9 @@ function renderPage(): ReturnType<typeof render> {
 function mockFetch(opts: {
   unavailable?: boolean
   workspaceSkills?: number
-  hotSkills?: number
   overrideActive?: boolean
 } = {}) {
   const workspaceSkills = opts.workspaceSkills ?? 1
-  const hotSkills = opts.hotSkills ?? 2
   const skills = [
     {
       name: 'agim-core',
@@ -80,17 +78,6 @@ function mockFetch(opts: {
         maxBodyChars: 32_000,
       })
     }
-    if (u === '/api/skills/remote/hot') {
-      return jsonResponse({
-        skills: Array.from({ length: hotSkills }, (_, idx) => ({
-          slug: `hot-${idx + 1}`,
-          name: `Hot ${idx + 1}`,
-          description: 'Remote skill',
-        })),
-        cached: false,
-        fetchedAt: Date.UTC(2026, 6, 1, 8, 0, 0),
-      })
-    }
     if (u === '/api/agim-skills/injection') {
       return jsonResponse({
         auto: 'auto',
@@ -107,14 +94,14 @@ function mockFetch(opts: {
 }
 
 describe('/settings/agim-skills overview', () => {
-  it('summarizes installed skills, hot skills, and injection state', async () => {
+  it('summarizes installed skills and injection state', async () => {
     mockFetch()
     renderPage()
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Skills overview' })).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('1 workspace · 1 builtin')).toBeInTheDocument())
     expect(screen.getByText('Skill dependencies are ready')).toBeInTheDocument()
-    expect(screen.getByText('2 available to browse')).toBeInTheDocument()
+    expect(screen.getAllByRole('article')).toHaveLength(3)
     expect(screen.getByText('1 always-on · 4 chars summary')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Review installed skills/i })).toHaveAttribute('href', '/settings/agim-skills/installed')
   })
@@ -128,11 +115,11 @@ describe('/settings/agim-skills overview', () => {
     expect(screen.getByRole('link', { name: /Fix unavailable skills first/i })).toHaveAttribute('href', '/settings/agim-skills/installed')
   })
 
-  it('routes an empty workspace toward the hot skill list when discovery is available', async () => {
-    mockFetch({ workspaceSkills: 0, hotSkills: 3 })
+  it('routes a builtin-only workspace toward installed skills', async () => {
+    mockFetch({ workspaceSkills: 0 })
     renderPage()
 
     await waitFor(() => expect(screen.getByText('0 workspace · 1 builtin')).toBeInTheDocument())
-    expect(screen.getByRole('link', { name: /Pick a hot skill to try/i })).toHaveAttribute('href', '/settings/agim-skills/hot')
+    expect(screen.getByRole('link', { name: /Review installed skills/i })).toHaveAttribute('href', '/settings/agim-skills/installed')
   })
 })

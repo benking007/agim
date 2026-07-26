@@ -84,6 +84,26 @@ describe('ChatSubagentCard', () => {
     expect(screen.getAllByText(/Waiting for subagent|等待子代理/).length).toBeGreaterThanOrEqual(1)
   })
 
+  it('wraps long Objective preview instead of single-line truncate', () => {
+    const long = `Objective: ${'研究识别美股牛熊周期拐点的宏观与估值类指标，'.repeat(4)}用中文输出`
+    render(<ChatSubagentCard activity={activity({
+      steps: [{
+        id: 'a2a-9',
+        kind: 'agent',
+        label: 'agim',
+        status: 'running',
+        startedAt: 1,
+        jobId: 9,
+        preview: long,
+      }],
+    })}
+    />)
+    const preview = screen.getByText(/Objective: 研究识别/)
+    expect(preview.className).toMatch(/break-words/)
+    expect(preview.className).toMatch(/whitespace-normal/)
+    expect(preview.className).not.toMatch(/\btruncate\b/)
+  })
+
   it('exposes Stop on live rows and calls onStopSubagent with jobId', async () => {
     const user = userEvent.setup()
     const onStopSubagent = vi.fn(() => true)

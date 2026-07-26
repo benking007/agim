@@ -1,97 +1,127 @@
 /**
  * i18n — react-i18next setup.
  *
- * Namespaces:
- *   common — buttons / generic / states reused on every page
- *   errors — ApiClientError code → human-readable text
+ * Cold-start namespaces (`common`, `errors`) load for the **active**
+ * language only (dynamic `import()` → own Vite chunk). The other
+ * language arrives on `changeLanguage`. Page namespaces stay on-demand.
  *
- * Each domain route adds its own ns later (tasks / approvals /
- * memory / observability / settings / chat / ...). Loaded via
- * i18next-http-backend so the SPA initial bundle stays small; ns
- * arrive on-demand when a route's `useTranslation('tasks')` runs.
- *
- * The active language is mirrored from `usePrefs` (zustand) so a
- * single `setLang('zh')` flips both the React state tree and the
- * i18next instance. The legacy localStorage key `agim-lang` is
- * preserved so the v1 UI's persisted preference carries over.
+ * This keeps both languages' JSON out of the entry chunk.
  */
 
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import HttpBackend from 'i18next-http-backend'
 
-// JSON bundles for the cold-start namespaces are inlined so the
-// first paint already has button labels / error toasts in the right
-// language — no flash-of-untranslated-content. Page-specific ns are
-// loaded via HttpBackend on demand.
-import commonEn from './locales/en/common.json'
-import commonZh from './locales/zh/common.json'
-import errorsEn from './locales/en/errors.json'
-import errorsZh from './locales/zh/errors.json'
-// Page-level namespaces. Eager-loaded for now — the per-page JSON
-// chunks are small (≤ 4 KB each), and pre-loading sidesteps the need
-// to host them as static assets under /locales/<lng>/<ns>.json. When
-// the count grows past ~6 we'll graduate to http-backend lazy loads.
-import tasksEn from './locales/en/tasks.json'
-import tasksZh from './locales/zh/tasks.json'
-import approvalsEn from './locales/en/approvals.json'
-import approvalsZh from './locales/zh/approvals.json'
-import remindersEn from './locales/en/reminders.json'
-import remindersZh from './locales/zh/reminders.json'
-import memosEn from './locales/en/memos.json'
-import memosZh from './locales/zh/memos.json'
-import memoryEn from './locales/en/memory.json'
-import memoryZh from './locales/zh/memory.json'
-import skillsEn from './locales/en/skills.json'
-import skillsZh from './locales/zh/skills.json'
-import workspaceEn from './locales/en/workspace.json'
-import workspaceZh from './locales/zh/workspace.json'
-import observabilityEn from './locales/en/observability.json'
-import observabilityZh from './locales/zh/observability.json'
-import settingsEn from './locales/en/settings.json'
-import settingsZh from './locales/zh/settings.json'
+/** Namespaces fetched only when a route/dialog first calls useTranslation. */
+export const LAZY_NAMESPACES = [
+  'tasks',
+  'approvals',
+  'reminders',
+  'memos',
+  'memory',
+  'skills',
+  'workspace',
+  'observability',
+  'settings',
+] as const
 
-const initialLang = detectInitialLang()
+export type LazyNamespace = (typeof LAZY_NAMESPACES)[number]
 
-void i18n
-  .use(HttpBackend)
-  .use(initReactI18next)
-  .init({
-    resources: {
-      en: { common: commonEn, errors: errorsEn, tasks: tasksEn, approvals: approvalsEn, reminders: remindersEn, memos: memosEn, memory: memoryEn, skills: skillsEn, workspace: workspaceEn, observability: observabilityEn, settings: settingsEn },
-      zh: { common: commonZh, errors: errorsZh, tasks: tasksZh, approvals: approvalsZh, reminders: remindersZh, memos: memosZh, memory: memoryZh, skills: skillsZh, workspace: workspaceZh, observability: observabilityZh, settings: settingsZh },
-    },
-    lng: initialLang,
-    fallbackLng: 'en',
-    supportedLngs: ['en', 'zh'],
-    ns: ['common', 'errors', 'tasks', 'approvals', 'reminders', 'memos', 'memory', 'skills', 'workspace', 'observability', 'settings'],
-    defaultNS: 'common',
-    interpolation: { escapeValue: false }, // React already escapes
-    react: { useSuspense: false },         // we render skeletons ourselves
-    backend: {
-      // Served by Vite from src/web-app/public/locales/<lang>/<ns>.json
-      // in dev; from dist/assets in prod. PR-N migrates this to inline
-      // bundle once page count justifies it.
-      loadPath: '/locales/{{lng}}/{{ns}}.json',
-    },
-    detection: {
-      // We bypass i18next's built-in detector; usePrefs.lang is the
-      // source of truth, propagated via syncI18nLanguage().
-      order: [],
-      caches: [],
-    },
-  })
-  .then(() => {
-    syncDocumentLang(i18n.language === 'zh' ? 'zh' : 'en')
-  })
+const COLD_START_NAMESPACES = ['common', 'errors'] as const
+const ALL_NAMESPACES = [...COLD_START_NAMESPACES, ...LAZY_NAMESPACES] as const
 
-function detectInitialLang(): 'en' | 'zh' {
+/** Vite turns each match into its own async chunk. */
+const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
+  './locales/*/*.json',
+)
+
+type ReadCallback = (err: Error | null, data: false | Record<string, unknown>) => void
+
+/** Minimal i18next backend — no HTTP round-trip, just dynamic import(). */
+const viteLocaleBackend = {
+  type: 'backend' as const,
+  init(): void { /* no-op */ },
+  read(language: string, namespace: string, callback: ReadCallback): void {
+    const key = `./locales/${language}/${namespace}.json`
+    const loader = localeModules[key]
+    if (!loader) {
+      callback(new Error(`missing locale module ${key}`), false)
+      return
+    }
+    loader()
+      .then((mod) => callback(null, mod.default))
+      .catch((err: unknown) => {
+        callback(err instanceof Error ? err : new Error(String(err)), false)
+      })
+  },
+}
+
+async function loadLocaleJson(
+  language: 'en' | 'zh',
+  namespace: 'common' | 'errors',
+): Promise<Record<string, unknown>> {
+  const key = `./locales/${language}/${namespace}.json`
+  const loader = localeModules[key]
+  if (!loader) throw new Error(`missing locale module ${key}`)
+  const mod = await loader()
+  return mod.default
+}
+
+let bootstrapped: Promise<typeof i18n> | null = null
+
+/**
+ * Load cold-start strings for one language and init i18next.
+ * Call once from `main.tsx` (and vitest setup) before first render.
+ * Subsequent calls reuse the first bootstrap (lang arg ignored).
+ */
+export function bootstrapI18n(lang: 'en' | 'zh' = detectInitialLang()): Promise<typeof i18n> {
+  if (bootstrapped) return bootstrapped
+  bootstrapped = (async () => {
+    const [common, errors] = await Promise.all([
+      loadLocaleJson(lang, 'common'),
+      loadLocaleJson(lang, 'errors'),
+    ])
+
+    await i18n
+      .use(viteLocaleBackend)
+      .use(initReactI18next)
+      .init({
+        // Only `lang`'s common/errors are preloaded; the other language
+        // + page namespaces go through the Vite backend.
+        partialBundledLanguages: true,
+        resources: {
+          [lang]: { common, errors },
+        },
+        lng: lang,
+        fallbackLng: 'en',
+        supportedLngs: ['en', 'zh'],
+        ns: [...ALL_NAMESPACES],
+        defaultNS: 'common',
+        interpolation: { escapeValue: false },
+        react: { useSuspense: false },
+      })
+
+    syncDocumentLang(lang)
+    return i18n
+  })()
+  return bootstrapped
+}
+
+/** Resolves after `bootstrapI18n` finishes (does not start bootstrap itself). */
+export function i18nReady(): Promise<typeof i18n> {
+  if (!bootstrapped) {
+    return Promise.reject(new Error('i18n: call bootstrapI18n() before i18nReady()'))
+  }
+  return bootstrapped
+}
+
+export function detectInitialLang(): 'en' | 'zh' {
   try {
     const v = localStorage.getItem('agim-lang')
     if (v === 'en' || v === 'zh') return v
   } catch {
     /* ignore */
   }
+  if (typeof navigator === 'undefined') return 'en'
   return (navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }
 
@@ -107,6 +137,15 @@ export function syncI18nLanguage(lang: 'en' | 'zh'): void {
 function syncDocumentLang(lang: 'en' | 'zh'): void {
   if (typeof document === 'undefined') return
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+}
+
+/** Preload lazy page namespaces (and both languages) for vitest. */
+export async function ensureLazyNamespacesLoaded(): Promise<void> {
+  await bootstrapI18n()
+  await Promise.all([
+    i18n.loadLanguages(['en', 'zh']),
+    i18n.loadNamespaces([...LAZY_NAMESPACES]),
+  ])
 }
 
 export default i18n

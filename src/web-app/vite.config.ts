@@ -8,8 +8,6 @@ const VENDOR_CHUNKS = {
   query: ['@tanstack/query-core', '@tanstack/react-query'],
   i18n: [
     'i18next',
-    'i18next-browser-languagedetector',
-    'i18next-http-backend',
     'react-i18next',
   ],
   'ui-runtime': [

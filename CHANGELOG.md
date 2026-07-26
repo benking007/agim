@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+<<<<<<< HEAD
 - **Loop history + Tasks audit**: every Loop run is archived under
   `~/.agim/loops/history/<runId>.json` (thread snapshot still at
   `<threadKey>.json`). Admin APIs `GET /api/loops` + `GET /api/loops/:id`
@@ -35,6 +36,13 @@ All notable changes to this project will be documented in this file.
   seeds `objective` from Focus. Focus title/body is appended to Mission
   `body` with the label `【当前 Agent 聚焦内容】` (Portal aligning dock
   shows it under 正文). Objective and exit still require explicit confirm.
+=======
+- **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.
+  `common`/`errors` load for the active language only; page namespaces
+  (`settings`, `tasks`, `memory`, …) load on demand via Vite
+  `import.meta.glob` chunks. Dropped unused `i18next-http-backend` and
+  `i18next-browser-languagedetector`.
+>>>>>>> origin/cursor/i18n-lazy-namespaces-fda5
 - **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
   harness/methodology/product/security set (`agent-*`, `autonomous-*`,
   `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,

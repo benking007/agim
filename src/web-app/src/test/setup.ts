@@ -14,6 +14,7 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
+import { bootstrapI18n, ensureLazyNamespacesLoaded } from '@/i18n'
 
 // vitest is configured with `globals: false`, so RTL's auto-cleanup
 // (which keys off a global `afterEach`) doesn't activate by default.
@@ -100,3 +101,8 @@ try {
 } catch {
   // Some runtimes expose localStorage through a read-only proxy.
 }
+
+// Cold-start + page i18n namespaces load async in production. Preload
+// both languages and page ns here so route tests don't race the backend.
+await bootstrapI18n('en')
+await ensureLazyNamespacesLoaded()

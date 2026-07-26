@@ -72,6 +72,21 @@ describe('parseLoopStartText', () => {
     expect(p.exitDescription).toBe('CI 绿')
   })
 
+  it('parses optional body after exit', () => {
+    const p = parseLoopStartText(
+      '修好登录超时；退出条件为验收通过或最多3轮；正文：优先查超时日志，不要改鉴权',
+    )
+    expect(p.objective).toBe('修好登录超时')
+    expect(p.exitDescription).toContain('验收通过')
+    expect(p.body).toBe('优先查超时日志，不要改鉴权')
+  })
+
+  it('parses body with body: label', () => {
+    const p = parseLoopStartText('Fix auth; exit: PR green; body: check nginx first')
+    expect(p.objective).toMatch(/Fix auth/i)
+    expect(p.body).toMatch(/nginx/i)
+  })
+
   it('parses acceptance + wall clock from NL', () => {
     const p = parseLoopStartText('修好登录；验收：补回归；退出条件为验收通过或最多3轮或超过2小时')
     expect(p.objective).toBe('修好登录')
@@ -133,6 +148,26 @@ describe('loop-run R2 Mission persist', () => {
     expect(status).toContain('CI 绿')
     expect(status).toContain('**目标**')
     expect(status).toContain('**退出条件**')
+  })
+
+  it('confirmed mission + body round-trips into status/snippet', () => {
+    reset()
+    const threadId = 'loop-r2-body'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好超时；退出条件为最多3轮；正文：优先查 nginx 超时日志',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.aligned).toBe(true)
+    expect(started.run.mission?.body).toContain('nginx')
+    const reloaded = getLoopRun(base.platform, base.channelId, threadId)
+    expect(reloaded?.mission?.body).toContain('nginx')
+    expect(formatLoopStatus(reloaded!)).toContain('nginx')
+    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('nginx')
   })
 
   it('confirmed mission + acceptance round-trips; status readable after reload', () => {

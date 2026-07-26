@@ -69,6 +69,11 @@ export interface LoopVerdict {
 
 export interface LoopMission {
   objective: string
+  /**
+   * Optional longer brief / hints for the Agent (not a hard gate field).
+   * Portal aligning dock 「正文」; slash `/loop body …`.
+   */
+  body?: string
   acceptance?: string
   exit: {
     description: string
@@ -163,6 +168,8 @@ export function emptyLoopUsage(): LoopUsage {
 export interface LoopMissionView {
   objective: string
   exitDescription: string
+  /** Optional longer brief / hints (soft). */
+  body?: string
   acceptance?: string
   minRounds?: number
   maxRounds: number
@@ -224,6 +231,8 @@ export interface LoopStatusDto {
   maxRounds: number
   objective: string
   exitDescription: string
+  /** Optional longer brief / hints for the Agent. */
+  body?: string
   acceptance?: string
   dispatchesThisRound: number
   /** In-flight Subagent jobs for the current Loop round (pending|running). */
@@ -267,6 +276,7 @@ export function toLoopStatusDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopSta
     maxRounds: view.maxRounds,
     objective: view.objective,
     exitDescription: view.exitDescription,
+    ...(view.body ? { body: view.body } : {}),
     acceptance: view.acceptance,
     dispatchesThisRound: run.dispatchesThisRound || 0,
     liveSubagents,
@@ -317,6 +327,10 @@ export function formatLoopEndedSummary(run: LoopRun): string {
     `用量：派工 ${usage.dispatchCount} · 独立验收 ${usage.evaluatorCount}`
     + ` · continue ${usage.continueCount} · revise ${usage.reviseCount}`,
   )
+  if (view.body) {
+    const bodyShort = view.body.length > 240 ? `${view.body.slice(0, 240)}…` : view.body
+    lines.push(`**正文**：${bodyShort}`)
+  }
   if (view.acceptance) lines.push(`**验收**：${view.acceptance}`)
   if (run.lastVerification) {
     lines.push(
@@ -437,9 +451,11 @@ export function getMissionView(run: LoopRun): LoopMissionView {
     || ''
   )
   const confirmed = run.status !== 'aligning' && !!objective && !!exitDescription
+  const body = run.mission?.body?.trim() || undefined
   return {
     objective,
     exitDescription,
+    ...(body ? { body } : {}),
     acceptance: run.mission?.acceptance?.trim() || undefined,
     minRounds,
     maxRounds,
@@ -459,6 +475,10 @@ export function formatMissionFields(run: LoopRun, opts?: { draftLabel?: boolean 
     `${objLabel}：${v.objective || '❌ 未设定'}`,
     `${exitLabel}：${v.exitDescription || '❌ 未设定'}`,
   ]
+  if (v.body) {
+    const bodyShort = v.body.length > 400 ? `${v.body.slice(0, 400)}…` : v.body
+    lines.push(`**正文**：${bodyShort}`)
+  }
   if (v.acceptance) lines.push(`**验收**：${v.acceptance}`)
   if (v.minRounds && v.minRounds > 1) {
     lines.push(`最少轮次：${v.minRounds}（未满不可 met=true 达标结束）`)
@@ -809,10 +829,26 @@ function splitAcceptance(objectiveSide: string): { objective: string; acceptance
   }
 }
 
+/** Soft body / brief: 「正文：」「补充：」「详情：」「body:」. */
+const BODY_MAX = 4_000
+
+function splitBody(text: string): { rest: string; body?: string } {
+  const t = text.trim()
+  if (!t) return { rest: '' }
+  const m =
+    t.match(/^(.*?)[；;，,]\s*(?:正文|补充|详情)\s*[：:]\s*(.+)$/s)
+    || t.match(/^(.*?)[；;，,]\s*body\s*[：:]\s*(.+)$/is)
+  if (!m) return { rest: t }
+  const rest = (m[1] ?? '').trim()
+  const body = (m[2] ?? '').trim().slice(0, BODY_MAX) || undefined
+  return { rest, body }
+}
+
 /** Parse `/loop …` payload for objective + exit (NL-friendly). */
 export function parseLoopStartText(text: string): {
   objective: string
   exitDescription: string
+  body?: string
   acceptance?: string
   minRounds?: number
   maxRounds?: number
@@ -832,6 +868,7 @@ export function parseLoopStartText(text: string): {
   //   修好登录 退出条件为验收通过
   //   修好登录；退出：验收通过
   //   Fix auth; exit condition is PR green
+  //   修好登录；退出条件为最多3轮；正文：优先查超时日志
   const m =
     raw.match(/^(.*?)(?:[；;，,。]?\s*)退出条件\s*(?:为|是|[：:])\s*(.+)$/s)
     || raw.match(/^(.*?)(?:[；;，,。]?\s*)exit\s*conditions?\s*(?:are|is|[：:])\s*(.+)$/is)
@@ -848,6 +885,15 @@ export function parseLoopStartText(text: string): {
     .replace(/^(退出条件\s*(?:为|是)|退出|exit\s*conditions?\s*(?:are|is)|exit)\s*[：:]?\s*/i, '')
     .trim()
 
+  // Body may sit on either side of the exit split.
+  let body: string | undefined
+  const fromExit = splitBody(exitDescription)
+  exitDescription = fromExit.rest
+  if (fromExit.body) body = fromExit.body
+  const fromObj = splitBody(objective)
+  objective = fromObj.rest
+  if (fromObj.body) body = body ? `${fromObj.body}\n${body}` : fromObj.body
+
   const split = splitAcceptance(objective)
   objective = split.objective
   const constraints = parseExitConstraints(exitDescription)
@@ -855,6 +901,7 @@ export function parseLoopStartText(text: string): {
   return {
     objective,
     exitDescription,
+    ...(body ? { body } : {}),
     acceptance: split.acceptance,
     minRounds: constraints.minRounds,
     maxRounds: constraints.maxRounds,
@@ -965,6 +1012,7 @@ export function startLoop(input: {
 
   const mission = emptyMission(maxRounds)
   mission.objective = objective
+  if (parsed.body) mission.body = parsed.body.slice(0, BODY_MAX)
   if (parsed.acceptance) mission.acceptance = parsed.acceptance
   if (exitDescription) {
     applyExitToMission(mission, exitDescription, {
@@ -1078,6 +1126,27 @@ export function setLoopAcceptance(
   return { ok: true, run }
 }
 
+/** Optional longer brief — aligning or after confirm (refine). */
+export function setLoopBody(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  body: string,
+): { ok: true; run: LoopRun } | { ok: false; error: string } {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return { ok: false, error: 'no_active_loop' }
+  if (run.status === 'ended') return { ok: false, error: 'ended' }
+  const text = body.trim().slice(0, BODY_MAX)
+  if (!text) return { ok: false, error: 'empty' }
+  if (!run.mission) run.mission = emptyMission(run.maxRounds || defaultMaxRounds())
+  run.mission.body = text
+  syncMissionMirrors(run)
+  run.updatedAt = Date.now()
+  pushTimeline(run, 'user', `body: ${text.slice(0, 120)}`)
+  writeRun(run)
+  return { ok: true, run }
+}
+
 export function confirmLoopMission(
   platform: string,
   channelId: string,
@@ -1096,6 +1165,7 @@ export function confirmLoopMission(
   if (!run.mission) run.mission = emptyMission(view.maxRounds)
   run.mission.objective = view.objective
   applyExitToMission(run.mission, view.exitDescription)
+  if (view.body) run.mission.body = view.body
   if (view.acceptance) run.mission.acceptance = view.acceptance
   run.maxRounds = run.mission.exit.maxRounds
   run.status = 'planning'
@@ -1472,6 +1542,10 @@ export function buildLoopSnippet(
   lines.push(`Round: ${run.round}/${view.maxRounds}${minPart}`)
   lines.push(`Objective: ${view.objective}`)
   lines.push(`Exit: ${view.exitDescription}`)
+  if (view.body) {
+    lines.push('Body (operator brief — follow when planning/dispatching):')
+    lines.push(view.body.length > 2_000 ? `${view.body.slice(0, 2_000)}…` : view.body)
+  }
   if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
   if (view.minRounds) {
     lines.push(
@@ -1566,9 +1640,12 @@ export function formatAligningPrompt(run: LoopRun): string {
     lines.push('请补充退出条件，例如：`/loop exit 验收通过，或最多 5 轮`')
   }
   if (view.objective && view.exitDescription) {
-    lines.push('两项草稿已齐，确认后开始：`/loop confirm`')
+    lines.push('两项硬字段已齐，确认后开始：`/loop confirm`（可选 `/loop body …` 补充正文）')
   } else {
-    lines.push('也可一次写齐：`/loop 目标描述；退出条件为验收通过或最多5轮`（会新开 Loop，请先 `/loop stop` 当前对焦若需重来）')
+    lines.push(
+      '也可一次写齐：`/loop 目标描述；退出条件为验收通过或最多5轮；正文：补充提示`',
+      '（会新开 Loop，请先 `/loop stop` 当前对焦若需重来）',
+    )
   }
   lines.push('', '查看：`/loop status` · 放弃：`/loop stop`')
   return lines.join('\n')

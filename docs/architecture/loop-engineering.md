@@ -56,17 +56,26 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 |------|----------|------|
 | **目标（objective）** | **必须** | 要达成什么；可同步写入 Focus |
 | **退出条件（exit）** | **必须** | 何时停：如「验收通过」+ 上限轮次/时限/失败判据等；用户须明确至少一项可判定的退出语义 |
+| 正文（body） | 可选 | 更长的操作提示 / 约束 / 背景（软字段）；写入 Mission 并注入 Agent snippet，**不**参与硬门禁 |
 | 验收细则（acceptance） | 推荐 | 可并入目标讨论；缺省时用 objective 做验收锚 |
 
 **缺任一硬输入 → 不得进入 PLANNING / 派子代理。**  
-进入 **ALIGNING（对焦）**：用 `ask_user`（或等价对话）与用户讨论，直到目标和退出条件都确认。
+进入 **ALIGNING（对焦）**：用 `ask_user`（或等价对话）与用户讨论，直到目标和退出条件都确认。正文可一并填写，也可稍后 `/loop body …` 补充。
 
 对焦示例问法：
 
 - 目标：「这次 Loop 要达成的结果是什么？怎么算做成？」  
-- 退出：「什么情况下结束？例如：验收通过 / 最多 N 轮 / 超过 T 小时 / 连续失败 K 次就停？」
+- 退出：「什么情况下结束？例如：验收通过 / 最多 N 轮 / 超过 T 小时 / 连续失败 K 次就停？」  
+- 正文（可选）：「还有哪些背景、约束或优先路径要写进提示？」（例：优先查超时日志；不要改鉴权配置）
 
-用户可一次给齐（`/loop 目标…；退出条件为…` 或 `；退出：…`），也可分步补全。
+用户可一次给齐：
+
+```text
+/loop 修好登录超时；退出条件为验收通过或最多3轮；正文：优先查 nginx 超时日志，不要改鉴权
+```
+
+也可用短标签 `；退出：…` / `；补充：…` / `；body: …`，或分步：`/loop objective` → `/loop exit` → `/loop body` → `/loop confirm`。  
+Portal「待对焦」底栏提供目标 / 退出条件 / **正文（可选）** 三个输入框，「确定并开始」会拼成上述 slash。
 
 ### 2.2 主流程
 
@@ -115,6 +124,7 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 ```ts
 type LoopMission = {
   objective: string;                 // 必填（对焦确认后）
+  body?: string;                     // 可选正文/补充提示（软字段，注入 Agent 上下文）
   acceptance?: string;               // 推荐
   exit: {                            // 必填（对焦确认后）
     /** 用户自然语言退出条件（一等展示） */
@@ -167,6 +177,7 @@ type LoopRun = {
 /loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
 /loop objective <text>            # 对焦中补目标（可含「；验收：…」）
 /loop exit <text>                 # 对焦中补退出条件
+/loop body <text>                 # 可选正文/补充提示（软字段，注入 Agent 上下文）
 /loop acceptance <text>           # 可选验收细则（写入 Mission）
 /loop confirm                     # 两硬字段齐后确认
 /loop status | stop | help        # status 恒展示目标+退出
@@ -184,7 +195,7 @@ type LoopRun = {
             │
             ▼
        ┌──────────┐
-       │ ALIGNING │ 目标 + 退出条件对焦（硬门禁）
+       │ ALIGNING │ 目标 + 退出条件对焦（硬门禁）；可选 body 正文
        └────┬─────┘
             │ confirmed
             ▼
@@ -329,7 +340,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 | 场景 | UI | 用户动作 |
 |------|-----|----------|
-| **待对焦** | 底部浮层：目标 + 退出条件 | 「确定并开始」→ 发送 `/loop …；退出条件为…` |
+| **待对焦** | 底部浮层：目标 + 退出条件 + 可选正文 | 「确定并开始」→ 发送 `/loop …；退出条件为…`（有正文则附 `；正文：…`） |
 | **待派工 / 待验收**（Agent 空闲） | 底部「立即行动」条（类审批） | 代用户发推进指令（`call_agents` / `loop_verdict`） |
 | **中间评审提问** | 与全局一致：`ask_user` 选择卡（Portal / IM） | 点选或文本回复 → Agent 继续 `loop_verdict` |
 | **结论已就绪** | 底部结案浮窗（`pending_user_confirm`）；**聊天里不提前铺完整结论** | 可补充 →「确认结束」（此时才 `ended` + 写入结束摘要）或「继续下一轮」 |
@@ -405,7 +416,7 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 |------|------|--------|------|
 | **R0** ✅ | Focus + `/loop` 壳 | 已在 main | — |
 | **R1** ✅ | **对焦门禁** | `ALIGNING`；缺 objective/exit → slash + snippet→`ask_user`；确认前拒绝 `call_agent(s)`/`loop_verdict` | 无退出条件无法进入 planning |
-| **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出 | status / reload 可读两硬字段 |
+| **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `body` / `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出（有则附正文） | status / reload 可读两硬字段 + 可选正文 |
 | **R3** ✅ | **PLAN + DISPATCH** | 确认后 snippet 强制拆解；`noteLoopDispatch` + `dispatchesThisRound`；`continue/revise` 无派工 → `no_dispatch` | 无子代理调用则不算完成一轮 |
 | **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
 | **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 对焦/立即行动底栏 + 小精灵 Loop 状态；结束总结 Markdown；菜单文案对齐 L3 | 用户能看懂「待对焦/待派工/待验收」并直接操作 |
@@ -485,5 +496,6 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **VERIFY 中途 ask_user**：父侧等待门禁放行提问；pending ask 推迟 `verify_skipped`；主流程/状态机/Portal/`ask-user.md` 对齐 |
 | 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |
 | 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |
+| 2026-07-26 | **Mission `body`**：对焦底栏可选正文；`/loop body` / `；正文：`；注入 Agent 上下文（非硬门禁） |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问是否汇总子代理输出；同意则落盘工作区 `PROJECTS/loops/` + 回显聊天（`loop-report.ts` / `POST /api/loop/generate-report`） |

@@ -305,7 +305,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 `continue|revise` 要求本轮已派工 + `met=false` + `nextDirection` + **无 live 子代理**。
 
 **重要**：墙钟 / 轮次截断 **不等待** `loop_verdict`（`maybeEnforceLoopExit`）；避免报告已写出却永远停在「待验收」。  
-但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）与 **验收启动** 都会 **推迟** 到子代理全部结束后；若仍有 **未完成的 `ask_user`**（`threadHasPendingAsk`），`verify_skipped` 与 VERIFY follow-up 同样推迟，等用户回复后再继续。主 Loop / Portal 通过 `GET /api/loop` 轮询 `liveSubagents`。`/loop stop` 会立刻结束 Loop **并取消** 未完成子代理。
+但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）与 **验收启动** 都会 **推迟** 到子代理全部结束后；若仍有 **未完成的 `ask_user`**（`threadHasPendingAsk`），`verify_skipped` 与 VERIFY follow-up 同样推迟，等用户回复后再继续。主 Loop / Portal 通过 `GET /api/loop` 轮询 `liveSubagents`。`/loop stop` 与 Focus off/clear 都会立刻结束 Loop **并取消** 未完成子代理。
 
 #### 中间评审 `ask_user`（VERIFY HITL）
 

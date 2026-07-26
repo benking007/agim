@@ -19,7 +19,6 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { useApplyTheme, usePrefs } from '@/stores/prefs'
 import { bindAuthToStorage } from '@/stores/auth'
-import '@/i18n'
 
 function LanguageBinder({ children }: { children: React.ReactNode }): JSX.Element {
   // Keep the i18next instance in lockstep with the zustand store —

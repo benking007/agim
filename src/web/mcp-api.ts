@@ -125,11 +125,11 @@ async function handleAddServer(req: IncomingMessage, res: ServerResponse): Promi
       ? Object.keys(headers).some((k) => /^(authorization|proxy-authorization|x-api-key|api-key)$/i.test(k))
       : false
     {
-      const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
+      const { assertSafeUrl, UnsafeUrlError } = await import('../core/url-guard.js')
       try {
-        await assertSafeAcpUrl(mcpUrl, { forwardsCredentials })
+        await assertSafeUrl(mcpUrl, { forwardsCredentials })
       } catch (err) {
-        if (err instanceof UnsafeAcpUrlError) {
+        if (err instanceof UnsafeUrlError) {
           send(res, 400, { error: `url blocked: ${err.message}`, reason: err.reason })
           return
         }

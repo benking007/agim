@@ -83,7 +83,7 @@ Stay on this focus unless the user explicitly changes topic or turns focus off.
 | `mcp__agim__focus_on` / `focus_off` | 开关 |
 | `mcp__agim__focus_clear` | 清除 |
 
-旧名 `mcp__agim__long_task` → **废弃**，兼容期内转发到 `focus_set`（见 §6）。
+旧名 `mcp__agim__long_task` 已退役；使用 `mcp__agim__focus_set`。
 
 ---
 
@@ -153,13 +153,13 @@ Loop 本体定义见 [`loop-engineering.md`](./loop-engineering.md)（L3，不�
 
 | 旧面 | 处置 |
 |---|---|
-| `/goal`、`/g`、`/目标` | 废弃；兼容期提示改用 `/focus`，或静默转发 |
-| `mcp__agim__long_task` | 废弃 → `focus_set` |
-| `mcp__agim__complete_goal` | **废弃**（完成语义不归 Focus；若 Loop 需要「收尾」，另定 `/loop complete`，不复活 goal） |
+| `/goal`、`/g`、`/目标` | 已退役；使用 `/focus` |
+| `mcp__agim__long_task` | 已退役；使用 `mcp__agim__focus_set` |
+| `mcp__agim__complete_goal` | 已退役；用 Loop / `loop_verdict` 做闭环 |
 | `docs/goals.md` | 顶部加废弃声明，指向本文 |
 | goal-critic 名字 | 可暂留代码名；产品文案改为「focus-critic / on-track critic」，避免再强化 goal |
 
-兼容期长度：实现 PR 定（建议 ≥1 个次要版本 + CHANGELOG 大声通知）。
+兼容期已结束；Focus/Loop 是现行产品面。
 
 ---
 

@@ -1,12 +1,10 @@
-// config-api — REST surface for agent configuration and ACP connectivity.
+// config-api — REST surface for agent configuration.
 // Extracted from server.ts; follows the dispatcher pattern used by mcp-api.ts.
 //
 // Endpoints:
 //   GET  /api/config              → full config (masked secrets) — admin only
 //   PUT  /api/config              → merge + validate + persist    — admin only
 //   GET  /api/agents/status       → { [name]: available }        — any auth
-//   POST /api/agents/acp/test     → fetch manifest, check reachable — admin only
-//   POST /api/agents/acp/discover → probe baseUrl, optionally register — admin only
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { validateConfig } from '../core/config-schema.js'
@@ -47,14 +45,6 @@ export async function handleConfigApi(
   if (p === '/api/agents/status' && m === 'GET') {
     await handleAgentsStatus(req, res); return true
   }
-  if (p === '/api/agents/acp/test' && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
-    await handleAcpTest(req, res); return true
-  }
-  if (p === '/api/agents/acp/discover' && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
-    await handleAcpDiscover(req, res); return true
-  }
   return false
 }
 
@@ -67,9 +57,8 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     // corresponding keys from the response so the settings UI never
     // sees them and renders no tabs / cards. On-disk config is left
     // untouched: flipping the env back on restores visibility.
-    const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
+    const { isGlobalImEnabled } = await import('../core/feature-flags.js')
     const showGlobalIm = isGlobalImEnabled()
-    const showRemoteAgent = isRemoteAgentEnabled()
     // v1.2.69 — IM platform blacklist. When an operator sets
     // AGIM_PLATFORM_BLACKLIST=telegram,discord (etc.), those platforms
     // are hidden from the admin SPA entirely — credentials still live
@@ -136,14 +125,6 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
             allowedChannels: config.discord.allowedChannels,
           }
         : undefined,
-      acpAgents: showRemoteAgent
-        ? config.acpAgents?.map(a => ({
-            ...a,
-            auth: a.auth
-              ? { ...a.auth, token: a.auth.token ? mask(a.auth.token) : undefined }
-              : undefined,
-          }))
-        : undefined,
       // Feature flags surfaced for the SPA so it can hide the
       // corresponding tabs / nav entries. Field names are
       // intentionally neutral — they don't reveal which IMs / agent
@@ -151,7 +132,6 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       // already exposes.
       features: {
         globalIm: showGlobalIm,
-        remoteAgent: showRemoteAgent,
         // v1.2.71 — surface the live blacklist set so the SPA can hide
         // PlatformCards for blacklisted platforms. Without this the
         // backend filter on `messengers` / `telegram` / `feishu` etc.
@@ -159,11 +139,6 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
         blacklistedPlatforms: (await import('../core/registry.js')).getPlatformBlacklist(),
       },
       webPort: config.webPort,
-      // R15 — acpPort travels only when remote-agent feature is on.
-      // Pairs with the SPA hiding the ACP-port input under the same
-      // gate (see web-app/src/routes/settings/service.tsx). When off,
-      // PUT /api/config also drops incoming.acpPort (below).
-      acpPort: showRemoteAgent ? config.acpPort : undefined,
       agentStatus,
     })
   } catch (_err) {
@@ -185,7 +160,7 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
     // via direct PUT (the SPA filters in render but a stale draft from
     // before the env flag was disabled would otherwise re-add the
     // entry on next save).
-    const { isGlobalImEnabled, isRemoteAgentEnabled } = await import('../core/feature-flags.js')
+    const { isGlobalImEnabled } = await import('../core/feature-flags.js')
     if (!isGlobalImEnabled()) {
       delete incoming.telegram
       delete incoming.discord
@@ -194,10 +169,9 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
           .filter((m) => m !== 'telegram' && m !== 'discord')
       }
     }
-    if (!isRemoteAgentEnabled()) {
-      delete incoming.acpAgents
-      delete incoming.acpPort
-    }
+    delete incoming.acpAgents
+    delete incoming.acpDiscoveryUrls
+    delete incoming.acpPort
 
     const { config: storedConfig } = await updateConfigObject((current) => {
       const existing = {
@@ -264,18 +238,6 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
         }
         continue
       }
-      if (key === 'acpAgents' && Array.isArray(val)) {
-        merged.acpAgents = (val as unknown[]).map((item: unknown, i: number) => {
-          const a = item as Record<string, unknown> | undefined
-          const old = existing.acpAgents?.[i]
-          if (a?.auth && typeof a.auth === 'object' && typeof (a.auth as Record<string, unknown>).token === 'string' && isMasked((a.auth as Record<string, unknown>).token as string)) {
-            return { ...a, auth: { ...(a.auth as Record<string, unknown>), token: old?.auth?.token } }
-          }
-          return a
-        })
-        continue
-      }
-
       if (typeof val === 'string' && isMasked(val)) {
         continue
       }
@@ -333,114 +295,6 @@ async function handleAgentsStatus(_req: IncomingMessage, res: ServerResponse): P
     sendJson(res, 200, agentStatus)
   } catch (_err) {
     sendJson(res, 500, { error: 'Failed to check agents' })
-  }
-}
-
-async function handleAcpDiscover(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  try {
-    const body = await readBody(req, res)
-    const parsed = JSON.parse(body) as { baseUrl?: unknown; register?: unknown }
-    const baseUrl = typeof parsed.baseUrl === 'string' ? parsed.baseUrl : ''
-    // Strict-boolean: only literal `true` enables auto-registration. A
-    // truthy `{}` / 'yes' / 1 won't trip it.
-    const register = parsed.register === true
-    if (!baseUrl) {
-      sendError(res, 400, 'ACP_BASEURL_REQUIRED', { message: 'Missing baseUrl' })
-      return
-    }
-    // Guard SSRF: discovery doesn't forward auth, but a malicious baseUrl
-    // can still probe internal services (e.g. cloud metadata).
-    const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
-    try {
-      await assertSafeAcpUrl(baseUrl, { forwardsCredentials: false })
-    } catch (err) {
-      if (err instanceof UnsafeAcpUrlError) {
-        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { ok: false, reason: err.reason } })
-        return
-      }
-      throw err
-    }
-    const { discoverAgents } = await import('../plugins/agents/acp/discovery.js')
-    const result = await discoverAgents(baseUrl)
-    if (register) {
-      await registry.loadACPAgents(result.agents)
-    }
-    sendJson(res, 200, { ok: true, baseUrl: result.baseUrl, agents: result.agents })
-  } catch (err) {
-    const e = err as Error & { statusCode?: number; handled?: boolean }
-    if (e?.handled) return
-    const status = e?.statusCode || 500
-    const msg = e instanceof Error ? e.message : String(err)
-    if (!res.headersSent) {
-      sendError(res, status, 'ACP_DISCOVER_FAILED', {
-        detail: msg,
-        extra: { ok: false },
-      })
-    }
-  }
-}
-
-async function handleAcpTest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  try {
-    const body = await readBody(req, res)
-    // M11: bare JSON.parse threw a SyntaxError that bubbled out into the
-    // outer catch and surfaced as a "500-ish 400" with the parser's raw
-    // message. Validate explicitly so malformed bodies get a clean 400.
-    let parsed: { endpoint?: string; auth?: unknown }
-    try {
-      parsed = JSON.parse(body) as { endpoint?: string; auth?: unknown }
-    } catch {
-      sendError(res, 400, 'INVALID_JSON_BODY', {
-        message: 'Invalid JSON body',
-        extra: { ok: false },
-      })
-      return
-    }
-    const { endpoint, auth } = parsed
-    if (!endpoint || typeof endpoint !== 'string') {
-      sendError(res, 400, 'ACP_ENDPOINT_REQUIRED', {
-        message: 'Missing or invalid "endpoint"',
-        extra: { ok: false },
-      })
-      return
-    }
-
-    // Guard SSRF + credential exfil: the manifest fetch carries the
-    // operator-supplied auth.token in the Authorization header, so a
-    // malicious endpoint URL would have it on the wire. Require https
-    // when a token would travel.
-    const hasAuthToken = !!(
-      auth && typeof auth === 'object'
-      && typeof (auth as Record<string, unknown>).token === 'string'
-      && (auth as Record<string, string>).token.length > 0
-    )
-    const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
-    try {
-      await assertSafeAcpUrl(endpoint, { forwardsCredentials: hasAuthToken })
-    } catch (err) {
-      if (err instanceof UnsafeAcpUrlError) {
-        sendError(res, 400, 'ACP_URL_BLOCKED', { detail: err.message, extra: { ok: false, reason: err.reason } })
-        return
-      }
-      throw err
-    }
-
-    // Dynamic import to avoid circular deps
-    const { ACPClient } = await import('../plugins/agents/acp/acp-client.js')
-    const client = new ACPClient({ name: 'test', endpoint, auth: auth as never })
-    const manifest = await client.fetchManifest()
-
-    sendJson(res, 200, {
-      ok: true,
-      name: manifest.name,
-      description: manifest.description,
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    sendError(res, 400, 'ACP_TEST_FAILED', {
-      detail: msg,
-      extra: { ok: false },
-    })
   }
 }
 

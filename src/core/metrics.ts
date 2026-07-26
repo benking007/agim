@@ -214,12 +214,12 @@ const KNOWN_INTENTS: ReadonlySet<string> = new Set([
 
 /**
  * Allowlist of platform names. Each adapter pins its own platform string
- * (telegram / feishu / wechat / discord / web / acp / acp-server / rest /
- * rest-msg). Anything else funnels to 'other' to bound cardinality.
+ * (telegram / feishu / wechat / discord / web / rest / rest-msg).
+ * Anything else funnels to 'other' to bound cardinality.
  */
 const KNOWN_PLATFORMS: ReadonlySet<string> = new Set([
   'telegram', 'feishu', 'wechat', 'discord',
-  'web', 'acp', 'acp-server', 'rest', 'rest-msg',
+  'web', 'rest', 'rest-msg',
 ])
 
 function bucketLabel(known: ReadonlySet<string>, value: string): string {

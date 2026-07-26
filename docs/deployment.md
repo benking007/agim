@@ -6,7 +6,7 @@
 
 - Node.js >= 22.19（推荐 24 LTS）
 - npm
-- 至少一个可用 Agent 后端（CLI agent、Agim Agent + `llmBackends`，或 ACP）
+- 至少一个可用 Agent 后端（CLI agent，或 Agim Agent + `llmBackends`）
 - **生产硬依赖**：原生 addon `better-sqlite3`（outbox / jobs / audit）。需要 `gcc/g++/make/python3` 编译。Bun 测试环境加载不了该 addon，不能作为生产运行时。
 
 常见 CLI agent 安装：
@@ -108,8 +108,8 @@ sudo systemctl status agim
 
 ## 5. 端口、鉴权与审批
 
-- Web 控制台默认 `127.0.0.1:3000`
-- ACP 默认 `127.0.0.1:9090`
+- Web 控制台默认 `127.0.0.1:3000`（安装向导 / `agim config web` 只配置此端口）
+- 旧版 ACP `:9090` / `acpPort` / `AGIM_ACP_BIND` 已退役；`agim go` / `agim start` / `agim doctor` 会自动从 `config.json` 与 `~/.agim/env` 清掉残留键
 - Web token 鉴权默认开启
 - 工具调用自动审批默认关闭（`AGIM_AUTO_APPROVE=0`）；单人自用可显式开启
 
@@ -117,8 +117,7 @@ sudo systemctl status agim
 
 1. 优先通过反向代理暴露 HTTPS（nginx/caddy/tailscale）。
 2. 只对白名单来源开放。
-3. 不需要时不要开放 ACP 端口。
-4. 审批默认已是人工确认（`AGIM_AUTO_APPROVE=0`）；单人自用可显式 `AGIM_AUTO_APPROVE=1`。超时策略用 `AGIM_APPROVAL_ON_TIMEOUT=deny`（旧名 `AGIM_TIMEOUT_DEFAULT` 仍可读）。
+3. 审批默认已是人工确认（`AGIM_AUTO_APPROVE=0`）；单人自用可显式 `AGIM_AUTO_APPROVE=1`。超时策略用 `AGIM_APPROVAL_ON_TIMEOUT=deny`（旧名 `AGIM_TIMEOUT_DEFAULT` 仍可读）。
 
 ## 6. 常用运维命令
 
@@ -186,13 +185,13 @@ curl -fsS http://127.0.0.1:3000/api/health
 
 ### 端口冲突
 
-修改 `config.json` 的 `webPort`/`acpPort` 后重启。
+修改 `config.json` 的 `webPort` 后重启。
 
 ## 10. 上线检查清单
 
 - [ ] `agim status` 正常
 - [ ] `/api/health` 正常
-- [ ] 至少一个 agent 可执行（CLI / Agim Agent / ACP）
+- [ ] 至少一个 agent 可执行（CLI / Agim Agent）
 - [ ] Web 对话可用（`messengers: []` 的 web-console-only 也算通过）
 - [ ] 若启用 IM：至少一个 IM 通道可收发
 - [ ] token 鉴权已启用（或已确认 loopback / `AGIM_WEB_AUTH=off` 的部署边界）

@@ -11,10 +11,6 @@
 import { client } from './client'
 import type {
   A2AStats,
-  ACPDiscoverBody,
-  ACPDiscoverResponse,
-  ACPTestBody,
-  ACPTestResponse,
   AppConfig,
   EmailTestResponse,
   ViewerTunnelStatusResponse,
@@ -61,7 +57,6 @@ import type {
   ListBgjobsQuery,
   ListBgjobsResponse,
   ListSkillsResponse,
-  RemoteHotSkillsResponse,
   SkillDetail,
   VectorActionResponse,
   VectorClearResponse,
@@ -124,19 +119,6 @@ export const api = {
   /** GET /api/agent-health */
   getAgentHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/agent-health', opts),
-
-  /** POST /api/agents/acp/discover — probe a `<baseUrl>/.well-known/acp`
-   *  document. With `register: true` the server also hot-loads the
-   *  discovered agents into the in-memory registry; persisting them
-   *  across restarts still requires PUT /api/config { acpAgents }. */
-  discoverAcpAgents: (body: ACPDiscoverBody) =>
-    client.post<ACPDiscoverResponse>('/api/agents/acp/discover', { body }),
-
-  /** POST /api/agents/acp/test — probe a single agent endpoint by
-   *  fetching its `/agent/card` manifest. Used by the "Test" buttons
-   *  in /settings/agents to validate an ACP entry before saving. */
-  testAcpAgent: (body: ACPTestBody) =>
-    client.post<ACPTestResponse>('/api/agents/acp/test', { body }),
 
   /** POST /api/messengers/email/test — run nodemailer.verify() against
    *  the SMTP creds currently in process.env. No mail is sent. Operators
@@ -426,12 +408,6 @@ export const api = {
   /** GET /api/skills/:slug */
   getSkillDetail: (slug: string) =>
     client.get<SkillDetail>(`/api/skills/${encodeURIComponent(slug)}`),
-
-  /** GET /api/skills/remote/hot — proxy to skillhub.cn with 5min
-   *  server cache. Per-entry fields are optional in case the upstream
-   *  shape changes. */
-  getSkillsRemoteHot: () =>
-    client.get<RemoteHotSkillsResponse>('/api/skills/remote/hot'),
 
   /** GET /api/subtasks */
   listSubtasks: (query: ListSubtasksQuery) =>

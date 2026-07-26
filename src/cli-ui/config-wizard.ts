@@ -9,8 +9,8 @@
 //                       install / auth instructions, set as default
 //   3. Agim Agent API — model API management (delegates to setup-llm)
 //   4. IM Admins      — add/remove by picking known IM identities
-//   5. Web port       — only webPort (ACP keeps default bind/port)
-// Advanced sections (ACP / SMTP / Baidu) remain available below.
+//   5. Web port       — web console port
+// Advanced sections (SMTP / Baidu) remain available below.
 //
 // Design rule: every sub-menu has a ← Back entry. The wizard never
 // requires Ctrl-C to escape (first-time users don't know it works).
@@ -34,7 +34,7 @@ import { loadConfig, saveConfigChanges, type Config } from '../core/onboarding.j
 import { describeSecretSource } from '../core/llm/secrets.js'
 import { CONFIG_DIR } from './paths.js'
 import { ENV_FILE, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
-import { isGlobalImEnabled, isRemoteAgentEnabled } from '../core/feature-flags.js'
+import { isGlobalImEnabled } from '../core/feature-flags.js'
 import { listAdmins, listKnownImUsers, promoteAdmin, revokeAdmin } from '../core/admin-allowlist.js'
 
 /** Probe whether a CLI command exists on PATH. Defaults to the `--version`
@@ -49,7 +49,7 @@ function cliAvailable(cmd: string, args: string[] = ['--version']): Promise<bool
   })
 }
 
-type Section = 'messengers' | 'agents' | 'agim' | 'admins' | 'acp' | 'web' | 'smtp' | 'baidu' | 'done'
+type Section = 'messengers' | 'agents' | 'agim' | 'admins' | 'web' | 'smtp' | 'baidu' | 'done'
 export type ConfigSection = Exclude<Section, 'done'>
 
 export interface ConfigWizardOptions {
@@ -108,11 +108,6 @@ const CONFIG_COMPONENT_SECTIONS: Record<string, ConfigSection> = {
   admins: 'admins',
   admin: 'admins',
 
-  acp: 'acp',
-  agent: 'acp',
-  remote: 'acp',
-  'remote-agent': 'acp',
-
   web: 'web',
   smtp: 'smtp',
   baidu: 'baidu',
@@ -136,7 +131,6 @@ async function runConfigSection(lang: Lang, picked: ConfigSection, config: Confi
     await sectionAdmins(lang)
     return config
   }
-  if (picked === 'acp') return sectionAcp(lang, config)
   if (picked === 'web') return sectionWeb(lang, config)
   if (picked === 'smtp') {
     await sectionSmtp(lang)
@@ -150,6 +144,10 @@ async function runConfigSection(lang: Lang, picked: ConfigSection, config: Confi
 }
 
 export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}): Promise<void> {
+  try {
+    const { purgeRetiredAcpResidue } = await import('./retire-acp-residue.js')
+    await purgeRetiredAcpResidue()
+  } catch { /* best-effort */ }
   let config = await loadConfig()
   const initialConfig = structuredClone(config)
   console.log()
@@ -184,10 +182,6 @@ export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}
   while (true) {
     let picked: Section | typeof BACK
     try {
-      // ACP main-menu entry is gated by AGIM_ENABLE_REMOTE_AGENT — see
-      // src/core/feature-flags.ts. Resolved fresh on each loop iteration
-      // so toggling the env mid-wizard surfaces the option without a
-      // restart.
       const sectionChoices: Array<{ value: Section; name: string; separatorBefore?: boolean }> = [
         { value: 'messengers', name: t(lang, 'config.section.messengers') },
         { value: 'agents', name: t(lang, 'config.section.agents') },
@@ -195,11 +189,8 @@ export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}
         { value: 'admins', name: t(lang, 'config.section.admins') },
         { value: 'web', name: t(lang, 'config.section.web') },
       ]
-      if (isRemoteAgentEnabled()) {
-        sectionChoices.push({ value: 'acp', name: t(lang, 'config.section.acp'), separatorBefore: true })
-      }
       sectionChoices.push(
-        { value: 'smtp', name: t(lang, 'config.section.smtp'), separatorBefore: !isRemoteAgentEnabled() },
+        { value: 'smtp', name: t(lang, 'config.section.smtp'), separatorBefore: true },
         { value: 'baidu', name: t(lang, 'config.section.baidu') },
         { value: 'done', name: t(lang, 'config.section.done'), separatorBefore: true },
       )
@@ -1035,84 +1026,6 @@ async function sectionAdmins(lang: Lang): Promise<void> {
   }
 }
 
-// ─── ACP section ───────────────────────────────────────────────────────
-
-async function sectionAcp(lang: Lang, cfg: Config): Promise<Config> {
-  let agents = [...(cfg.acpAgents ?? [])]
-  while (true) {
-    const choices: Array<{ value: string; name: string }> = []
-    choices.push({ value: '__add__', name: t(lang, 'acp.action.add') })
-    for (const a of agents) {
-      choices.push({ value: `edit:${a.name}`, name: t(lang, 'acp.action.edit', { name: a.name }) })
-      choices.push({ value: `remove:${a.name}`, name: t(lang, 'acp.action.remove', { name: a.name }) })
-    }
-    const picked = (await menu<string>({
-      lang,
-      message: t(lang, 'acp.subtitle'),
-      choices,
-      back: 'acp.action.back',
-    })) as string | typeof BACK
-    if (picked === BACK) break
-
-    if (picked === '__add__') {
-      const a = await promptAcpAgent(lang)
-      if (a) agents.push(a)
-    } else if (picked.startsWith('remove:')) {
-      const name = picked.slice('remove:'.length)
-      agents = agents.filter(x => x.name !== name)
-      console.log(t(lang, 'acp.removed', { name }))
-    } else if (picked.startsWith('edit:')) {
-      const name = picked.slice('edit:'.length)
-      const idx = agents.findIndex(x => x.name === name)
-      if (idx >= 0) {
-        const updated = await promptAcpAgent(lang, agents[idx])
-        if (updated) agents[idx] = updated
-      }
-    }
-  }
-  return { ...cfg, acpAgents: agents }
-}
-
-async function promptAcpAgent(
-  lang: Lang,
-  existing?: NonNullable<Config['acpAgents']>[number],
-): Promise<NonNullable<Config['acpAgents']>[number] | null> {
-  const name = await inputText({
-    message: t(lang, 'acp.field.name'),
-    default: existing?.name,
-    required: true,
-  })
-  const endpoint = await inputText({
-    message: t(lang, 'acp.field.endpoint'),
-    default: existing?.endpoint,
-    required: true,
-    validate: v => /^https?:\/\//.test(v) || 'must start with http:// or https://',
-  })
-  const authType = (await menu<'none' | 'bearer'>({
-    lang,
-    message: t(lang, 'acp.field.auth_type'),
-    choices: [
-      { value: 'none', name: t(lang, 'acp.auth.none') },
-      { value: 'bearer', name: t(lang, 'acp.auth.bearer') },
-    ],
-    default: (existing?.auth?.type === 'bearer' ? 'bearer' : 'none') as 'none' | 'bearer',
-  })) as 'none' | 'bearer'
-  let token: string | undefined
-  if (authType === 'bearer') {
-    token = await inputSecret({
-      message: t(lang, 'acp.field.auth_token'),
-      required: true,
-    })
-  }
-  console.log(t(lang, 'acp.added', { name }))
-  return {
-    name,
-    endpoint,
-    auth: authType === 'none' ? { type: 'none' } : { type: 'bearer', token },
-    enabled: true,
-  }
-}
-
 // ─── SMTP section ──────────────────────────────────────────────────────
 
 interface SmtpPreset {
@@ -1293,8 +1206,6 @@ async function sectionBaidu(lang: Lang): Promise<void> {
 // ─── Web port section ─────────────────────────────────────────────────
 //
 // On first-run we keep this intentionally small: only expose webPort.
-// ACP keeps its own default endpoint/port unless the operator opts into
-// advanced env edits manually.
 async function sectionWeb(lang: Lang, cfg: Config): Promise<Config> {
   let config = cfg
   while (true) {

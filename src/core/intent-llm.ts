@@ -123,7 +123,7 @@ const MAX_KEY_TEXT_LEN = 256
 
 function makeKey(text: string, candidates: string[]): string {
   // Hash the candidate list so the key length is bounded regardless of
-  // how many ACP agents are registered. SHA-256/16-hex (64 bits) gives
+  // how many agents are registered. SHA-256/16-hex (64 bits) gives
   // 1-in-2^64 collision probability across the LRU window — irrelevant.
   const candHash = createHash('sha256')
     .update(candidates.slice().sort().join('|'))

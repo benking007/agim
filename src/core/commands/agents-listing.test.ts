@@ -78,12 +78,4 @@ describe('/agents output — peer rendering with kind tags', () => {
     expect(line).toBeDefined()
     expect(line).not.toContain(' — ')
   })
-
-  it('renders a remote kind with [remote] tag', async () => {
-    const fake = stubAdapter('test-remote-peer-1', 'remote', ['trp1'], 'host: acp.example.com')
-    registry.registerAgent(fake)
-    const out = await handleBuiltInCommand('agents', CTX)
-    expect(out).toContain('[remote]')
-    expect(out).toContain('acp.example.com')
-  })
 })

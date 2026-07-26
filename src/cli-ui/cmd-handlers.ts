@@ -15,7 +15,6 @@ import {
   stopService,
   formatUptime,
   findTcpListenOwner,
-  readAcpEndpoint,
   readWebEndpoint,
   DEFAULT_WEB_PORT,
   PID_FILE,
@@ -90,21 +89,10 @@ function describeRecentStartupFailure(lang: Lang): string | null {
     if (!Number.isFinite(port)) return null
 
     const web = readWebEndpoint() ?? { bind: '127.0.0.1', port: 3000 }
-    const acp = readAcpEndpoint()
     const owner = findTcpListenOwner(port)
     const ownerText = owner
       ? text(lang, `，当前占用进程：${owner}`, `, current owner: ${owner}`)
       : ''
-
-    if (port === acp.port) {
-      return text(
-        lang,
-        `启动失败原因：ACP 端口 ${bind}:${port} 已被占用${ownerText}。\n` +
-          '   ACP 不是首次 Web 对话必需；可以关闭占用程序，或在 ~/.agim/config.json 设置 "acpPort" 为其他端口后重试。',
-        `Startup failed because ACP port ${bind}:${port} is already in use${ownerText}.\n` +
-          '   ACP is not required for first Web chat; close the owner process, or set "acpPort" in ~/.agim/config.json and retry.',
-      )
-    }
 
     if (port === web.port) {
       return text(
@@ -538,7 +526,7 @@ function credentialFiles(): string[] {
     join(CONFIG_DIR, 'admin-bootstrap-token'),
     join(CONFIG_DIR, 'web-bootstrap-token'),
     join(CONFIG_DIR, 'llm-secrets.json'),
-    // Legacy ACP token file from pre-Web-token-unified versions.
+    // Legacy token file from pre-Web-token-unified versions.
     join(CONFIG_DIR, 'acp-token'),
     join(CONFIG_DIR, 'approval-bus.sock'),
   ]
@@ -694,8 +682,8 @@ export async function cmdUninstall(): Promise<void> {
   }
 
   // ─── Mode='creds' or 'full': wipe credential files ─────────────────
-  // These four files are what would let an attacker keep using the Web
-  // dashboard / ACP after the install is gone. unlink is fine here
+  // These files are what would let an attacker keep using the Web
+  // dashboard after the install is gone. unlink is fine here
   // because mode='full' falls through to a secure shred + rm -rf below.
   console.log(t(lang, 'svc.uninstall.removing_creds'))
   for (const f of credentialFiles()) {

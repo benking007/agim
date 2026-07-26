@@ -64,8 +64,6 @@ automatically.
               (Claude Code, Codex, OpenCode, Antigravity)
 'in-process'  runs entirely inside the agim process via the
               LLM client + agent loop (the Agim Agent / `agim` adapter)
-'remote'      talks to an external Agent Client Protocol endpoint
-              over the network (acp-* adapters)
 ```
 
 `kind` is **only consulted by operator-facing UI** (`/agents` listing,
@@ -95,7 +93,6 @@ The current registry:
 | `mimo` | `/mo`, `/mimo-code` | `cli` | MiMo Code CLI (`mimo run --format json`) |
 | `antigravity` | `/agy`, `/gemini`, `/ag` | `cli` | Google Antigravity CLI |
 | `agim` | `/agim`, `/na`, `/llm`, `/native-llm` (+ alias id `native`) | `in-process` | LLM client + agent loop (no subprocess) |
-| (per-config) | per-config | `remote` | ACP endpoint over HTTP |
 
 `/agents` renders every row with its `kind` tag and a one-line
 `describe()` so the user sees at a glance:
@@ -156,8 +153,6 @@ Cross-thread admin views land under two SPA areas:
 **`/tasks/*`** — runtime queue inspection:
 - `/tasks/heartbeat` — every `/heartbeat bind` across threads with
   last-tick status + enable/disable. REST `/api/heartbeat/bindings`.
-- `/tasks/goals` — every active goal across threads with lifecycle
-  controls (pause / complete / cancel). REST `/api/goals`.
 - `/tasks/asks` — live pending `mcp__agim__ask_user` queue with
   per-row Cancel (5s auto-refresh). REST `/api/asks/pending`.
 
@@ -229,8 +224,6 @@ The peer model gives us a clean upgrade path:
 - **More models for Agim Agent** — add a provider in `src/core/llm/`; Agim Agent can
   pick it automatically once it has a usable key. `llmRoles` remains an
   optional preference layer for deterministic role routing.
-- **Remote backends** — register an ACP-compatible endpoint with
-  `kind='remote'`; same A2A / approval / skills behaviour.
 - **Hosted agents** — if a SaaS exposes an agent API tomorrow, write
   one adapter and the entire agim feature set works against it.
 
@@ -239,7 +232,7 @@ The bridge identity stays. The peer set grows.
 ## 9. TL;DR
 
 > agim = **messenger ↔ agent bridge**.
-> All agent backends — CLI, in-process Agim Agent (`agim`), remote ACP — are peer
+> All agent backends — CLI and in-process Agim Agent (`agim`) — are peer
 > `AgentAdapter` implementations. `kind` is a UI tag, not a code path.
 > Every existing feature (routing, A2A, approval, skills, goal,
 > heartbeat, ask_user, /router compare) works on every peer
@@ -279,13 +272,6 @@ opt in / accept the documented semantics:
   SPA disable is a real routing kill-switch. Boot runs
   `migrateNativeAgentToggle` once so legacy non-empty lists that
   omitted the in-process agent get it appended before the filter applies.
-- **ACP SSRF**: `assertSafeAcpUrl` now guards Web discover/test,
-  discovery `.well-known` + advertised endpoints, and
-  `registry.loadACPAgents` before adapter construction. Runtime fetch
-  still uses `redirect: 'manual'`. Escape hatch:
-  `AGIM_ACP_ALLOW_LOOPBACK=1`.
-- **ACP abort/outcome**: `ACPAdapter` forwards `opts.signal` and reports
-  exactly-once `onOutcome`. Token `onUsage` awaits ACP wire support.
 - **Session id persistence**: router **and** cli `onAgentResolved` use
   `agent-session-bindings.ts` (`bindTurnAgentSession` + persist tables)
   instead of per-agent if-chains. Cursor now has `cursorSessionId`

@@ -82,7 +82,7 @@ context) so non-IM call sites still behave correctly.
   undefined, inherits agim `/`, behavior identical to before.
 - Direct-terminal usage (`claude` / `opencode` typed at a shell prompt) —
   not in agim's call path at all, completely unaffected.
-- Other CLI agents (codex, copilot, ACP-imported) — they don't override
+- Other CLI agents (codex, copilot, etc.) — they don't override
   `prepareCommand` and don't have per-cwd memory anyway. They continue to
   inherit agim's cwd.
 - Memory format. We rely entirely on Claude / opencode's existing per-cwd

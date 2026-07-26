@@ -8,7 +8,6 @@
  *   installed — agim's own loader view; CRUD against the writable
  *               workspace dir, read-only for builtins and skills
  *               inherited from ~/.claude/skills + opencode + codex.
- *   hot       — skillhub.cn 热门 (moved from /skills/hot).
  *
  * Old URLs under /skills still resolve via redirects in router.tsx
  * so bookmarks keep working.
@@ -27,7 +26,6 @@ interface SubTab {
 const SUB_TABS: SubTab[] = [
   { to: '.', i18nKey: 'agimSkills.tab.overview', end: true },
   { to: 'installed', i18nKey: 'agimSkills.tab.installed' },
-  { to: 'hot',       i18nKey: 'agimSkills.tab.hot' },
   // v1.2.151 — system-prompt skill block editor (operator override).
   { to: 'injection', i18nKey: 'agimSkills.tab.injection' },
 ]

@@ -1,9 +1,8 @@
 // Plugin registry for messengers and agents
 
 import type { MessengerAdapter, AgentAdapter } from './types.js'
-import type { ACPAgentConfig } from '../plugins/agents/acp/types.js'
 import { logger as rootLogger } from './logger.js'
-import { isGlobalImEnabled, isRemoteAgentEnabled } from './feature-flags.js'
+import { isGlobalImEnabled } from './feature-flags.js'
 import { isAgentEnabled } from './live-config.js'
 
 const log = rootLogger.child({ component: 'registry' })
@@ -101,7 +100,7 @@ class PluginRegistry {
 
   listAgents(): string[] {
     // v1.2.103 — same enabled-list filter as findAgent. Callers include
-    // the intent classifier, ACP advertisement, /agents handler, and the
+    // the intent classifier, /agents handler, and the
     // helper-agent selector — all should reflect the operator's current
     // enable/disable choices without a service restart.
     return Array.from(this.agents.keys()).filter((n) => isAgentEnabled(n))
@@ -113,94 +112,6 @@ class PluginRegistry {
    *  decides which are enabled visually). */
   listAllAgents(): string[] {
     return Array.from(this.agents.keys())
-  }
-
-  /**
-   * Load ACP (remote) agents from config. Uses Promise.allSettled
-   * for parallel loading so one slow endpoint doesn't block startup.
-   *
-   * Compliance gate: AGIM_ENABLE_REMOTE_AGENT must be '1' or the entire
-   * call is a no-op. Logged at info level so an operator who flipped
-   * config-on-disk without the env flag can see why nothing loaded.
-   */
-  async loadACPAgents(acpConfigs: ACPAgentConfig[]): Promise<void> {
-    if (!isRemoteAgentEnabled()) {
-      if (acpConfigs.length > 0) {
-        log.info({ event: 'registry.acp.disabled', count: acpConfigs.length },
-          'ACP agents in config but remote-agent gate is off; skipping load')
-      }
-      return
-    }
-    const enabled = acpConfigs.filter((c) => c.enabled !== false)
-    if (enabled.length === 0) return
-
-    const results = await Promise.allSettled(
-      enabled.map(async (cfg) => {
-        const { ACPAdapter } = await import('../plugins/agents/acp/acp-adapter.js')
-        const { assertSafeAcpUrl, UnsafeAcpUrlError } = await import('../plugins/agents/acp/url-guard.js')
-        try {
-          await assertSafeAcpUrl(cfg.endpoint, {
-            forwardsCredentials: !!(cfg.auth?.token && cfg.auth.type !== 'none'),
-          })
-        } catch (err) {
-          if (err instanceof UnsafeAcpUrlError) {
-            log.warn({
-              event: 'registry.acp.url_blocked',
-              acpAgent: cfg.name,
-              endpoint: cfg.endpoint,
-              reason: err.reason,
-            }, `ACP agent "${cfg.name}" blocked by URL guard: ${err.message}`)
-            return
-          }
-          throw err
-        }
-        const adapter = new ACPAdapter(cfg)
-
-        const available = await adapter.isAvailable().catch(() => false)
-        if (!available) {
-          log.warn({ acpAgent: cfg.name, endpoint: cfg.endpoint }, `ACP agent "${cfg.name}" not reachable, skipping`)
-          return
-        }
-
-        this.registerAgent(adapter)
-        log.info({ acpAgent: cfg.name, endpoint: cfg.endpoint }, `Loaded ACP agent: ${cfg.name}`)
-      })
-    )
-
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        log.warn({ reason: String(result.reason) }, 'Failed to load ACP agent')
-      }
-    }
-  }
-
-  /**
-   * Discover ACP agents via `.well-known/acp` on each base URL, then
-   * load every advertised agent through loadACPAgents(). Failures on
-   * individual URLs are logged but don't fail the batch.
-   *
-   * Compliance gate: same AGIM_ENABLE_REMOTE_AGENT switch — skip the
-   * discovery fetch entirely so disabled deployments don't even emit
-   * `.well-known/acp` requests on the network.
-   */
-  async loadDiscoveredACPAgents(baseUrls: string[]): Promise<number> {
-    if (!isRemoteAgentEnabled()) {
-      if (baseUrls.length > 0) {
-        log.info({ event: 'registry.acp.discovery.disabled', count: baseUrls.length },
-          'ACP discovery URLs configured but remote-agent gate is off; skipping discovery')
-      }
-      return 0
-    }
-    if (!baseUrls.length) return 0
-    const { discoverMany } = await import('../plugins/agents/acp/discovery.js')
-    const results = await discoverMany(baseUrls)
-    const flat: ACPAgentConfig[] = []
-    for (const r of results) flat.push(...r.agents)
-    if (flat.length === 0) return 0
-    await this.loadACPAgents(flat)
-    log.info({ baseUrls: baseUrls.length, agents: flat.length },
-      'ACP discovery complete')
-    return flat.length
   }
 
   async loadBuiltInPlugins(): Promise<void> {

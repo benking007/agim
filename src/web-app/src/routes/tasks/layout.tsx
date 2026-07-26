@@ -49,7 +49,6 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
       { to: 'schedules', i18nKey: 'subnav.schedules', mounted: true },
       // P1 follow-up — per-thread background primitives.
       { to: 'heartbeat', i18nKey: 'subnav.heartbeat', mounted: true },
-      { to: 'goals',     i18nKey: 'subnav.goals',     mounted: true },
       { to: 'asks',      i18nKey: 'subnav.asks',      mounted: true },
     ],
   },

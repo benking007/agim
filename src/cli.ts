@@ -10,7 +10,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { registry } from './core/registry.js'
-import { loadConfig as loadOnboardingConfig } from './core/onboarding.js'
 
 const PACKAGE_JSON = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
 
@@ -100,6 +99,14 @@ program
       await runConfigWizard(lang)
       return
     }
+    // Former ACP shortcuts (inbound :9090 / remote agents). Agents list is
+    // `agim config agents`; Web port is `agim config web`.
+    const retired = component.trim().toLowerCase().replace(/_/g, '-')
+    if (retired === 'acp' || retired === 'remote' || retired === 'remote-agent' || retired === 'agent') {
+      console.log(cliT(lang, 'config.shortcut.acp_retired'))
+      process.exitCode = 1
+      return
+    }
     const section = sectionForConfigComponent(component)
     if (!section) {
       console.log(cliT(lang, 'config.shortcut.unknown', { component }))
@@ -159,15 +166,10 @@ program
   .description('List available agents')
   .action(async () => {
     await registry.loadBuiltInPlugins()
-    const config = await loadOnboardingConfig()
-    if (config.acpAgents?.length) {
-      await registry.loadACPAgents(config.acpAgents)
-    }
     const agents = registry.listAgents()
     if (agents.length === 0) {
       console.log('No agents registered yet.')
       console.log('Run "agim config claude" to configure Claude Code.')
-      console.log('Run "agim config agent" to add a remote ACP agent.')
       return
     }
 
@@ -178,28 +180,15 @@ program
       agents.map(async (name) => {
         const agent = registry.getAgent(name)
         const available = await agent?.isAvailable().catch(() => false)
-
-        // Check if this is an ACP agent with extra info
-        let info = ''
-        try {
-          const { ACPAdapter } = await import('./plugins/agents/acp/acp-adapter.js')
-          if (agent instanceof ACPAdapter) {
-            const manifest = await agent.getManifest().catch(() => undefined)
-            if (manifest) {
-              info = ` — ${manifest.description || 'Remote ACP agent'}`
-            }
-          }
-        } catch { /* not an ACP agent */ }
-
-        return { name, available, aliases: agent?.aliases || [], info }
+        return { name, available, aliases: agent?.aliases || [] }
       })
     )
 
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        const { name, available, aliases, info } = result.value
+        const { name, available, aliases } = result.value
         const aliasStr = aliases.length ? ` (${aliases.join(', ')})` : ''
-        console.log(`  ${available ? '✅' : '❌'} ${name}${aliasStr}${info}`)
+        console.log(`  ${available ? '✅' : '❌'} ${name}${aliasStr}`)
       }
     }
   })

@@ -64,7 +64,7 @@ export type TodoMutationGateResult =
 
 /**
  * Hard preflight for mutating tools. Exempt tools always pass.
- * Fail-closed when the store is unavailable (same posture as complete_goal).
+ * Fail-closed when the store is unavailable.
  */
 export function evaluateTodoMutationGate(
   threadKey: string,
@@ -93,7 +93,7 @@ export function evaluateTodoMutationGate(
   return { ok: true }
 }
 
-/** complete_goal(completed) presence check when the gate is on. */
+/** Mission-completion presence check when the gate is on. */
 export function evaluateTodoPresenceGate(threadKey: string): TodoMutationGateResult {
   if (!isTodoGateOn()) return { ok: true }
   const snap = getTodoSnapshot(threadKey)
@@ -108,7 +108,7 @@ export function evaluateTodoPresenceGate(threadKey: string): TodoMutationGateRes
       ok: false,
       reason:
         'TODO_REQUIRED: AGIM_TODO_GATE requires a non-empty agim_todo_write checklist '
-        + 'before complete_goal(completed)',
+        + 'before marking a mission complete',
     }
   }
   return { ok: true }
@@ -116,7 +116,7 @@ export function evaluateTodoPresenceGate(threadKey: string): TodoMutationGateRes
 
 export const TODO_FIRST_PROMPT = [
   '[agim framework rule — todo-first planning]',
-  '- Before any mutating tool (agim_exec / agim_write_file / edit / memo write / push / call_agent / complete_goal / …), you MUST call agim_todo_write with a non-empty checklist.',
+  '- Before any mutating tool (agim_exec / agim_write_file / edit / memo write / push / call_agent / loop_verdict / ...), you MUST call agim_todo_write with a non-empty checklist.',
   '- Read tools, ask_user, and agim_todo_write itself are allowed without a checklist.',
   '- For multi-step work, the first tool call should be agim_todo_write. Update the checklist after each completed item.',
   '- Before ending the turn, call agim_todo_write once with every item completed (no trailing in_progress).',

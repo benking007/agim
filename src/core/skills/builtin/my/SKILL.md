@@ -28,7 +28,7 @@ The user (and you, with the user's consent) can change runtime settings via slas
 | Switch model on a CLI agent | `/model` (works for claude-code / codex / opencode / cursor) |
 | Reset thread context | `/new` |
 | Stop a running task | `/abort` |
-| Set a sustained objective | `/goal set <title>` |
+| Set a sustained objective | `/focus set <title>` |
 | Periodic self-check | `/heartbeat bind <body>` |
 
 ## Diagnostic checklist (when something fails)

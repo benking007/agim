@@ -145,8 +145,7 @@ export async function decideToolAccess(
  * signal AND return a structured "timed out" tool-result so the model
  * sees a tool-level failure (not a thrown rejection).
  *
- * `timeoutMs === 0` disables the per-tool cap for this call — used for
- * long_task etc. that are explicitly slow.
+ * `timeoutMs === 0` disables the per-tool cap for explicitly slow calls.
  */
 export async function dispatchWithTimeout(
   invoke: (signal: AbortSignal) => Promise<DispatcherResult>,

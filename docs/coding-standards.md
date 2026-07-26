@@ -24,7 +24,7 @@
 - 配置变更走 `updateConfigObject` + `configSchema`（原子写 + 锁）；**不要**直接 `writeFileSync(config.json)`。
 - 密钥文件（`llm-secrets.json`、token 文件）必须 **0600**，写入用 tmp+rename（或等价原子替换）。
 - 对外 HTTP JSON：**永不**回传 raw API key；敏感 header 在 list API 脱敏。
-- URL 出站（LLM / MCP / webhook / ACP）：优先复用现有 SSRF 护栏（`url-guard` / webhook DNS 检查）；新出口必须评估私网与 redirect。
+- URL 出站（LLM / MCP / webhook）：优先复用现有 SSRF 护栏（`url-guard` / webhook DNS 检查）；新出口必须评估私网与 redirect。
 - 错误：面向操作员的短消息；内部细节进 pino（`event:` 稳定字段）。
 
 ## 3. 测试

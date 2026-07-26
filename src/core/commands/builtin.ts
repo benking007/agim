@@ -38,10 +38,8 @@ const HELP_ZH = [
   '/remind …     提醒（一次性/周期/邮件）',
   '/memo …       5W1H 持久记录（自然语言交给 agent 自动拆解）',
   '/cron …       定时跑 agent（旧名 /schedule）',
-  '/focus …      本线程聚焦（注入 / on / off；旧 /goal 已废弃）',
+  '/focus …      本线程聚焦（注入 / on / off）',
   '/loop …       开发闭环（路径 A/B；需 Focus 或 /loop <text> 代开）',
-  '/long_task <标题>   废弃 → /focus set（兼容）',
-  '/complete_goal      废弃（完成语义不在 Focus；请用 /loop）',
   '/job          后台长任务管理',
   '/tasks        列出我的任务',
   '/check <id>   查看任务进度',
@@ -80,16 +78,14 @@ const HELP_EN = [
   'agim Commands',
   '',
   '/new          start a new session',
-  '/agents       list available agents (kind tag: [cli]=bridged CLI / [in-process]=agim / [remote]=ACP)',
+  '/agents       list available agents (kind tag: [cli]=bridged CLI / [in-process]=agim)',
   '/[agent]      send message to agent (/cc claude / /cx codex / /oc opencode / /agim …)',
   '/help [cmd]   show help (/help zh for Chinese)',
   '/remind …     reminders (one-shot/recurring/email)',
   '/memo …       5W1H persistent memos (let agent parse natural language)',
   '/cron …       scheduled agent runs (legacy /schedule)',
-  '/focus …      per-thread Focus (inject / on / off; /goal deprecated)',
+  '/focus …      per-thread Focus (inject / on / off)',
   '/loop …       development loop (path A/B; needs Focus or /loop <text>)',
-  '/long_task <title>   deprecated → /focus set (compat)',
-  '/complete_goal       deprecated (use /loop; not on Focus)',
   '/job          manage background jobs',
   '/tasks        list your jobs',
   '/check <id>   inspect job progress',
@@ -348,7 +344,7 @@ export async function handleBuiltInCommand(
         const adapter = registry.findAgent(name)
         if (!adapter) return `• ${name}`
         const kind = adapter.kind ?? 'cli'
-        const flag = ({ cli: '[cli]', 'in-process': '[in-process]', remote: '[remote]' })[kind] ?? `[${kind}]`
+        const flag = ({ cli: '[cli]', 'in-process': '[in-process]' })[kind] ?? `[${kind}]`
         const displayName = isAgimAgentId(name) ? 'Agim Agent' : name
         const aliasSet = new Set<string>()
         if (isAgimAgentId(name)) { aliasSet.add('agim'); aliasSet.add('native') }

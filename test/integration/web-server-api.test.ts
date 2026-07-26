@@ -204,30 +204,14 @@ describe('Web REST API', () => {
     })
   })
 
-  describe('POST /api/agents/acp/discover', () => {
-    it('rejects missing baseUrl with 400', async () => {
+  describe('retired ACP config endpoints', () => {
+    it('returns 404 for ACP discovery', async () => {
       const res = await fetch(url('/api/agents/acp/discover'), {
         method: 'POST',
         headers: { ...auth, 'content-type': 'application/json' },
         body: JSON.stringify({}),
       })
-      expect(res.status).toBe(400)
-    })
-
-    it('refuses loopback baseUrl with 400 ACP_URL_BLOCKED (R9 SSRF guard)', async () => {
-      // Pre-R9 this case exercised the unreachable-host error mapping
-      // (any 200-ok-false or 500). R9 short-circuits before the fetch
-      // because 127.0.0.1 is private-addr blocked. The dev escape hatch
-      // AGIM_ACP_ALLOW_LOOPBACK=1 restores the old behaviour.
-      const res = await fetch(url('/api/agents/acp/discover'), {
-        method: 'POST',
-        headers: { ...auth, 'content-type': 'application/json' },
-        body: JSON.stringify({ baseUrl: 'http://127.0.0.1:1' }),
-      })
-      expect(res.status).toBe(400)
-      const body = await res.json() as { code?: string; reason?: string }
-      expect(body.code).toBe('ACP_URL_BLOCKED')
-      expect(body.reason).toBe('private_address')
+      expect(res.status).toBe(404)
     })
   })
 

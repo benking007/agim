@@ -73,7 +73,6 @@ export type ParsedMessage =
   | { type: 'remind'; args: string }
   | { type: 'memo'; args: string }
   | { type: 'heartbeat'; args: string }
-  | { type: 'goal'; args: string }
   | { type: 'focus'; args: string }
   | { type: 'loop'; args: string }
   | { type: 'skill'; args: string }
@@ -586,20 +585,18 @@ export interface ToolActivityStep {
  * a peer 'agent backend' — `kind` is a hint for the operator-facing UI
  * (e.g. `/agents`) so they can tell at a glance whether a given backend
  * runs as an out-of-process CLI subprocess, in-process LLM loop, or
- * something else (ACP / remote).
+ * another local implementation.
  *
  *   'cli'         — spawns an external CLI binary per turn (Claude Code,
  *                   Codex, OpenCode, Antigravity, ...). The historical
  *                   default; the entire 'bridge' identity of agim.
  *   'in-process'  — runs entirely inside the agim process via the native
  *                   LLM client + agent loop (the `native` adapter).
- *   'remote'      — talks to an external Agent Client Protocol endpoint
- *                   over the network (acp-* adapters).
  *
  * Optional — adapters that pre-date this field default to behaviour-only
  * 'cli' rendering, which matches every existing built-in.
  */
-export type AgentAdapterKind = 'cli' | 'in-process' | 'remote'
+export type AgentAdapterKind = 'cli' | 'in-process'
 
 export interface AgentAdapter {
   readonly name: string

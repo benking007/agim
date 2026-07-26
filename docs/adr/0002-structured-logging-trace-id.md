@@ -77,7 +77,7 @@ agim 当前使用 `console.log()` / `console.error()` 输出日志，存在以�
 ### 渐进式迁移
 
 - 第一批（本次）：核心路径（messenger → router → opencode agent）+ 所有 `console.log` → `logger.info`
-- 第二批（Phase 1 后续）：其他 agent（claude-code / codex / copilot / ACP）
+- 第二批（Phase 1 后续）：其他 agent（claude-code / codex / copilot）
 - 第三批（Phase 2）：metrics 从日志中提取聚合
 
 ## Consequences

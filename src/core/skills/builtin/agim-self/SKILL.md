@@ -1,6 +1,6 @@
 ---
 name: agim-self
-description: Reference card for agim's built-in slash commands and MCP tools. Read this when the user asks about agim itself, reminders, memos, goals, heartbeat, or how to do something with the IM bridge.
+description: Reference card for agim's built-in slash commands and MCP tools. Read this when the user asks about agim itself, reminders, memos, Focus, Loop, heartbeat, or how to do something with the IM bridge.
 always: false
 ---
 
@@ -20,7 +20,8 @@ capabilities the user might ask you about.
 | `/<agent>` | switch agent (`/cc` claude-code, `/oc` opencode, `/cx` codex, `/co` opencode) |
 | `/remind <when> <text>` | one-shot or recurring reminder |
 | `/memo …` | 5W1H persistent memory (auto-extract via natural language) |
-| `/goal set <title>` | sustained multi-turn objective |
+| `/focus set <title>` | sustained attention anchor injected into future turns |
+| `/loop <objective>` | closed engineering loop with verification |
 | `/heartbeat bind <body>` | periodic agent self-check on this thread |
 | `/btw <q>` | bypass current thread for a quick parallel question |
 | `/abort` | stop the running agent |
@@ -64,11 +65,13 @@ sidecar wired:
   read_skill when the user's question matches a description in the
   skills list at the top of your system prompt.
 
-- **long_task / complete_goal** *(v1.2.63)* — self-register sustained
-  multi-turn objectives. `long_task(goal, summary?)` opens an active
-  goal that agim injects into your future prompts as an `[Active goal]`
-  block; `complete_goal(recap?, status?)` closes it. See the
-  **long-goal** skill for the full pattern.
+- **focus_set / focus_on / focus_off / focus_clear** — manage the
+  current thread's Focus attention anchor. Use when an objective should
+  stay visible across future turns.
+
+- **loop_verdict** — drive Loop verification. Use after dispatching and
+  checking work to continue, revise, or stop a closed engineering loop.
+  See the **long-goal** skill for the full pattern.
 
 ## Native built-in tools (v1.2.58–v1.2.62)
 

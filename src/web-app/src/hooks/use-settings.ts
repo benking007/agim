@@ -15,10 +15,6 @@
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api/endpoints'
 import type {
-  ACPDiscoverBody,
-  ACPDiscoverResponse,
-  ACPTestBody,
-  ACPTestResponse,
   EmailTestResponse,
   ViewerTunnelStatusResponse,
   AddAdminBody,
@@ -204,24 +200,6 @@ export function useWechatQrStatus(token: string | null) {
     enabled: Boolean(token),
     refetchInterval: 2000,
     refetchIntervalInBackground: false,
-  })
-}
-
-/** Probe a single ACP endpoint by fetching its manifest. Used by
- *  the "Test" buttons in /settings/agents to validate an entry
- *  before saving it to config. Errors flow back as ApiError. */
-export function useTestAcp() {
-  return useMutation<ACPTestResponse, Error, ACPTestBody>({
-    mutationFn: (body) => api.testAcpAgent(body),
-  })
-}
-
-/** Probe a `<baseUrl>/.well-known/acp` doc for an agent list. Used
- *  by the "Discover" form in /settings/agents to bulk-import. The
- *  caller still has to PUT /api/config { acpAgents } to persist. */
-export function useDiscoverAcp() {
-  return useMutation<ACPDiscoverResponse, Error, ACPDiscoverBody>({
-    mutationFn: (body) => api.discoverAcpAgents(body),
   })
 }
 

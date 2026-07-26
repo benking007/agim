@@ -335,10 +335,9 @@ export async function startWebServer(options: {
     // read surfaces additionally require admin (role=user tokens from
     // mobile QR must not enumerate jobs, config, or other operators' data).
 
-    // Config + agent status + ACP endpoints (admin guards are inside the dispatcher).
+    // Config + agent status (admin guards are inside the dispatcher).
     if (url.pathname === '/api/config'
-        || url.pathname === '/api/agents/status'
-        || url.pathname.startsWith('/api/agents/acp/')) {
+        || url.pathname === '/api/agents/status') {
       const handled = await handleConfigApi(req, res, url)
       if (handled) return
     }
@@ -418,8 +417,7 @@ export async function startWebServer(options: {
     }
     // v1.2.3 — Skills browser (locally-installed claude/opencode skills).
     if (url.pathname === '/api/skills'
-        || url.pathname === '/api/skills/remote/hot'
-        || url.pathname.startsWith('/api/skills/')) {
+        || /^\/api\/skills\/[A-Za-z0-9._-]+$/.test(url.pathname)) {
       if (await handleWorkspaceSkillsApi(req, res, url)) return
     }
     // PR-B: HITL approvals — global pending list + per-reqId resolve.
@@ -445,11 +443,10 @@ export async function startWebServer(options: {
       const handled = await handleMcpApi(req, res, url)
       if (handled) return
     }
-    // P1 follow-up — admin overview of the three per-thread background
-    // primitives (heartbeat bindings / goals / pending asks). Cross-
+    // P1 follow-up — admin overview of per-thread background
+    // primitives (heartbeat bindings / pending asks). Cross-
     // thread, user-typed content — require admin on every method.
     if (url.pathname.startsWith('/api/heartbeat/')
-        || url.pathname === '/api/goals' || url.pathname.startsWith('/api/goals/')
         || url.pathname.startsWith('/api/asks/')) {
       if (!requireAdmin(req, res)) return
       const handled = await handleBackgroundTasksApi(req, res, url)

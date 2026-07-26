@@ -8,7 +8,7 @@ Agim 是一个 **IM 到 AI Agent 的桥接系统**。
 ## 项目重点
 
 - **桥接优先**：微信 / 飞书 / 钉钉 / 邮件接入多类 Agent。
-- **后端灵活**：Claude Code、Codex、GitHub Copilot CLI、OpenCode、Cursor、Kimi Code、Qoder、PI、MiMo Code、Antigravity、Agim Agent（进程内 LLM）、ACP 远端 Agent。
+- **后端灵活**：Claude Code、Codex、GitHub Copilot CLI、OpenCode、Cursor、Kimi Code、Qoder、PI、MiMo Code、Antigravity、Agim Agent（进程内 LLM）。
 - **AI 能力成套**：记忆、技能、长目标、心跳、提醒、备忘、结构化提问。
 - **运行可靠**：SQLite outbox（at-least-once 投递）、重启恢复、任务看板、审计日志。生产环境硬依赖 Node 原生 `better-sqlite3`；无 SQLite 时 outbox 不可用。
 - **安全默认开启**：token 鉴权、敏感路径拦截；工具自动审批默认开（单人自用）。面向非受信 IM 时请按加固清单收紧。
@@ -72,7 +72,6 @@ agim doctor
 |---|---|
 | 编码与复杂任务 | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
 | 低成本 API 直连 | `agim`（别名 `native`）+ `llmBackends` |
-| 自定义远端执行器 | ACP (`acpAgents`) |
 
 Agim Agent 配置详见：`docs/llm-backends.md`
 

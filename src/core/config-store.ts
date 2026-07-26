@@ -12,6 +12,7 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
+import { stripRetiredAcpKeys } from './config-schema.js'
 
 export type ConfigObject = Record<string, unknown>
 
@@ -123,10 +124,13 @@ async function atomicWriteJson(filePath: string, config: ConfigObject): Promise<
   const dir = dirname(filePath)
   await mkdir(dir, { recursive: true, mode: 0o700 })
   const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`
+  // Drop retired ACP keys on every write so install/upgrade paths cannot
+  // re-persist acpPort / acpAgents after the surface was removed.
+  const sanitized = stripRetiredAcpKeys(config) as ConfigObject
   let handle: FileHandle | undefined
   try {
     handle = await open(tmpPath, 'wx', 0o600)
-    await handle.writeFile(JSON.stringify(config, null, 2), 'utf-8')
+    await handle.writeFile(JSON.stringify(sanitized, null, 2), 'utf-8')
     await handle.sync()
     await handle.close()
     handle = undefined

@@ -32,22 +32,21 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 
 | Name | Meaning | Typical knobs |
 |------|---------|---------------|
-| **ACP** | Remote agents plugged **into** Agim (`acpAgents[]`, discovery) | `acpPort`, `AGIM_ENABLE_REMOTE_AGENT` |
 | **A2A** | Transport/guardrails for calling **another registered** `AgentAdapter` (`callAgentByName` / `call_agent`) | `AGIM_A2A_*` |
-| **Agim ACP endpoint** | Agim speaking ACP **outward** on `:9090` | `~/.agim` access-token / legacy `acp-token` |
 | **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` / `mcp__agim__call_agents` (`role`/`backend`/`isolate`); [`architecture/subagent.md`](./architecture/subagent.md) |
 | **Subagent parallel fan-out** | One parent turn joins multiple SubagentRuns (batch tool) | `AGIM_SUBAGENT_PARALLEL` (default on), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3), `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default 3) |
-| **Focus** | Per-thread attention anchor: auto-inject when **on**, stop inject when **off**, optional clear | `/focus`; replaces `/goal` (deprecated); SSOT [`architecture/focus.md`](./architecture/focus.md) |
+| **Focus** | Per-thread attention anchor: auto-inject when **on**, stop inject when **off**, optional clear | `/focus`; SSOT [`architecture/focus.md`](./architecture/focus.md) |
 | **Loop / Loop Engineering**（Phase C；历史名 Long-engineering） | **L3 自动调度层**：目标 → 拆解 → 调度 Subagent → 验收 →（未达）反思再来 → 退出。≠ L2 Agent Loop（单代理 tool while）。用户面桶名：**待对焦 / 待派工 / 待验收**（不用「卡在…」）；「独立验收」= cheap evaluator，≠ `loop_verdict` 次数 | `/loop`; Portal 底栏/小精灵; `AGIM_LOOP_*`; SSOT [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6 |
 | **Agent Loop（L2）** | Single-agent Observe→Think→Tools→Results while not done | pi-agent / native tool loop — **not** `/loop` |
 | **≠ Claude Code `/loop`** | Claude 博客里的 `/loop` 是**定时再跑 prompt**（time-based）；Agim `/loop` ≈ 他们的 **`/goal` 级使命闭环**。定时触发属 Heartbeat/R6，不占用 `/loop` | 见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §对照 |
-| **goal**（deprecated） | Legacy sustained-objective slash/tools — migrate to **Focus**; do **not** revive completion on Focus | `/goal`, `long_task`, `complete_goal` → see [`goals.md`](./goals.md) banner |
+| **goal**（retired） | Former sustained-objective slash/tools — product surface removed; storage reused by Focus | see [`architecture/goal-residue.md`](./architecture/goal-residue.md) |
 | **goal-critic** | In-process cheap on-track check — **not** a Subagent / not Loop observer; product copy may say focus-critic | `AGIM_NATIVE_CRITIC_*` |
+| **ACP**（retired） | Former inbound `:9090` agent endpoint + outbound remote agents | removed; SSRF helpers in `src/core/url-guard.ts` |
 | **Heartbeat** | Wall-clock “anything to do?” — must **not** share LoopRun paths | `AGIM_HEARTBEAT_*` |
 | **Handoff / sticky switch** | User conversation control moves to another backend (`/cc`, `/oc`, …) — **not** a Subagent | session sticky |
 
-UI copy should say the full phrase (“Remote agents (ACP)”, “Subagent”
-for nested workers, “A2A” only when discussing cross-adapter transport).
+UI copy should say “Subagent” for nested workers and “A2A” only when
+discussing cross-adapter transport.
 Do not call sticky `/cc` a “subagent”.
 
 ## Workspace (two different words)

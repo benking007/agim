@@ -17,7 +17,6 @@
     "outbox": "Outbox",
     "a2a": "Agent ↔ Agent",
     "heartbeat": "Heartbeat",
-    "goals": "Goals",
     "asks": "Ask User",
     "plans": "Plans",
     "loops": "Loops"
@@ -48,7 +47,7 @@
       },
       "automation": {
         "title": "Automation",
-        "detail": "{{schedules}} schedules · {{heartbeats}} heartbeats · {{goals}} goals",
+        "detail": "{{schedules}} schedules · {{heartbeats}} heartbeats",
         "action": "Open schedules"
       },
       "a2a": {
@@ -76,7 +75,7 @@
       },
       "automation": {
         "title": "Review automation",
-        "detail": "Schedules, heartbeats, or active goals are running in the background."
+        "detail": "Schedules or heartbeats are running in the background."
       },
       "idle": {
         "title": "No active task pressure",
@@ -340,35 +339,6 @@
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago",
     "intervalMin": "{{count}}m"
-  },
-  "goals": {
-    "title": "Active goals",
-    "subtitle": "(Transitional) Cross-thread view of goals.db active rows; product primitive is now /focus. Lifecycle controls still work; create with /focus set <title> in a thread.",
-    "refresh": "Refresh",
-    "empty": "No active Focus/goal rows. Create with /focus set <title> in any IM thread.",
-    "col": {
-      "id": "#",
-      "thread": "Thread",
-      "title": "Title",
-      "progress": "Progress",
-      "updated": "Updated",
-      "actions": "Actions"
-    },
-    "showBody": "Show body",
-    "hideBody": "Hide body",
-    "pause": "Pause",
-    "complete": "Complete",
-    "cancel": "Cancel",
-    "status": {
-      "paused": "Paused",
-      "completed": "Completed",
-      "cancelled": "Cancelled"
-    },
-    "body": "Body",
-    "recentProgress": "Recent progress (latest {{count}})",
-    "created": "created {{at}}",
-    "closed": "closed {{at}}",
-    "statusUpdated": "Goal {{status}}"
   },
   "asks": {
     "title": "Pending ask_user",

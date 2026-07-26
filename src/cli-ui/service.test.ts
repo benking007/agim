@@ -13,7 +13,6 @@ const {
   LOG_FILE,
   LOG_REDIRECTED_ENV,
   ensureServiceLogMirror,
-  readAcpEndpoint,
   readWebEndpoint,
 } = await import('./service.js')
 const { _internal, cmdStatus, cmdWeb } = await import('./cmd-handlers.js')
@@ -24,7 +23,6 @@ function writeConfig(cfg: Record<string, unknown>): void {
 }
 
 beforeEach(() => {
-  delete process.env.AGIM_ACP_BIND
   delete process.env.AGIM_WEB_BIND
   delete process.env.AGIM_WEB_AUTH
   delete process.env.AGIM_TRUST_LOOPBACK
@@ -70,19 +68,6 @@ describe('readWebEndpoint', () => {
     writeConfig({ webPort: 3456 })
     writeFileSync(join(AGIM_HOME, 'env'), 'AGIM_WEB_BIND=0.0.0.0\n')
     expect(readWebEndpoint()).toEqual({ bind: '0.0.0.0', port: 3456 })
-  })
-})
-
-describe('readAcpEndpoint', () => {
-  it('uses the default loopback endpoint when acpPort is absent', () => {
-    writeConfig({})
-    expect(readAcpEndpoint()).toEqual({ bind: '127.0.0.1', port: 9090 })
-  })
-
-  it('reads acpPort from config and AGIM_ACP_BIND from the env file', () => {
-    writeConfig({ acpPort: 19090 })
-    writeFileSync(join(AGIM_HOME, 'env'), 'AGIM_ACP_BIND=0.0.0.0\n')
-    expect(readAcpEndpoint()).toEqual({ bind: '0.0.0.0', port: 19090 })
   })
 })
 

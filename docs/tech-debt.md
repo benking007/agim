@@ -24,7 +24,7 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `pi-sessions` → `agim-sessions` | Boot rename when target absent |
 | Config `workspaces[]` → `tenants[]` | Prefer `tenants`; dual-write on SPA save |
 | Agim Agent JSONL orphaned on `/new` / TTL | Quarantine + grace purge (`agim-agent-session-lifecycle`) |
-| LLM/MCP URL SSRF guard | CR P1a → `assertSafeAcpUrl` on add; hatch `AGIM_URL_ALLOW_PRIVATE=1` (#220) |
+| LLM/MCP URL SSRF guard | CR P1a → `assertSafeUrl` on add; hatch `AGIM_URL_ALLOW_PRIVATE=1` (#220) |
 | MCP GET redact auth headers | CR P2a → list masks Authorization / api-key (#220) |
 | Atomic `tokens.json` writes | CR P2b → tmp+rename like `llm-secrets.json` (#220) |
 | Mobile QR short-TTL exchange | CR P2c → `?c=` + `POST /api/auth/exchange-mobile` (#220) |
@@ -39,7 +39,7 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `AGIM_NATIVE_*` env prefix | Historical; future `AGIM_AGENT_*` aliases deferred |
 | Dispatch accept `native_*` | Prompt/policy migration window |
 | Config read `workspaces[]` + API `/api/workspaces` | SPA URL churn deferred |
-| `AGIM_ENABLE_GLOBAL_IM` / `AGIM_ENABLE_REMOTE_AGENT` | Compliance gates |
+| `AGIM_ENABLE_GLOBAL_IM` | Compliance gate |
 | `config.agents: []` = allow-all | Back-compat |
 | Session legacy single-file JSON | Back-compat loader |
 | `/setup`, `/schedule`, `?token=` | Soft deprecation |

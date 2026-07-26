@@ -1,16 +1,16 @@
 # ADR-0001: Agent Base Abstraction
 
 - **日期**：2026-04-30
-- **状态**：已实施（`src/core/agent-base.ts`；各 CLI / ACP adapter 继承）
+- **状态**：已实施（`src/core/agent-base.ts`；各 CLI adapter 继承）
 
 ---
 
 ## Context
 
-agim 目前有 5 个 Agent 适配器（opencode、claude-code、codex、copilot、ACP），每个独立实现了 `isAvailable()`、`sendPrompt()`、超时处理、abort 支持、流式解析。这使得以下行为不一致：
+agim 目前有多个 CLI Agent 适配器（opencode、claude-code、codex、copilot 等），每个独立实现了 `isAvailable()`、`sendPrompt()`、超时处理、abort 支持、流式解析。这使得以下行为不一致：
 
 - 只有 opencode 有 30min 超时，其他无超时保护
-- 只有 opencode 和 ACP 支持 abort signal
+- 只有 opencode 支持 abort signal
 - 只有 opencode 利用 CLI 的 `--session` 实现上下文保持
 - copilot 和 codex 把全部历史拼成纯文本注入 prompt（token 浪费）
 - 每次新增 agent 都需要重写一遍 timeout/abort/stream 逻辑
@@ -23,7 +23,7 @@ agim 目前有 5 个 Agent 适配器（opencode、claude-code、codex、copilot�
 |------|------------------------|-------------------|
 | isAvailable | 各自 spawn 子进程检测 | 基类包装 + 缓存 + TTL |
 | timeout | opencode 30min，其他无 | 统一 `opts.timeoutMs` → SIGTERM/SIGKILL 阶梯 |
-| abort | opencode/ACP 有，其他无 | 统一 `opts.signal` → AbortController |
+| abort | opencode 有，其他无 | 统一 `opts.signal` → AbortController |
 | stream parsing | JSONL 各自解析 | 基类提供 `parseStream()` helper |
 | session 重用 | 仅 opencode | 基类提供 `#sessionMap` + `getSessionId()/setSessionId()` |
 | usage 收集 | opencode 有，其他无 | 基类统一字段 `usage: { tokens, cost, steps }` |

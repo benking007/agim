@@ -40,7 +40,7 @@ interface PendingRpc {
   resolve: (value: JsonObject) => void
 }
 
-type AgimRpcType = 'skill' | 'memory' | 'memo' | 'reminder' | 'ask' | 'push' | 'a2a' | 'goal' | 'native_tool'
+type AgimRpcType = 'skill' | 'memory' | 'memo' | 'reminder' | 'ask' | 'push' | 'a2a' | 'native_tool'
 
 const ANY_OBJECT_SCHEMA: JsonObject = {
   type: 'object',
@@ -51,34 +51,6 @@ const EMPTY_SCHEMA: JsonObject = {
   type: 'object',
   additionalProperties: false,
   properties: {},
-}
-
-const LONG_TASK_SCHEMA: JsonObject = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    goal: { type: 'string', description: 'One-line sustained objective.' },
-    summary: { type: 'string', description: 'Acceptance criteria / scope notes.' },
-    force: { type: 'boolean', description: 'Pause an existing active goal.' },
-  },
-  required: ['goal'],
-}
-
-const COMPLETE_GOAL_SCHEMA: JsonObject = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    goalId: { type: 'number', description: 'Exact goalId from the Completion token.' },
-    goalVersion: { type: 'number', description: 'Exact goalVersion from the Completion token.' },
-    evidenceIds: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Server-issued evidence capabilities, when available.',
-    },
-    recap: { type: 'string', description: 'Honest completion/cancellation recap.' },
-    status: { type: 'string', enum: ['completed', 'cancelled'] },
-  },
-  required: ['goalId', 'goalVersion', 'recap'],
 }
 
 const WEB_SEARCH_SCHEMA: JsonObject = {
@@ -420,21 +392,5 @@ export default function agimPiExtension(pi: PiExtensionApi): void {
     label: 'Agim call agent',
     description: 'Call another registered Agim agent and wait for its result.',
     type: 'a2a',
-  })
-  registerRpcTool(pi, {
-    name: 'mcp__agim__long_task',
-    label: 'Agim long task',
-    description: 'Register a sustained multi-turn objective for this IM thread.',
-    type: 'goal',
-    op: 'long_task',
-    parameters: LONG_TASK_SCHEMA,
-  })
-  registerRpcTool(pi, {
-    name: 'mcp__agim__complete_goal',
-    label: 'Agim complete goal',
-    description: 'Mark the active goal complete or cancelled.',
-    type: 'goal',
-    op: 'complete_goal',
-    parameters: COMPLETE_GOAL_SCHEMA,
   })
 }

@@ -1,6 +1,6 @@
 /**
  * use-background-tasks — react-query hooks for the P1 follow-up
- * admin panels (heartbeat / goals / asks).
+ * admin panels (heartbeat / asks).
  *
  * All three sit under the same `/tasks/*` SPA group + share polling
  * intervals because operators tend to flip between them. Each list
@@ -59,53 +59,6 @@ export function useHeartbeatToggle() {
       `/api/heartbeat/bindings/${encodeURIComponent(bindingKey(row))}/${op}`,
     ),
     onSuccess: () => qc.invalidateQueries({ queryKey: hbKeys.all }),
-  })
-}
-
-// ─── Goals ──────────────────────────────────────────────────────
-
-export interface GoalRow {
-  id: number
-  platform: string
-  channelId: string
-  threadId: string
-  userId: string
-  title: string
-  body: string
-  status: 'active' | 'paused' | 'completed' | 'cancelled'
-  progressLog: Array<{ ts: string; by: string; text: string }>
-  progressCount: number
-  createdAt: string
-  updatedAt: string
-  closedAt: string | null
-}
-
-export interface GoalsListResponse {
-  goals: GoalRow[]
-  count: number
-  scope: 'all-active' | 'thread'
-}
-
-const goalKeys = {
-  all:  ['goals'] as const,
-  list: ['goals', 'list'] as const,
-}
-
-export function useGoalsList() {
-  return useQuery<GoalsListResponse>({
-    queryKey: goalKeys.list,
-    queryFn: () => client.get<GoalsListResponse>('/api/goals'),
-    refetchInterval: 30_000,
-  })
-}
-
-export function useGoalUpdateStatus() {
-  const qc = useQueryClient()
-  return useMutation<unknown, Error, { id: number; status: GoalRow['status'] }>({
-    mutationFn: ({ id, status }) => client.put(
-      `/api/goals/${id}/status`, { body: { status } },
-    ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: goalKeys.all }),
   })
 }
 

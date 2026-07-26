@@ -2,10 +2,8 @@
  * /settings/service — operator-facing process control: see the
  * running agim daemon's mode/pid/uptime + start, stop, or restart it.
  *
- * R8 (this round) added a dedicated "Ports" card at the top covering
- * webPort + acpPort. They live in `~/.agim/config.json` (PUT /api/config),
- * and take effect on the next service restart — handled by the
- * Start/Restart buttons immediately below.
+ * The "Ports" card edits `webPort` in `~/.agim/config.json`
+ * (PUT /api/config). Changes take effect on the next service restart.
  *
  * Stop and restart go through ConfirmDialog because they
  * permanently interrupt every messenger adapter + in-flight job;
@@ -46,7 +44,6 @@ const MODE_VARIANT: Record<ServiceMode, 'success' | 'info' | 'warning' | 'defaul
 }
 
 const DEFAULT_WEB_PORT = 3000
-const DEFAULT_ACP_PORT = 9090
 
 export default function SettingsServiceRoute(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
@@ -371,7 +368,7 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-/* ─────────────── Ports card (webPort + acpPort) ─────────────── */
+/* ─────────────── Ports card (webPort) ─────────────── */
 
 /** Validate a port string. Empty = "use the default", which we
  *  represent on the wire as `undefined` (omitted field). Non-empty
@@ -391,10 +388,8 @@ function PortsCard(): JSX.Element {
 
   const cfg = cfgQuery.data
   const currentWeb = cfg?.webPort
-  const currentAcp = cfg?.acpPort
 
   const [webDraft, setWebDraft] = useState<string>('')
-  const [acpDraft, setAcpDraft] = useState<string>('')
   // Tracks the cfg snapshot we last synced from, so post-save refetch
   // re-hydrates the drafts cleanly (and so local edits don't get
   // clobbered by background refetches).
@@ -404,34 +399,28 @@ function PortsCard(): JSX.Element {
     if (!cfg) return
     if (cfgQuery.dataUpdatedAt === syncedAt) return
     setWebDraft(currentWeb != null ? String(currentWeb) : '')
-    setAcpDraft(currentAcp != null ? String(currentAcp) : '')
     setSyncedAt(cfgQuery.dataUpdatedAt)
-  }, [cfg, cfgQuery.dataUpdatedAt, currentWeb, currentAcp, syncedAt])
+  }, [cfg, cfgQuery.dataUpdatedAt, currentWeb, syncedAt])
 
   const webParsed = parsePort(webDraft)
-  const acpParsed = parsePort(acpDraft)
   const webInvalid = !webParsed.ok
-  const acpInvalid = !acpParsed.ok
 
   const isDirty = useMemo(() => {
     if (!cfg) return false
     const nextWeb = webParsed.ok ? webParsed.value : undefined
-    const nextAcp = acpParsed.ok ? acpParsed.value : undefined
-    return nextWeb !== currentWeb || nextAcp !== currentAcp
-  }, [cfg, webParsed, acpParsed, currentWeb, currentAcp])
+    return nextWeb !== currentWeb
+  }, [cfg, webParsed, currentWeb])
 
   function onDiscard(): void {
     setWebDraft(currentWeb != null ? String(currentWeb) : '')
-    setAcpDraft(currentAcp != null ? String(currentAcp) : '')
   }
 
   async function onSave(): Promise<void> {
-    if (!cfg || webInvalid || acpInvalid) return
+    if (!cfg || webInvalid) return
     try {
       await updateCfg.mutateAsync({
         ...cfg,
         webPort: webParsed.ok ? webParsed.value : undefined,
-        acpPort: acpParsed.ok ? acpParsed.value : undefined,
       })
       toast.success(t('service.ports.toast.saved'))
     } catch (err) {
@@ -461,21 +450,6 @@ function PortsCard(): JSX.Element {
           invalid={webInvalid}
           placeholder={String(DEFAULT_WEB_PORT)}
         />
-        {/* R15 — acpPort hidden when remote-agent feature is off (same
-            gate as the ACP card in /settings/agents). Server already
-            strips acpPort from GET /api/config and drops it from
-            incoming PUT in the off state. */}
-        {cfg?.features?.remoteAgent ? (
-          <PortField
-            id="acp-port"
-            label={t('service.ports.acpPort')}
-            hint={t('service.ports.acpPortHint', { default: DEFAULT_ACP_PORT })}
-            value={acpDraft}
-            onChange={setAcpDraft}
-            invalid={acpInvalid}
-            placeholder={String(DEFAULT_ACP_PORT)}
-          />
-        ) : null}
       </div>
 
       {isDirty && (
@@ -494,7 +468,7 @@ function PortsCard(): JSX.Element {
           <Button
             size="sm"
             onClick={() => void onSave()}
-            disabled={updateCfg.isPending || webInvalid || acpInvalid}
+            disabled={updateCfg.isPending || webInvalid}
           >
             {updateCfg.isPending
               ? <Loader2 className="h-4 w-4 animate-spin" />

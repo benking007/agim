@@ -162,11 +162,10 @@ describe('buildGoalSnippet', () => {
     if (!hasSqliteRow(r)) return
     const snippet = buildGoalSnippet(T.platform, T.channelId, T.threadId)
     expect(snippet).toContain(`#${r.id}`)
-    expect(snippet).toContain(`"goalId":${r.id}`)
-    expect(snippet).toContain('"goalVersion":')
     expect(snippet).toContain('Ship v1.3.0')
     expect(snippet).toContain('CHANGELOG')
     expect(snippet).toContain('agim context')
+    expect(snippet).not.toContain('complete_goal')
   })
 
   it('only includes the most recent N progress notes (bounded)', () => {

@@ -59,6 +59,22 @@ describe('config-store', () => {
     expect(readdirSync(DIR)).toEqual(['config.json'])
   })
 
+  it('strips retired ACP keys on write', async () => {
+    await writeConfigObject({
+      agents: ['agim'],
+      defaultAgent: 'agim',
+      acpPort: 9090,
+      acpAgents: [{ name: 'x', endpoint: 'https://example.com' }],
+      acpDiscoveryUrls: ['https://example.com'],
+    }, { filePath: FILE })
+
+    const stored = await readConfigObject({ filePath: FILE })
+    expect(stored).toEqual({ agents: ['agim'], defaultAgent: 'agim' })
+    expect(stored.acpPort).toBeUndefined()
+    expect(stored.acpAgents).toBeUndefined()
+    expect(stored.acpDiscoveryUrls).toBeUndefined()
+  })
+
   it('serializes concurrent read-modify-write transactions', async () => {
     await writeConfigObject({ seed: true }, { filePath: FILE })
 

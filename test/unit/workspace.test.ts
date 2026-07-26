@@ -44,7 +44,7 @@ describe('WorkspaceRegistry', () => {
   it('default workspace is unrestricted (empty whitelist allows all)', () => {
     const r = new WorkspaceRegistry()
     expect(r.default.hasAgent('claude-code')).toBe(true)
-    expect(r.default.hasAgent('newly-registered-acp-agent')).toBe(true)
+    expect(r.default.hasAgent('newly-registered-custom-agent')).toBe(true)
   })
 
   it('resolves to a named workspace when user is a member', () => {

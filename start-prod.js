@@ -4,12 +4,12 @@
 // Differences from `dist/cli.js start`:
 //   - Skips the interactive onboarding (no readline prompts).
 //   - Skips the messenger startup (Telegram/WeChat/Feishu) — this script
-//     is intended for deployments that only expose the Web/REST/ACP
+//     is intended for deployments that only expose the Web/REST
 //     surfaces. Set AGIM_ENABLE_MESSENGERS=1 to opt in.
 //
-// Everything else mirrors cli.ts: load config, plugins, ACP agents,
-// auto-discovery, scheduler, audit retention sweep — so /api/jobs,
-// /schedule, /audit etc. all work identically to the CLI flow.
+// Everything else mirrors cli.ts: load config, plugins, scheduler, audit
+// retention sweep — so /api/jobs, /schedule, /audit etc. all work
+// identically to the CLI flow.
 
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -20,7 +20,6 @@ const { registry } = await import(join(here, 'dist/core/registry.js'))
 const { sessionManager } = await import(join(here, 'dist/core/session.js'))
 const { workspaceRegistry } = await import(join(here, 'dist/core/workspace.js'))
 const { startWebServer } = await import(join(here, 'dist/web/server.js'))
-const { startACPServer } = await import(join(here, 'dist/core/acp-server.js'))
 const { loadConfig } = await import(join(here, 'dist/core/onboarding.js'))
 const { startScheduler } = await import(join(here, 'dist/core/schedule.js'))
 const { logger } = await import(join(here, 'dist/core/logger.js'))
@@ -44,7 +43,6 @@ migrateAgentWorkspaceDir()
 
 const defaultAgent = config.defaultAgent || 'claude-code'
 const webPort = config.webPort || 3000
-const acpPort = config.acpPort || 9090
 
 await sessionManager.start()
 await registry.loadBuiltInPlugins()
@@ -54,13 +52,6 @@ if (tenants.length > 0) {
   workspaceRegistry.load({ workspaces: tenants })
 } else {
   workspaceRegistry.load({})
-}
-
-if (Array.isArray(config.acpAgents) && config.acpAgents.length > 0) {
-  await registry.loadACPAgents(config.acpAgents)
-}
-if (Array.isArray(config.acpDiscoveryUrls) && config.acpDiscoveryUrls.length > 0) {
-  await registry.loadDiscoveredACPAgents(config.acpDiscoveryUrls)
 }
 
 // Optional: enable IM messengers when explicitly requested. cli.ts has
@@ -86,7 +77,6 @@ if (process.env.AGIM_ENABLE_MESSENGERS === '1') {
 startScheduler()
 
 await startWebServer({ port: webPort, defaultAgent })
-await startACPServer({ port: acpPort, defaultAgent })
 
-log.info({ webPort, acpPort, defaultAgent, agents: registry.listAgents().length },
+log.info({ webPort, defaultAgent, agents: registry.listAgents().length },
   'agim headless started')

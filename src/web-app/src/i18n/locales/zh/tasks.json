@@ -17,7 +17,6 @@
     "outbox": "投递队列",
     "a2a": "Agent 互调",
     "heartbeat": "心跳",
-    "goals": "目标",
     "asks": "待回答",
     "plans": "计划审计",
     "loops": "Loop 审计"
@@ -48,7 +47,7 @@
       },
       "automation": {
         "title": "自动化",
-        "detail": "{{schedules}} 个定时 · {{heartbeats}} 个心跳 · {{goals}} 个目标",
+        "detail": "{{schedules}} 个定时 · {{heartbeats}} 个心跳",
         "action": "查看定时"
       },
       "a2a": {
@@ -76,7 +75,7 @@
       },
       "automation": {
         "title": "检查自动化任务",
-        "detail": "定时、心跳或目标正在后台运行。"
+        "detail": "定时或心跳正在后台运行。"
       },
       "idle": {
         "title": "当前没有任务压力",
@@ -340,35 +339,6 @@
     "hoursAgo": "{{count}} 小时前",
     "daysAgo": "{{count}} 天前",
     "intervalMin": "{{count}} 分钟"
-  },
-  "goals": {
-    "title": "活跃目标",
-    "subtitle": "（过渡）跨线程查看 goals.db 活跃行；产品原语已改为 /focus。生命周期操作仍可用；新建请用线程内 /focus set <title>。",
-    "refresh": "刷新",
-    "empty": "暂无活跃 Focus/goal 行。在任意 IM 线程执行 /focus set <title> 创建。",
-    "col": {
-      "id": "#",
-      "thread": "线程",
-      "title": "标题",
-      "progress": "进度",
-      "updated": "更新",
-      "actions": "操作"
-    },
-    "showBody": "展开正文",
-    "hideBody": "收起正文",
-    "pause": "暂停",
-    "complete": "完成",
-    "cancel": "取消",
-    "status": {
-      "paused": "暂停",
-      "completed": "完成",
-      "cancelled": "取消"
-    },
-    "body": "正文",
-    "recentProgress": "最近进度（最新 {{count}} 条）",
-    "created": "创建于 {{at}}",
-    "closed": "关闭于 {{at}}",
-    "statusUpdated": "目标已{{status}}"
   },
   "asks": {
     "title": "待回答 ask_user",

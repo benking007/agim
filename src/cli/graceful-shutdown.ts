@@ -24,7 +24,6 @@ export async function gracefulShutdown(ctx: StartRuntimeContext, signal: string,
     // it on exit. close() is safe to call from a fired timer
     // because shuttingDown is true so nothing re-enters this fn.
     try { ctx.webServer?.close() } catch { /* ignore */ }
-    try { ctx.acpServer?.close() } catch { /* ignore */ }
     // PID_FILE cleanup intentionally NOT done here — the next
     // start's self-check uses pidAlive(recorded), which returns
     // false for our soon-to-be-dead pid, so stale file is harmless.
@@ -35,10 +34,10 @@ export async function gracefulShutdown(ctx: StartRuntimeContext, signal: string,
   // process.exit(0) wins.
   if (typeof hardKill.unref === 'function') hardKill.unref()
 
-  // PORT RELEASE FIRST — close webServer + acpServer at the top of
+  // PORT RELEASE FIRST — close webServer at the top of
   // the chain (was previously after sessionManager.stop, which is
   // cheap but unnecessary friction). closeAllConnections() (added
-  // inside startWebServer/startACPServer in R14) force-drops
+  // inside startWebServer in R14) force-drops
   // in-flight sockets so the listener actually releases the port
   // before any DB / messenger teardown begins.
   sessionManager.stop()
@@ -47,7 +46,6 @@ export async function gracefulShutdown(ctx: StartRuntimeContext, signal: string,
     stopAgimAgentSessionRetention()
   } catch { /* ignore */ }
   try { ctx.webServer?.close() } catch { /* ignore */ }
-  try { ctx.acpServer?.close() } catch { /* ignore */ }
 
   // Stop the cloudflared subprocess (if we forked one for viewer auto-tunnel).
   // Doing this early gives it a clean SIGTERM exit before we tear down the

@@ -143,7 +143,7 @@ OpenAI / Anthropic **不再**作为内置预设；用 `custom` 填入兼容 `bas
 
 ### 5.3 URL 安全（SSRF）
 
-写入 `baseUrl`（以及 MCP HTTP URL）时会走与 ACP 相同的 `assertSafeAcpUrl` 校验：拒绝非 http(s)、userinfo、解析到私网 / 回环 / 链路本地 / 云 metadata 的地址。
+写入 `baseUrl`（以及 MCP HTTP URL）时会走共享 `assertSafeUrl` 校验：拒绝非 http(s)、userinfo、解析到私网 / 回环 / 链路本地 / 云 metadata 的地址。
 
 | 场景 | 做法 |
 |------|------|

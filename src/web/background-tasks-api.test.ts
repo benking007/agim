@@ -1,4 +1,4 @@
-// Unit tests for the P1 follow-up /api/heartbeat /api/goals /api/asks
+// Unit tests for the P1 follow-up /api/heartbeat /api/asks
 // REST endpoints. Same shape as llm-api.test.ts + mcp-api.test.ts —
 // invoke the dispatcher directly with mock req/res so we don't need
 // the whole HTTP server.
@@ -7,8 +7,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import { EventEmitter } from 'node:events'
 
 const { handleBackgroundTasksApi } = await import('./background-tasks-api.js')
-const { _resetAskBusForTests, handleAskOp } = await import('../core/ask-user-rpc.js')
-const { _truncateForTests: truncGoals, setActiveGoal } = await import('../core/goals.js')
+const { _resetAskBusForTests } = await import('../core/ask-user-rpc.js')
 
 interface MockRes {
   statusCode: number
@@ -54,7 +53,6 @@ function asRes(r: MockRes): import('node:http').ServerResponse {
 
 beforeEach(() => {
   _resetAskBusForTests()
-  try { truncGoals() } catch { /* sqlite may be unavailable */ }
 })
 
 describe('handleBackgroundTasksApi — heartbeat list', () => {
@@ -92,57 +90,6 @@ describe('handleBackgroundTasksApi — heartbeat list', () => {
   })
 })
 
-describe('handleBackgroundTasksApi — goals', () => {
-  it('returns empty list on fresh install', async () => {
-    const res = makeRes()
-    await handleBackgroundTasksApi(makeReq('GET'), asRes(res), url('/api/goals'))
-    expect(res.statusCode).toBe(200)
-    const body = JSON.parse(res.body)
-    expect(body.goals).toEqual([])
-    expect(body.scope).toBe('all-active')
-  })
-
-  it('narrows to thread when scope params present', async () => {
-    const res = makeRes()
-    await handleBackgroundTasksApi(makeReq('GET'), asRes(res),
-      url('/api/goals?platform=wechat&channelId=c&threadId=t'))
-    expect(res.statusCode).toBe(200)
-    const body = JSON.parse(res.body)
-    expect(body.scope).toBe('thread')
-  })
-
-  it('GET /:id returns 404 on unknown id', async () => {
-    const res = makeRes()
-    await handleBackgroundTasksApi(makeReq('GET'), asRes(res), url('/api/goals/999999'))
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('status PUT rejects unknown status', async () => {
-    const res = makeRes()
-    await handleBackgroundTasksApi(makeReq('PUT', { status: 'whatever' }), asRes(res),
-      url('/api/goals/1/status'))
-    expect(res.statusCode).toBe(400)
-  })
-
-  it('status PUT happy path round-trips when goal exists (sqlite-dependent)', async () => {
-    const created = setActiveGoal({
-      platform: 'wechat', channelId: 'rest', threadId: 'unit-1',
-      userId: 'u', title: 'demo',
-    })
-    if (!created) {
-      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') {
-        throw new Error('SQLite is required by the Node persistence suite')
-      }
-      return
-    }
-    const res = makeRes()
-    await handleBackgroundTasksApi(makeReq('PUT', { status: 'paused' }), asRes(res),
-      url(`/api/goals/${created.id}/status`))
-    expect(res.statusCode).toBe(200)
-    expect(JSON.parse(res.body).status).toBe('paused')
-  })
-})
-
 describe('handleBackgroundTasksApi — asks', () => {
   it('returns empty pending list when nothing is in flight', async () => {
     const res = makeRes()
@@ -169,6 +116,12 @@ describe('handleBackgroundTasksApi — routing', () => {
     const res = makeRes()
     const handled = await handleBackgroundTasksApi(makeReq('GET'), asRes(res),
       url('/api/heartbeatx'))
+    expect(handled).toBe(false)
+  })
+
+  it('does not handle retired /api/goals routes', async () => {
+    const res = makeRes()
+    const handled = await handleBackgroundTasksApi(makeReq('GET'), asRes(res), url('/api/goals'))
     expect(handled).toBe(false)
   })
 })

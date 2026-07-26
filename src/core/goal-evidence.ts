@@ -218,8 +218,6 @@ const CONTROL_TOOLS = new Set([
   'agim_random_uuid',
   'agim_todo_write',
   'agim_exit_plan_mode',
-  'mcp__agim__long_task',
-  'mcp__agim__complete_goal',
 ])
 
 const OBSERVATION_TOOLS = new Set([

@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Loop path A Focus → body**: when Focus is already on, `/loop` no longer
+  seeds `objective` from Focus. Focus title/body is appended to Mission
+  `body` with the label `【当前 Agent 聚焦内容】` (Portal aligning dock
+  shows it under 正文). Objective and exit still require explicit confirm.
 - **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
   harness/methodology/product/security set (`agent-*`, `autonomous-*`,
   `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,

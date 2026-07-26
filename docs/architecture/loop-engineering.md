@@ -56,17 +56,26 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 |------|----------|------|
 | **目标（objective）** | **必须** | 要达成什么；可同步写入 Focus |
 | **退出条件（exit）** | **必须** | 何时停：如「验收通过」+ 上限轮次/时限/失败判据等；用户须明确至少一项可判定的退出语义 |
+| 正文（body） | 可选 | 更长的操作提示 / 约束 / 背景（软字段）；写入 Mission 并注入 Agent snippet，**不**参与硬门禁 |
 | 验收细则（acceptance） | 推荐 | 可并入目标讨论；缺省时用 objective 做验收锚 |
 
 **缺任一硬输入 → 不得进入 PLANNING / 派子代理。**  
-进入 **ALIGNING（对焦）**：用 `ask_user`（或等价对话）与用户讨论，直到目标和退出条件都确认。
+进入 **ALIGNING（对焦）**：用 `ask_user`（或等价对话）与用户讨论，直到目标和退出条件都确认。正文可一并填写，也可稍后 `/loop body …` 补充。
 
 对焦示例问法：
 
 - 目标：「这次 Loop 要达成的结果是什么？怎么算做成？」  
-- 退出：「什么情况下结束？例如：验收通过 / 最多 N 轮 / 超过 T 小时 / 连续失败 K 次就停？」
+- 退出：「什么情况下结束？例如：验收通过 / 最多 N 轮 / 超过 T 小时 / 连续失败 K 次就停？」  
+- 正文（可选）：「还有哪些背景、约束或优先路径要写进提示？」（例：优先查超时日志；不要改鉴权配置）
 
-用户可一次给齐（`/loop 目标…；退出条件为…` 或 `；退出：…`），也可分步补全。
+用户可一次给齐：
+
+```text
+/loop 修好登录超时；退出条件为验收通过或最多3轮；正文：优先查 nginx 超时日志，不要改鉴权
+```
+
+也可用短标签 `；退出：…` / `；补充：…` / `；body: …`，或分步：`/loop objective` → `/loop exit` → `/loop body` → `/loop confirm`。  
+Portal「待对焦」底栏提供目标 / 退出条件 / **正文（可选）** 三个输入框，「确定并开始」会拼成上述 slash。
 
 ### 2.2 主流程
 
@@ -186,7 +195,7 @@ type LoopRun = {
             │
             ▼
        ┌──────────┐
-       │ ALIGNING │ 目标 + 退出条件对焦（硬门禁）
+       │ ALIGNING │ 目标 + 退出条件对焦（硬门禁）；可选 body 正文
        └────┬─────┘
             │ confirmed
             ▼
@@ -407,7 +416,7 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 |------|------|--------|------|
 | **R0** ✅ | Focus + `/loop` 壳 | 已在 main | — |
 | **R1** ✅ | **对焦门禁** | `ALIGNING`；缺 objective/exit → slash + snippet→`ask_user`；确认前拒绝 `call_agent(s)`/`loop_verdict` | 无退出条件无法进入 planning |
-| **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出 | status / reload 可读两硬字段 |
+| **R2** ✅ | **Mission 持久化** | `LoopMission` 为 store SSOT（对焦期可部分填写）；`sessionKey`；可选 `body` / `acceptance` / `maxWallMs`；`/loop status` 恒展示目标+退出（有则附正文） | status / reload 可读两硬字段 + 可选正文 |
 | **R3** ✅ | **PLAN + DISPATCH** | 确认后 snippet 强制拆解；`noteLoopDispatch` + `dispatchesThisRound`；`continue/revise` 无派工 → `no_dispatch` | 无子代理调用则不算完成一轮 |
 | **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
 | **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 对焦/立即行动底栏 + 小精灵 Loop 状态；结束总结 Markdown；菜单文案对齐 L3 | 用户能看懂「待对焦/待派工/待验收」并直接操作 |

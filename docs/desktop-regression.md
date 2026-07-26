@@ -84,7 +84,7 @@ node tools/phase-a-acceptance.mjs
 
 | 标记 / 场景 | 期望 |
 |---|---|
-| `/loop`（空） | Portal **待对焦**底栏；小精灵气泡「待对焦」；填目标+退出 →「确定并开始」后进入待派工 |
+| `/loop`（空）或 `/loop 目标文案`（无退出） | Portal **待对焦**底栏：目标 + 退出条件 + **正文（可选）**；小精灵「待对焦」；填齐两硬字段 →「确定并开始」后进入待派工；有正文时 slash 含 `；正文：…`，`/loop status` / Agent snippet 可见 |
 | `LOOP_SELF_RESEARCH_TEST`（已确认使命） | 父侧不可自行调研；须 `call_agents`；小精灵/底栏「待派工」→「立即行动」可推进 |
 | `LOOP_E2E_TEST` | 派工后验收；`loop_verdict` stop+met；结束总结；**不**残留待验收条 |
 | `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死（无 pending ask / live 子代理时） |

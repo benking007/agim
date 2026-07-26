@@ -238,9 +238,12 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.run.mission?.body).toContain('Keep me')
     expect(started.run.mission?.body).toContain('detail line')
     expect(started.run.startNote).toBe('note')
-    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('ALIGNING')
-    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('do NOT call')
-    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('Keep me')
+    const snippet = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snippet).toContain('ALIGNING')
+    expect(snippet).toContain('do NOT call')
+    expect(snippet).toContain('Objective: note')
+    // Aligning snippet lists objective/exit only; Focus brief stays on mission.body
+    // for the Portal dock / status (not duplicated into the hard-gate snippet).
 
     // verdict blocked while aligning
     const blocked = applyLoopVerdict(base.platform, base.channelId, threadId, {

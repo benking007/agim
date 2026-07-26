@@ -72,7 +72,7 @@ export function PortalLoopDock({
 
   // Clear stale offer when switching threads.
   useEffect(() => {
-    setReportOffer(null)
+    setReportOffer((prev) => (prev && prev.threadId !== threadId ? null : prev))
   }, [threadId])
 
   if (reportOffer && reportOffer.threadId === threadId) {

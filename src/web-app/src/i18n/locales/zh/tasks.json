@@ -417,34 +417,34 @@
   },
   "loops": {
     "title": "Loop 审计",
-    "subtitle": "每次 Loop 运行的落盘历史（目标、验收、时间线、子代理 job），同线程新 Loop 不会覆盖旧记录。",
+    "subtitle": "按次落盘的 Loop 历史；同线程新 Loop 不覆盖旧记录。",
     "refresh": "刷新",
-    "filterLabel": "按线程 ID 筛选（可选）",
+    "filterLabel": "线程 ID（可选）",
     "statusFilter": "状态",
     "statusAll": "全部",
     "statusActive": "进行中",
     "statusEnded": "已结束",
     "applyFilter": "应用",
     "clearFilter": "清空",
-    "empty": "暂无 Loop 记录。",
-    "emptyFiltered": "该筛选下暂无 Loop。",
-    "detailError": "无法加载详情。",
+    "empty": "暂无 Loop。",
+    "emptyFiltered": "无匹配 Loop。",
+    "detailError": "详情加载失败。",
     "col": {
       "status": "状态",
       "objective": "目标",
       "thread": "线程",
       "round": "轮次",
       "jobs": "子代理",
-      "updated": "更新时间"
+      "updated": "更新"
     },
     "detail": {
       "objective": "目标",
-      "exit": "退出条件",
+      "exit": "退出",
       "body": "正文",
       "session": "会话",
       "jobs": "子代理 job",
       "path": "历史文件",
-      "verification": "最近验收",
+      "verification": "验收",
       "endedSummary": "结束摘要",
       "timeline": "时间线"
     }

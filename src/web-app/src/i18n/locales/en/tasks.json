@@ -417,17 +417,17 @@
   },
   "loops": {
     "title": "Loop audit",
-    "subtitle": "Persisted history of every Loop run (mission, verification, timeline, Subagent jobs). A new Loop on the same thread does not erase prior runs.",
+    "subtitle": "Per-run Loop history on disk; new Loops on a thread keep prior runs.",
     "refresh": "Refresh",
-    "filterLabel": "Filter by thread id (optional)",
+    "filterLabel": "Thread id (optional)",
     "statusFilter": "Status",
     "statusAll": "All",
     "statusActive": "Active",
     "statusEnded": "Ended",
     "applyFilter": "Apply",
     "clearFilter": "Clear",
-    "empty": "No Loop runs yet.",
-    "emptyFiltered": "No Loops match this filter.",
+    "empty": "No Loops yet.",
+    "emptyFiltered": "No matching Loops.",
     "detailError": "Failed to load detail.",
     "col": {
       "status": "Status",
@@ -444,7 +444,7 @@
       "session": "Session",
       "jobs": "Subagent jobs",
       "path": "History file",
-      "verification": "Last verification",
+      "verification": "Verification",
       "endedSummary": "Ended summary",
       "timeline": "Timeline"
     }

@@ -21,7 +21,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Loop CR follow-ups**: Focus path A seeds Mission `body` (not objective);
-  post-end reports use cumulative `loopJobIds` (no thread-wide job mix);
+  post-end report offer uses cumulative `loopJobIds` for the dock count
+  (Agent writes the report via chat prompt; no thread-wide assemble);
   Focus off/clear cancels live Subagents like `/loop stop`; empty
   `roundJobIds` + 0 dispatches no longer counts unrelated thread jobs as
   live; Loop gate denials emit as `kind:tool` and UI shows `blocked`

@@ -4,8 +4,8 @@
  * - Ready (dispatch/verify): "Act now" sheet like ApprovalDock
  * - After confirm-end: offer to ask the Agent for a detail report
  *
- * Status chrome lives on the pet — these only ask for user action.
- * Polling + pet-task formatting stay in this lazy chunk (entry budget).
+ * These only ask for user action — Loop progress is not mirrored onto
+ * the pet speech bubble (that cluttered the composer after start).
  */
 
 import { useEffect, useState } from 'react'
@@ -22,7 +22,6 @@ import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
 import { buildAlignPayload } from './portal-loop-align-payload'
 import { buildLoopReportPrompt } from './portal-loop-report-prompt'
-import type { PetTaskItem } from './portal-pet'
 
 type ReportOffer = {
   threadId: string
@@ -33,8 +32,6 @@ type ReportOffer = {
 export interface PortalLoopDockProps {
   threadId: string | null | undefined
   refreshKey?: number | string
-  /** Compact Loop row for the pet panel / bubble. */
-  onLoopPetTask?: (task: PetTaskItem | null) => void
   dark?: boolean
   /** True while an agent turn is in flight — hide Act Now. */
   busy?: boolean
@@ -57,38 +54,9 @@ function actNowPrompt(loop: LoopStatusDto, zh: boolean): string {
     : 'Start: decompose and call_agents to dispatch Subagents this round — do not research alone.'
 }
 
-function toPetTask(loop: LoopStatusDto, zh: boolean): PetTaskItem {
-  const obj = (loop.objective || '').trim()
-  const shortObj = obj.length > 36 ? `${obj.slice(0, 36)}…` : obj
-  const min = loop.minRounds && loop.minRounds > 1 ? `≥${loop.minRounds}` : ''
-  const round = zh
-    ? `第 ${loop.round}/${loop.maxRounds} 轮${min ? `（最少 ${loop.minRounds}）` : ''}`
-    : `R${loop.round}/${loop.maxRounds}${min ? ` (min ${loop.minRounds})` : ''}`
-  const live = (loop.liveSubagents ?? 0) > 0
-    ? (zh ? `子代理进行中 ${loop.liveSubagents}` : `${loop.liveSubagents} subagent(s) live`)
-    : ''
-  const usage = loop.usage
-    ? (zh
-      ? `派工 ${loop.usage.dispatchCount} · 独立验收 ${loop.usage.evaluatorCount}`
-      : `${loop.usage.dispatchCount} dispatch · ${loop.usage.evaluatorCount} indep. eval`)
-    : ''
-  const label = loop.bucket === 'confirm'
-    ? (zh ? '待确认结案' : 'Confirm conclusion')
-    : live
-      ? (zh ? '子代理进行中' : 'Subagents running')
-      : loop.bucketLabel
-  return {
-    id: `loop-${loop.id}`,
-    kind: 'loop',
-    label,
-    detail: [shortObj || undefined, round, live || undefined, usage].filter(Boolean).join(' · ') || undefined,
-  }
-}
-
 export function PortalLoopDock({
   threadId,
   refreshKey,
-  onLoopPetTask,
   dark,
   busy,
   hasBlockingDock,
@@ -101,14 +69,6 @@ export function PortalLoopDock({
   const { loop, reload } = usePortalLoop(threadId, refreshKey)
   // Survives loop.active → false after「确认结束」.
   const [reportOffer, setReportOffer] = useState<ReportOffer | null>(null)
-
-  useEffect(() => {
-    onLoopPetTask?.(loop?.active ? toPetTask(loop, zh) : null)
-  }, [loop, onLoopPetTask, zh])
-
-  useEffect(() => () => {
-    onLoopPetTask?.(null)
-  }, [onLoopPetTask])
 
   // Clear stale offer when switching threads.
   useEffect(() => {

@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { CheckCircle2, Loader2, MessageCircleQuestion, ShieldAlert, Terminal, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type PetTaskKind = 'loop' | 'run' | 'approval' | 'ask' | 'bgjob'
+export type PetTaskKind = 'run' | 'approval' | 'ask' | 'bgjob'
 
 export interface PetTaskItem {
   id: string
@@ -44,7 +44,7 @@ export interface PortalPetProps {
 
 type Mood = 'idle' | 'busy' | 'happy'
 
-const KIND_ORDER: PetTaskKind[] = ['loop', 'approval', 'ask', 'run', 'bgjob']
+const KIND_ORDER: PetTaskKind[] = ['approval', 'ask', 'run', 'bgjob']
 
 /** 16×16 pixel art. Values are palette keys; `.` = empty. */
 const IDLE: string[] = [
@@ -167,12 +167,10 @@ function KindIcon({ kind, className }: { kind: PetTaskKind; className?: string }
   if (kind === 'approval') return <ShieldAlert className={className} />
   if (kind === 'ask') return <MessageCircleQuestion className={className} />
   if (kind === 'bgjob') return <Terminal className={className} />
-  // loop + run share Loader2; only run spins
   return <Loader2 className={cn(className, kind === 'run' && 'animate-spin')} />
 }
 
 function kindTone(kind: PetTaskKind): string {
-  if (kind === 'loop') return 'text-amber-500'
   if (kind === 'approval') return 'text-amber-400'
   if (kind === 'ask') return 'text-sky-400'
   if (kind === 'bgjob') return 'text-violet-400'
@@ -180,7 +178,7 @@ function kindTone(kind: PetTaskKind): string {
 }
 
 function sectionKey(kind: PetTaskKind): string {
-  if (kind === 'loop' || kind === 'approval' || kind === 'ask') return 'needsYou'
+  if (kind === 'approval' || kind === 'ask') return 'needsYou'
   if (kind === 'bgjob') return 'background'
   return 'running'
 }
@@ -284,12 +282,8 @@ export function PortalPet({
   const colors = palette(dark)
   const taskCount = tasks.length
   const needsYou = tasks.filter(
-    (item) => item.kind === 'approval' || item.kind === 'ask' || item.kind === 'loop',
+    (item) => item.kind === 'approval' || item.kind === 'ask',
   ).length
-  const loopTask = tasks.find((item) => item.kind === 'loop')
-  const loopBubble = loopTask
-    ? [loopTask.label, loopTask.detail].filter(Boolean).join(' · ')
-    : null
 
   return (
     <div id={panelId} className={cn('pointer-events-auto relative', className)}>
@@ -400,28 +394,20 @@ export function PortalPet({
         </div>
       )}
 
-      {/* Loop status / emotional bubble (hidden while panel open / floats active).
-          Loop is a pet progress state — prefer it over idle chatter. */}
-      {((loopBubble || bubble) && !open && floats.length === 0) && (
+      {/* Idle / mood chatter bubble (hidden while panel open / floats active). */}
+      {(bubble && !open && floats.length === 0) && (
         <div
           className={cn(
-            'absolute bottom-full right-0 mb-1.5 rounded-md px-2 py-1 text-[10px] font-semibold shadow-md',
-            loopBubble
-              ? 'max-w-[13.5rem] whitespace-normal text-right leading-snug'
-              : 'max-w-[9rem] whitespace-nowrap',
-            loopBubble
-              ? (dark ? 'bg-amber-950/90 text-amber-100' : 'bg-amber-50 text-amber-900')
-              : (dark ? 'bg-zinc-800 text-zinc-100' : 'bg-white text-zinc-700'),
+            'absolute bottom-full right-0 mb-1.5 max-w-[9rem] whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-semibold shadow-md',
+            dark ? 'bg-zinc-800 text-zinc-100' : 'bg-white text-zinc-700',
           )}
-          title={loopBubble || bubble || undefined}
+          title={bubble}
         >
-          {loopBubble || bubble}
+          {bubble}
           <span
             className={cn(
               'absolute right-3 top-full border-4 border-transparent',
-              loopBubble
-                ? (dark ? 'border-t-amber-950/90' : 'border-t-amber-50')
-                : (dark ? 'border-t-zinc-800' : 'border-t-white'),
+              dark ? 'border-t-zinc-800' : 'border-t-white',
             )}
           />
         </div>

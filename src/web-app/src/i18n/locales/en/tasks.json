@@ -397,7 +397,8 @@
     "applyFilter": "Apply",
     "clearFilter": "Clear",
     "empty": "No Loops.",
-    "emptyFiltered": "No match.",
+    "emptyFiltered": "No match. Try All or clear filters.",
+    "loadError": "Failed to load",
     "detailError": "Load failed",
     "col": {
       "status": "Status",

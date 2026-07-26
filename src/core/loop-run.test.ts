@@ -231,8 +231,9 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.aligned).toBe(false)
     expect(started.run.status).toBe('aligning')
     // Focus must not fill objective; it lands in labeled body.
-    expect(started.run.draftObjective || '').toBe('')
-    expect(started.run.mission?.objective || '').toBe('')
+    // Bare start text DOES prefill objective (Aligning dock) as start note.
+    expect(started.run.draftObjective || '').toBe('note')
+    expect(started.run.mission?.objective || '').toBe('note')
     expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
     expect(started.run.mission?.body).toContain('Keep me')
     expect(started.run.mission?.body).toContain('detail line')

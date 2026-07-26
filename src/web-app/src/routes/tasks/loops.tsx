@@ -50,10 +50,11 @@ export default function TasksLoopsRoute(): JSX.Element {
   const [filter, setFilter] = useState('')
   const [appliedFilter, setAppliedFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'ended'>('all')
+  const [appliedStatus, setAppliedStatus] = useState<'all' | 'active' | 'ended'>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const listQuery = useLoopsList({
-    status: statusFilter === 'all' ? undefined : statusFilter,
+    status: appliedStatus === 'all' ? undefined : appliedStatus,
     threadId: appliedFilter || undefined,
     limit: 200,
     lang,
@@ -61,9 +62,16 @@ export default function TasksLoopsRoute(): JSX.Element {
   const rows = useMemo(() => listQuery.data?.loops ?? [], [listQuery.data])
   const detailQuery = useLoopDetail(expandedId, lang)
   const detail = detailQuery.data?.loop
+  const hasExtraFilter = !!appliedFilter || appliedStatus !== 'all'
+  const listError = listQuery.isError
+    ? (listQuery.error instanceof Error
+      ? listQuery.error.message
+      : String(listQuery.error || t('loops.loadError', { defaultValue: '加载失败' })))
+    : null
 
   function applyFilter(): void {
     setAppliedFilter(filter.trim())
+    setAppliedStatus(statusFilter)
   }
 
   return (
@@ -119,6 +127,7 @@ export default function TasksLoopsRoute(): JSX.Element {
             setFilter('')
             setAppliedFilter('')
             setStatusFilter('all')
+            setAppliedStatus('all')
           }}
         >
           {t('loops.clearFilter')}
@@ -130,9 +139,13 @@ export default function TasksLoopsRoute(): JSX.Element {
           <Loader2 className="h-4 w-4 animate-spin" />
           {t('states.loading', { ns: 'common' })}
         </div>
+      ) : listError ? (
+        <p className="text-sm text-danger">
+          {t('loops.loadError', { defaultValue: '加载失败' })}: {listError}
+        </p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-text-muted">
-          {appliedFilter ? t('loops.emptyFiltered') : t('loops.empty')}
+          {hasExtraFilter ? t('loops.emptyFiltered') : t('loops.empty')}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">

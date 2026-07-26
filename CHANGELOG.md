@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **SPA i18n lazy namespaces**: entry only inlines `common` + `errors`.
+  Page namespaces (`settings`, `tasks`, `memory`, …) load on demand via
+  Vite async chunks (`import.meta.glob`), cutting the entry bundle under
+  the 350 KiB budget. Dropped unused `i18next-http-backend`.
 - **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
   harness/methodology/product/security set (`agent-*`, `autonomous-*`,
   `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,

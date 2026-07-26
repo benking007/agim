@@ -43,6 +43,13 @@ export async function runQuickstart(lang: Lang = resolveCliLang()): Promise<void
     'Goal: get the Web console and one agent conversation working first. IM and server deployment can come later.',
   ))
 
+  // Older installs may still carry acpPort / AGIM_ACP_BIND — strip before
+  // the first-run path talks about ports.
+  try {
+    const { purgeRetiredAcpResidue } = await import('./retire-acp-residue.js')
+    await purgeRetiredAcpResidue()
+  } catch { /* best-effort */ }
+
   let config = await loadConfig()
   let readiness = await checkAgentsFresh(config)
   let preferred = pickPreferredAgent(readiness.available, config.defaultAgent)

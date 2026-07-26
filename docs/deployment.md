@@ -108,7 +108,8 @@ sudo systemctl status agim
 
 ## 5. 端口、鉴权与审批
 
-- Web 控制台默认 `127.0.0.1:3000`
+- Web 控制台默认 `127.0.0.1:3000`（安装向导 / `agim config web` 只配置此端口）
+- 旧版 ACP `:9090` / `acpPort` / `AGIM_ACP_BIND` 已退役；`agim go` / `agim start` / `agim doctor` 会自动从 `config.json` 与 `~/.agim/env` 清掉残留键
 - Web token 鉴权默认开启
 - 工具调用自动审批默认关闭（`AGIM_AUTO_APPROVE=0`）；单人自用可显式开启
 

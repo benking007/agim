@@ -58,6 +58,25 @@ function sqliteAddonAvailable(): boolean {
 
 export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<CheckRow[]> {
   const rows: CheckRow[] = []
+  try {
+    const { purgeRetiredAcpResidue } = await import('./retire-acp-residue.js')
+    const purged = await purgeRetiredAcpResidue()
+    if (purged.configKeysRemoved.length || purged.envKeysRemoved.length) {
+      const bits = [
+        ...purged.configKeysRemoved.map((k) => `config.${k}`),
+        ...purged.envKeysRemoved,
+      ]
+      rows.push({
+        level: 'info',
+        title: text(lang, 'ACP 残留', 'ACP residue'),
+        detail: text(
+          lang,
+          `已清理已退役设置：${bits.join(', ')}（ACP :9090 已移除，仅保留 Web 端口）`,
+          `cleaned retired settings: ${bits.join(', ')} (ACP :9090 removed; Web port only)`,
+        ),
+      })
+    }
+  } catch { /* best-effort */ }
   const config = await loadConfig()
 
   rows.push({

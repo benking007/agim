@@ -16,6 +16,11 @@ All notable changes to this project will be documented in this file.
 - **ACP retired**: removed the inbound ACP server on `:9090` and outbound
   remote ACP agent registration/discovery. Legacy ACP config keys are ignored.
   SSRF URL checks live in `src/core/url-guard.ts`.
+- **Install/upgrade ACP residue**: `agim go` / `start` / `doctor` / `config`
+  purge stale `acpPort`/`acpAgents` from `config.json` and
+  `AGIM_ACP_BIND`/`AGIM_ENABLE_REMOTE_AGENT` from `~/.agim/env`. Config
+  writes also strip those keys. `agim config acp` prints a retired hint
+  (use `config web` / `config agents`).
 
 ### Changed
 

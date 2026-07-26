@@ -10,6 +10,7 @@
 | Goal SPA `/tasks/goals` + `/api/goals*` + slash/MCP/RPC | 已删；Focus 复用 `goals.db` |
 | Skillhub Hot 页 + `/api/skills/remote/hot` | 已删；本地 Skills 管理保留 |
 | ACP 入站服务 + `acpAgents` 发现/配置 UI/CLI | 已删；`url-guard` 迁到 `src/core/url-guard.ts` |
+| 安装流 ACP 端口（wizard / doctor / `acpPort`） | 已删；`purgeRetiredAcpResidue` 在 go/start/doctor/config 清磁盘残留 |
 
 ## 建议下一波（低风险 / 低使用）
 

@@ -99,6 +99,14 @@ program
       await runConfigWizard(lang)
       return
     }
+    // Former ACP shortcuts (inbound :9090 / remote agents). Agents list is
+    // `agim config agents`; Web port is `agim config web`.
+    const retired = component.trim().toLowerCase().replace(/_/g, '-')
+    if (retired === 'acp' || retired === 'remote' || retired === 'remote-agent' || retired === 'agent') {
+      console.log(cliT(lang, 'config.shortcut.acp_retired'))
+      process.exitCode = 1
+      return
+    }
     const section = sectionForConfigComponent(component)
     if (!section) {
       console.log(cliT(lang, 'config.shortcut.unknown', { component }))

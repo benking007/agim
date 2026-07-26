@@ -68,6 +68,8 @@ const en = {
   'config.section.baidu': 'Baidu Maps AK — /memo address geocoding',
   'config.shortcut.redirect': '`{shortcut}` now opens the unified config wizard: {section}.',
   'config.shortcut.unknown': 'Unknown config shortcut: {component}. Run `agim config` and pick a section.',
+  'config.shortcut.acp_retired':
+    'ACP is retired (no :9090 port / remote ACP agents). Use `agim config web` for the Web console port, or `agim config agents` for local agents.',
   'web.title': 'Web admin — port',
   'web.subtitle': 'Set the web console port here.',
   'web.current': 'Current port: {port}',
@@ -450,6 +452,8 @@ const zh: Record<Key, string> = {
   'config.section.baidu': '百度地图 AK — /memo 地址解析',
   'config.shortcut.redirect': '`{shortcut}` 现在会进入统一配置向导：{section}。',
   'config.shortcut.unknown': '未知配置入口：{component}。请运行 `agim config` 后选择对应分类。',
+  'config.shortcut.acp_retired':
+    'ACP 已退役（不再有 :9090 端口 / 远程 ACP agent）。Web 端口请用 `agim config web`；本地 agent 请用 `agim config agents`。',
   'web.title': 'Web 后台 — 端口',
   'web.subtitle': '这里只设置 Web 控制台端口。',
   'web.current': '当前端口：{port}',

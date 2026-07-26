@@ -4,13 +4,22 @@ import { z } from 'zod'
 
 const safeNamePattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
-const RETIRED_ACP_KEYS = ['acpAgents', 'acpDiscoveryUrls', 'acpPort'] as const
+/** Retired ACP surface — strip on parse and on every config.json write so
+ *  upgrades don't keep advertising dead ports in ~/.agim/config.json. */
+export const RETIRED_ACP_KEYS = ['acpAgents', 'acpDiscoveryUrls', 'acpPort'] as const
 
-function stripRetiredAcpKeys(data: unknown): unknown {
+export function stripRetiredAcpKeys(data: unknown): unknown {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return data
   const next = { ...(data as Record<string, unknown>) }
   for (const key of RETIRED_ACP_KEYS) delete next[key]
   return next
+}
+
+/** True when the raw object still carries any retired ACP key. */
+export function hasRetiredAcpKeys(data: unknown): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+  const obj = data as Record<string, unknown>
+  return RETIRED_ACP_KEYS.some((key) => Object.prototype.hasOwnProperty.call(obj, key))
 }
 
 const telegramSchema = z.object({

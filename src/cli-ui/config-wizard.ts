@@ -144,6 +144,10 @@ async function runConfigSection(lang: Lang, picked: ConfigSection, config: Confi
 }
 
 export async function runConfigWizard(lang: Lang, opts: ConfigWizardOptions = {}): Promise<void> {
+  try {
+    const { purgeRetiredAcpResidue } = await import('./retire-acp-residue.js')
+    await purgeRetiredAcpResidue()
+  } catch { /* best-effort */ }
   let config = await loadConfig()
   const initialConfig = structuredClone(config)
   console.log()

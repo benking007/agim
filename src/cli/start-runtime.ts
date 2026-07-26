@@ -40,6 +40,20 @@ async function saveConfigChanges(base: Config, next: Config): Promise<Config> {
 export async function runStartForeground(): Promise<void> {
   console.log('🚀 Starting Agim (阿吉姆)…')
 
+  // Upgrade hygiene: drop retired ACP keys (acpPort / acpAgents / AGIM_ACP_BIND)
+  // left behind by older installs so port conflict hints never mention :9090.
+  try {
+    const { purgeRetiredAcpResidue } = await import('../cli-ui/retire-acp-residue.js')
+    const purged = await purgeRetiredAcpResidue()
+    if (purged.configKeysRemoved.length || purged.envKeysRemoved.length) {
+      const bits = [
+        ...purged.configKeysRemoved.map((k) => `config.${k}`),
+        ...purged.envKeysRemoved,
+      ]
+      console.log(`   Cleaned retired ACP settings: ${bits.join(', ')}`)
+    }
+  } catch { /* best-effort */ }
+
   // Process-level rejection guard. Without it, a stray Promise reject
   // (typically an in-flight undici fetch torn down during graceful
   // shutdown — e.g. a long-running A2A → opencode call whose socket

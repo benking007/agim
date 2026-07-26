@@ -77,9 +77,8 @@ const router = createBrowserRouter([
       { path: 'schedules', lazy: lazy(() => import('@/routes/tasks/schedules')) },
       { path: 'outbox',    lazy: lazy(() => import('@/routes/tasks/outbox')) },
       { path: 'a2a',       lazy: lazy(() => import('@/routes/tasks/a2a')) },
-      // P1 follow-up — cross-thread admin views (heartbeat / goals / asks).
+      // P1 follow-up — cross-thread admin views (heartbeat / asks).
       { path: 'heartbeat', lazy: lazy(() => import('@/routes/tasks/heartbeat')) },
-      { path: 'goals',     lazy: lazy(() => import('@/routes/tasks/goals')) },
       { path: 'asks',      lazy: lazy(() => import('@/routes/tasks/asks')) },
       // v1.2.133 — plan-history audit (native_exit_plan_mode handshakes).
       { path: 'plans',     lazy: lazy(() => import('@/routes/tasks/plans')) },
@@ -113,14 +112,13 @@ const router = createBrowserRouter([
     ],
   },
   {
-    // Backward-compat: /skills, /skills/installed, /skills/hot all land
-    // on the merged Settings → 技能 area. Keep these forever; they're
-    // tiny and protect prior bookmarks / IM-pinned links.
+    // Backward-compat: /skills and /skills/installed land on the merged
+    // Settings → 技能 area. Keep these forever; they're tiny and protect
+    // prior bookmarks / IM-pinned links.
     path: '/skills',
     children: [
       { index: true,        element: <Navigate to="/settings/agim-skills" replace /> },
       { path: 'installed',  element: <Navigate to="/settings/agim-skills/installed" replace /> },
-      { path: 'hot',        element: <Navigate to="/settings/agim-skills/hot" replace /> },
     ],
   },
   {
@@ -171,7 +169,6 @@ const router = createBrowserRouter([
         children: [
           { index: true,        lazy: lazy(() => import('@/routes/settings/agim-skills/overview')) },
           { path: 'installed',  lazy: lazy(() => import('@/routes/settings/agim-skills/installed')) },
-          { path: 'hot',        lazy: lazy(() => import('@/routes/settings/agim-skills/hot')) },
           // v1.2.151 — system-prompt injection block editor. Operators
           // see the auto block + can override with their own version.
           { path: 'injection',  lazy: lazy(() => import('@/routes/settings/agim-skills/injection')) },

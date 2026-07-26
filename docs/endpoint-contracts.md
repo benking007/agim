@@ -36,4 +36,4 @@ npm run check:contracts
 
 ## 范围边界
 
-清单覆盖 `startWebServer` 路径上可直达的 REST 路由（含域模块内匹配）。`/api/llm`、`/api/mcp`、`/api/goals` 等委托路由器的**内部子路径细节**仍以各模块测试为准；顶层前缀与已声明的动态路由会出现在清单中。
+清单覆盖 `startWebServer` 路径上可直达的 REST 路由（含域模块内匹配）。`/api/llm`、`/api/mcp` 等委托路由器的**内部子路径细节**仍以各模块测试为准；顶层前缀与已声明的动态路由会出现在清单中。

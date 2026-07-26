@@ -46,7 +46,6 @@ export async function dispatchRpc(
   if (m.type === 'skill')       { await handleSkill(m, socket);             return true }
   if (m.type === 'native_tool') { await handleNativeTool(m, socket, host);  return true }
   if (m.type === 'memory')      { await handleMemory(m, socket, host);      return true }
-  if (m.type === 'goal')        { await handleGoal(m, socket, host);        return true }
   return false
 }
 
@@ -501,54 +500,3 @@ async function handleMemory(
   sendResult(socket, 'memory.result', reqId, result, 'memory.bus.write_failed')
 }
 
-// ---------------------------------------------------------------------------
-// Goal
-// ---------------------------------------------------------------------------
-
-async function handleGoal(
-  m: Record<string, unknown>,
-  socket: Socket,
-  host: ApprovalRpcHost,
-): Promise<void> {
-  const reqId = typeof m.reqId === 'string' ? m.reqId : null
-  const runId = typeof m.runId === 'string' ? m.runId : null
-  const op = typeof m.op === 'string' ? m.op : null
-  const payload = (m.payload && typeof m.payload === 'object' && !Array.isArray(m.payload))
-    ? m.payload as Record<string, unknown>
-    : {}
-
-  if (!reqId) { log.warn({ event: 'goal.bus.missing_reqId' }); return }
-  if (!op || (op !== 'long_task' && op !== 'complete_goal')) {
-    sendResult(socket, 'goal.result', reqId, {
-      ok: false, error: 'invalid goal message (op must be long_task|complete_goal)',
-    }, 'goal.bus.write_failed')
-    return
-  }
-  const ctx = runId ? (host.getRunContext(runId) ?? null) : null
-  if (!ctx) {
-    sendResult(socket, 'goal.result', reqId, {
-      ok: false, error: `unknown runId: ${runId} — goal ops require a live runContext`,
-    }, 'goal.bus.write_failed')
-    return
-  }
-  const { handleGoalOp } = await import('../goal-rpc.js')
-  const { hashWorkspaceScope } = await import('../goal-evidence.js')
-  const { defaultAgentCwd, resolveAgentCwd } = await import('../agent-cwd.js')
-  const agentName = ctx.callerAgent || 'agim'
-  const result = await handleGoalOp(op, payload, {
-    platform: ctx.platform,
-    channelId: ctx.channelId,
-    threadId: ctx.threadId,
-    userId: ctx.userId,
-    callerAgent: ctx.callerAgent,
-    traceId: ctx.traceId,
-    workspaceScope: hashWorkspaceScope(
-      resolveAgentCwd(agentName, {
-        platform: ctx.platform,
-        channelId: ctx.channelId,
-        threadId: ctx.threadId,
-      }) || defaultAgentCwd(agentName),
-    ),
-  })
-  sendResult(socket, 'goal.result', reqId, result, 'goal.bus.write_failed')
-}

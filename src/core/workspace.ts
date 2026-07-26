@@ -58,8 +58,7 @@ export class WorkspaceRegistry {
 
   constructor() {
     // Default workspace is unrestricted (empty whitelist) so any registered
-    // agent — including ACP-added custom agents — is reachable without
-    // explicit workspace configuration.
+    // agent is reachable without explicit workspace configuration.
     this.defaultWorkspace = new Workspace({
       id: 'default',
       name: 'Default',

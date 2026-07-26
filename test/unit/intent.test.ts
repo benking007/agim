@@ -96,7 +96,7 @@ describe('classifyIntent', () => {
   })
 
   it('non-PROFILES custom agents receive default weight and remain selectable', () => {
-    // Register an agent without a PROFILES entry — simulates ACP custom agent.
+    // Register an agent without a PROFILES entry — simulates a custom agent.
     const customAgent: AgentAdapter = {
       name: 'my-custom-agent',
       aliases: [],

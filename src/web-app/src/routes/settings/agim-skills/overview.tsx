@@ -1,7 +1,7 @@
 /**
  * /settings/agim-skills — overview surface.
  *
- * The installed / hot / injection pages stay as the source of truth.
+ * The installed / injection pages stay as the source of truth.
  * This entry point answers the first operator question: "is Skills
  * ready, and where should I click next?"
  */
@@ -13,7 +13,6 @@ import {
   ArrowRight,
   BookOpen,
   CheckCircle2,
-  Flame,
   Puzzle,
   RefreshCcw,
   Wand2,
@@ -22,11 +21,10 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useAgimSkillsList, useSkillInjection } from '@/hooks/use-agim-skills'
-import { useSkillsRemoteHot } from '@/hooks/use-skills'
 import { cn } from '@/lib/utils'
 
 type CardTone = 'success' | 'warning' | 'danger' | 'info' | 'default'
-type NextActionId = 'fixUnavailable' | 'browseHot' | 'reviewOverride' | 'manageInstalled' | 'createSkill'
+type NextActionId = 'fixUnavailable' | 'reviewOverride' | 'manageInstalled' | 'createSkill'
 
 interface MetricCard {
   id: string
@@ -59,7 +57,6 @@ const ROOT = '/settings/agim-skills'
 export default function AgimSkillsOverviewRoute(): JSX.Element {
   const { t } = useTranslation('settings')
   const skillsQuery = useAgimSkillsList()
-  const hotQuery = useSkillsRemoteHot()
   const injectionQuery = useSkillInjection()
 
   const skills = skillsQuery.data?.skills ?? []
@@ -67,21 +64,16 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
   const builtinCount = skills.filter((s) => s.source === 'builtin').length
   const unavailableCount = skills.filter((s) => !s.available).length
   const alwaysOnCount = skills.filter((s) => s.always).length
-  const hotCount = hotQuery.data?.skills.length ?? 0
-  const hotStale = Boolean(hotQuery.data?.stale)
-  const hotUnavailable = hotQuery.isError || hotStale
   const overrideActive = Boolean(injectionQuery.data?.overrideActive)
   const autoChars = injectionQuery.data?.autoChars ?? injectionQuery.data?.auto?.length ?? 0
   const overrideChars = injectionQuery.data?.overrideChars ?? injectionQuery.data?.override?.length ?? 0
-  const anyFetching = skillsQuery.isFetching || hotQuery.isFetching || injectionQuery.isFetching
-  const needsAttention = unavailableCount + (hotUnavailable ? 1 : 0)
+  const anyFetching = skillsQuery.isFetching || injectionQuery.isFetching
+  const needsAttention = unavailableCount
 
   const nextAction = pickNextAction({
     t,
     skillCount: skills.length,
-    workspaceCount,
     unavailableCount,
-    hotCount,
     overrideActive,
   })
 
@@ -110,20 +102,6 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
       action: t('agimSkills.overview.cards.availability.action'),
       tone: unavailableCount > 0 ? 'danger' : 'success',
       icon: unavailableCount > 0 ? <AlertTriangle /> : <CheckCircle2 />,
-    },
-    {
-      id: 'hot',
-      title: t('agimSkills.overview.cards.hot.title'),
-      value: hotQuery.isLoading ? '-' : hotCount,
-      detail: hotQuery.isError
-        ? t('agimSkills.overview.cards.hot.error')
-        : hotStale
-          ? t('agimSkills.overview.cards.hot.stale')
-          : t('agimSkills.overview.cards.hot.ready', { count: hotCount }),
-      to: `${ROOT}/hot`,
-      action: t('agimSkills.overview.cards.hot.action'),
-      tone: hotUnavailable ? 'warning' : hotCount > 0 ? 'info' : 'default',
-      icon: <Flame />,
     },
     {
       id: 'injection',
@@ -165,7 +143,6 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
           disabled={anyFetching}
           onClick={() => {
             void skillsQuery.refetch()
-            void hotQuery.refetch()
             void injectionQuery.refetch()
           }}
         >
@@ -174,7 +151,7 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
         </Button>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <MetricCardItem key={card.id} card={card} />
         ))}
@@ -200,10 +177,9 @@ export default function AgimSkillsOverviewRoute(): JSX.Element {
 
         <section className="rounded-md border border-border bg-surface p-4">
           <h2 className="text-sm font-semibold">{t('agimSkills.overview.views.title')}</h2>
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
             {([
               { id: 'installed', to: `${ROOT}/installed`, Icon: BookOpen },
-              { id: 'hot', to: `${ROOT}/hot`, Icon: Flame },
               { id: 'injection', to: `${ROOT}/injection`, Icon: Puzzle },
             ] as const).map(({ id, to, Icon }) => (
               <Button key={id} asChild variant="secondary" size="sm">
@@ -253,24 +229,19 @@ function MetricCardItem({ card }: { card: MetricCard }): JSX.Element {
 function pickNextAction(opts: {
   t: ReturnType<typeof useTranslation>['t']
   skillCount: number
-  workspaceCount: number
   unavailableCount: number
-  hotCount: number
   overrideActive: boolean
 }): NextAction {
   const id: NextActionId = opts.unavailableCount > 0
     ? 'fixUnavailable'
     : opts.skillCount === 0
       ? 'createSkill'
-      : opts.workspaceCount === 0 && opts.hotCount > 0
-        ? 'browseHot'
-        : opts.overrideActive
-          ? 'reviewOverride'
-          : 'manageInstalled'
+      : opts.overrideActive
+        ? 'reviewOverride'
+        : 'manageInstalled'
 
   const to: Record<NextActionId, string> = {
     fixUnavailable: `${ROOT}/installed`,
-    browseHot:      `${ROOT}/hot`,
     reviewOverride: `${ROOT}/injection`,
     manageInstalled: `${ROOT}/installed`,
     createSkill:    `${ROOT}/installed`,

@@ -10,7 +10,6 @@
 |---|---|
 | 启用 Discord / Telegram | [§1](#1-启用-discord--telegram) |
 | 找回 Web bootstrap token | [§1b](#1b-web-bootstrap-token) |
-| 启用远程 ACP Agent | [§2](#2-启用远程-acp-agent) |
 | 改 Web 端口 | [§3](#3-改-web-端口) |
 | 重启服务 | [§4](#4-重启服务) |
 | 停止 / 启动服务 | [§5](#5-停止--启动服务) |
@@ -62,31 +61,6 @@ Environment="AGIM_ENABLE_GLOBAL_IM=1"
 
 ---
 
-## 2. 启用远程 ACP Agent
-
-**默认隐藏**。同样在 env 加：
-
-```bash
-echo 'AGIM_ENABLE_REMOTE_AGENT=1' >> ~/.agim/env
-systemctl restart agim
-```
-
-**验证**：
-1. `agim config` 主菜单 → 应该出现 `Remote ACP agents` 段
-2. Web 后台 `/settings/agents` → 底部应该出现 ACP card
-3. Web 后台 `/settings/service` → Ports 卡里应该有 `ACP 端口` 输入框（之前隐藏的）
-
-**网络**：ACP 服务默认绑 `127.0.0.1:9090`。如要跨机器 A2A：
-
-```bash
-echo 'AGIM_ACP_BIND=0.0.0.0' >> ~/.agim/env
-systemctl restart agim
-```
-
-设非回环会触发 warn + audit 行（`target=acp-server.bind`），便于事后追溯。
-
----
-
 ## 3. 改 Web 端口
 
 CLI 向导里有专门段：
@@ -133,8 +107,8 @@ curl -I http://127.0.0.1:3000  # 应返 401 或 302（鉴权未通过/重定向�
 **验证**：
 
 ```bash
-journalctl -u agim --since "1 minute ago" | grep "ACP Server listening"
-# 应看到新的 listening 行 + 新 PID
+journalctl -u agim --since "1 minute ago" | grep "Chat UI:"
+# 应看到新的 Chat UI 行 + 新 PID
 ```
 
 ---
@@ -216,7 +190,6 @@ journalctl -u agim --output=cat | jq "select(.traceId == \"$TRACE_ID\")"
 ```bash
 # ~/.agim/env
 cat >> ~/.agim/env <<EOF
-AGIM_SKILLHUB_ENABLED=0       # /skills 页不调 api.skillhub.cn
 AGIM_VIEWER_TUNNEL_MODE=off   # 不开 Cloudflare 临时隧道
 EOF
 
@@ -227,7 +200,6 @@ sed -i '/^AGIM_SMTP_HOST/d' ~/.agim/env
 
 # IM gate 保持默认（关）
 # 不要设 AGIM_ENABLE_GLOBAL_IM
-# 不要设 AGIM_ENABLE_REMOTE_AGENT
 
 systemctl restart agim
 ```

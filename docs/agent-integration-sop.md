@@ -12,7 +12,7 @@ Agim 的核心定位是“把各类 IM 连接到各类 Agent”。接入新 agen
 |---|---|---|
 | CLI agent | Claude Code、Codex、OpenCode、Cursor、Antigravity、Kimi Code、Qoder、PI、MiMo Code、Gemini CLI、Qwen Code | 实现 `AgentAdapter`，通常继承 `AgentBase`，每轮 spawn CLI |
 | In-process agent | Agim Agent（`agim`，别名 `native`） | 直接在 Agim 进程内调用 LLM loop 和 tool dispatcher |
-| Remote agent | ACP endpoint、托管 agent 服务 | 通过 HTTP/ACP 客户端实现 `AgentAdapter` |
+| Hosted agent | 托管 agent 服务 | 通过该服务的官方 HTTP API 实现 `AgentAdapter` |
 | Prompt-only bridge | 不支持非交互、工具或 MCP 的 CLI | 只能降级为对话桥接，UI/文档必须明确能力受限 |
 
 优先级：能做 CLI/remote 原生协议就不要做 prompt-only。prompt-only 容易让用户误以为 Skills、Memory、审批都可用，实际只是纯聊天。
@@ -339,7 +339,7 @@ Memo 是用户显式记事，与 Memory 不同。
 | Ask user | `ask_user` | Agent 能通过 IM 结构化询问用户 |
 | Push | `push_message` | Agent 能主动向当前 IM thread 发消息 |
 | A2A | `call_agent` | Agent 能调用其他 agent，带 parent/depth |
-| Goal | `long_task` / `complete_goal` | 长任务目标管理 |
+| Focus / Loop | `focus_*` / `loop_verdict` | 线程聚焦与工程闭环（旧 Goal 工具已退役） |
 | Location | `request_location_capture` 等 | 地点记忆闭环 |
 
 注意命名：CLI MCP server 里工具名可能是 `read_skill`，在日志、审批和 native 工具面上常显示为 `mcp__agim__read_skill`。验收时看能力，不只看表面名称。

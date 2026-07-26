@@ -9,8 +9,8 @@ import { randomUUID } from 'node:crypto'
 import { existsSync as fsExistsSync, readFileSync as fsReadFileSync, statSync as fsStatSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path'
 import { approvalBus } from '../../../core/approval-bus.js'
+import { resolveGoalConfirmationTimeoutMs } from '../../../core/approval-timeouts.js'
 import { AGIM_BGJOB_WRAPPER_EXPR } from '../../../core/agent-cwd.js'
-import { resolveGoalConfirmationTimeoutMs } from '../../../core/goal-rpc.js'
 import { type LlmProvider, getAnyProvider, getProvider } from '../../../core/llm/index.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import {
@@ -110,7 +110,7 @@ export function buildSystemPrompt(
 
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
-    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict (long_task/complete_goal deprecated)',
+    '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict',
     '  - native filesystem tools: agim_read_file, agim_write_file, agim_list_dir, agim_glob, agim_grep — full filesystem access by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to your workspace cwd; sensitive paths always denied)',
     '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
@@ -270,8 +270,8 @@ export function isPlanModeOn(threadKey?: string): boolean {
  * Honors composer「替我审批」(`AGIM_AUTO_APPROVE` effective) via
  * `allowSessionPin` on the approval bus — same as ordinary tools.
  * When auto-approve is off, still bypasses allow-on-timeout (deny on
- * timeout) and offers session「本类自动放行». plan-exit / complete_goal
- * stay hard-explicit (no session pin).
+ * timeout) and offers session「本类自动放行」. Plan-exit stays hard-explicit
+ * (no session pin).
  */
 export async function confirmUnconfinedGoalExec(opts: {
   runId: string
@@ -324,7 +324,7 @@ export async function confirmUnconfinedGoalExec(opts: {
       // otherwise still requires a click (or session pin / deny-on-timeout).
       requiresExplicitDecision: true,
       allowSessionPin: true,
-      // Human round-trip budget — same as complete_goal confirmation.
+      // Human round-trip budget for explicit confirmation.
       timeoutMs: resolveGoalConfirmationTimeoutMs(),
       ctx: {
         platform: opts.platform,

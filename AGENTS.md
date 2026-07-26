@@ -4,7 +4,7 @@
 
 ### Overview
 
-Agim is a universal messenger-to-agent bridge (Node.js >= 22.19/TypeScript). Single process, no Docker, no Redis. Web UI on port 3000, ACP server on port 9090.
+Agim is a universal messenger-to-agent bridge (Node.js >= 22.19/TypeScript). Single process, no Docker, no Redis. Web UI on port 3000.
 
 ### Commands
 
@@ -49,7 +49,7 @@ Web-console-only is valid — empty `messengers` no longer blocks `agim start`. 
 
 2. At least one agent must be available: either an agent CLI on PATH (`<command> --version`), or Agim Agent with a usable `llmBackends` entry (+ API key in `~/.agim/llm-secrets.json`). A stub `/usr/local/bin/claude` satisfies the CLI check for cloud VMs. For local SPA debugging without tokens, `AGIM_WEB_AUTH=off` is fine on loopback.
 
-3. After `npm run build`, start with `node dist/cli.js start` (or `agim start --bg`). Web UI at `http://localhost:3000` (token-gated unless `AGIM_WEB_AUTH=off` or loopback trust). On first boot the server writes a one-time raw token to `~/.agim/web-bootstrap-token` (chmod 600). Retrieve it with `agim token bootstrap` or `cat ~/.agim/web-bootstrap-token` — **not** `agim token list` (that only shows hashes). ACP endpoint at `http://localhost:9090` uses a bearer token from the access-token registry (`~/.agim/tokens.json`; legacy `~/.agim/acp-token` may still exist on older installs and is cleaned on uninstall).
+3. After `npm run build`, start with `node dist/cli.js start` (or `agim start --bg`). Web UI at `http://localhost:3000` (token-gated unless `AGIM_WEB_AUTH=off` or loopback trust). On first boot the server writes a one-time raw token to `~/.agim/web-bootstrap-token` (chmod 600). Retrieve it with `agim token bootstrap` or `cat ~/.agim/web-bootstrap-token` — **not** `agim token list` (that only shows hashes).
 
 ### Testing notes
 

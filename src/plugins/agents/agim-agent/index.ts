@@ -468,7 +468,7 @@ function composeOffTrackRecap(reason: string, redirect?: string): string {
     `原因：${reason.slice(0, 300)}`,
   ]
   if (redirect?.trim()) lines.push(`建议：${redirect.trim().slice(0, 300)}`)
-  lines.push('', '你可以回「继续」按建议调整，或 /goal show 核对当前目标。')
+  lines.push('', '你可以回「继续」按建议调整，或 /focus show 核对当前 Focus。')
   return lines.join('\n')
 }
 

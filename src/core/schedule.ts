@@ -18,7 +18,7 @@ import { AgentBase } from './agent-base.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { lookup } from 'node:dns/promises'
-import { isPrivateAddr } from '../plugins/agents/acp/url-guard.js'
+import { isPrivateAddr } from './url-guard.js'
 import type { AgentTurnOutcome } from './types.js'
 
 const SCHED_DB = join(AGIM_HOME, 'schedules.db')

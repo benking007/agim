@@ -66,18 +66,18 @@ describe('validateConfig', () => {
     }
   })
 
-  it('accepts a valid acpAgents entry', () => {
+  it('ignores legacy ACP config keys', () => {
     const result = validateConfig({
       acpAgents: [{ name: 'my-agent', endpoint: 'https://example.com' }],
+      acpDiscoveryUrls: ['not-a-url'],
+      acpPort: 99_999,
     })
     expect(result.ok).toBe(true)
-  })
-
-  it('rejects acpAgents with empty name or endpoint', () => {
-    const result = validateConfig({
-      acpAgents: [{ name: '', endpoint: '' }],
-    })
-    expect(result.ok).toBe(false)
+    if (result.ok) {
+      expect((result.config as Record<string, unknown>).acpAgents).toBeUndefined()
+      expect((result.config as Record<string, unknown>).acpDiscoveryUrls).toBeUndefined()
+      expect((result.config as Record<string, unknown>).acpPort).toBeUndefined()
+    }
   })
 
   it('accepts a workspace config with rate limit', () => {
@@ -145,7 +145,6 @@ describe('validateConfig', () => {
 
   it('rejects ports outside the TCP range', () => {
     expect(validateConfig({ webPort: 65_536 }).ok).toBe(false)
-    expect(validateConfig({ acpPort: 99_999 }).ok).toBe(false)
   })
 
   it('returns structured error paths', () => {

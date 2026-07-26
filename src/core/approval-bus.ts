@@ -831,7 +831,7 @@ export class ApprovalBus {
     // Pinnable explicit tools (unconfined goal `agim_exec` when bwrap is
     // missing/off) also honor「替我审批」— the operator already opted into
     // proxy-approve. Hard explicit tools without allowSessionPin
-    // (plan-exit / complete_goal) still require a human click.
+    // (such as plan-exit) still require a human click.
     if (
       (!args.requiresExplicitDecision || allowSessionPin)
       && isAutoApproveEffective()
@@ -885,8 +885,8 @@ export class ApprovalBus {
       || allowSessionPin
     ) && (this.autoAllowByThread.get(cKey)?.has(ruleKey) ?? false)
     // Grace mode must use autoAllowGraceMs even when the caller passed a
-    // long first-ask budget (e.g. confirmUnconfinedGoalExec /
-    // complete_goal via timeoutMs). Otherwise the SPA countdown hits
+    // long first-ask budget (e.g. confirmUnconfinedGoalExec via
+    // timeoutMs). Otherwise the SPA countdown hits
     // "Auto-allowing now…" at graceSeconds while the bus timer still
     // waits minutes — the dock never receives approval-card-edit.
     const timeoutMs = isAutoAllow
@@ -986,7 +986,7 @@ export class ApprovalBus {
     clearTimeout(p.timer)
 
     // "Allow all" is never meaningful for hard one-shot transitions (plan
-    // exit / complete_goal). Pinnable explicit tools (unconfined exec) may
+    // exit). Pinnable explicit tools (unconfined exec) may
     // seed a remembered rule via autoAllowFurther.
     if (
       p.requiresExplicitDecision

@@ -11,7 +11,7 @@
 - [`../README.md`](../README.md) / [`../README.zh-CN.md`](../README.zh-CN.md)：项目概览与快速开始（`agim go`）
 - [`agents.md`](./agents.md)：支持的 Agent 后端、安装入口、模型切换与工具能力
 - [`deployment.md`](./deployment.md)：部署与上线清单
-- [`naming.md`](./naming.md)：命名术语表（Agim Agent / `agim` / ACP≠A2A / tenants）
+- [`naming.md`](./naming.md)：命名术语表（Agim Agent / `agim` / A2A / tenants）
 - [`migration-naming-v2.md`](./migration-naming-v2.md)：Naming v2 新老迁移指引
 - [`llm-backends.md`](./llm-backends.md)：Agim Agent 大模型 API 配置与排障（含 SSRF / 私网 hatch）
 - [`agim-agent-context-budget.md`](./agim-agent-context-budget.md)：上下文预算（L1/L2 / compact / 指标）
@@ -23,7 +23,8 @@
 - [`architecture/subagent.md`](./architecture/subagent.md)：**现行设计** — Subagent 概念、与 A2A/handoff 边界、同族 role/backend、拆解原则、**子代理代审免卡**
 - [`architecture/focus.md`](./architecture/focus.md)：**现行设计** — Focus：聚焦注入 / on / off（废弃 `/goal`）
 - [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；父侧 `ask_user`；结案浮窗；门禁仅 depth=0；Portal）
-- [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点
+- [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点（UI/工具链已退役）
+- [`architecture/retirement-candidates.md`](./architecture/retirement-candidates.md)：退役清单（已落地 Goal/Hot/ACP + 下一波候选）
 - [`architecture/orchestration-roadmap.md`](./architecture/orchestration-roadmap.md)：**现行计划** — Subagent 可观测 → 并行 fan-out → Loop（A→B→C）
 - [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)：工作目录与记忆隔离（已实施）
 - [`architecture/reminders.md`](./architecture/reminders.md)：提醒与主动通知链路

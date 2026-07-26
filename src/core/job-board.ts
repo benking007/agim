@@ -8,7 +8,7 @@
 //     and `workspace_id`. Commands that the user runs through IM
 //     (`/job list|check|cancel|run`) MUST pass the caller's userId via
 //     opts.creatorId so users can't peek at or stomp on each others' jobs.
-//     Internal callers (REST `/api/jobs`, ACP server, scheduler) pass no
+//     Internal callers (REST `/api/jobs`, scheduler) pass no
 //     filter and see every row — that's intentional, those entry-points
 //     are guarded by the web / API token.
 //   - Legacy rows (created before the migration) have creator_id = ''.
@@ -507,7 +507,7 @@ function getDb(): Database.Database | null {
  *   This preserves visibility of pre-migration jobs while preventing one
  *   user from poking at another's freshly-created ones.
  * - When `creatorId` is unset (undefined), no ownership filter is applied
- *   — used by REST / ACP / scheduler entry-points that are guarded by the
+ *   — used by REST / scheduler entry-points that are guarded by the
  *   web token, not by per-user identity.
  */
 export interface OwnerOpts {

@@ -84,7 +84,7 @@
   },
   "agents": {
     "title": "Agents",
-    "subtitle": "Manage bridged external agents (CLI / ACP). Agim Agent is the built-in default agent and is configured from the Agim Agent tab via Model APIs.",
+    "subtitle": "Manage bridged CLI agents. Agim Agent is the built-in default agent and is configured from the Agim Agent tab via Model APIs.",
     "installHint": "Not installed. `npm install -g {{pkg}}` on the host.",
     "nativeInstallHint": "No model API configured for Agim Agent. Open Settings → Agim Agent to add one (OpenAI / DeepSeek / Anthropic / …).",
     "inProcessBadge": "built-in",
@@ -104,47 +104,6 @@
     "discard": "Discard",
     "toast": {
       "saved": "Saved"
-    },
-    "acp": {
-      "title": "Remote agents (ACP)",
-      "subtitle": "Agents reachable over HTTP via the Agent Communication Protocol. Each entry persists in config and registers on the next service restart.",
-      "discoverBtn": "Discover",
-      "runDiscover": "Probe",
-      "baseUrl": "Discovery URL",
-      "baseUrlHint": "Probes `<base>/.well-known/acp` and adds the entries it lists. Skips names already present.",
-      "addTitle": "Add agent",
-      "name": "Name",
-      "nameHint": "Stable identifier; letters, digits, `._-`.",
-      "aliases": "Aliases",
-      "aliasesHint": "Comma-separated; routed via `/alias` in chat.",
-      "endpoint": "Endpoint",
-      "endpointHint": "Base URL of the agent's ACP root (no trailing `/`).",
-      "authType": "Auth",
-      "auth": {
-        "none": "None",
-        "apikey": "API key",
-        "bearer": "Bearer"
-      },
-      "token": "Token",
-      "tokenPlaceholder": "Paste token",
-      "testBtn": "Test",
-      "addBtn": "Add",
-      "removeBtn": "Remove",
-      "on": "on",
-      "off": "off",
-      "dupName": "An agent with this name already exists.",
-      "empty": {
-        "title": "No remote agents",
-        "description": "Add an ACP endpoint below or use Discover for a `.well-known/acp` directory."
-      },
-      "toast": {
-        "staged": "Added — click Save to apply.",
-        "testOk": "Reached `{{name}}`",
-        "testMasked": "Save first — token is masked, can't test in place.",
-        "discoverEmpty": "Nothing new to add.",
-        "discoverAdded_one": "Added {{count}} agent.",
-        "discoverAdded_other": "Added {{count}} agents."
-      }
     }
   },
   "policy": {
@@ -517,8 +476,6 @@
       "subtitle": "Which ports agim binds when started. Leave blank to use the default. Changes apply on the next service restart (use the Restart button below after saving).",
       "webPort": "Web port",
       "webPortHint": "HTTP server for the chat UI + REST API. Default: {{default}}.",
-      "acpPort": "ACP port",
-      "acpPortHint": "Agent Communication Protocol server (remote agent surface). Default: {{default}}.",
       "invalidPort": "Must be a number between 1 and 65535.",
       "restartRequired": "Restart required",
       "save": "Save",
@@ -1079,12 +1036,11 @@
     "tab": {
       "overview": "Overview",
       "installed": "Installed",
-      "hot": "skillhub Hot",
       "injection": "Prompt Injection"
     },
     "overview": {
       "title": "Skills overview",
-      "subtitle": "Manage the skills the Agent can read, external skill sources, and the summary injected into each turn.",
+      "subtitle": "Manage the local skills the Agent can read and the summary injected into each turn.",
       "ready": "Ready",
       "needsAttention": "{{count}} needs attention",
       "refresh": "Refresh",
@@ -1100,13 +1056,6 @@
           "missing": "{{count}} skill(s) missing dependencies",
           "action": "Review"
         },
-        "hot": {
-          "title": "Hot skills",
-          "ready": "{{count}} available to browse",
-          "stale": "Showing cached results",
-          "error": "Could not load right now",
-          "action": "Browse"
-        },
         "injection": {
           "title": "Agent visibility",
           "autoValue": "Auto",
@@ -1120,10 +1069,6 @@
         "fixUnavailable": {
           "title": "Fix unavailable skills first",
           "detail": "Some skills are missing commands or environment variables, so the Agent cannot use them reliably yet."
-        },
-        "browseHot": {
-          "title": "Pick a hot skill to try",
-          "detail": "There are no workspace skills yet; start from common capabilities."
         },
         "reviewOverride": {
           "title": "Review prompt injection override",

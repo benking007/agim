@@ -33,7 +33,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 125,
+  "count": 122,
   "endpoints": [
     {
       "method": "DELETE",
@@ -212,12 +212,6 @@
     {
       "method": "GET",
       "path": "/api/env",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "GET",
-      "path": "/api/goals",
       "source": "exact",
       "authRequired": true
     },
@@ -421,12 +415,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/skills/remote/hot",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "GET",
       "path": "/api/stt/providers",
       "source": "exact",
       "authRequired": true
@@ -482,18 +470,6 @@
     {
       "method": "POST",
       "path": "/api/admin-allowlist",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/agents/acp/discover",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/agents/acp/test",
       "source": "exact",
       "authRequired": true
     },
@@ -602,6 +578,12 @@
     {
       "method": "POST",
       "path": "/api/loop/confirm-met",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/loop/generate-report",
       "source": "exact",
       "authRequired": true
     },

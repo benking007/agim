@@ -232,7 +232,7 @@ export async function handleAskOp(payload: AskPayload, ctx: RunContext): Promise
     : undefined
 
   // Resolve the messenger for the IM thread. If the platform isn't
-  // registered (rare — usually means a misconfigured ACP caller), fall
+  // registered, fall
   // through to text-only via sink, which will queue and eventually fail
   // delivery with a clear error. We refuse the ask in that case so the
   // agent doesn't sit on a Promise that can never resolve.

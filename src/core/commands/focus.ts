@@ -30,84 +30,13 @@ const HELP = [
   '  `/focus help`                 本帮助',
   '',
   '与 /loop：可先 focus 再 loop（结束保留 focus）；或直接 `/loop <text>` 代开。',
-  '旧命令 `/goal` 已废弃，请改用 `/focus`。',
 ].join('\n')
 
-const DEPRECATION =
-  '⚠️ `/goal` 已废弃，请改用 `/focus`（on/off/set/clear）。完成闭环请用 `/loop`。\n\n'
-
 export async function handleFocusCommand(args: string, ctx: RouteContext): Promise<string> {
-  return dispatchFocus(args, ctx, false)
+  return dispatchFocus(args, ctx)
 }
 
-/** Deprecated `/goal` surface — forwards to Focus with a banner. */
-export async function handleGoalCommandDeprecated(args: string, ctx: RouteContext): Promise<string> {
-  const mapped = mapGoalArgsToFocus(args)
-  if (mapped.kind === 'hard_deprecated') {
-    return DEPRECATION + mapped.message
-  }
-  const body = await dispatchFocus(mapped.args, ctx, true)
-  return DEPRECATION + body
-}
-
-function mapGoalArgsToFocus(args: string): { kind: 'forward'; args: string } | { kind: 'hard_deprecated'; message: string } {
-  const trimmed = args.trim()
-  const parts = trimmed.split(/\s+/).filter(Boolean)
-  const sub = (parts[0] || '').toLowerCase()
-  const rest = trimmed.slice(parts[0]?.length ?? 0).trim()
-
-  if (!sub) return { kind: 'forward', args: '' }
-  switch (sub) {
-    case 'help':
-    case '?':
-      return { kind: 'forward', args: 'help' }
-    case 'show':
-    case 'get':
-      return { kind: 'forward', args: 'show' }
-    case 'set':
-    case 'create':
-    case 'new':
-      return { kind: 'forward', args: rest ? `set ${rest}` : 'set' }
-    case 'body':
-    case 'desc':
-    case 'detail':
-      return { kind: 'forward', args: rest ? `body ${rest}` : 'body' }
-    case 'pause':
-    case 'off':
-      return { kind: 'forward', args: 'off' }
-    case 'resume':
-    case 'on':
-      // Old resume required id; Focus on uses retained content.
-      return { kind: 'forward', args: 'on' }
-    case 'cancel':
-    case 'abort':
-    case 'drop':
-      return { kind: 'forward', args: 'clear' }
-    case 'complete':
-    case 'done':
-    case 'finish':
-      return {
-        kind: 'hard_deprecated',
-        message: '`/goal complete` 已废弃（完成语义不在 Focus 上）。请用 `/loop` 做开发闭环，或 `/focus off` 停止注入。',
-      }
-    case 'progress':
-    case 'prog':
-    case 'log':
-      return { kind: 'forward', args: rest ? `note ${rest}` : 'note' }
-    case 'list':
-    case 'history':
-    case 'all':
-      return {
-        kind: 'hard_deprecated',
-        message: `\`/goal ${sub}\` 已废弃。查看当前聚焦用 \`/focus show\`。`,
-      }
-    default:
-      // Treat bare text after /goal as set (legacy muscle memory).
-      return { kind: 'forward', args: `set ${trimmed}` }
-  }
-}
-
-async function dispatchFocus(args: string, ctx: RouteContext, _fromGoal: boolean): Promise<string> {
+async function dispatchFocus(args: string, ctx: RouteContext): Promise<string> {
   const trimmed = args.trim()
   const parts = trimmed.split(/\s+/).filter(Boolean)
   const sub = (parts[0] || '').toLowerCase()

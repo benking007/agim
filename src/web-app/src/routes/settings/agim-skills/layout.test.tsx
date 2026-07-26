@@ -27,16 +27,16 @@ describe('/settings/agim-skills layout', () => {
     expect(screen.queryByText('Advanced')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/settings/agim-skills')
     expect(screen.getByRole('link', { name: 'Installed' })).toHaveAttribute('href', '/settings/agim-skills/installed')
-    expect(screen.getByRole('link', { name: 'skillhub Hot' })).toHaveAttribute('href', '/settings/agim-skills/hot')
     expect(screen.getByRole('link', { name: 'Prompt Injection' })).toHaveAttribute('href', '/settings/agim-skills/injection')
+    expect(screen.getAllByRole('link')).toHaveLength(3)
     expect(screen.getByTestId('skills-child')).toBeInTheDocument()
   })
 
   it('marks nested skill routes active', () => {
-    renderAt('/settings/agim-skills/hot')
+    renderAt('/settings/agim-skills/injection')
 
-    const hot = screen.getByRole('link', { name: 'skillhub Hot' })
-    expect(hot.className).toContain('text-accent')
+    const injection = screen.getByRole('link', { name: 'Prompt Injection' })
+    expect(injection.className).toContain('text-accent')
     expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('text-accent')
   })
 })

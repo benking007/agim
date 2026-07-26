@@ -17,8 +17,8 @@
 //
 // Storage: ~/.agim/todos.db (SQLite) with an in-memory fallback when the
 // native addon is unavailable (Bun tests). Persistence matters for
-// complete_goal: a restart must not turn "incomplete checklist" into
-// "no checklist".
+// mission-completion gates: a restart must not turn "incomplete checklist"
+// into "no checklist".
 
 import { join } from 'node:path'
 import { AGIM_HOME } from '../agim-paths.js'
@@ -140,7 +140,7 @@ export function getTodoSnapshot(threadKey: string): TodoSnapshot {
   return cur ? { status: 'present', items: cloneItems(cur) } : { status: 'absent' }
 }
 
-/** Gate used by complete_goal for native agents. */
+/** Gate used by mission-completion checks for native agents. */
 export function evaluateTodoCompletionGate(threadKey: string):
   | { ok: true }
   | { ok: false; error: string } {
@@ -220,7 +220,7 @@ export function getTodoTools(): ToolDef[] {
         'Overwrite this conversation\'s plan checklist with a fresh array of items. ' +
         'REQUIRED before mutating tools when AGIM_TODO_GATE is on (default): call this with a '
         + 'non-empty list before agim_exec / agim_write_file / edit / memo writes / push / '
-        + 'call_agent / complete_goal / etc. Read tools and ask_user stay allowed without a plan. '
+        + 'call_agent / loop_verdict / etc. Read tools and ask_user stay allowed without a plan. '
         + 'Use this at the start of any multi-step task (≥ 3 steps) to externalise the plan. ' +
         'The user watches this checklist live in chat (like a progress board) — so you MUST ' +
         'call it again immediately after finishing each item to mark that item completed and ' +

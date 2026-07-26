@@ -40,9 +40,8 @@ const NAV: Array<NavEntry & { mounted: boolean }> = [
   { to: '/reminders',     i18nKey: 'nav.reminders',     mounted: true  },
   { to: '/memos',         i18nKey: 'nav.memos',         mounted: true  },
   { to: '/memory',        i18nKey: 'nav.memory',        mounted: true  },
-  // Skills consolidated under Settings → 技能 in 2026-05 (installed CRUD +
-  // skillhub 热门 in one place). Old /skills URLs still resolve via the
-  // redirect in router.tsx so bookmarks don't 404.
+  // Skills consolidated under Settings → 技能 in 2026-05. Old /skills URLs
+  // still resolve via the redirect in router.tsx so bookmarks don't 404.
   { to: '/workspace',     i18nKey: 'nav.workspace',     mounted: true  },
   { to: '/observability', i18nKey: 'nav.observability', mounted: true  },
   { to: '/settings',      i18nKey: 'nav.settings',      mounted: true  },

@@ -32,7 +32,6 @@ export default defineConfig({
     reporters: ['default', failOnSkippedTests],
     setupFiles: [fileURLToPath(new URL('../../test/setup.ts', import.meta.url))],
     include: [
-      'src/core/goal-rpc.test.ts',
       'src/core/goals.test.ts',
       'src/core/focus.test.ts',
       'src/core/loop-run.test.ts',

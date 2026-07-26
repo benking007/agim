@@ -22,7 +22,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useA2AStats } from '@/hooks/use-a2a'
-import { useAsksList, useGoalsList, useHeartbeatList } from '@/hooks/use-background-tasks'
+import { useAsksList, useHeartbeatList } from '@/hooks/use-background-tasks'
 import { useJobs } from '@/hooks/use-jobs'
 import { useOutboxStats } from '@/hooks/use-outbox'
 import { useSchedules } from '@/hooks/use-schedules'
@@ -64,7 +64,6 @@ export default function TasksOverviewRoute(): JSX.Element {
   const schedulesQuery = useSchedules({})
   const a2aQuery = useA2AStats()
   const heartbeatQuery = useHeartbeatList()
-  const goalsQuery = useGoalsList()
   const asksQuery = useAsksList()
 
   const jobStats = jobsQuery.data?.stats
@@ -82,17 +81,15 @@ export default function TasksOverviewRoute(): JSX.Element {
   const enabledSchedules = schedules.filter((s) => s.enabled).length
   const heartbeatBindings = heartbeatQuery.data?.bindings ?? []
   const enabledHeartbeats = heartbeatBindings.filter((b) => b.enabled).length
-  const activeGoals = goalsQuery.data?.count ?? goalsQuery.data?.goals.length ?? 0
   const pendingAsks = asksQuery.data?.count ?? asksQuery.data?.pending.length ?? 0
   const a2aRecent = a2aQuery.data?.recent24h ?? 0
-  const automationCount = enabledSchedules + enabledHeartbeats + activeGoals
+  const automationCount = enabledSchedules + enabledHeartbeats
   const needsAttention = pendingAsks + outboxGivingUp + failedJobs
   const anyFetching = jobsQuery.isFetching
     || outboxQuery.isFetching
     || schedulesQuery.isFetching
     || a2aQuery.isFetching
     || heartbeatQuery.isFetching
-    || goalsQuery.isFetching
     || asksQuery.isFetching
 
   const nextAction = pickNextAction({
@@ -146,7 +143,6 @@ export default function TasksOverviewRoute(): JSX.Element {
       detail: t('overview.cards.automation.detail', {
         schedules: enabledSchedules,
         heartbeats: enabledHeartbeats,
-        goals: activeGoals,
       }),
       to: '/tasks/schedules',
       action: t('overview.cards.automation.action'),
@@ -180,7 +176,6 @@ export default function TasksOverviewRoute(): JSX.Element {
       links: [
         ['schedules', '/tasks/schedules'],
         ['heartbeat', '/tasks/heartbeat'],
-        ['goals', '/tasks/goals'],
         ['asks', '/tasks/asks'],
       ],
     },
@@ -218,7 +213,6 @@ export default function TasksOverviewRoute(): JSX.Element {
             void schedulesQuery.refetch()
             void a2aQuery.refetch()
             void heartbeatQuery.refetch()
-            void goalsQuery.refetch()
             void asksQuery.refetch()
           }}
         >

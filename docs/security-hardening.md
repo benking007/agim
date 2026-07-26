@@ -16,7 +16,6 @@ agim **默认状态**偏「单人本机助手」合规友好，但**不是**面�
 |---|---|---|
 | Web 控制台监听 | 仅 `127.0.0.1`；非回环必须显式 env 切换 | 公网暴露需运维主动确认 |
 | Discord / Telegram | **隐藏**（需 `AGIM_ENABLE_GLOBAL_IM=1` 启用）| 全球 IM 默认不开 |
-| 远程 ACP Agent | **隐藏**（需 `AGIM_ENABLE_REMOTE_AGENT=1` 启用）| 远端执行默认不开 |
 | 工具审批 | **默认人工审批**（`AGIM_AUTO_APPROVE=0`）；显式 `=1` 或 Portal/桌面 composer「替我审批」才自动放行（安全检查仍先执行）。接 IM 且未配严格 `AGIM_ALLOWED_USERS` 时自动审批会被抑制，除非 `AGIM_AUTO_APPROVE_OPEN_IM=1`。**子代理（`callDepth>0`）默认代审免卡**（敏感路径 / self-protect / deny-all 仍拦截） | **主 turn 安全默认；composer 可一键切换；子代理代批** |
 | 审批超时 | 超时默认 **放行**（`AGIM_TIMEOUT_DEFAULT=allow`）；仅自动审批关闭时生效；设 `deny` 启用严格交互模式 | HITL 严格模式需显式改 |
 | IM 发送者 | 默认开放（未设 `AGIM_ALLOWED_USERS`）| 谁能私聊 bot 谁就能驱 agent |
@@ -43,7 +42,6 @@ export AGIM_ALLOWED_USERS='tg:123456789,feishu:ou_xxx'
 
 # 保持控制面本机；反代后关闭 loopback 旁路信任
 export AGIM_WEB_BIND=127.0.0.1
-export AGIM_ACP_BIND=127.0.0.1
 export AGIM_TRUST_LOOPBACK=off
 # 切勿 AGIM_WEB_AUTH=off
 
@@ -64,14 +62,11 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | 变量 | 默认 | 用途 | 引入 |
 |---|---|---|---|
 | `AGIM_ENABLE_GLOBAL_IM` | 未设 = 关 | `=1` 开启 Discord + Telegram 的 CLI 配置入口、Web 设置卡片、运行时适配器加载 | R12 |
-| `AGIM_ENABLE_REMOTE_AGENT` | 未设 = 关 | `=1` 开启 ACP（远程 Agent over HTTP）的 CLI 入口、Web 卡片、端口配置、运行时加载、`.well-known/acp` 自动发现 | R12 |
 | `AGIM_LOG_USER_TEXT` | 未设 = 关 | `=1` 让 pino 日志带原文 user message（默认只记 `len`/`prefix(6)`/`sha256(12)`）。**严格匹配**，`true`/`yes`/`on`/`0` 都视为关 | R12 ① |
 | `AGIM_MEMORY_FACT_RETENTION_DAYS` | `90` | 长期事实 TTL（按 `last_referenced_at` 而非创建时间，LRU 友好）。`0` 永久 | R12 ② |
 | `AGIM_PERSONA_RETENTION_DAYS` | `180` | 用户画像 TTL（按 `updated_at`）。`0` 永久 | R12 ② |
 | `AGIM_PASTE_RETENTION_DAYS` | `30` | viewer paste TTL（按 `created_at`）。`0` 永久 | R12 ② |
 | `AGIM_AUDIT_EVENTS_RETENTION_DAYS` | `180` | 审计事件表保留天数（满足等保 2.0 三级 ≥ 6 个月） | R12 ⑤ |
-| `AGIM_SKILLHUB_ENABLED` | `1` = 开 | `=0` 关闭技能热榜对外 fetch（气隙部署） | R12 ⑥ |
-| `AGIM_ACP_BIND` | `127.0.0.1` | ACP 服务监听地址；改成非回环值会触发 warn + 持久审计记录 | R13 G4 |
 | `AGIM_WEB_TLS_ACK` | 未设 = 警告 | `=1` 静默非回环 Web bind 时的启动横幅（操作员确认 TLS 反代已就位） | R13 G5 C2 |
 | `AGIM_WS_MAX_PER_IP` | `20` | WebSocket 单 IP 并发上限 | R13 G5 A4 |
 | `AGIM_WS_MAX_NEW_PER_IP_PER_MIN` | `30` | WebSocket 单 IP 60 秒内新建数 | R13 G5 A4 |
@@ -81,9 +76,9 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | (已有) `AGIM_TIMEOUT_DEFAULT` | `allow` | 审批超时策略（仅 AUTO_APPROVE 关闭时生效）；设 `deny` 启用严格交互模式 | R13 G5 C1 |
 | `AGIM_NATIVE_TRUST_WORKSPACE` | on（信任） | `off`/`0`/`false`/`no` → native **不注入**工作区发现的 `AGENTS.md`/`AGENTS.local.md`（多租户 / A2A 防工作区内容投毒 system prompt）；显式 `AGIM_NATIVE_AGENT_ROLE_FILE` 不受门控 | v1.2.145 |
 | `AGIM_ALLOW_PRIVATE_WEBHOOKS` | 未设 = 关 | `=1` 同时放行 `notify_url` 的词法校验**与** fetch-time DNS 守卫的私网目标（仅供内网 webhook 调试） | v1.2.145 |
-| `AGIM_URL_ALLOW_PRIVATE` | 未设 = 关 | `=1` 放行 LLM `baseUrl` / MCP HTTP `url` / ACP 配置中的私网与回环地址（本地 Ollama 等）；亦接受历史名 `AGIM_ACP_ALLOW_LOOPBACK=1` | CR follow-up |
+| `AGIM_URL_ALLOW_PRIVATE` | 未设 = 关 | `=1` 放行 LLM `baseUrl` / MCP HTTP `url` 中的私网与回环地址（本地 Ollama 等）；亦接受历史名 `AGIM_ACP_ALLOW_LOOPBACK=1` | CR follow-up |
 
-> **重要**：`AGIM_ENABLE_GLOBAL_IM` 和 `AGIM_ENABLE_REMOTE_AGENT` 的设计目的是合规分发 —— **不会出现在首次安装向导 / `agim go` 主路径里**。运维通过 SSH 编辑 `~/.agim/env`、systemd `Environment=`，或进程启动前 export 启用。Web UI **不能**反向打开这两个门。README / runbook / naming 会提到「存在此门控」，但不把开启步骤塞进 Quick start。
+> **重要**：`AGIM_ENABLE_GLOBAL_IM` 的设计目的是合规分发 —— **不会出现在首次安装向导 / `agim go` 主路径里**。运维通过 SSH 编辑 `~/.agim/env`、systemd `Environment=`，或进程启动前 export 启用。Web UI **不能**反向打开这个门。
 
 ---
 
@@ -114,7 +109,6 @@ Telegram 群聊另配 `approvalAllowlist`，避免任意成员点批准按钮。
 | `~/.agim/web-bootstrap-token` | 0o600 | `core/access-token.ts:bootstrapIfEmpty`（一次性原值；`agim token bootstrap` 取回后删除） |
 | `~/.agim/llm-secrets.json` | 0o600 | `cli-ui/setup-llm.ts` / LLM API |
 | `~/.agim/admin-bootstrap-token` | 0o600 | `core/admin-bootstrap.ts:ensureBootstrapTokenIfNeeded` |
-| `~/.agim/acp-token` | 0o600 | `core/acp-server.ts:getOrCreateAcpToken` |
 | `~/.agim/approval-bus.sock` | 0o600 | `core/approval-bus.ts:start` 后 chmod |
 | `~/.agim/agim.pid` | 0o600 | `cli.ts:agim start` 写入（R15） |
 | `~/.agim/sessions/<key>.log` | 0o600 | `core/session.ts:appendFile` |
@@ -174,14 +168,7 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 - 每令牌上限 100 连接（`AGIM_MAX_WS_CLIENTS`）
 - **R13 G5 A4 新增按 IP 限流**：`AGIM_WS_MAX_PER_IP=20` 并发 + `AGIM_WS_MAX_NEW_PER_IP_PER_MIN=30` 滚动窗口；rate-limit 在鉴权**之前**跑，防止 sha256 暴力 CPU 占用
 
-### 3.4 ACP 入站端口（R13 G4）
-
-- **默认** `127.0.0.1`（之前是 0.0.0.0 —— 我审计时 Explore agent 报告错了，实际一直是回环）
-- 通过 `AGIM_ACP_BIND=<addr>` 可改非回环
-- 改非回环时启动 warn + 持久审计行 `target=acp-server.bind`
-- 客户端鉴权：`acp-token` Bearer（`~/.agim/acp-token`，0o600）
-
-### 3.5 `?token=` URL 回退（R13 G5 A5）
+### 3.4 `?token=` URL 回退（R13 G5 A5）
 
 继续兼容 WS upgrade / iframe 场景，但**首次命中时每进程 warn 一次**并入 audit-event，建议运维迁移到 `Authorization: Bearer` 或 `agim_token` cookie。
 
@@ -202,9 +189,7 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 | 7 | `api.map.baidu.com` | `AGIM_BAIDU_MAP_AK` + `/memo` 地址 | 不设 AK | TLS |
 | 8 | `*.trycloudflare.com` | `AGIM_VIEWER_TUNNEL_MODE=quick` | 默认关 | TLS |
 | 9 | OpenAI 兼容服务 | `OPENAI_API_KEY` + 语音/向量功能 | 不设；或 base_url 指向内网 Ollama / LM Studio | TLS |
-| 10 | ACP 远程 Agent | `acpAgents[]` + R12 ACP gate 开 | `AGIM_ENABLE_REMOTE_AGENT` 不设 | **R13 SSRF**：私网/回环拒绝 + `redirect: 'manual'` |
-| 11 | 定时任务 Webhook | 用户传 `notify_url` | 不传 | **R13 SSRF**：私网拒绝（词法）+ **v1.2.145：fetch 前 DNS 解析守卫**（`assertWebhookHostPublic`，堵主机名解析进内网 / DNS-rebinding）；`redirect: 'manual'` |
-| 12 | `api.skillhub.cn` | Web 打开 `/skills` 页 | `AGIM_SKILLHUB_ENABLED=0` | R12 ⑥ |
+| 10 | 定时任务 Webhook | 用户传 `notify_url` | 不传 | **R13 SSRF**：私网拒绝（词法）+ **v1.2.145：fetch 前 DNS 解析守卫**（`assertWebhookHostPublic`，堵主机名解析进内网 / DNS-rebinding）；`redirect: 'manual'` |
 
 ### 4.2 完全切断公网
 
@@ -212,7 +197,6 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 # 关闭所有可选出口
 unset OPENAI_API_KEY AGIM_BAIDU_MAP_AK AGIM_SMTP_HOST
 export AGIM_VIEWER_TUNNEL_MODE=off
-export AGIM_SKILLHUB_ENABLED=0
 
 # IM 必选：选自建飞书私有云 / 钉钉私有云 / 内网 IM
 # 完全气隙：不配任何 IM 适配器，纯 Web 控制台操作
@@ -302,7 +286,7 @@ export AGIM_SKILLHUB_ENABLED=0
 |---|---|
 | `approval.allow` / `approval.deny` | `core/approval-router.ts:tryHandleApprovalReply` + R13 G2 sensitive-paths 块 |
 | `admin.elevate` / `admin.revoke` | `core/admin-allowlist.ts:promoteAdmin` + `core/access-token.ts:setTokenRole` |
-| `config.put` | `web/config-api.ts`（及 R13/R14 几处系统事件，e.g. ACP bind / 非回环 Web bind / 超时策略=allow / 安全 advisory） |
+| `config.put` | `web/config-api.ts`（及 R13/R14 几处系统事件，e.g. 非回环 Web bind / 超时策略=allow / 安全 advisory） |
 | `env.put` | `web/env-api.ts` |
 | `token.create` / `token.revoke` | `core/access-token.ts:createToken/revokeToken` |
 | `workspace.add` / `workspace.delete` | `web/workspaces-api.ts` |
@@ -333,7 +317,7 @@ export AGIM_SKILLHUB_ENABLED=0
 
 ### 7.2 反 EADDRINUSE 三道防线
 
-1. **25s 优雅退出硬截止**（cli.ts gracefulShutdown）—— SIGTERM 25s 内不退就强 `exit(1)`；webServer / acpServer 加 `closeAllConnections()` 强断 keep-alive；与 `TimeoutStopSec=30` 配 5s buffer
+1. **25s 优雅退出硬截止**（cli.ts gracefulShutdown）—— SIGTERM 25s 内不退就强 `exit(1)`；webServer 加 `closeAllConnections()` 强断 keep-alive；与 `TimeoutStopSec=30` 配 5s buffer
 2. **Reap 残留 agim 进程**（service.ts `reapStrayAgimProcesses` + R15 argv-strict /proc 扫描）—— Web/IM/CLI 触发 stop/restart 前后都跑；不误伤 shell 脚本
 3. **启动期 PID + INVOCATION_ID 自检**（cli.ts foreground start）—— PID_FILE 活 pid 且 ≠ self → `exit(2)`；不在 systemd 但有 unit 文件 → warn + `~/.agim/start-anomaly.log`
 
@@ -379,11 +363,8 @@ ExecStart=/usr/local/bin/agim start
 **网络层**
 - [ ] 仅放行业务必需的 IM 厂商域名出网
 - [ ] `AGIM_WEB_BIND` 保持 `127.0.0.1` 或非回环时 `AGIM_WEB_TLS_ACK=1` + 前置 TLS 反代
-- [ ] `AGIM_ACP_BIND` 保持 `127.0.0.1`（除非多机 A2A）
 - [ ] `AGIM_VIEWER_TUNNEL_MODE=off`
-- [ ] `AGIM_SKILLHUB_ENABLED=0`（气隙）
 - [ ] `AGIM_ENABLE_GLOBAL_IM` 未设（除非确需 Discord/Telegram）
-- [ ] `AGIM_ENABLE_REMOTE_AGENT` 未设（除非确需远程 Agent）
 - [ ] `OPENAI_API_KEY` 不配，或 `AGIM_MEMORY_VECTOR_OPENAI_BASE_URL` 指内网
 
 **OS 层**

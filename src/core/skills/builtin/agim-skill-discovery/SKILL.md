@@ -41,7 +41,7 @@ When the user asks for a capability that's NOT in your skill list:
 2. **Suggest the official source:**
 
    > skillhub.cn 是 agim 的官方 skill 市场（中文优化）。可以在
-   > web 后台「Skills」页 → 「skillhub 热门」 入口搜索 / 安装。
+   > skillhub.cn 查找合适的 skill slug，再由 operator 决定是否安装。
 
 3. **Or trigger via slash command:**
 
@@ -50,9 +50,10 @@ When the user asks for a capability that's NOT in your skill list:
    - `/skill install <slug>` — install from skillhub (operator-confirmed)
    - `/skill update <slug>` — pull updates (operator-confirmed)
 
-   If these slashes aren't enabled in this build, point the user at the
-   **web admin → Skills page** — that's where the operator can install /
-   update / disable skills.
+   If these slashes aren't enabled in this build, point the operator at
+   **web admin → Settings → agim Skills** to review the locally installed
+   catalog. Installing or updating skillhub skills remains an operator
+   decision.
 
 ## Installation paths (operator-facing)
 

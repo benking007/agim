@@ -84,7 +84,7 @@
   },
   "agents": {
     "title": "Agents",
-    "subtitle": "这里管理桥接的外部 Agent（CLI / ACP）。Agim Agent 是系统内置默认 Agent，在「Agim Agent」页通过大模型 API 配置。",
+    "subtitle": "这里管理桥接的 CLI Agent。Agim Agent 是系统内置默认 Agent，在「Agim Agent」页通过大模型 API 配置。",
     "installHint": "未安装。在宿主机执行 `npm install -g {{pkg}}`。",
     "nativeInstallHint": "Agim Agent 尚未配置大模型 API。前往 设置 → Agim Agent 添加一个 API（OpenAI / DeepSeek / Anthropic 等）即可使用。",
     "inProcessBadge": "内置",
@@ -104,47 +104,6 @@
     "discard": "放弃改动",
     "toast": {
       "saved": "已保存"
-    },
-    "acp": {
-      "title": "远程 Agent (ACP)",
-      "subtitle": "通过 Agent Communication Protocol 接入的 HTTP Agent。每个条目持久化到 config，下次服务重启时注册。",
-      "discoverBtn": "批量发现",
-      "runDiscover": "探测",
-      "baseUrl": "发现地址",
-      "baseUrlHint": "探测 `<base>/.well-known/acp` 并追加返回的 Agent；同名条目自动跳过。",
-      "addTitle": "新增 Agent",
-      "name": "名称",
-      "nameHint": "稳定标识；只允许 字母 数字 `._-`。",
-      "aliases": "别名",
-      "aliasesHint": "逗号分隔；在 IM 内通过 `/alias` 路由。",
-      "endpoint": "Endpoint",
-      "endpointHint": "Agent 的 ACP 根路径（不带尾部 `/`）。",
-      "authType": "鉴权",
-      "auth": {
-        "none": "无",
-        "apikey": "API key",
-        "bearer": "Bearer"
-      },
-      "token": "Token",
-      "tokenPlaceholder": "粘贴 token",
-      "testBtn": "测试",
-      "addBtn": "新增",
-      "removeBtn": "移除",
-      "on": "已启用",
-      "off": "已停用",
-      "dupName": "已存在同名 Agent。",
-      "empty": {
-        "title": "暂无远程 Agent",
-        "description": "下方填写 ACP endpoint 新增，或使用「批量发现」自动从 `.well-known/acp` 导入。"
-      },
-      "toast": {
-        "staged": "已暂存，点击「保存」生效。",
-        "testOk": "已联通 `{{name}}`",
-        "testMasked": "Token 是掩码态，请先保存后再测试。",
-        "discoverEmpty": "没有可新增的 Agent。",
-        "discoverAdded_one": "已新增 {{count}} 个 Agent。",
-        "discoverAdded_other": "已新增 {{count}} 个 Agent。"
-      }
     }
   },
   "policy": {
@@ -517,8 +476,6 @@
       "subtitle": "agim 启动时监听的端口。留空使用默认值；改动需下次服务重启生效（保存后点下方「重启」按钮）。",
       "webPort": "Web 端口",
       "webPortHint": "聊天 UI + REST API 的 HTTP 服务端口。默认 {{default}}。",
-      "acpPort": "ACP 端口",
-      "acpPortHint": "Agent Communication Protocol 服务端口（远程 Agent 接入面）。默认 {{default}}。",
       "invalidPort": "需为 1-65535 之间的数字。",
       "restartRequired": "需重启生效",
       "save": "保存",
@@ -1079,12 +1036,11 @@
     "tab": {
       "overview": "总览",
       "installed": "已安装",
-      "hot": "skillhub 热门",
       "injection": "系统提示注入"
     },
     "overview": {
       "title": "Skills 总览",
-      "subtitle": "管理 Agent 可读取的技能库、外部技能来源，以及每轮对话会注入的技能摘要。",
+      "subtitle": "管理 Agent 可读取的本地技能库，以及每轮对话会注入的技能摘要。",
       "ready": "已就绪",
       "needsAttention": "{{count}} 项需处理",
       "refresh": "刷新",
@@ -1100,13 +1056,6 @@
           "missing": "{{count}} 个技能缺少依赖",
           "action": "查看"
         },
-        "hot": {
-          "title": "热门技能",
-          "ready": "{{count}} 个可浏览",
-          "stale": "使用缓存结果",
-          "error": "暂时无法加载",
-          "action": "浏览"
-        },
         "injection": {
           "title": "Agent 可见范围",
           "autoValue": "自动",
@@ -1120,10 +1069,6 @@
         "fixUnavailable": {
           "title": "先处理不可用技能",
           "detail": "有技能缺少命令或环境变量，处理后 Agent 才能稳定使用。"
-        },
-        "browseHot": {
-          "title": "从热门技能挑一个试用",
-          "detail": "当前还没有工作区技能，可以先看看常用能力。"
         },
         "reviewOverride": {
           "title": "复核系统提示覆盖",

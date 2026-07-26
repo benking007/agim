@@ -4,16 +4,14 @@ import { z } from 'zod'
 
 const safeNamePattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
-const acpAgentSchema = z.object({
-  name: z.string().min(1).regex(safeNamePattern, 'Agent name must be alphanumeric (with . _ - allowed)'),
-  aliases: z.array(z.string()).optional(),
-  endpoint: z.string().min(1),
-  auth: z.object({
-    type: z.enum(['none', 'apikey', 'bearer']),
-    token: z.string().optional(),
-  }).optional(),
-  enabled: z.boolean().optional(),
-})
+const RETIRED_ACP_KEYS = ['acpAgents', 'acpDiscoveryUrls', 'acpPort'] as const
+
+function stripRetiredAcpKeys(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data
+  const next = { ...(data as Record<string, unknown>) }
+  for (const key of RETIRED_ACP_KEYS) delete next[key]
+  return next
+}
 
 const telegramSchema = z.object({
   botToken: z.string().min(1),
@@ -189,18 +187,14 @@ const discordLooseSchema = z.object({
   allowedChannels: z.array(z.string()).optional(),
 }).passthrough().optional()
 
-export const configSchema = z.object({
+export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
   messengers: z.array(z.string()).default([]),
   agents: z.array(z.string()).default([]),
   defaultAgent: z.string().default('agim'),
   telegram: telegramLooseSchema,
   feishu: feishuLooseSchema,
   discord: discordLooseSchema,
-  acpAgents: z.array(acpAgentSchema).optional(),
-  /** Base URLs to probe for `.well-known/acp` at startup. */
-  acpDiscoveryUrls: z.array(z.string().url()).optional(),
   webPort: z.number().int().min(1).max(65_535).optional(),
-  acpPort: z.number().int().min(1).max(65_535).optional(),
   workspaces: z.array(z.object({
     id: z.string().min(1),
     name: z.string().default(''),
@@ -266,7 +260,7 @@ export const configSchema = z.object({
       }
     }
   }
-})
+}))
 
 export type ValidatedConfig = z.infer<typeof configSchema>
 

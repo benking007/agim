@@ -83,25 +83,7 @@ export interface MetricsEvent {
   }>
 }
 
-/** v1.2.86 — long-task goal state changes. Fired when a goal is
- *  created, has its status changed, or gets a progress note appended.
- *  Web /tasks/goals subscribes via SSE so the list refreshes in real
- *  time without a manual reload. */
-export interface GoalEvent {
-  type: 'goal'
-  phase: 'created' | 'status' | 'progress'
-  goalId: number
-  platform: string
-  channelId: string
-  threadId: string
-  /** New status when phase='status' or 'created'. */
-  status?: 'active' | 'paused' | 'completed' | 'cancelled'
-  /** Short headline (truncated title or progress note) for UI consumers. */
-  summary?: string
-  ts: string
-}
-
-export type AgimEvent = AuditEvent | ApprovalEvent | JobEvent | MetricsEvent | GoalEvent
+export type AgimEvent = AuditEvent | ApprovalEvent | JobEvent | MetricsEvent
 
 class AgimEventBus extends EventEmitter {
   /** Bounded recent-event log so a freshly-connected SSE client can

@@ -1,8 +1,7 @@
 {
   "pageTitle": "技能",
   "subnav": {
-    "installed": "已安装",
-    "hot":       "skillhub.cn 热门"
+    "installed": "已安装"
   },
   "installed": {
     "title":    "已安装的技能",
@@ -30,39 +29,6 @@
       "loadFailed":    "加载技能详情失败",
       "metadataLabel": "元数据",
       "agentsLabel":   "可用于"
-    }
-  },
-  "hot": {
-    "title":      "skillhub.cn 热门",
-    "subtitle":   "实时拉取 skillhub.cn 热门下载（服务端 5 分钟缓存）。点击任意条目查看安装命令。agim 不会自动跑安装——命令复制后由你贴去 shell 或 IM 触发。",
-    "openHub":    "前往 skillhub.cn",
-    "loading":    "正在加载…",
-    "empty":      "暂无数据",
-    "cached":     "缓存命中",
-    "stale":      "上游不可达，使用旧数据",
-    "updatedAt":  "更新于 {{at}}",
-    "col": {
-      "slug":     "slug",
-      "name":     "名称 / 描述",
-      "stars":    "收藏",
-      "installs": "安装量"
-    },
-    "detail": {
-      "slug":         "标识",
-      "version":      "版本",
-      "category":     "类别",
-      "stars":        "收藏",
-      "installs":     "安装量",
-      "downloads":    "下载量",
-      "howInstall":   "安装方式（任选一个；agim 不会自动跑）",
-      "copy":         "复制",
-      "copied":       "已复制",
-      "label": {
-        "cliInstall": "Host 上跑（推荐）",
-        "cliSearch":  "先查再装",
-        "imAsk":      "在 IM 里让 agent 装"
-      },
-      "hint":         "前两条要先在 host 上安装 skillhub CLI。详见 docs/skills.md 或 skillhub.cn。"
     }
   }
 }

@@ -7,16 +7,16 @@
 
 Agim 是一个**单进程 IM-to-Agent 网关**（Node.js ≥ 22.19 / TypeScript）：
 
-- 向上接 IM / Web / ACP 请求
+- 向上接 IM / Web / API 请求
 - 向下编排 CLI agent 与 Agim Agent（进程内 LLM，registry id `agim`）
 - 中间统一做路由、权限、会话、审计、投递与恢复
 
-无 Docker、无 Redis；Web UI 默认 `:3000`，ACP 默认 `:9090`。
+无 Docker、无 Redis；Web UI 默认 `:3000`。
 
 ## 2. 运行拓扑
 
 ```text
-IM / Web / API / ACP ingress
+IM / Web / API ingress
       │
       ▼
 Message normalize (platform, user, thread, trace)
@@ -37,7 +37,6 @@ Router (core/router.ts)
 AgentAdapter
   - CLI agents (claude-code, codex, …)
   - agim (进程内 agent-loop)
-  - acp
       │
       ▼
 Message sink / outbox
@@ -73,7 +72,7 @@ IM delivery + Web / TUI views
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Surfaces                                                    │
-│  cli.ts · web/server.ts · acp-server · messengers · SPA      │
+│  cli.ts · web/server.ts · messengers · SPA                   │
 └───────────────┬─────────────────────────────┬───────────────┘
                 │                             │
         ┌───────▼────────┐            ┌───────▼────────┐
@@ -116,7 +115,7 @@ IM delivery + Web / TUI views
 
 | 模块 | 作用 |
 |---|---|
-| `start-runtime.ts` | `agim start`：装载配置、启 messenger / Web / ACP、接线 |
+| `start-runtime.ts` | `agim start`：装载配置、启 messenger / Web、接线 |
 | `messenger-inbound.ts` | IM 入站规范化与投递到 router |
 | `handle-message.ts` | 单条消息处理与 agent 调用边界 |
 | `graceful-shutdown.ts` | 信号与有序停机 |

@@ -4,8 +4,8 @@
 // The agent loop doesn't want to know WHERE each tool lives. It just
 // produces a ToolCallRequest and asks the dispatcher to run it. This
 // keeps the loop testable (stub dispatcher) and lets us add new tool
-// sources (built-in agim tools, sub-agent delegate, remote ACP tools,
-// …) later without touching the loop.
+// sources (built-in agim tools, sub-agent delegate, etc.) later without
+// touching the loop.
 //
 // Stage 2 sub-PR #3 ships only:
 //   - the dispatcher interface (ToolDispatcher)

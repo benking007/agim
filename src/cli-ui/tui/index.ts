@@ -161,9 +161,6 @@ export async function runTui(opts: TuiOptions = {}): Promise<void> {
 
     await registry.loadBuiltInPlugins()
     const cfg = await loadConfig()
-    if (cfg.acpAgents && cfg.acpAgents.length > 0) {
-      await registry.loadACPAgents(cfg.acpAgents)
-    }
 
     // LLM registry — without this, native agent's pickProvider() returns
     // null and every turn yields the "no LLM backend configured" error.

@@ -19,7 +19,8 @@
     "heartbeat": "Heartbeat",
     "goals": "Goals",
     "asks": "Ask User",
-    "plans": "Plans"
+    "plans": "Plans",
+    "loops": "Loops"
   },
   "overview": {
     "title": "Tasks overview",
@@ -412,6 +413,43 @@
       "rejected": "Rejected",
       "edited": "Edited",
       "expired": "Expired"
+    }
+  },
+  "loops": {
+    "title": "Loop audit",
+    "subtitle": "Per-run history; new Loops keep prior runs.",
+    "refresh": "Refresh",
+    "filterLabel": "Thread id",
+    "statusFilter": "Status",
+    "statusAll": "All",
+    "statusActive": "Active",
+    "statusEnded": "Ended",
+    "applyFilter": "Apply",
+    "clearFilter": "Clear",
+    "empty": "No Loops.",
+    "emptyFiltered": "No match.",
+    "detailError": "Load failed",
+    "col": {
+      "status": "Status",
+      "objective": "Objective",
+      "thread": "Thread",
+      "round": "Round",
+      "jobs": "Jobs",
+      "report": "Report",
+      "updated": "Updated"
+    },
+    "detail": {
+      "objective": "Objective",
+      "exit": "Exit",
+      "body": "Body",
+      "session": "Session",
+      "jobs": "Jobs",
+      "path": "History",
+      "reportPath": "Report",
+      "report": "Report",
+      "verification": "Verify",
+      "endedSummary": "Summary",
+      "timeline": "Timeline"
     }
   }
 }

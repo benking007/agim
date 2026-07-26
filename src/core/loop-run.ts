@@ -1,6 +1,8 @@
 // loop-run — Phase C Loop session store (Focus-bound).
 // SSOT: docs/architecture/loop-engineering.md
-// Persistence: ~/.agim/loops/<threadKey>.json (fail-soft).
+// Persistence (fail-soft):
+//   - Live/thread snapshot: ~/.agim/loops/<threadKey>.json (one per thread; new Loop overwrites)
+//   - Append-by-id history: ~/.agim/loops/history/<runId>.json (each Loop run, for Tasks audit)
 //
 // R1: ALIGNING gate — objective + exit required before planning/dispatch.
 // R2: LoopMission as persisted SSOT (partial while aligning; status shows both hard fields).
@@ -8,9 +10,17 @@
 // R4: VERIFY + REFLECT — structured verification; unmet → nextDirection → replan; exit truncates.
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
+import { defaultAgentCwd } from './agent-cwd.js'
 import { logger as rootLogger } from './logger.js'
 import {
   cancelActiveChildJobsByThread,
@@ -29,6 +39,118 @@ const log = rootLogger.child({ component: 'loop-run' })
 
 function loopsDir(): string {
   return process.env.AGIM_LOOPS_DIR ?? join(AGIM_HOME, 'loops')
+}
+
+/** Per-run archive directory (survives thread snapshot overwrite). */
+function historyDir(): string {
+  return join(loopsDir(), 'history')
+}
+
+function safeRunId(id: string): string {
+  return (id || '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80)
+}
+
+function historyPathFor(runId: string): string {
+  return join(historyDir(), `${safeRunId(runId)}.json`)
+}
+
+/** Default: `<agim-cwd>/PROJECTS/loops`. Override: `AGIM_LOOP_REPORTS_DIR`. */
+export function resolveLoopReportsDir(agentName = 'agim'): string {
+  if (process.env.AGIM_LOOP_REPORTS_DIR) return process.env.AGIM_LOOP_REPORTS_DIR
+  return join(defaultAgentCwd(agentName), 'PROJECTS', 'loops')
+}
+
+/**
+ * Find detail-report markdown files for a Loop id under the reports dir.
+ * Matches `<loopId>.md` and `*-<loopId>.md` (session-prefixed convention).
+ */
+export function discoverLoopReportPaths(loopId: string): string[] {
+  const id = (loopId || '').trim()
+  if (!id) return []
+  const safe = safeRunId(id)
+  const dir = resolveLoopReportsDir()
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!/\.md$/i.test(name)) continue
+      const base = name.replace(/\.md$/i, '')
+      if (base === safe || base === id || base.endsWith(`-${safe}`) || base.endsWith(`-${id}`)) {
+        out.push(join(dir, name))
+      }
+    }
+  } catch (err) {
+    log.warn({ event: 'loop.reports_scan_failed', err: String(err) })
+  }
+  return out.sort()
+}
+
+/** Merge discovered + stored report paths; optionally persist onto history. */
+export function resolveLoopReportPaths(run: LoopRun, opts?: { persist?: boolean }): string[] {
+  const found = discoverLoopReportPaths(run.id)
+  const prev = Array.isArray(run.reportPaths) ? run.reportPaths.filter((p) => typeof p === 'string' && p) : []
+  const merged = [...new Set([...prev, ...found])].slice(0, 16)
+  run.reportPaths = merged
+  if (opts?.persist && merged.length > 0) {
+    try {
+      writeHistoryRun(run)
+    } catch { /* best-effort */ }
+  }
+  return merged
+}
+
+/**
+ * Register a report file for a Loop after Agent write_file.
+ * `filePath` may be absolute or workspace-relative (`PROJECTS/loops/…`).
+ */
+export function noteLoopReportPath(loopId: string, filePath: string): void {
+  const id = (loopId || '').trim()
+  const raw = (filePath || '').trim()
+  if (!id || !raw) return
+  const abs = raw.startsWith('/')
+    ? raw
+    : join(resolveLoopReportsDir(), raw.replace(/^PROJECTS\/loops\/?/i, ''))
+  const run = getLoopRunById(id)
+  if (!run) return
+  if (!Array.isArray(run.reportPaths)) run.reportPaths = []
+  if (run.reportPaths.includes(abs)) return
+  run.reportPaths.push(abs)
+  if (run.reportPaths.length > 16) run.reportPaths = run.reportPaths.slice(-16)
+  run.updatedAt = Date.now()
+  pushTimeline(run, 'system', `detail report: ${abs}`)
+  try {
+    writeHistoryRun(run)
+  } catch { /* ignore */ }
+  const snap = readRun(run.platform, run.channelId, run.threadId)
+  if (snap?.id === run.id) {
+    snap.reportPaths = run.reportPaths
+    snap.timeline = run.timeline
+    snap.updatedAt = run.updatedAt
+    writeRun(snap)
+  }
+  log.info({ event: 'loop.report_linked', loopId: id, path: abs })
+}
+
+/** Read the primary detail report markdown for a Loop (newest matching file). */
+export function readLoopReportMarkdown(loopId: string): {
+  ok: true
+  path: string
+  markdown: string
+} | { ok: false; error: string } {
+  const run = getLoopRunById(loopId)
+  const paths = run
+    ? resolveLoopReportPaths(run, { persist: true })
+    : discoverLoopReportPaths(loopId)
+  if (paths.length === 0) return { ok: false, error: 'no_report' }
+  // Prefer exact `<id>.md`, else last path.
+  const safe = safeRunId(loopId)
+  const preferred = paths.find((p) => p.endsWith(`/${safe}.md`)) || paths[paths.length - 1]!
+  try {
+    const markdown = readFileSync(preferred, 'utf8')
+    return { ok: true, path: preferred, markdown }
+  } catch (err) {
+    return { ok: false, error: `read_failed:${String(err)}` }
+  }
 }
 
 /** L3 statuses; legacy 'running'|'observing' still read as active. */
@@ -129,6 +251,18 @@ export interface LoopRun {
    * Round-scoped live wait uses these — not all thread jobs forever.
    */
   roundJobIds: number[]
+  /**
+   * Cumulative Subagent job ids across **all rounds of this Loop**.
+   * Used by post-end detail reports so prior Loops on the same thread
+   * are not mixed in. Cleared only when a new Loop starts (new run).
+   */
+  loopJobIds: number[]
+  /**
+   * Absolute paths of detail reports written for this Loop
+   * (typically `PROJECTS/loops/<loopId>.md`). Discovered on disk and/or
+   * registered when `agim_write_file` lands under the reports dir.
+   */
+  reportPaths?: string[]
   /** R3: last decompose plan recorded from call_agents (or synthetic single). */
   lastPlan?: {
     at: number
@@ -418,6 +552,23 @@ function normalizeRun(raw: LoopRun): LoopRun {
       .filter((id) => Number.isFinite(id) && id > 0)
       .slice(-64)
   }
+  if (!Array.isArray(raw.loopJobIds)) {
+    // Backfill from last-round ids when upgrading older persisted runs.
+    raw.loopJobIds = raw.roundJobIds.length > 0 ? [...raw.roundJobIds] : []
+  } else {
+    raw.loopJobIds = raw.loopJobIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .slice(-128)
+  }
+  if (!Array.isArray(raw.reportPaths)) {
+    raw.reportPaths = []
+  } else {
+    raw.reportPaths = raw.reportPaths
+      .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+      .map((p) => p.trim())
+      .slice(0, 16)
+  }
   if (!raw.usage || typeof raw.usage !== 'object') {
     raw.usage = emptyLoopUsage()
   } else {
@@ -503,6 +654,15 @@ function readRun(platform: string, channelId: string, threadId: string): LoopRun
   }
 }
 
+function writeHistoryRun(run: LoopRun): void {
+  const dir = historyDir()
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const hp = historyPathFor(run.id)
+  const tmp = `${hp}.${process.pid}.tmp`
+  writeFileSync(tmp, JSON.stringify(run, null, 2), { encoding: 'utf8', mode: 0o600 })
+  renameSync(tmp, hp)
+}
+
 function writeRun(run: LoopRun): boolean {
   try {
     ensureDir()
@@ -510,11 +670,218 @@ function writeRun(run: LoopRun): boolean {
     const tmp = `${p}.${process.pid}.tmp`
     writeFileSync(tmp, JSON.stringify(run, null, 2), { encoding: 'utf8', mode: 0o600 })
     renameSync(tmp, p)
+    // Always upsert per-run history so a later Loop on the same thread
+    // does not erase auditability of prior runs.
+    try {
+      writeHistoryRun(run)
+    } catch (histErr) {
+      log.warn({ event: 'loop.history_write_failed', runId: run.id, err: String(histErr) })
+    }
     return true
   } catch (err) {
     log.warn({ event: 'loop.write_failed', err: String(err) })
     return false
   }
+}
+
+function readRunFromPath(p: string): LoopRun | null {
+  if (!existsSync(p)) return null
+  try {
+    const raw = JSON.parse(readFileSync(p, 'utf8')) as LoopRun
+    if (!raw || typeof raw !== 'object' || !raw.id) return null
+    return normalizeRun(raw)
+  } catch (err) {
+    log.warn({ event: 'loop.read_failed', path: p, err: String(err) })
+    return null
+  }
+}
+
+/** Load one Loop by run id from history (falls back to thread snapshots). */
+export function getLoopRunById(runId: string): LoopRun | null {
+  const id = (runId || '').trim()
+  if (!id) return null
+  const fromHist = readRunFromPath(historyPathFor(id))
+  if (fromHist && fromHist.id === id) return fromHist
+  // Legacy / race: scan thread snapshots for matching id.
+  try {
+    ensureDir()
+    for (const name of readdirSync(loopsDir())) {
+      if (!name.endsWith('.json') || name === 'history') continue
+      const run = readRunFromPath(join(loopsDir(), name))
+      if (run?.id === id) {
+        try { writeHistoryRun(run) } catch { /* best-effort backfill */ }
+        return run
+      }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+export interface ListLoopRunsOpts {
+  status?: LoopStatus | 'active'
+  platform?: string
+  threadId?: string
+  sessionKey?: string
+  limit?: number
+}
+
+/**
+ * List Loop runs for Tasks audit — history first, merge thread snapshots
+ * (legacy files written before history existed). Newest `updatedAt` first.
+ */
+export function listLoopRuns(opts: ListLoopRunsOpts = {}): LoopRun[] {
+  const byId = new Map<string, LoopRun>()
+
+  const ingest = (run: LoopRun | null): void => {
+    if (!run?.id) return
+    const prev = byId.get(run.id)
+    if (!prev || (run.updatedAt || 0) >= (prev.updatedAt || 0)) {
+      byId.set(run.id, run)
+    }
+  }
+
+  try {
+    const hdir = historyDir()
+    if (existsSync(hdir)) {
+      for (const name of readdirSync(hdir)) {
+        if (!name.endsWith('.json')) continue
+        ingest(readRunFromPath(join(hdir, name)))
+      }
+    }
+  } catch (err) {
+    log.warn({ event: 'loop.history_list_failed', err: String(err) })
+  }
+
+  try {
+    ensureDir()
+    for (const name of readdirSync(loopsDir())) {
+      if (!name.endsWith('.json')) continue
+      // skip if somehow a file named history.json
+      if (name === 'history.json') continue
+      ingest(readRunFromPath(join(loopsDir(), name)))
+    }
+  } catch (err) {
+    log.warn({ event: 'loop.thread_list_failed', err: String(err) })
+  }
+
+  let rows = [...byId.values()]
+  if (opts.status === 'active') {
+    rows = rows.filter((r) => r.status !== 'ended')
+  } else if (opts.status) {
+    rows = rows.filter((r) => r.status === opts.status)
+  }
+  if (opts.platform) {
+    const p = opts.platform
+    rows = rows.filter((r) => r.platform === p)
+  }
+  if (opts.threadId) {
+    const t = opts.threadId
+    rows = rows.filter((r) => r.threadId === t)
+  }
+  if (opts.sessionKey) {
+    const sk = opts.sessionKey
+    rows = rows.filter((r) => (r.sessionKey || '') === sk)
+  }
+  rows.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
+  return rows.slice(0, limit)
+}
+
+/** Rich DTO for Tasks audit detail (includes timeline + job ids). */
+export interface LoopAuditDto extends LoopStatusDto {
+  platform: string
+  channelId: string
+  threadId: string
+  focusSnapshot?: string
+  loopJobIds: number[]
+  roundJobIds: number[]
+  timeline: LoopTimelineEntry[]
+  lastVerdict?: LoopRun['lastVerdict']
+  endedSummary?: string
+  historyPath?: string
+  /** Linked detail-report files (absolute paths). */
+  reportPaths: string[]
+  hasReport: boolean
+}
+
+export function toLoopAuditDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopAuditDto {
+  const base = toLoopStatusDto(run, lang)
+  const hist = historyPathFor(run.id)
+  const reportPaths = resolveLoopReportPaths(run, { persist: true })
+  return {
+    ...base,
+    platform: run.platform,
+    channelId: run.channelId,
+    threadId: run.threadId,
+    ...(run.focusSnapshot ? { focusSnapshot: run.focusSnapshot } : {}),
+    loopJobIds: Array.isArray(run.loopJobIds) ? [...run.loopJobIds] : [],
+    roundJobIds: Array.isArray(run.roundJobIds) ? [...run.roundJobIds] : [],
+    timeline: Array.isArray(run.timeline) ? [...run.timeline] : [],
+    ...(run.lastVerdict ? { lastVerdict: run.lastVerdict } : {}),
+    ...(run.status === 'ended' ? { endedSummary: formatLoopEndedSummary(run) } : {}),
+    ...(existsSync(hist) ? { historyPath: hist } : {}),
+    reportPaths,
+    hasReport: reportPaths.length > 0,
+  }
+}
+
+/** Compact list row for Tasks table. */
+export interface LoopListItemDto {
+  id: string
+  sessionKey: string
+  platform: string
+  channelId: string
+  threadId: string
+  status: LoopStatus
+  bucket: LoopUxBucket
+  bucketLabel: string
+  active: boolean
+  objective: string
+  exitDescription: string
+  round: number
+  maxRounds: number
+  endReason?: LoopRun['endReason']
+  dispatchCount: number
+  childJobCount: number
+  hasReport: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export function toLoopListItemDto(run: LoopRun, lang: 'zh' | 'en' = 'zh'): LoopListItemDto {
+  const view = getMissionView(run)
+  const bucket = getLoopUxBucket(run)
+  const usage = run.usage || emptyLoopUsage()
+  const childJobCount = Array.isArray(run.loopJobIds) && run.loopJobIds.length > 0
+    ? run.loopJobIds.length
+    : (Array.isArray(run.roundJobIds) ? run.roundJobIds.length : 0)
+  const reportPaths = resolveLoopReportPaths(run)
+  return {
+    id: run.id,
+    sessionKey: run.sessionKey || threadKey(run.platform, run.channelId, run.threadId),
+    platform: run.platform,
+    channelId: run.channelId,
+    threadId: run.threadId,
+    status: run.status,
+    bucket,
+    bucketLabel: loopUxBucketLabel(bucket, lang),
+    active: run.status !== 'ended',
+    objective: view.objective,
+    exitDescription: view.exitDescription,
+    round: run.round,
+    maxRounds: view.maxRounds,
+    endReason: run.endReason,
+    dispatchCount: usage.dispatchCount,
+    childJobCount,
+    hasReport: reportPaths.length > 0,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+  }
+}
+
+/** @internal test helper — expose history path resolution. */
+export function _historyPathForTests(runId: string): string {
+  return historyPathFor(runId)
 }
 
 function defaultMaxRounds(): number {
@@ -582,14 +949,16 @@ export function _setTestLiveSubagents(value: boolean | null): void {
 
 /**
  * Live Subagent count for the active Loop's current round.
- * Prefers `roundJobIds` (round-scoped); falls back to thread-wide child count
- * for legacy runs that predate round job tracking.
+ * Prefers `roundJobIds` (round-scoped). When empty:
+ * - 0 dispatches this round → 0 (do not mix unrelated thread jobs)
+ * - ≥1 dispatch but missing ids (legacy / race) → thread-wide fallback
  */
 export function countRoundLiveSubagents(run: LoopRun): number {
   if (_testLiveSubagents != null) return _testLiveSubagents ? 1 : 0
   if (run.roundJobIds?.length) {
     return countActiveJobsByIds(run.roundJobIds)
   }
+  if ((run.dispatchesThisRound || 0) < 1) return 0
   return countActiveChildJobsByThread(
     jobThreadKey(run.platform, run.channelId, run.threadId),
   )
@@ -635,12 +1004,34 @@ export function noteLoopRoundJob(
     run.roundJobIds.push(jobId)
     if (run.roundJobIds.length > 64) run.roundJobIds = run.roundJobIds.slice(-64)
   }
+  if (!Array.isArray(run.loopJobIds)) run.loopJobIds = []
+  if (!run.loopJobIds.includes(jobId)) {
+    run.loopJobIds.push(jobId)
+    if (run.loopJobIds.length > 128) run.loopJobIds = run.loopJobIds.slice(-128)
+  }
   run.updatedAt = Date.now()
   writeRun(run)
 }
 
 function clearRoundJobs(run: LoopRun): void {
   run.roundJobIds = []
+}
+
+/**
+ * Count Subagent jobs belonging to this Loop (for Portal report-offer copy).
+ * Prefers cumulative `loopJobIds`; falls back to the last round only.
+ */
+export function countLoopChildJobs(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): number {
+  const run = getLoopRun(platform, channelId, threadId)
+  if (!run) return 0
+  if (Array.isArray(run.loopJobIds) && run.loopJobIds.length > 0) {
+    return run.loopJobIds.length
+  }
+  return Array.isArray(run.roundJobIds) ? run.roundJobIds.length : 0
 }
 
 /**
@@ -933,7 +1324,26 @@ function focusText(
 ): string {
   const focus = getFocusOn(platform, channelId, threadId)
   if (!focus) return ''
-  return (focus.title + (focus.body ? `\n${focus.body}` : '')).slice(0, 500)
+  return (focus.title + (focus.body ? `\n${focus.body}` : '')).trim()
+}
+
+/**
+ * Format pre-existing Focus as a Mission.body appendix.
+ * Path A must NOT seed objective from Focus — append here instead.
+ */
+export function formatFocusBodyAppendix(focusContent: string): string {
+  const content = focusContent.trim()
+  if (!content) return ''
+  return `【当前 Agent 聚焦内容】\n${content}`
+}
+
+function mergeMissionBody(userBody: string | undefined, focusAppendix: string): string | undefined {
+  const user = (userBody || '').trim()
+  const focus = focusAppendix.trim()
+  if (!user && !focus) return undefined
+  if (!user) return focus.slice(0, BODY_MAX)
+  if (!focus) return user.slice(0, BODY_MAX)
+  return `${user}\n\n${focus}`.slice(0, BODY_MAX)
 }
 
 /** Path A bare `/loop note` is a start note, not an objective override. */
@@ -995,12 +1405,14 @@ export function startLoop(input: {
   const fromFocus = focusText(input.platform, input.channelId, input.threadId)
   let objective = ''
   let startNote: string | undefined
+  // Path A: Focus already on — never seed objective from Focus.
+  // Append Focus into mission.body (labeled) so the aligning dock shows it
+  // under 正文, not 目标.
   if (path === 'A') {
     if (isExplicitObjectiveText(rawText, parsed)) {
-      objective = (parsed.objective || fromFocus).slice(0, 500)
-    } else {
-      objective = fromFocus
-      if (rawText) startNote = rawText.slice(0, 500)
+      objective = (parsed.objective || '').slice(0, 500)
+    } else if (rawText) {
+      startNote = rawText.slice(0, 500)
     }
   } else {
     objective = (parsed.objective || rawText).slice(0, 500)
@@ -1012,7 +1424,9 @@ export function startLoop(input: {
 
   const mission = emptyMission(maxRounds)
   mission.objective = objective
-  if (parsed.body) mission.body = parsed.body.slice(0, BODY_MAX)
+  const focusAppendix = path === 'A' ? formatFocusBodyAppendix(fromFocus) : ''
+  const mergedBody = mergeMissionBody(parsed.body, focusAppendix)
+  if (mergedBody) mission.body = mergedBody
   if (parsed.acceptance) mission.acceptance = parsed.acceptance
   if (exitDescription) {
     applyExitToMission(mission, exitDescription, {
@@ -1040,6 +1454,8 @@ export function startLoop(input: {
     draftExitDescription: exitDescription || undefined,
     dispatchesThisRound: 0,
     roundJobIds: [],
+    loopJobIds: [],
+    reportPaths: [],
     usage: emptyLoopUsage(),
     createdAt: now,
     updatedAt: now,
@@ -1303,6 +1719,19 @@ export function cancelLoopForFocusOff(
 ): LoopRun | null {
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return null
+  // Align with /loop stop: abort in-flight Subagents so UI/jobs do not
+  // linger after Focus off/clear ends the Loop.
+  const cancelled = cancelActiveChildJobsByThread(
+    jobThreadKey(platform, channelId, threadId),
+    'cancelled: Loop cancelled because focus off/clear',
+  )
+  if (cancelled > 0) {
+    log.info({
+      event: 'loop.focus_off_cancelled_subagents',
+      threadId,
+      cancelled,
+    }, `cancelled ${cancelled} live Subagent job(s) on focus off/clear`)
+  }
   run.status = 'ended'
   run.endReason = 'focus_off'
   run.updatedAt = Date.now()

@@ -30,6 +30,7 @@ function seed(dir: string, over: Record<string, unknown> = {}) {
     },
     dispatchesThisRound: 2,
     roundJobIds: [],
+    loopJobIds: [],
     usage: { dispatchCount: 2, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
     createdAt: now,
     updatedAt: now,

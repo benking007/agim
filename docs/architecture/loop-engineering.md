@@ -145,10 +145,14 @@ type LoopRun = {
     | "dispatching"
     | "verifying"
     | "reflecting"
+    | "pending_user_confirm"          // met=true 待 Portal 确认结案
     | "ended";
+  // 另有 legacy：running / observing / paused（读盘兼容，新路径不再写入）
   round: number;
   openedFocus: boolean;
   dispatchesThisRound: number;       // R3: 本轮已接受的子代理派工数
+  roundJobIds: number[];             // 本轮 Subagent job ids（live 守候）
+  loopJobIds: number[];              // 本 Loop 累计 job ids（结案报告范围）
   lastPlan?: { at: number; tasks: Array<{ id: string; brief: string; agentHint?: string }> };
   lastVerification?: {
     at: number;
@@ -167,14 +171,14 @@ type LoopRun = {
 };
 ```
 
-**UX 桶**（Portal / status，非 store status）：`待对焦` / `待派工` / `待验收` / `已结束`  
-（`getLoopUxBucket`：有本轮派工后即进「待验收」，直至 ENDED。）
+**UX 桶**（Portal / status，非 store status）：`待对焦` / `待派工` / `待验收` / `待确认结案` / `已结束`  
+（`getLoopUxBucket`：本轮仍有 live Subagent → 待派工；live=0 且已派工 → 待验收；`pending_user_confirm` → 待确认结案。）
 
 用户面：
 
 ```text
 /loop <objective> [；验收：…] [；退出条件为… / 退出：…]  # 一次给齐
-/loop                             # 有 Focus 可作目标草稿，仍须确认退出条件
+/loop                             # 有 Focus：聚焦内容写入正文（标注），目标仍须手填；退出条件仍须确认
 /loop objective <text>            # 对焦中补目标（可含「；验收：…」）
 /loop exit <text>                 # 对焦中补退出条件
 /loop body <text>                 # 可选正文/补充提示（软字段，注入 Agent 上下文）
@@ -184,7 +188,8 @@ type LoopRun = {
 ```
 
 路径 A/B 与 Focus 关系保留——见 [focus.md](./focus.md)。  
-**即使 Focus 已有文案，退出条件仍必须对焦确认**（不可静默默认「跑到爽」）。
+**即使 Focus 已有文案，目标与退出条件仍必须对焦确认**（不可静默默认「跑到爽」）。  
+路径 A（已有 Focus）启动时：Focus 标题/正文拼入 Mission.`body`，前缀 `【当前 Agent 聚焦内容】`；**不会**再默认塞进 `objective`。
 
 ---
 
@@ -300,7 +305,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 `continue|revise` 要求本轮已派工 + `met=false` + `nextDirection` + **无 live 子代理**。
 
 **重要**：墙钟 / 轮次截断 **不等待** `loop_verdict`（`maybeEnforceLoopExit`）；避免报告已写出却永远停在「待验收」。  
-但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）与 **验收启动** 都会 **推迟** 到子代理全部结束后；若仍有 **未完成的 `ask_user`**（`threadHasPendingAsk`），`verify_skipped` 与 VERIFY follow-up 同样推迟，等用户回复后再继续。主 Loop / Portal 通过 `GET /api/loop` 轮询 `liveSubagents`。`/loop stop` 会立刻结束 Loop **并取消** 未完成子代理。
+但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）与 **验收启动** 都会 **推迟** 到子代理全部结束后；若仍有 **未完成的 `ask_user`**（`threadHasPendingAsk`），`verify_skipped` 与 VERIFY follow-up 同样推迟，等用户回复后再继续。主 Loop / Portal 通过 `GET /api/loop` 轮询 `liveSubagents`。`/loop stop` 与 Focus off/clear 都会立刻结束 Loop **并取消** 未完成子代理。
 
 #### 中间评审 `ask_user`（VERIFY HITL）
 
@@ -340,25 +345,34 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 | 场景 | UI | 用户动作 |
 |------|-----|----------|
-| **待对焦** | 底部浮层：目标 + 退出条件 + 可选正文 | 「确定并开始」→ 发送 `/loop …；退出条件为…`（有正文则附 `；正文：…`） |
+| **待对焦** | 底部浮层：目标 + 退出条件 + 可选正文（已有 Focus 时正文预填聚焦内容） | 「确定并开始」→ 发送 `/loop …；退出条件为…`（有正文则附 `；正文：…`） |
 | **待派工 / 待验收**（Agent 空闲） | 底部「立即行动」条（类审批） | 代用户发推进指令（`call_agents` / `loop_verdict`） |
 | **中间评审提问** | 与全局一致：`ask_user` 选择卡（Portal / IM） | 点选或文本回复 → Agent 继续 `loop_verdict` |
 | **结论已就绪** | 底部结案浮窗（`pending_user_confirm`）；**聊天里不提前铺完整结论** | 可补充 →「确认结束」（此时才 `ended` + 写入结束摘要）或「继续下一轮」 |
-| **详细报告（可选）** | 确认结束后 Portal 再问：是否结合各子代理输出生成详细报告 | 「生成报告」→ 落盘 + 聊天回显；「不需要」关闭 |
+| **详细报告（可选）** | 确认结束后 Portal 再问：是否生成详细分析报告 | 「生成报告」→ 向 Agent 发送一句总结指令；「不需要」关闭 |
 | **任意活跃阶段** | 小精灵气泡 + 任务面板 `loop` 行 | 展示桶名 · 轮次 · 派工/独立验收用量 |
 | **结束** | Markdown 结束总结；小精灵可短暂显示后消失 | — |
 
-**结案详细报告**（`POST /api/loop/generate-report` / `loop-report.ts`）：
+**结案详细报告**（Portal `ReportOfferDock` → `onSend`）：
 
 - 触发：Portal「确认结束」之后的底栏询问（不挡结案摘要本身）。
-- 内容：确定性拼装各子代理输出（优先读 `__a2a_result_full.md`），**不再调 LLM**。
-- 落盘：默认 **`<agim-cwd>/PROJECTS/loops/<sessionKey>-<loopId>.md`**  
-  （通常即 `~/.agim-workspaces/agim/PROJECTS/loops/`，与工作区 `PROJECTS/` 主题档案同树）。
-- 聊天：报告正文（过长则截断）+ 绝对路径；Agent 可用 `read` / 相对路径 `PROJECTS/loops/…` 再读全文。
-- 覆盖：`AGIM_LOOP_REPORTS_DIR`（测试或自定义部署）。
+- 同意：代用户发送一句指令，请 Agent **只基于本 Loop**（`loopId` / 各轮子代理产出）撰写详细报告；框架不再做确定性拼接。
+- 落盘约定：Agent 写入工作区 **`PROJECTS/loops/`**（通常 `~/.agim-workspaces/agim/PROJECTS/loops/`），并在聊天展示全文。
+- 取消：关闭底栏，不发消息。
 
 API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `bucketLabel` / `liveSubagents` / `canVerify` / `minRounds` / `usage` / `lastVerification`…）。  
 轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。
+
+### 6.3.1 落盘与 Tasks 审计
+
+| 路径 | 用途 |
+|------|------|
+| `~/.agim/loops/<threadKey>.json` | **线程快照**（当前/最近一次）；同线程新 Loop 会覆盖 |
+| `~/.agim/loops/history/<runId>.json` | **按次归档**；每次 `writeRun` 同步 upsert，供回溯 |
+
+- 管理端：`GET /api/loops`（列表）· `GET /api/loops/:id`（详情含 timeline / `loopJobIds` / 结束摘要）· `GET /api/loops/:id/report`（详细报告 Markdown）— admin。
+- UI：任务 → 审计 → **Loop 审计**（`/tasks/loops`）；有报告时列表标「有报告」，详情可展开查看全文。
+- 结案详细报告约定落盘：`PROJECTS/loops/<loopId>.md`（`agim_write_file` 成功后写入 `reportPaths`；详情也会扫描该目录关联）。
 
 **文案**：一律「待对焦 / 待派工 / 待验收」，不用「卡在…」。子代理进行中时小精灵可显示「子代理进行中」，且不弹出验收「立即行动」。  
 用量行写 **「独立验收 N」**（`usage.evaluatorCount`），**不要**读成「loop_verdict 次数」——独立验收 skip 时 N 可为 0，但 Loop 已通过 verdict 结束。
@@ -382,7 +396,6 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | `AGIM_LOOP_VERIFY_GATE` | on | 派工后强制 `loop_verdict` |
 | `AGIM_LOOP_EVALUATOR` | `auto` | `stop`+`met=true` 前独立 cheap 验收 |
 | `AGIM_LOOPS_DIR` | `~/.agim/loops` | Loop JSON 目录（测试可覆盖） |
-| `AGIM_LOOP_REPORTS_DIR` | `<agim-cwd>/PROJECTS/loops` | 结案详细报告落盘目录（默认工作区 `PROJECTS/loops/`） |
 | `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | `3` | 每 **user turn** 的 `call_agent` + `call_agents` 任务预算（Loop 多轮共用同一 turn 时见 §6.6） |
 
 ### 6.6 Turn 委托上限 × 派工门（防 R2 死锁）
@@ -497,5 +510,7 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **门禁误伤修复**：wait/dispatch 仅 depth=0；子代理禁 HITL；live>0 禁父侧提问解阻塞；continue 重置 turn 委托上限；子代理工具代审免卡 |
 | 2026-07-25 | **§6.6 R2 死锁防护**：新一轮首派清 stale history；Loop 下 cap/wait 错误文案；明确重置 cap **不**清 UI Agents 列表 |
 | 2026-07-26 | **Mission `body`**：对焦底栏可选正文；`/loop body` / `；正文：`；注入 Agent 上下文（非硬门禁） |
+| 2026-07-26 | **Focus→body**：路径 A 已有 Focus 时写入正文并标注「当前 Agent 聚焦内容」，不再默认填入目标 |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
-| 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问是否汇总子代理输出；同意则落盘工作区 `PROJECTS/loops/` + 回显聊天（`loop-report.ts` / `POST /api/loop/generate-report`） |
+| 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问；同意则向 Agent 发总结指令（`PROJECTS/loops/` 落盘约定），取消则关闭 |
+| 2026-07-25 | **详细报告=Agent 撰写**：移除确定性拼接 / `generate-report` API；累计 `loopJobIds` 仅用于底栏「约 N 个子代理」提示 |

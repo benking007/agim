@@ -1116,8 +1116,11 @@ export class NativeAgentAdapter implements AgentAdapter {
             ev.toolName,
           )
           if (!loopGate.ok) {
+            // Parent orchestration denial — kind:tool so Subagent cards
+            // never render this as a failed child agent.
             emitToolActivity({
               id: ev.toolCallId,
+              kind: 'tool',
               label: ev.toolName,
               status: 'denied',
               startedAt: Date.now(),
@@ -1135,6 +1138,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           if (!waitGate.ok) {
             emitToolActivity({
               id: ev.toolCallId,
+              kind: 'tool',
               label: ev.toolName,
               status: 'denied',
               startedAt: Date.now(),

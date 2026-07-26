@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Loop history + Tasks audit**: every Loop run is archived under
+  `~/.agim/loops/history/<runId>.json` (thread snapshot still at
+  `<threadKey>.json`). Admin APIs `GET /api/loops` + `GET /api/loops/:id`
+  + `GET /api/loops/:id/report`, and Tasks → Review → **Loop 审计**
+  (`/tasks/loops`) for browse/timeline/report audit. Detail reports at
+  `PROJECTS/loops/<loopId>.md` are linked via `reportPaths` (discover +
+  `agim_write_file` hook). Same-thread new Loops no longer erase prior runs.
+- **Loop path A Focus → body**: when Focus is already on, `/loop` no longer
+  seeds `objective` from Focus. Focus title/body is appended to Mission
+  `body` with the label `【当前 Agent 聚焦内容】` (Portal aligning dock
+  shows it under 正文). Objective and exit still require explicit confirm.
 - **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
   harness/methodology/product/security set (`agent-*`, `autonomous-*`,
   `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,
@@ -16,6 +27,13 @@ All notable changes to this project will be documented in this file.
   `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
+- **Loop CR follow-ups**: Focus path A seeds Mission `body` (not objective);
+  post-end report offer uses cumulative `loopJobIds` for the dock count
+  (Agent writes the report via chat prompt; no thread-wide assemble);
+  Focus off/clear cancels live Subagents like `/loop stop`; empty
+  `roundJobIds` + 0 dispatches no longer counts unrelated thread jobs as
+  live; Loop gate denials emit as `kind:tool` and UI shows `blocked`
+  (not Subagent `failed`).
 - **Subagent card Objective wrap**: long `Objective:` preview wraps in the content column left of Stop (no single-line truncate overflow).
 
 - **Composer status bar no longer wraps Chinese labels vertically** on
@@ -71,12 +89,10 @@ All notable changes to this project will be documented in this file.
   (and `/loop body …` / `；正文：…` in start text). Soft field — not a hard
   gate — injected into Loop Agent context alongside objective/exit.
 - **Loop post-end detail report offer**: after Portal「确认结束」, a bottom
-  dock asks whether to assemble a detailed report from Subagent outputs.
-  Agree → `POST /api/loop/generate-report` writes
-  `<agim-cwd>/PROJECTS/loops/<thread>-<loopId>.md` (default
-  `~/.agim-workspaces/agim/PROJECTS/loops/`) and posts the markdown into
-  chat; dismiss closes the dock. Deterministic assemble (no extra LLM).
-  Override path with `AGIM_LOOP_REPORTS_DIR`.
+  dock asks whether to generate a detailed report. Agree → send one chat
+  prompt asking the Agent to synthesize **this Loop's** Subagent outputs,
+  save under `PROJECTS/loops/`, and show the full text in chat; dismiss
+  closes the dock. No server-side concatenation.
 - **Loop VERIFY mid-review `ask_user`**: after dispatch, parent wait gate
   allows `mcp__agim__ask_user` for uncertain / anomalous results; user
   reply then continues to `loop_verdict`. Pending asks defer VERIFY

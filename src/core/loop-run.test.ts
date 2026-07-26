@@ -1,20 +1,30 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setFocus, getFocusOn } from './focus.js'
 import { _truncateForTests } from './goals.js'
 import {
+  createInlineJob,
+  getJob,
+  jobThreadKey,
+} from './job-board.js'
+import {
   applyLoopVerdict,
   buildLoopSnippet,
   cancelLoopForFocusOff,
   confirmLoopMission,
+  countRoundLiveSubagents,
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
+  getLoopRunById,
   getMissionView,
   isLoopWallExceeded,
+  listLoopRuns,
   noteLoopDispatch,
+  noteLoopRoundJob,
+  countLoopChildJobs,
   parseExitConstraints,
   parseLoopStartText,
   resolveLoopMetConfirm,
@@ -23,6 +33,11 @@ import {
   setLoopObjective,
   startLoop,
   stopLoop,
+  discoverLoopReportPaths,
+  noteLoopReportPath,
+  readLoopReportMarkdown,
+  resolveLoopReportsDir,
+  _historyPathForTests,
   _touchLoopCreatedAtForTests,
 } from './loop-run.js'
 
@@ -131,23 +146,29 @@ describe('loop-run R2 Mission persist', () => {
     if (!started.ok) return
     expect(started.run.status).toBe('aligning')
     expect(started.run.sessionKey).toContain('loop-r2-partial')
-    expect(started.run.mission?.objective).toContain('Ship v2')
+    // Focus seeds body (labeled), not objective.
+    expect(started.run.mission?.objective || '').toBe('')
+    expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
+    expect(started.run.mission?.body).toContain('Ship v2')
 
+    setLoopObjective(base.platform, base.channelId, threadId, 'Ship v2 release')
     setLoopExit(base.platform, base.channelId, threadId, 'CI 绿，最多 4 轮')
     const reloaded = getLoopRun(base.platform, base.channelId, threadId)
     expect(reloaded).toBeTruthy()
     if (!reloaded) return
     const view = getMissionView(reloaded)
-    expect(view.objective).toContain('Ship v2')
+    expect(view.objective).toContain('Ship v2 release')
+    expect(view.body).toContain('Ship v2')
     expect(view.exitDescription).toContain('CI 绿')
     expect(view.maxRounds).toBe(4)
     expect(view.confirmed).toBe(false)
 
     const status = formatLoopStatus(reloaded)
-    expect(status).toContain('Ship v2')
+    expect(status).toContain('Ship v2 release')
     expect(status).toContain('CI 绿')
     expect(status).toContain('**目标**')
     expect(status).toContain('**退出条件**')
+    expect(status).toContain('**正文**')
   })
 
   it('confirmed mission + body round-trips into status/snippet', () => {
@@ -201,7 +222,7 @@ describe('loop-run R1 ALIGNING', () => {
   it('path A without exit stays aligning', () => {
     reset()
     const threadId = 'loop-a-align'
-    const focus = setFocus({ ...base, threadId, title: 'Keep me' })
+    const focus = setFocus({ ...base, threadId, title: 'Keep me', body: 'detail line' })
     if (!hasSqliteRow(focus)) return
     const started = startLoop({ ...base, threadId, text: 'note' })
     expect(started.ok).toBe(true)
@@ -209,10 +230,16 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.path).toBe('A')
     expect(started.aligned).toBe(false)
     expect(started.run.status).toBe('aligning')
-    expect(started.run.draftObjective).toContain('Keep me')
+    // Focus must not fill objective; it lands in labeled body.
+    expect(started.run.draftObjective || '').toBe('')
+    expect(started.run.mission?.objective || '').toBe('')
+    expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
+    expect(started.run.mission?.body).toContain('Keep me')
+    expect(started.run.mission?.body).toContain('detail line')
     expect(started.run.startNote).toBe('note')
     expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('ALIGNING')
     expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('do NOT call')
+    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('Keep me')
 
     // verdict blocked while aligning
     const blocked = applyLoopVerdict(base.platform, base.channelId, threadId, {
@@ -224,6 +251,27 @@ describe('loop-run R1 ALIGNING', () => {
 
     stopLoop(base.platform, base.channelId, threadId, 'user_stop')
     expect(getFocusOn(base.platform, base.channelId, threadId)?.title).toBe('Keep me')
+  })
+
+  it('path A with explicit objective keeps Focus in body only', () => {
+    reset()
+    const threadId = 'loop-a-focus-body'
+    const focus = setFocus({ ...base, threadId, title: 'Old focus title' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '新目标：修好超时；退出条件为最多3轮；正文：优先查日志',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    expect(started.path).toBe('A')
+    expect(started.aligned).toBe(true)
+    expect(started.run.mission?.objective).toContain('修好超时')
+    expect(started.run.mission?.objective).not.toContain('Old focus')
+    expect(started.run.mission?.body).toContain('优先查日志')
+    expect(started.run.mission?.body).toContain('当前 Agent 聚焦内容')
+    expect(started.run.mission?.body).toContain('Old focus title')
   })
 
   it('path B without exit stays aligning; end focus off', () => {
@@ -318,6 +366,57 @@ describe('loop-run R1 ALIGNING', () => {
     expect(started.ok).toBe(true)
     cancelLoopForFocusOff(base.platform, base.channelId, threadId)
     expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
+  })
+
+  it('focus off cancels in-flight Subagent jobs (like /loop stop)', () => {
+    reset()
+    const threadId = 'loop-focus-off-jobs'
+    const focus = setFocus({ ...base, threadId, title: 'X' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出：验收通过或最多3轮',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const jobId = createInlineJob({
+      agent: 'agim',
+      prompt: 'child work',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    if (jobId <= 0) return
+    noteLoopRoundJob(base.platform, base.channelId, threadId, jobId)
+    expect(getJob(jobId)?.status).toMatch(/pending|running/)
+    cancelLoopForFocusOff(base.platform, base.channelId, threadId)
+    expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
+    expect(getJob(jobId)?.status).toBe('cancelled')
+  })
+
+  it('countRoundLiveSubagents is 0 when round ids empty and no dispatch', () => {
+    reset()
+    const threadId = 'loop-live-empty-round'
+    const focus = setFocus({ ...base, threadId, title: '上下文' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出：验收通过或最多3轮',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    // Unrelated live children on the thread must not block a fresh round.
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const stray = createInlineJob({
+      agent: 'agim',
+      prompt: 'stray',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    expect(countRoundLiveSubagents(started.run)).toBe(0)
+    void stray
   })
 
   it('loop_verdict stop ends confirmed loop (path B focus off)', () => {
@@ -426,6 +525,39 @@ describe('loop-run R3 PLAN+DISPATCH', () => {
     expect(cont.run.status).toBe('planning')
     expect(cont.run.lastVerification?.met).toBe(false)
     expect(cont.run.lastVerification?.nextDirection).toContain('flaky')
+  })
+
+  it('loopJobIds accumulate across rounds (for detail report scope)', () => {
+    reset()
+    const threadId = `t-loop-jobs-${Date.now()}`
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '累计子代理；退出条件为有结论或最多5轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 2 })
+    noteLoopRoundJob(base.platform, base.channelId, threadId, 101)
+    noteLoopRoundJob(base.platform, base.channelId, threadId, 102)
+    const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: 'next round',
+      met: false,
+      nextDirection: 'more research',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.roundJobIds).toEqual([])
+    expect(cont.run.loopJobIds).toEqual([101, 102])
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    noteLoopRoundJob(base.platform, base.channelId, threadId, 103)
+    const again = getLoopRun(base.platform, base.channelId, threadId)
+    expect(again?.roundJobIds).toEqual([103])
+    expect(again?.loopJobIds).toEqual([101, 102, 103])
+    expect(countLoopChildJobs(base.platform, base.channelId, threadId)).toBe(3)
   })
 })
 
@@ -635,6 +767,146 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.run.endReason).toBe('wall_limit')
+  })
+})
+
+describe('loop history audit persistence', () => {
+  it('writes history file and survives thread overwrite by a new Loop', () => {
+    reset()
+    const threadId = 'loop-history-overwrite'
+    const first = startLoop({
+      ...base,
+      threadId,
+      text: '第一轮目标；退出：验收通过或最多2轮',
+    })
+    if (!first.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(first.error)
+      return
+    }
+    const firstId = first.run.id
+    expect(existsSync(_historyPathForTests(firstId))).toBe(true)
+
+    stopLoop(base.platform, base.channelId, threadId, 'user_stop')
+    expect(getLoopRunById(firstId)?.status).toBe('ended')
+    expect(getLoopRunById(firstId)?.endReason).toBe('user_stop')
+
+    const second = startLoop({
+      ...base,
+      threadId,
+      text: '第二轮目标；退出：最多3轮',
+    })
+    if (!second.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(second.error)
+      return
+    }
+    expect(second.run.id).not.toBe(firstId)
+    // Thread snapshot is the new run…
+    expect(getLoopRun(base.platform, base.channelId, threadId)?.id).toBe(second.run.id)
+    // …but the first run remains in history for audit.
+    const archived = getLoopRunById(firstId)
+    expect(archived).not.toBeNull()
+    expect(archived?.mission?.objective).toContain('第一轮')
+    expect(archived?.status).toBe('ended')
+
+    const listed = listLoopRuns({ threadId, limit: 20 })
+    expect(listed.some((r) => r.id === firstId)).toBe(true)
+    expect(listed.some((r) => r.id === second.run.id)).toBe(true)
+  })
+
+  it('listLoopRuns / getLoopRunById read history JSON without Focus/sqlite', () => {
+    reset()
+    const histDir = join(TMP, 'loops', 'history')
+    mkdirSync(histDir, { recursive: true, mode: 0o700 })
+    const id1 = '11111111-1111-4111-8111-111111111111'
+    const id2 = '22222222-2222-4222-8222-222222222222'
+    const mk = (id: string, objective: string, updatedAt: number) => ({
+      id,
+      sessionKey: 'wechat__rest__loop-hist-list',
+      platform: 'wechat',
+      channelId: 'rest',
+      threadId: 'loop-hist-list',
+      focusSnapshot: objective,
+      openedFocus: false,
+      status: 'ended',
+      endReason: 'user_stop',
+      round: 1,
+      maxRounds: 3,
+      mission: {
+        objective,
+        exit: { description: '最多3轮', maxRounds: 3, onFocusOff: 'cancel' },
+      },
+      dispatchesThisRound: 0,
+      roundJobIds: [],
+      loopJobIds: [9, 10],
+      usage: { dispatchCount: 1, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+      createdAt: updatedAt - 1000,
+      updatedAt,
+      timeline: [{ at: updatedAt, kind: 'system', summary: 'ended' }],
+    })
+    writeFileSync(join(histDir, `${id1}.json`), JSON.stringify(mk(id1, '旧 Loop', 100), null, 2))
+    writeFileSync(join(histDir, `${id2}.json`), JSON.stringify(mk(id2, '新 Loop', 200), null, 2))
+
+    const byId = getLoopRunById(id1)
+    expect(byId?.mission?.objective).toBe('旧 Loop')
+    expect(byId?.loopJobIds).toEqual([9, 10])
+
+    const listed = listLoopRuns({ threadId: 'loop-hist-list', limit: 10 })
+    expect(listed.map((r) => r.id)).toEqual([id2, id1])
+    expect(existsSync(_historyPathForTests(id1))).toBe(true)
+  })
+
+  it('discovers and reads detail reports under PROJECTS/loops/<loopId>.md', () => {
+    reset()
+    const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    const reportsDir = join(TMP, 'reports-for-loop')
+    mkdirSync(reportsDir, { recursive: true, mode: 0o700 })
+    process.env.AGIM_LOOP_REPORTS_DIR = reportsDir
+    try {
+      expect(resolveLoopReportsDir()).toBe(reportsDir)
+      writeFileSync(join(reportsDir, `${id}.md`), '# Report\n\nhello from loop\n', 'utf8')
+      expect(discoverLoopReportPaths(id)).toEqual([join(reportsDir, `${id}.md`)])
+
+      // Persist a minimal history run so noteLoopReportPath / read can attach.
+      const histDir = join(TMP, 'loops', 'history')
+      mkdirSync(histDir, { recursive: true, mode: 0o700 })
+      writeFileSync(join(histDir, `${id}.json`), JSON.stringify({
+        id,
+        sessionKey: 'web__web__t-report',
+        platform: 'web',
+        channelId: 'web',
+        threadId: 't-report',
+        focusSnapshot: 'x',
+        openedFocus: false,
+        status: 'ended',
+        endReason: 'objective_met',
+        round: 1,
+        maxRounds: 3,
+        mission: {
+          objective: 'obj',
+          exit: { description: 'exit', maxRounds: 3, onFocusOff: 'cancel' },
+        },
+        dispatchesThisRound: 0,
+        roundJobIds: [],
+        loopJobIds: [],
+        reportPaths: [],
+        usage: { dispatchCount: 0, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+        timeline: [],
+      }, null, 2))
+
+      noteLoopReportPath(id, join(reportsDir, `${id}.md`))
+      const linked = getLoopRunById(id)
+      expect(linked?.reportPaths?.some((p) => p.endsWith(`${id}.md`))).toBe(true)
+
+      const md = readLoopReportMarkdown(id)
+      expect(md.ok).toBe(true)
+      if (!md.ok) return
+      expect(md.markdown).toContain('hello from loop')
+      expect(md.path).toContain(`${id}.md`)
+    } finally {
+      delete process.env.AGIM_LOOP_REPORTS_DIR
+    }
   })
 })
 

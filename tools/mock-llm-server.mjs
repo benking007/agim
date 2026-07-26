@@ -419,6 +419,43 @@ function decide(body) {
     return textReply('PARENT_DONE parallel-fanout')
   }
 
+  // Portal post-end「生成报告」→ one user prompt asking Agent to synthesize.
+  if (/PROJECTS\/loops\//i.test(user) && /详细分析报告|detailed analysis report/i.test(user)) {
+    const loopId = (user.match(/id:\s*([a-zA-Z0-9_-]+)/i) || [])[1] || 'loop-demo'
+    if (toolResults === 0) {
+      const body = [
+        '# Loop 详细分析报告',
+        '',
+        `> 由 Loop \`${loopId}\` 结案后 Agent 撰写（mock）`,
+        '',
+        '## 综合结论',
+        '',
+        '本 Loop 目标已达成；关键证据充分，维持结案结论。',
+        '',
+        '## 关键证据',
+        '',
+        '- 各轮子代理产出已审阅（仅本 Loop，不含历史线程任务）',
+        '- 验收摘要与独立验收一致',
+        '',
+        '## 可执行建议',
+        '',
+        '- 无需追加调研；如需润色可再要求改写对外版',
+        '',
+      ].join('\n')
+      return toolCall('agim_write_file', {
+        path: `PROJECTS/loops/${loopId}.md`,
+        content: body,
+      }, 'loop_report_write')
+    }
+    return textReply(
+      `已基于本 Loop（id: ${loopId}）各子代理产出整理详细分析报告，`
+      + '并落盘到 `PROJECTS/loops/`。\n\n'
+      + '## 综合结论\n\n本 Loop 目标已达成；维持结案结论。\n\n'
+      + '## 关键证据\n\n- 仅汇总本 Loop 产出\n- 验收与独立验收一致\n\n'
+      + '## 可执行建议\n\n- 无需追加调研',
+    )
+  }
+
   // Default / A3 probe — answer without tools.
   if (/PHASE_A3_SIMPLE/i.test(user)) {
     return textReply('2')

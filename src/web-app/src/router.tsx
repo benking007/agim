@@ -83,6 +83,8 @@ const router = createBrowserRouter([
       { path: 'asks',      lazy: lazy(() => import('@/routes/tasks/asks')) },
       // v1.2.133 — plan-history audit (native_exit_plan_mode handshakes).
       { path: 'plans',     lazy: lazy(() => import('@/routes/tasks/plans')) },
+      // Loop Engineering audit (per-run history under ~/.agim/loops/history).
+      { path: 'loops',     lazy: lazy(() => import('@/routes/tasks/loops')) },
     ],
   },
   {

@@ -440,6 +440,7 @@ describe('buildAgimDispatcher', () => {
         },
         dispatchesThisRound: 0,
         roundJobIds: [],
+        loopJobIds: [],
         usage: { dispatchCount: 0, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
         createdAt: now,
         updatedAt: now,

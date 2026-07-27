@@ -42,6 +42,12 @@ import { logInvocation } from './audit-log.js'
 import { applyGoalTimeoutBoost } from './goals.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import {
+  formatAgentDispatchUnavailable,
+  isAgentAvailableCached,
+  looksLikeAgentAuthFailure,
+  markAgentUnavailable,
+} from './onboarding.js'
+import {
   buildEnvelope,
   copyInputs,
   ensureArtifactsDir,
@@ -367,6 +373,18 @@ export async function callAgentByName(
     )
   }
 
+  // Pre-dispatch probe: CLI missing / force-quarantined (auth/subscription)
+  // must not create a Loop-counting job that will only fail after spawn.
+  if (!(await isAgentAvailableCached(target.name))) {
+    const msg = formatAgentDispatchUnavailable(target.name)
+    log.warn({
+      event: 'a2a.agent_unavailable',
+      agentName: target.name,
+      threadId: ctx.threadId,
+    }, msg)
+    return earlyFail(msg, target.name)
+  }
+
   const threadKey = `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
   const jobId = createInlineJob({
     agent: target.name,
@@ -647,6 +665,11 @@ export async function callAgentByName(
     log.warn({
       event: 'a2a.invoke_end', outcome, jobId, durationMs, callee: target.name, err: errMsg,
     }, `A2A → ${target.name} ${outcome}: ${errMsg}`)
+    // Quarantine CLI after auth/subscription-shaped failures so the next
+    // call_agents preferred-worker hint / probe refuses before spawn.
+    if (outcome === 'failed' && looksLikeAgentAuthFailure(errMsg)) {
+      markAgentUnavailable(target.name, errMsg || 'auth/subscription failure')
+    }
     emitAgentActivity(opts, ctx, {
       id: activityStepId,
       kind: 'agent',

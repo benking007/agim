@@ -61,6 +61,11 @@ All notable changes to this project will be documented in this file.
   the last non-Agim sticky agent (e.g. Codex). Portal offers one-click
   「用 Agim 编排」; Loop snippet + Act now prefer `call_agents` with that
   worker. Full CLI-as-parent remains deferred.
+- **Pre-dispatch CLI probe**: `call_agent` / `call_agents` refuse targets that
+  fail `isAvailable` (or auth quarantine) before creating Loop-counting jobs.
+  Auth/subscription-shaped failures mark the agent unavailable ~5m so the
+  next preferred-worker hint skips it. `--version` alone still cannot prove
+  login; quarantine covers the first real failure.
 - **Loop Portal UX**: after Loop starts, stop mirroring status onto the pet
   speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
   Loop 审计 surfaces list API errors and only applies status filter on

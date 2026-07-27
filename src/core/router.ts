@@ -5,7 +5,10 @@ import type { Logger } from 'pino'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
 import { AGENT_SESSION_PERSIST, bindTurnAgentSession, TURN_AGENT_SESSION, type SessionStickyFields } from './agent-session-bindings.js'
-import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'
+import {
+  isAgentAvailableCached,
+  formatAgentNotAvailableError,
+} from './onboarding.js'
 import { handleBuiltInCommand } from './commands/builtin.js'
 import { handleAgentCommand } from './commands/agent.js'
 import { handleAuditCommand } from './commands/audit.js'
@@ -756,6 +759,11 @@ export async function callAgentWithHistory(
     )
     if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
     preferredWorkerAgent = resolvePreferredWorkerAgent(sess?.agent ?? agent.name, sess?.preferredWorkerAgent)
+    // Skip preferred CLI when probe/quarantine says it cannot run — do not
+    // steer call_agents toward a dead Codex/Claude subscription.
+    if (preferredWorkerAgent && !(await isAgentAvailableCached(preferredWorkerAgent))) {
+      preferredWorkerAgent = undefined
+    }
   } catch { /* ignore — defaults to auto / no worker hint */ }
   const loopSnippet = buildLoopSnippet(ctx.platform, ctx.channelId, ctx.threadId, {
     preferredWorkerAgent,

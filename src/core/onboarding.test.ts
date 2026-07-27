@@ -3,9 +3,15 @@
 import { describe, it, expect, } from 'bun:test'
 import {
   checkMessengerConfig,
+  clearAgentCache,
+  formatAgentDispatchUnavailable,
   formatAgentInstallHint,
   formatAgentNotAvailableError,
   formatMessengerStartError,
+  getAgentUnavailableReason,
+  isAgentAvailableCached,
+  looksLikeAgentAuthFailure,
+  markAgentUnavailable,
   type Config,
 } from './onboarding.js'
 
@@ -136,6 +142,27 @@ describe('formatAgentNotAvailableError', () => {
 
     expect(error).toContain('unknown-agent')
     expect(error).toContain('npm i -g unknown-agent')
+  })
+})
+
+describe('dispatch probe / quarantine', () => {
+  it('looksLikeAgentAuthFailure catches login/subscription shapes', () => {
+    expect(looksLikeAgentAuthFailure('Codex 账号已过期')).toBe(true)
+    expect(looksLikeAgentAuthFailure('please login again')).toBe(true)
+    expect(looksLikeAgentAuthFailure('subscription expired')).toBe(true)
+    expect(looksLikeAgentAuthFailure('model refused tool')).toBe(false)
+  })
+
+  it('markAgentUnavailable quarantines past --version probes', async () => {
+    clearAgentCache()
+    markAgentUnavailable('codex', 'login expired', 60_000)
+    expect(getAgentUnavailableReason('codex')).toContain('login expired')
+    expect(await isAgentAvailableCached('codex')).toBe(false)
+    const msg = formatAgentDispatchUnavailable('codex')
+    expect(msg).toContain('not dispatchable')
+    expect(msg).toContain('codex')
+    expect(msg).toContain('login expired')
+    clearAgentCache()
   })
 })
 

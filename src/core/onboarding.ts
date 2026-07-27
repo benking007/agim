@@ -270,6 +270,96 @@ const AGENT_CHECK_CACHE_TTL = 2 * 60 * 1000 // 2 minutes
 const perAgentCache = new Map<string, { ok: boolean; timestamp: number }>()
 
 /**
+ * Soft-fail quarantine after a live CLI run proves unusable (login /
+ * subscription / provider outage). Survives bulk `--version` probes that
+ * would otherwise flip the agent back to "available".
+ */
+const forcedUnavailable = new Map<string, { until: number; reason: string }>()
+const FORCED_UNAVAILABLE_TTL_MS = 5 * 60 * 1000
+
+function forcedUnavailableActive(agentName: string): { reason: string } | null {
+  const hit = forcedUnavailable.get(agentName)
+  if (!hit) return null
+  if (Date.now() >= hit.until) {
+    forcedUnavailable.delete(agentName)
+    return null
+  }
+  return { reason: hit.reason }
+}
+
+/**
+ * Mark a CLI agent unusable for dispatch (auth expiry, subscription, …).
+ * Loop / call_agents must not prefer or spawn it until TTL elapses.
+ */
+export function markAgentUnavailable(
+  agentName: string,
+  reason = 'unavailable',
+  ttlMs = FORCED_UNAVAILABLE_TTL_MS,
+): void {
+  const name = (agentName || '').trim()
+  if (!name) return
+  forcedUnavailable.set(name, {
+    until: Date.now() + Math.max(1_000, ttlMs),
+    reason: reason.trim() || 'unavailable',
+  })
+  perAgentCache.set(name, { ok: false, timestamp: Date.now() })
+  if (agentCheckCache) {
+    const { available, missing } = agentCheckCache.result
+    agentCheckCache.result = {
+      available: available.filter((n) => n !== name),
+      missing: missing.includes(name) ? missing : [...missing, name],
+      allMissing: available.filter((n) => n !== name).length === 0,
+    }
+  }
+}
+
+/** Reason string while an agent is force-quarantined; undefined if clear. */
+export function getAgentUnavailableReason(agentName: string): string | undefined {
+  return forcedUnavailableActive(agentName)?.reason
+}
+
+/** Heuristic: stderr / outcome text looks like login / subscription failure. */
+export function looksLikeAgentAuthFailure(text: string | undefined | null): boolean {
+  const t = (text || '').toLowerCase()
+  if (!t) return false
+  return (
+    t.includes('expired')
+    || t.includes('过期')
+    || t.includes('not logged')
+    || t.includes('please login')
+    || t.includes('please log in')
+    || (t.includes('请运行') && t.includes('login'))
+    || t.includes('unauthorized')
+    || t.includes('authentication')
+    || t.includes('subscription')
+    || t.includes('quota')
+    || t.includes('payment required')
+    || t.includes('账号已过期')
+    || t.includes('重新登录')
+  )
+}
+
+/**
+ * Short tool-facing error when call_agent(s) must refuse a dead CLI.
+ * Prefer this over the long install-hint banner inside Loop turns.
+ */
+export function formatAgentDispatchUnavailable(
+  agentName: string,
+  reason?: string,
+): string {
+  const detail = (reason || getAgentUnavailableReason(agentName) || '').trim()
+  const why = detail
+    ? detail
+    : 'CLI missing, not ready, login/subscription expired, or provider fault'
+  return (
+    `agent "${agentName}" is not dispatchable right now (${why}). `
+    + `Do NOT assign work to it this turn — pick another registered agent `
+    + `(or same-family Agim role/backend), or ask the user to fix ${agentName} `
+    + `(install / login / subscription) and retry later.`
+  )
+}
+
+/**
  * Check which agents are available.
  * Result is cached with a 2-minute TTL.
  */
@@ -284,6 +374,11 @@ export async function checkAgentAvailability(): Promise<AgentCheckResult> {
     const agent = registry.findAgent(name)
     if (agent) {
       try {
+        if (forcedUnavailableActive(name)) {
+          missing.push(name)
+          perAgentCache.set(name, { ok: false, timestamp: Date.now() })
+          continue
+        }
         const isAvail = await agent.isAvailable()
         if (isAvail) {
           available.push(name)
@@ -312,8 +407,11 @@ export async function checkAgentAvailability(): Promise<AgentCheckResult> {
  * Uses the bulk cache when present, but falls through to a one-off probe
  * if the agent name isn't represented (e.g. agent registered after the
  * last bulk refresh). The probe result is itself cached for the TTL.
+ * Force-quarantine (auth/subscription) always wins over `--version` OK.
  */
 export async function isAgentAvailableCached(agentName: string): Promise<boolean> {
+  if (forcedUnavailableActive(agentName)) return false
+
   const bulk = await checkAgentAvailability()
   if (bulk.available.includes(agentName)) return true
   if (bulk.missing.includes(agentName)) return false
@@ -342,6 +440,7 @@ export async function isAgentAvailableCached(agentName: string): Promise<boolean
 export function clearAgentCache(): void {
   agentCheckCache = null
   perAgentCache.clear()
+  forcedUnavailable.clear()
 }
 
 // ============================================

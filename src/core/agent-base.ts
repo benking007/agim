@@ -462,7 +462,24 @@ export abstract class AgentBase implements AgentAdapter {
       }
 
       if (spawnError) {
-        throw spawnError
+        // Assigned from proc 'error' callback — CF analysis may treat the
+        // outer binding as always-null; re-bind through a typed local.
+        const err = spawnError as NodeJS.ErrnoException
+        const detail = err.message || String(err)
+        // Kernel ARG_MAX overflow — common when CLI adapters put a huge
+        // Loop/Focus/history prompt into spawn argv (Codex/Claude Code).
+        if (err.code === 'E2BIG' || /E2BIG/i.test(detail)) {
+          reportOutcome({ status: 'error', providerFailure: true, error: detail })
+          yield [
+            `⚠️ \`${this.name}\` 启动失败：命令行参数过长（spawn E2BIG）。`,
+            '',
+            '常见原因：历史 / Focus / Loop 上下文被塞进 CLI 参数。',
+            '若正在跑 **/loop**：请把 Portal Agent 切回 **Agim**（Loop 父编排），',
+            'Codex 等仍可通过 `call_agents` 作为子代理。',
+          ].join('\n')
+          return
+        }
+        throw err
       }
 
       rootLogger.info({

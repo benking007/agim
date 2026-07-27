@@ -51,6 +51,12 @@ All notable changes to this project will be documented in this file.
   `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
+- **Loop parent must be Agim Agent**: sticky CLI agents (Codex / Claude Code /
+  …) cannot parent `/loop` — they lack `call_agents` / `loop_verdict`, and
+  packing Loop+Focus context into spawn argv often fails with
+  `spawn E2BIG`. Gate `/loop` start/confirm + parent turns; Portal hides
+  Act now and prompts to switch to Agim (CLI agents remain valid
+  Subagents). Friendly E2BIG message on CLI spawn overflow.
 - **Loop Portal UX**: after Loop starts, stop mirroring status onto the pet
   speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
   Loop 审计 surfaces list API errors and only applies status filter on

@@ -27,7 +27,8 @@ import { handleHeartbeatCommand } from './commands/heartbeat.js'
 import { handleFocusCommand } from './commands/focus.js'
 import { handleLoopCommand } from './commands/loop.js'
 import { buildFocusSnippet } from './focus.js'
-import { buildLoopSnippet } from './loop-run.js'
+import { buildLoopSnippet, getActiveLoop } from './loop-run.js'
+import { canParentLoop, formatLoopParentRequired } from './loop-parent-agent.js'
 import { handleSkillCommand } from './commands/skill.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
@@ -603,6 +604,29 @@ export async function callAgentWithHistory(
   }
   if (ctx.signal?.aborted) {
     return (async function* (): AsyncGenerator<string> { /* cancelled before side effects */ })()
+  }
+
+  // Loop parent gate: orchestration phases need Agim Agent tools
+  // (call_agents / loop_verdict). CLI parents (Codex, …) also hit spawn
+  // E2BIG on large Loop+Focus argv — fail closed with a switch hint.
+  // pending_user_confirm is excluded so post-met report prompts can still
+  // run on any sticky agent. Subagents use callAgentByName (not this path).
+  const activeLoop = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+  if (
+    activeLoop
+    && activeLoop.status !== 'pending_user_confirm'
+    && !canParentLoop(agent.name)
+  ) {
+    const msg = formatLoopParentRequired(agent.name, 'zh')
+    ctx.logger.warn({
+      event: 'loop.parent_agent_blocked',
+      agent: agent.name,
+      loopId: activeLoop.id,
+      status: activeLoop.status,
+    }, 'Loop parent must be Agim Agent')
+    return (async function* (): AsyncGenerator<string> {
+      yield msg
+    })()
   }
 
   const storageThreadId = options.storageThreadId ?? ctx.threadId

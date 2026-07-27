@@ -681,6 +681,7 @@ export function AgentPortal(): JSX.Element {
                   threadId={portalThreadId}
                   refreshKey={loopRefreshKey}
                   dark={dark}
+                  agentId={agentId}
                   busy={canStop}
                   hasBlockingDock={hasBlockingDock}
                   flush

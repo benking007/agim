@@ -33,6 +33,8 @@ export interface PortalLoopDockProps {
   threadId: string | null | undefined
   refreshKey?: number | string
   dark?: boolean
+  /** Sticky Portal agent id — Loop parent must be Agim. */
+  agentId?: string
   /** True while an agent turn is in flight — hide Act Now. */
   busy?: boolean
   /** Approval/Ask dock already open — don't stack Act Now on top. */
@@ -41,6 +43,10 @@ export interface PortalLoopDockProps {
   /** Send a chat/slash message on the user's behalf. */
   onSend: (text: string) => void
   className?: string
+}
+
+function canParentLoopAgent(agentId: string | undefined): boolean {
+  return agentId === 'agim' || agentId === 'native'
 }
 
 function actNowPrompt(loop: LoopStatusDto, zh: boolean): string {
@@ -59,6 +65,7 @@ export const PortalLoopDock = memo(function PortalLoopDock({
   threadId,
   refreshKey,
   dark,
+  agentId,
   busy,
   hasBlockingDock,
   flush,
@@ -70,6 +77,7 @@ export const PortalLoopDock = memo(function PortalLoopDock({
   const { loop, reload } = usePortalLoop(threadId, refreshKey)
   // Survives loop.active → false after「确认结束」.
   const [reportOffer, setReportOffer] = useState<ReportOffer | null>(null)
+  const parentOk = canParentLoopAgent(agentId)
 
   // Clear stale offer when switching threads.
   useEffect(() => {
@@ -99,6 +107,8 @@ export const PortalLoopDock = memo(function PortalLoopDock({
         flush={flush}
         zh={zh}
         onSend={onSend}
+        parentOk={parentOk}
+        agentId={agentId}
         className={className}
       />
     )
@@ -127,6 +137,17 @@ export const PortalLoopDock = memo(function PortalLoopDock({
   // HARD: while Subagents are live this round, do not nudge verify.
   if ((loop.liveSubagents ?? 0) > 0) return null
   if (loop.bucket === 'dispatch' || loop.bucket === 'verify') {
+    if (!parentOk) {
+      return (
+        <SwitchToAgimDock
+          dark={dark}
+          flush={flush}
+          zh={zh}
+          agentId={agentId}
+          className={className}
+        />
+      )
+    }
     return (
       <ActNowDock
         loop={loop}
@@ -386,6 +407,8 @@ function AligningDock({
   flush,
   zh,
   onSend,
+  parentOk = true,
+  agentId,
   className,
 }: {
   loop: LoopStatusDto
@@ -393,6 +416,8 @@ function AligningDock({
   flush?: boolean
   zh: boolean
   onSend: (text: string) => void
+  parentOk?: boolean
+  agentId?: string
   className?: string
 }): JSX.Element {
   const [objective, setObjective] = useState(loop.objective || '')
@@ -407,7 +432,8 @@ function AligningDock({
     setBody(loop.body || '')
   }, [loop.objective, loop.exitDescription, loop.body])
 
-  const canConfirm = objective.trim().length > 0 && exit.trim().length > 0
+  const canConfirm = parentOk && objective.trim().length > 0 && exit.trim().length > 0
+  const currentAgent = (agentId || '').trim() || (zh ? '当前 Agent' : 'current agent')
   const fieldClass = cn(
     'w-full resize-none rounded-lg border px-2.5 py-2 text-sm outline-none focus:border-teal-500',
     dark
@@ -447,6 +473,17 @@ function AligningDock({
             </p>
           </div>
         </div>
+
+        {!parentOk ? (
+          <p className={cn(
+            'border-b px-3 py-2 text-[11px] leading-snug',
+            dark ? 'border-rose-500/20 bg-rose-500/10 text-rose-200' : 'border-rose-200 bg-rose-50 text-rose-800',
+          )}>
+            {zh
+              ? `Loop 父编排须用 Agim（当前：${currentAgent}）。请在顶部切换到 Agim 后再确认；Codex 等仍可作子代理。`
+              : `Loop parent must be Agim (current: ${currentAgent}). Switch the top agent to Agim before confirm; Codex can still run as a Subagent.`}
+          </p>
+        ) : null}
 
         <div className="space-y-2.5 px-3 py-3">
           <label className="block space-y-1">
@@ -513,6 +550,55 @@ function AligningDock({
               {zh ? '确定并开始' : 'Confirm & start'}
             </Button>
           </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SwitchToAgimDock({
+  dark,
+  flush,
+  zh,
+  agentId,
+  className,
+}: {
+  dark?: boolean
+  flush?: boolean
+  zh: boolean
+  agentId?: string
+  className?: string
+}): JSX.Element {
+  const current = (agentId || '').trim() || (zh ? '当前 Agent' : 'current agent')
+  const title = zh ? 'Loop 需要 Agim 父编排' : 'Loop needs Agim as parent'
+  const body = zh
+    ? `当前是 ${current}。请在顶部切回 Agim，再点「立即行动」。Codex 等仍可由 call_agents 作子代理。`
+    : `Current agent is ${current}. Switch the top selector to Agim, then Act now. Codex can still run via call_agents as a Subagent.`
+
+  return (
+    <div className={cn('relative z-20 pb-1 pt-0', flush ? 'px-0' : 'px-3 sm:px-4', className)}>
+      <section
+        className={cn(
+          'mx-auto flex w-full max-w-2xl items-start gap-2 rounded-xl border px-3 py-2.5',
+          'shadow-[0_-6px_22px_rgba(15,23,42,0.10)] ring-1 ring-black/5',
+          'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200',
+          dark ? 'border-rose-500/30 bg-zinc-950' : 'border-rose-300/70 bg-white',
+        )}
+        aria-label={title}
+      >
+        <span className={cn(
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+          dark ? 'bg-rose-500/20 text-rose-300' : 'bg-rose-100 text-rose-700',
+        )}>
+          <X className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn('text-sm font-semibold', dark ? 'text-zinc-100' : 'text-zinc-800')}>
+            {title}
+          </p>
+          <p className={cn('mt-0.5 text-[11px] leading-snug', dark ? 'text-zinc-400' : 'text-zinc-500')}>
+            {body}
+          </p>
         </div>
       </section>
     </div>

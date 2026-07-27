@@ -115,23 +115,34 @@ Workspace / 文件 / skill 以蓝色 chip 显示在输入区；光标在文本�
 
 | kind | 含义 |
 |------|------|
-| `loop` | 活跃 Loop（待对焦 / 待派工 / 待验收）— 进展状态之一，**不再另造挡内容状态条** |
 | `approval` / `ask` | 待你处理 |
 | `run` | 本轮 Agent 执行 |
 | `bgjob` | 后台任务 |
 
-有活跃 Loop 时，小精灵上方优先显示琥珀色状态气泡（桶名 · 目标摘要 · 轮次 · 用量），盖过闲聊文案。
+**不再**用小精灵琥珀色气泡 / `loop` 任务行镜像 Loop 状态（启动后会抢输入区）。Loop 进展只走下方底栏 docks。
 
 ## Loop 底栏（与审批同级）
 
-Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry）：
+Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry；组件 `memo`，避免主输入按键重渲长正文）：
 
 | 状态 | 底栏 |
 |------|------|
-| 待对焦 | 表单：目标 + 退出条件 →「确定并开始」 |
-| 待派工 / 待验收（Agent 空闲，且无审批/提问挡板） | 「立即行动」代用户发推进句 |
+| 待对焦 | 表单：目标 + 退出条件 + **正文（可选）** →「确定并开始」。路径 A：Focus→正文（标注）；`/loop start <text>`→目标预填。正文 **>240 字默认折叠** |
+| 待派工 / 待验收（Agent 空闲，且无审批/提问挡板；`liveSubagents=0`） | 「立即行动」代用户发推进句 |
+| 结论已就绪 | 结案浮窗：确认结束 / 继续下一轮 |
+| 确认结束后（可选） | 是否生成详细报告 |
 
-契约与门禁见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。
+契约与门禁见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。Tasks 审计见同文 §6.3.1（`/tasks/loops`）。
+
+## 输入性能（长 Context）
+
+主输入 `inputMessage` 仍挂在 `AgentPortal`，但按键时：
+
+- `memo(PortalMessageList)` / `memo(PortalLoopDock)` + 稳定回调，避免整页重渲 Markdown / 对焦长正文；
+- caret 用 ref；`/` `@` 触发只在状态真正变化时 `setState`；
+- 对焦「正文」过长时默认折叠，减少常驻大 textarea。
+
+现象：Focus / 对焦正文很长时，主输入仍应跟手。
 
 ## 相关文件
 

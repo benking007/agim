@@ -121,7 +121,7 @@ Loop 本体定义见 [`loop-engineering.md`](./loop-engineering.md)（L3，不�
 
 | 路径 | 用户怎么做 | Loop 结束时 Focus |
 |------|------------|-------------------|
-| **A · 分步** | 先 `/focus …`（已 on），再 `/loop [note]` | **保持**：不自动 off |
+| **A · 分步** | 先 `/focus …`（已 on），再 `/loop` 或 `/loop start <note>` | **保持**：不自动 off。Focus→Mission **正文**（标注）；裸 `<note>` **预填**对焦「目标」，退出条件仍须确认。细节 [`loop-engineering.md`](./loop-engineering.md) §3 |
 | **B · 直开** | Focus 未 on 时直接 `/loop <text>` | **自动** `focus set+on` 用 `<text>`；结束时 **focus off**（内容可保留，仅停注入） |
 
 要点：

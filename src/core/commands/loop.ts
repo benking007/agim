@@ -37,7 +37,7 @@ const HELP = [
   '  `/loop 目标…；退出条件为…`  尽量一次给齐（也可用「退出：…」）',
   '  `/loop 目标…；退出条件为…；正文：…`  可附带可选正文（也可用「补充：」「body:」）',
   '  `/loop` / `/loop start`  Focus 已 on：聚焦内容写入正文（标注），目标/退出仍须确认',
-  '  `/loop start <note>`     Focus 已 on：附带说明启动对焦（note 不进目标）',
+  '  `/loop start <note>`     Focus 已 on：note 预填对焦「目标」；Focus 仍进正文；退出仍须确认',
   '  `/loop objective <text>` 对焦中补目标（可含「；验收：…」）',
   '  `/loop exit <text>`      对焦中补退出条件',
   '  `/loop body <text>`      可选正文/补充提示（写入 Mission，非硬门禁）',

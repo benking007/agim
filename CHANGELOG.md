@@ -186,6 +186,10 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- **Loop Portal UX 文档对齐（#268/#269）**：`loop-engineering.md` §3/§6.3
+ （无小精灵 Loop 气泡；`/loop start <text>` 预填目标；审计「应用」筛选；
+  长正文折叠）；`portal-composer.md` 底栏/输入性能；`desktop-regression`
+  §3.2；`focus.md` / `orchestration-roadmap` / `naming`；`/loop help`。
 - **Composer 审批芯片文档**：`portal-composer.md` 状态栏专节；
   `security-hardening` / `subagent` / `current` 对齐「替我审批」与
   `/api/policy/auto-approve`。

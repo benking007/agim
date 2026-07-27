@@ -55,6 +55,10 @@ All notable changes to this project will be documented in this file.
   speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
   Loop 审计 surfaces list API errors and only applies status filter on
   「应用」(empty filtered copy no longer looks like “no data at all”).
+- **Portal composer typing lag**: keystrokes no longer re-render the full
+  message list / Loop AligningDock. Memoize `PortalMessageList` +
+  `PortalLoopDock`, keep caret in a ref, skip duplicate `/` `@` trigger
+  work on each change, and collapse long Aligning 「正文」by default.
 - **Loop CR follow-ups**: Focus path A seeds Mission `body` (not objective);
   post-end report offer uses cumulative `loopJobIds` for the dock count
   (Agent writes the report via chat prompt; no thread-wide assemble);

@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { memo, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bot } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -28,7 +28,11 @@ interface PortalMessageListProps {
   emptySlot?: React.ReactNode
 }
 
-export function PortalMessageList({
+/**
+ * Memoized so composer keystrokes in AgentPortal (inputMessage) do not
+ * re-parse Markdown / rebuild activity cards for the whole transcript.
+ */
+export const PortalMessageList = memo(function PortalMessageList({
   dark,
   active,
   chatTurns,
@@ -165,4 +169,4 @@ export function PortalMessageList({
       </div>
     </div>
   )
-}
+})

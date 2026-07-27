@@ -8,7 +8,7 @@
  * the pet speech bubble (that cluttered the composer after start).
  */
 
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Compass, FileText, Play, Target, X } from 'lucide-react'
 
@@ -54,7 +54,8 @@ function actNowPrompt(loop: LoopStatusDto, zh: boolean): string {
     : 'Start: decompose and call_agents to dispatch Subagents this round — do not research alone.'
 }
 
-export function PortalLoopDock({
+/** Memoized: composer typing must not re-reconcile AligningDock's long Focus body. */
+export const PortalLoopDock = memo(function PortalLoopDock({
   threadId,
   refreshKey,
   dark,
@@ -138,7 +139,7 @@ export function PortalLoopDock({
     )
   }
   return null
-}
+})
 
 function ConfirmMetDock({
   loop,
@@ -397,6 +398,8 @@ function AligningDock({
   const [objective, setObjective] = useState(loop.objective || '')
   const [exit, setExit] = useState(loop.exitDescription || '')
   const [body, setBody] = useState(loop.body || '')
+  // Long Focus appendix in body: collapse by default so the sheet stays light.
+  const [bodyOpen, setBodyOpen] = useState(() => (loop.body || '').length <= 240)
 
   useEffect(() => {
     setObjective(loop.objective || '')
@@ -470,20 +473,34 @@ function AligningDock({
               className={fieldClass}
             />
           </label>
-          <label className="block space-y-1">
-            <span className={cn('text-[11px] font-medium', dark ? 'text-zinc-300' : 'text-zinc-600')}>
-              {zh ? '正文（可选）' : 'Body (optional)'}
-            </span>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={3}
-              placeholder={zh
-                ? '例如：优先查超时日志；对照上周回归清单；不要改鉴权配置'
-                : 'e.g. Check timeout logs first; follow last week’s checklist; do not touch auth config'}
-              className={fieldClass}
-            />
-          </label>
+          <div className="block space-y-1">
+            <button
+              type="button"
+              onClick={() => setBodyOpen((v) => !v)}
+              className={cn(
+                'flex w-full items-center justify-between text-left text-[11px] font-medium',
+                dark ? 'text-zinc-300' : 'text-zinc-600',
+              )}
+            >
+              <span>{zh ? '正文（可选）' : 'Body (optional)'}</span>
+              <span className={cn('font-normal', dark ? 'text-zinc-500' : 'text-zinc-400')}>
+                {bodyOpen
+                  ? (zh ? '收起' : 'Hide')
+                  : (zh ? `展开${body.trim() ? ` · ${body.trim().length} 字` : ''}` : `Show${body.trim() ? ` · ${body.trim().length} chars` : ''}`)}
+              </span>
+            </button>
+            {bodyOpen ? (
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={3}
+                placeholder={zh
+                  ? '例如：优先查超时日志；对照上周回归清单；不要改鉴权配置'
+                  : 'e.g. Check timeout logs first; follow last week’s checklist; do not touch auth config'}
+                className={fieldClass}
+              />
+            ) : null}
+          </div>
           <div className="flex justify-end pt-0.5">
             <Button
               type="button"

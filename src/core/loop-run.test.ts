@@ -317,6 +317,12 @@ describe('loop-run R1 ALIGNING', () => {
     expect(snip).toContain('MUST decompose')
     expect(snip).toContain('call_agents')
     expect(snip).toContain('HARD GATE')
+
+    const withWorker = buildLoopSnippet(base.platform, base.channelId, threadId, {
+      preferredWorkerAgent: 'codex',
+    })
+    expect(withWorker).toContain('Preferred worker agent: "codex"')
+    expect(withWorker).toContain('agent:"codex"')
   })
 
   it('objective + exit + confirm leaves aligning', () => {

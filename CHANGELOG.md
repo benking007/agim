@@ -51,6 +51,21 @@ All notable changes to this project will be documented in this file.
   `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
+- **Loop parent must be Agim Agent**: sticky CLI agents (Codex / Claude Code /
+  …) cannot parent `/loop` — they lack `call_agents` / `loop_verdict`, and
+  packing Loop+Focus context into spawn argv often fails with
+  `spawn E2BIG`. Gate `/loop` start/confirm + parent turns; Portal hides
+  Act now and prompts to switch to Agim (CLI agents remain valid
+  Subagents). Friendly E2BIG message on CLI spawn overflow.
+- **Agim orchestrates, CLI workers**: session `preferredWorkerAgent` remembers
+  the last non-Agim sticky agent (e.g. Codex). Portal offers one-click
+  「用 Agim 编排」; Loop snippet + Act now prefer `call_agents` with that
+  worker. Full CLI-as-parent remains deferred.
+- **Pre-dispatch CLI probe**: `call_agent` / `call_agents` refuse targets that
+  fail `isAvailable` (or auth quarantine) before creating Loop-counting jobs.
+  Auth/subscription-shaped failures mark the agent unavailable ~5m so the
+  next preferred-worker hint skips it. `--version` alone still cannot prove
+  login; quarantine covers the first real failure.
 - **Loop Portal UX**: after Loop starts, stop mirroring status onto the pet
   speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
   Loop 审计 surfaces list API errors and only applies status filter on

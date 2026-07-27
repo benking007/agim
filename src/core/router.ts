@@ -5,7 +5,10 @@ import type { Logger } from 'pino'
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
 import { AGENT_SESSION_PERSIST, bindTurnAgentSession, TURN_AGENT_SESSION, type SessionStickyFields } from './agent-session-bindings.js'
-import { isAgentAvailableCached, formatAgentNotAvailableError } from './onboarding.js'
+import {
+  isAgentAvailableCached,
+  formatAgentNotAvailableError,
+} from './onboarding.js'
 import { handleBuiltInCommand } from './commands/builtin.js'
 import { handleAgentCommand } from './commands/agent.js'
 import { handleAuditCommand } from './commands/audit.js'
@@ -27,7 +30,12 @@ import { handleHeartbeatCommand } from './commands/heartbeat.js'
 import { handleFocusCommand } from './commands/focus.js'
 import { handleLoopCommand } from './commands/loop.js'
 import { buildFocusSnippet } from './focus.js'
-import { buildLoopSnippet } from './loop-run.js'
+import { buildLoopSnippet, getActiveLoop } from './loop-run.js'
+import {
+  canParentLoop,
+  formatLoopParentRequired,
+  resolvePreferredWorkerAgent,
+} from './loop-parent-agent.js'
 import { handleSkillCommand } from './commands/skill.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
@@ -605,6 +613,29 @@ export async function callAgentWithHistory(
     return (async function* (): AsyncGenerator<string> { /* cancelled before side effects */ })()
   }
 
+  // Loop parent gate: orchestration phases need Agim Agent tools
+  // (call_agents / loop_verdict). CLI parents (Codex, …) also hit spawn
+  // E2BIG on large Loop+Focus argv — fail closed with a switch hint.
+  // pending_user_confirm is excluded so post-met report prompts can still
+  // run on any sticky agent. Subagents use callAgentByName (not this path).
+  const activeLoop = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+  if (
+    activeLoop
+    && activeLoop.status !== 'pending_user_confirm'
+    && !canParentLoop(agent.name)
+  ) {
+    const msg = formatLoopParentRequired(agent.name, 'zh')
+    ctx.logger.warn({
+      event: 'loop.parent_agent_blocked',
+      agent: agent.name,
+      loopId: activeLoop.id,
+      status: activeLoop.status,
+    }, 'Loop parent must be Agim Agent')
+    return (async function* (): AsyncGenerator<string> {
+      yield msg
+    })()
+  }
+
   const storageThreadId = options.storageThreadId ?? ctx.threadId
   const agentSessionId = options.agentSessionId ?? ctx.agentSessionId
   const agentSessionResume = options.agentSessionResume ?? ctx.agentSessionResume
@@ -718,7 +749,25 @@ export async function callAgentWithHistory(
   })
   // Focus (replaces goal injection) + optional Loop status — wire-only.
   const focusSnippet = buildFocusSnippet(ctx.platform, ctx.channelId, ctx.threadId)
-  const loopSnippet = buildLoopSnippet(ctx.platform, ctx.channelId, ctx.threadId)
+  // Session-scoped compression rate + preferred Loop worker (Usage「压缩率」/ /ctx).
+  // Looked up once so Loop snippet can steer call_agents toward the user's CLI.
+  let compactRate: ReturnType<typeof normalizeCompactRate> | undefined
+  let preferredWorkerAgent: string | undefined
+  try {
+    const sess = await sessionManager.getExistingSession(
+      ctx.platform, ctx.channelId, storageThreadId,
+    )
+    if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
+    preferredWorkerAgent = resolvePreferredWorkerAgent(sess?.agent ?? agent.name, sess?.preferredWorkerAgent)
+    // Skip preferred CLI when probe/quarantine says it cannot run — do not
+    // steer call_agents toward a dead Codex/Claude subscription.
+    if (preferredWorkerAgent && !(await isAgentAvailableCached(preferredWorkerAgent))) {
+      preferredWorkerAgent = undefined
+    }
+  } catch { /* ignore — defaults to auto / no worker hint */ }
+  const loopSnippet = buildLoopSnippet(ctx.platform, ctx.channelId, ctx.threadId, {
+    preferredWorkerAgent,
+  })
   // P0 #3 (Stage 3) — inject the agim skills tier-1 summary so every
   // agent reply sees what skills are configured. Empty when no skills
   // installed; filter(Boolean) below drops it cleanly.
@@ -764,15 +813,6 @@ export async function callAgentWithHistory(
       if (pj > 0) ctx.parentJobId = pj
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }
-
-  // Session-scoped compression rate (Usage「压缩率」/ /ctx). Best-effort lookup.
-  let compactRate: ReturnType<typeof normalizeCompactRate> | undefined
-  try {
-    const sess = await sessionManager.getExistingSession(
-      ctx.platform, ctx.channelId, storageThreadId,
-    )
-    if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
-  } catch { /* ignore — defaults to auto */ }
 
   const generator = agent.sendPrompt(sessionId, wirePrompt, effectiveHistory, {
     model,

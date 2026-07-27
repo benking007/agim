@@ -131,6 +131,13 @@ export interface Session {
   threadId: string
   platform: string
   agent: string
+  /**
+   * Preferred Loop Subagent / worker (usually a CLI like `codex`).
+   * Agim remains the Loop parent; this steers `call_agents` task.agent.
+   * Updated when the user picks a non-Agim sticky agent, or when switching
+   * that CLI → Agim. Cleared by /new.
+   */
+  preferredWorkerAgent?: string
   createdAt: Date
   lastActivity: Date
   ttl: number

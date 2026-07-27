@@ -41,6 +41,8 @@ export type ChatIncoming =
       type: 'history'
       messages: HistoryMessage[]
       agent: string
+      /** Preferred Loop Subagent (CLI) while Agim parents. Empty = none. */
+      preferredWorkerAgent?: string
       planMode?: boolean
       thinkVariant?: string
       sessionModel?: string
@@ -55,7 +57,7 @@ export type ChatIncoming =
   /** Session `/ctx` compression rate. */
   | { type: 'compact-rate'; rate: string }
   | { type: 'agents'; agents: string[] }
-  | { type: 'agent-switched'; agent: string }
+  | { type: 'agent-switched'; agent: string; preferredWorkerAgent?: string }
   | { type: 'chunk'; text: string; runId?: string }
   | { type: 'done'; text: string; runId?: string; messageId?: string }
   | RunStartEvent

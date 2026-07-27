@@ -164,6 +164,25 @@ describe('A2A callAgentByName rejection branches', () => {
     if (!r.ok) expect(r.error).toContain('agent not found')
   })
 
+  it('rejects quarantined / unavailable agent before creating a job', async () => {
+    const { markAgentUnavailable, clearAgentCache } = await import('../../src/core/onboarding.js')
+    clearAgentCache()
+    markAgentUnavailable('claude-code', 'subscription expired', 60_000)
+    const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
+      callerAgent: 'agim',
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toMatch(/not dispatchable|not found|whitelist/i)
+      // When the adapter is registered + whitelisted, probe must refuse.
+      if (r.error.includes('not dispatchable')) {
+        expect(r.error).toContain('claude-code')
+        expect(r.error).toContain('subscription expired')
+      }
+    }
+    clearAgentCache()
+  })
+
   it('normalizes legacy agent id agim/native before lookup', async () => {
     const steps: Array<{ id: string; status: string; preview?: string }> = []
     const r = await a2a.callAgentByName('agim/native', 'hi', fakeCtx(), {

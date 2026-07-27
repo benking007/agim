@@ -40,6 +40,38 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 
 **Focus** 仍是注意力锚点（注入 / on / off），给 L3 提供「本轮使命文案」；**完成判定、拆解、派子代理、验收**属于 Loop，不塞回 Focus。
 
+### 1.1 父编排 Agent（硬门禁）
+
+| 角色 | 可用 Agent | 说明 |
+|------|------------|------|
+| **Loop 父编排** | **仅 Agim Agent**（`agim` / 遗留 `native`） | 需要进程内工具：`call_agents` / `loop_verdict` / 派工·验收门禁 |
+| **子代理 / 工人** | Codex / Claude Code / OpenCode / Agim … | 由父侧 `call_agents` 派工；CLI 本身**不能**当 Loop 父进程 |
+
+**产品模型（已落地）**：Agim = 编排壳；非 Agim CLI = 可派工的干活者。
+
+- Session 字段 `preferredWorkerAgent`：用户选过 Codex 等 CLI 后，再切回 Agim，会记住该 CLI。
+- Loop snippet / Portal「立即行动」会提示 `call_agents` **优先** `agent:"<preferred>"`。
+- Portal 在 sticky=CLI 时提供 **「用 Agim 编排」** 一键切换（不再只挡死）。
+
+Portal 顶部若仍停在 Codex 等 CLI：
+
+- `/loop` 启动 / `confirm` /「立即行动」仍会被拒绝（缺工具 + 易 `spawn E2BIG`）；
+- 点「用 Agim 编排」后即可继续，并由 Agim 派原 CLI 干活。
+
+实现：`src/core/loop-parent-agent.ts` · `session.preferredWorkerAgent` · `/loop` 门禁 · `callAgentWithHistory` · Portal `PortalLoopDock`。
+
+**派工前探测（已落地第一刀）**：
+
+| 层级 | 行为 |
+|------|------|
+| `call_agent` / `call_agents` | 派工前 `isAgentAvailableCached`；不可用则拒绝，**不**计入本轮 `noteLoopDispatch` |
+| 鉴权/订阅失败后 | 结果文案像 login/expired/subscription 时 `markAgentUnavailable`（约 5 分钟隔离），下次不再指派 |
+| preferred worker | 探测失败则不写进 Loop snippet / Act now 提示 |
+
+说明：`--version` 只能证明 CLI 在 PATH；账号过期往往要一次真实失败后才会隔离。后续可补各 CLI 的轻量 `auth status`（若官方提供且零成本）。
+
+**暂缓（以后再议）**：给 Codex MCP 直接挂 `call_agents`/`loop_verdict`、完整 CLI-as-parent、各 CLI 官方 auth-lite 探针。
+
 ---
 
 ## 2. 产品形态（任务团队 Loop）
@@ -525,5 +557,8 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-26 | **Focus→body**：路径 A 已有 Focus 时写入正文并标注「当前 Agent 聚焦内容」，不再默认填入目标 |
 | 2026-07-27 | **Portal UX**：去掉小精灵 Loop 状态气泡；`/loop start <text>` 预填对焦目标；审计筛选点「应用」；长正文默认折叠；composer 输入 memo 性能 |
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
+| 2026-07-27 | **父编排硬门禁**：Loop 父进程仅 Agim Agent；CLI sticky（Codex 等）禁止 start/confirm/Act now，并友好提示（避免 `spawn E2BIG`） |
+| 2026-07-27 | **Agim 编排 + CLI 工人**：`preferredWorkerAgent`；Portal「用 Agim 编排」；Loop snippet / Act now 优先派该 CLI |
+| 2026-07-27 | **派工前探测**：`call_agent(s)` 前 isAvailable；鉴权失败 quarantine；不可用 CLI 不进 preferred 提示 |
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问；同意则向 Agent 发总结指令（`PROJECTS/loops/` 落盘约定），取消则关闭 |
 | 2026-07-25 | **详细报告=Agent 撰写**：移除确定性拼接 / `generate-report` API；累计 `loopJobIds` 仅用于底栏「约 N 个子代理」提示 |

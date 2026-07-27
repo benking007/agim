@@ -11,6 +11,13 @@ import { validateConfig } from '../core/config-schema.js'
 import { updateConfigObject } from '../core/config-store.js'
 import { loadConfig, type Config } from '../core/onboarding.js'
 import { registry } from '../core/registry.js'
+import {
+  DEFAULT_AGENT_PROFILES,
+  agentProfileOverridesFromEffective,
+  mergeAgentProfiles,
+  readAgentProfileOverrides,
+  type AgentProfile,
+} from '../core/agent-profiles.js'
 import { isMasked } from './env-mask.js'
 import { readBody, sendJson, sendError } from './http-utils.js'
 import { requireAdmin, getRequestActor } from './auth.js'
@@ -81,10 +88,17 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       ? config.messengers.filter((name) => !blocked(name))
       : config.messengers
 
+    const profileOverrides = readAgentProfileOverrides(config)
+    const agentProfiles = mergeAgentProfiles(profileOverrides)
+
     sendJson(res, 200, {
       messengers: visibleMessengers,
       agents: config.agents,
       defaultAgent: config.defaultAgent,
+      /** Effective specialty profiles (defaults ⊕ config overrides). */
+      agentProfiles,
+      /** Builtin defaults — Settings「恢复默认」用. */
+      agentProfileDefaults: DEFAULT_AGENT_PROFILES,
       telegram: showGlobalIm && config.telegram && !blocked('telegram')
         ? { botToken: mask(config.telegram.botToken), channelId: config.telegram.channelId }
         : undefined,
@@ -238,6 +252,14 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
         }
         continue
       }
+      if (key === 'agentProfiles' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
+        // SPA sends effective profiles; persist sparse overrides vs builtins.
+        const effective = mergeAgentProfiles(val as Record<string, Partial<AgentProfile>>)
+        merged.agentProfiles = agentProfileOverridesFromEffective(effective)
+        continue
+      }
+      // Read-only companion field from GET — never persist.
+      if (key === 'agentProfileDefaults') continue
       if (typeof val === 'string' && isMasked(val)) {
         continue
       }

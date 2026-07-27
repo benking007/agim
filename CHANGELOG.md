@@ -22,7 +22,23 @@ All notable changes to this project will be documented in this file.
   writes also strip those keys. `agim config acp` prints a retired hint
   (use `config web` / `config agents`).
 
+### Added
+
+- **CLI agent specialty profiles**: builtin capability cards for all
+  non-Agim agents (`claude-code`, `codex`, `copilot`, `opencode`,
+  `antigravity`, `cursor`, `kimi-code`, `qoder`, `pi`, `mimo`). Operators
+  edit them under Settings → Agents; sparse overrides live in
+  `config.agentProfiles`. Agim injects the **full catalog into the system
+  prompt**; `call_agent` / `call_agents` tool descriptions only get a short
+  “prefer specialty fit” hint (not a schema dump). SSOT:
+  `docs/architecture/agent-profiles.md`.
+
 ### Changed
+
+- **Docs: specialty profiles + orchestration status**: expand
+  `agent-profiles.md` (API/UI/injection layers); cross-link Loop /
+  Subagent / roadmap / naming / Portal / SOP; mark roadmap A/B/C
+  (R1–R5+gates) landed and drop stale “C1 shell only” / planning wording.
 
 - **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.
   `common`/`errors` load for the active language only; page namespaces

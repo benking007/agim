@@ -117,11 +117,12 @@ src/plugins/agents/<agent>/adapter.test.ts
 | `src/cli-ui/i18n.ts` | 中英文名称、安装、登录提示 |
 | `src/web-app/src/routes/settings/agents.tsx` | Web 设置页 agent 元数据 |
 | `src/web-app/src/lib/agent-label.ts` | 展示名 |
+| `src/core/agent-profiles.ts` | **非 Agim CLI**：在 `NON_AGIM_AGENT_IDS` + `DEFAULT_AGENT_PROFILES` 补 specialty（summary / strengths / avoid / tags）；见 [`architecture/agent-profiles.md`](./architecture/agent-profiles.md) |
 | `src/core/commands/model.ts` | 若支持 `/models`，添加 `ModelDriver` |
 | `src/cli.ts` | IM 主入口 `onAgentResolved` 的原生 session 续接 |
-| `README` / `docs` | 安装、登录、能力限制 |
+| `README` / `docs` | 安装、登录、能力限制；`docs/agents.md` inventory |
 
-注意：现在 agent 元数据散在后端、CLI、Web 多处。后续建议抽成统一 `agent-catalog`，减少漂移。接入前必须检查已有元数据是否已同步。
+注意：现在 agent 元数据散在后端、CLI、Web 多处。后续建议抽成统一 `agent-catalog`，减少漂移。接入前必须检查已有元数据是否已同步。Agim 本身不进 specialty 列表（编排者）。
 
 ## 4. 会话续接
 

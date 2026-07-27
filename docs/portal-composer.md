@@ -25,7 +25,7 @@
 - **Plan** → 直接发送 `/plan on` 或 `/plan off`
 - **Memo** → 填入 `/memo here`
 - **Focus / 循环任务** → 填入 `/focus ` / `/loop `
-- **子代理** → 填入「请用子代理（call_agent / call_agents）完成：」
+- **子代理** → 填入引导句「请用子代理（call_agent / call_agents）完成：」（脚手架，**不**预选某 CLI；选型靠 Agim + [派工画像](./architecture/agent-profiles.md)）
 - **Remember** → 填入 `/remind `
 - **Models** → 直接发送 `/models`
 
@@ -75,7 +75,7 @@
 
 - **Plan / Memo / Focus** → Plan 切换 · `/memo here` · `/focus `
 - **循环任务** → `/loop `
-- **子代理** → 填入子代理引导句（同上）
+- **子代理** → 填入子代理引导句（同上；真实 `agent=` 由父模型按 specialty catalog 选，见 [`architecture/subagent.md`](./architecture/subagent.md) §5.3 · [`architecture/agent-profiles.md`](./architecture/agent-profiles.md)）
 - **Remember** → `/remind `
 - **Models** → 发送 `/models`
 - **Skills** → 填入 `/` 并唤出 slash 菜单

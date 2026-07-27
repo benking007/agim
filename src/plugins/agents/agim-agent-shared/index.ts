@@ -25,6 +25,7 @@ import { isTodoGateOn, TODO_FIRST_PROMPT } from '../../../core/llm/todo-gate.js'
 import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/prompt-injection-guard.js'
 import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { buildSubagentDelegationGuidance } from '../../../core/subagent-heuristics.js'
+import { getAgentProfilesCatalogForPrompt } from '../../../core/agent-profiles.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
@@ -150,7 +151,9 @@ export function buildSystemPrompt(
     '  - Jobs land in ${AGIM_HOME:-$HOME/.agim}/bgjobs (all agents). Follow up: status / tail / list --running on the same wrapper expr.',
     '  - Focus (/focus, focus_set) keeps attention across turns; Loop (/loop) is L3 mission closed-loop (≈ Claude /goal, NOT Claude time-based /loop). ALIGNING → PLAN/DISPATCH → VERIFY/REFLECT. Do not call_agent(s)/loop_verdict while ALIGNING. After confirm: each round MUST call_agents before continue/revise; loop_verdict with met/summary/nextDirection (met=true → stop; independent cheap evaluator may veto). Neither is a background process (use bgjob for that).',
     '',
-    buildSubagentDelegationGuidance(),
+    buildSubagentDelegationGuidance({
+      agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
+    }),
   )
   return lines.join('\n')
 }

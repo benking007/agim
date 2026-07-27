@@ -241,6 +241,7 @@ type LoopRun = {
 |------|------|
 | **Focus** | 使命文案与注入；Loop **不**替代 Focus；完成门闸在 Loop |
 | **Subagent** | Loop 的默认劳动力；L3 负责「何时派、派几个、如何验收」 |
+| **CLI sticky 父** | Codex / Claude 等可通过 MCP `call_agent(s)` **派** Subagent；**不能**当 Loop 父（无 `loop_verdict` / Focus 工具）。要跑 `/loop` → sticky 到 Agim |
 | **Agent Loop (L2)** | 每个子代理内部仍是 L2；L3 不重写 L2 |
 | **Heartbeat** | 墙钟「有没有事」；**不是** Loop。定时触发可 *启动* 一个 Loop，但不共用状态机 |
 | **goal（废弃）** | 勿复活；Loop 的 objective ≠ 旧 `/goal` 完成 CAS |

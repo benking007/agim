@@ -203,19 +203,25 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 - [x] 审批、取消、超时：单个子失败不必然杀死兄弟（`allSettled` + 父汇总）。
 - [x] audit / job 树完整；单测覆盖并行预算与门控。
 
-#### B5. 非本阶段
+#### B5. CLI 父也可派 Subagent（已开刀）
 
-观察者状态机、同 thread 多主 agent、Claude MCP sidecar 暴露 `call_agents`（Native 优先）。
+- [x] MCP sidecar（Codex / Claude / … 共用）暴露 `call_agents`；PI extension 同步  
+- [x] 复用 `AGIM_SUBAGENT_PARALLEL*` + `CALL_AGENTS_TASKS_HARD_MAX`；allSettled join  
+- [x] 产品分界：**CLI 可派工，不可当 Loop 父**（`loop_verdict` / `focus_*` 仍仅 Agim）
+
+#### B6. 非本阶段
+
+观察者状态机、同 thread 多主 agent、CLI 当完整 Loop 父、sidecar 注入完整 specialty catalog。
 
 ---
 
 ### Phase C — Focus + Loop Engineering（L3）
 
 > 目标：**Focus** 替换 `/goal`；**Loop** = 图中 L3「自动调度层」——目标→拆解→`call_agents`→验收→（未达）反思再来→退出。  
-> **概念 SSOT**：[`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)（已按三层图重对齐）。  
+> **概念 SSOT**：[`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)。  
 > 依赖：Phase A + B（子代理 fan-out）。  
 > 历史名：Long-engineering / EngineeringRun → 用户面 **Loop**。  
-> **注意**：现行 `/loop` 仅为 **C1 占位壳**，≠ 完整 L3。
+> **父编排者 = Agim Agent**；sticky CLI（Codex 等）只做 Subagent 工人或「可派工的 sticky 父」，**不**跑 `/loop` 状态机。
 
 #### C0. 文档
 
@@ -310,6 +316,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 2026-07-24 | A1 运行时 | #223 | `subagent.ts` + call_agent role/backend/isolate |
 | 2026-07-24 | A2–A3 | #223 | 多 Subagent UI / 消息流卡片 / Stop / 启发式；`phase-a-acceptance` 27/27 |
 | 2026-07-24 | B | #228 | `call_agents` 并行 fan-out；验收 13/13 |
+| 2026-07-27 | B5 CLI 父 | （本 PR） | sidecar + PI `call_agents`；Loop 仍 Agim-only |
 | 2026-07-24 | C0 文档 | （本 PR） | `focus.md` + `loop-engineering.md`；废弃 goal；无运行时 |
 
 ---

@@ -338,8 +338,8 @@ Memo 是用户显式记事，与 Memory 不同。
 | Reminder | `create_reminder` / `list_reminders` / `cancel_reminder` / `snooze_reminder` | 提醒创建、查询、取消、稍后提醒 |
 | Ask user | `ask_user` | Agent 能通过 IM 结构化询问用户 |
 | Push | `push_message` | Agent 能主动向当前 IM thread 发消息 |
-| A2A | `call_agent` | Agent 能调用其他 agent，带 parent/depth |
-| Focus / Loop | `focus_*` / `loop_verdict` | 线程聚焦与工程闭环（旧 Goal 工具已退役） |
+| A2A / Subagent | `call_agent` / `call_agents` | CLI 父可派 Subagent（单路/批量 fan-out）；bus 带 parent/depth |
+| Focus / Loop | `focus_*` / `loop_verdict` | **仅 Agim Agent**（CLI sidecar **不**暴露；`/loop` 请 sticky 到 Agim） |
 | Location | `request_location_capture` 等 | 地点记忆闭环 |
 
 注意命名：CLI MCP server 里工具名可能是 `read_skill`，在日志、审批和 native 工具面上常显示为 `mcp__agim__read_skill`。验收时看能力，不只看表面名称。

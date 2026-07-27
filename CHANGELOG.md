@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **CLI Subagent fan-out (`call_agents`)**: shared MCP sidecar (Codex /
+  Claude Code / …) and PI extension now expose `mcp__agim__call_agents`
+  alongside existing `call_agent`. Parallel join reuses
+  `AGIM_SUBAGENT_PARALLEL*` + hard max. **Loop Engineering stays
+  Agim-only** (`loop_verdict` / Focus tools are not on the sidecar).
+
 ### Removed
 
 - **Goal residual UI/tooling retired**: removed SPA `/tasks/goals`, REST

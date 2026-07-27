@@ -22,6 +22,16 @@ All notable changes to this project will be documented in this file.
   writes also strip those keys. `agim config acp` prints a retired hint
   (use `config web` / `config agents`).
 
+### Added
+
+- **CLI agent specialty profiles**: builtin capability cards for all
+  non-Agim agents (`claude-code`, `codex`, `copilot`, `opencode`,
+  `antigravity`, `cursor`, `kimi-code`, `qoder`, `pi`, `mimo`). Operators
+  edit them under Settings → Agents; sparse overrides live in
+  `config.agentProfiles`. Agim injects the catalog into system prompt /
+  `call_agent(s)` so Loop can assign work by fit. SSOT:
+  `docs/architecture/agent-profiles.md`.
+
 ### Changed
 
 - **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.

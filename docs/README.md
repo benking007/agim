@@ -21,6 +21,7 @@
 - [`architecture/current.md`](./architecture/current.md)：**现行**组合根 / 域模块地图、数据流、文件预算与扩展配方（架构首页）
 - [`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md)：桥接 + Agim Agent 产品立场（旧名 `architecture-bridge-and-native.md` 仅作跳转）
 - [`architecture/subagent.md`](./architecture/subagent.md)：**现行设计** — Subagent 概念、与 A2A/handoff 边界、同族 role/backend、拆解原则、**子代理代审免卡**
+- [`architecture/agent-profiles.md`](./architecture/agent-profiles.md)：**现行设计** — 非 Agim CLI 派工能力画像（Settings 可维护；注入 call_agents）
 - [`architecture/focus.md`](./architecture/focus.md)：**现行设计** — Focus：聚焦注入 / on / off（废弃 `/goal`）
 - [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；父侧 `ask_user`；结案浮窗；门禁仅 depth=0；Portal 底栏 docks；Tasks Loop 审计）
 - [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点（UI/工具链已退役）

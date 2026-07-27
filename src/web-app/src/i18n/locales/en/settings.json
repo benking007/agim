@@ -104,6 +104,17 @@
     "discard": "Discard",
     "toast": {
       "saved": "Saved"
+    },
+    "profiles": {
+      "title": "Dispatch specialty profiles",
+      "subtitle": "Tell Agim what each CLI agent is good at so Loop / call_agents can assign work. Agim Agent is the orchestrator and is omitted. Overrides builtin defaults; only changed profiles are persisted.",
+      "summary": "One-line specialty",
+      "strengths": "Strengths (one per line)",
+      "avoid": "Avoid assigning (one per line)",
+      "tags": "Tags (comma-separated)",
+      "reset": "Reset to default",
+      "customized": "Customized",
+      "defaultBadge": "Default"
     }
   },
   "policy": {

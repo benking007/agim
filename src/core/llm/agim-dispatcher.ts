@@ -52,6 +52,7 @@ import {
   buildCallAgentToolDescription,
   buildCallAgentsToolDescription,
 } from '../subagent-heuristics.js'
+import { getAgentProfilesCatalogForPrompt } from '../agent-profiles.js'
 import {
   CALL_AGENTS_TASKS_HARD_MAX,
   getCallAgentMaxPerTurn,
@@ -370,6 +371,7 @@ export function getAgimTools(): ToolDef[] {
       description: buildCallAgentToolDescription({
         backends: listProviders().map((p) => p.name),
         roles: Object.keys(describeRegistry().roles),
+        agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
       }),
       parameters: {
         type: 'object',
@@ -419,6 +421,7 @@ export function getAgimTools(): ToolDef[] {
       description: buildCallAgentsToolDescription({
         backends: listProviders().map((p) => p.name),
         roles: Object.keys(describeRegistry().roles),
+        agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
       }),
       parameters: {
         type: 'object',

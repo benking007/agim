@@ -632,5 +632,15 @@ export interface Config {
   messengers: string[]
   agents: string[]
   defaultAgent: string
+  /**
+   * Sparse overrides of builtin CLI specialty profiles
+   * (`src/core/agent-profiles.ts`). Agim Agent is never profiled here.
+   */
+  agentProfiles?: Record<string, {
+    summary?: string
+    strengths?: string[]
+    avoid?: string[]
+    tags?: string[]
+  }>
   [key: string]: unknown
 }

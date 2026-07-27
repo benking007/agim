@@ -242,6 +242,16 @@ export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
    *  the built-in agim MCP server's tools (mcp__agim__*) are available
    *  to the native agent. */
   mcpServers: z.array(mcpServerSchema).optional(),
+  /**
+   * Specialty profiles for non-Agim CLI agents (call_agents routing).
+   * Sparse overrides of builtin defaults — see `src/core/agent-profiles.ts`.
+   */
+  agentProfiles: z.record(z.string(), z.object({
+    summary: z.string().max(500).optional(),
+    strengths: z.array(z.string().max(200)).max(20).optional(),
+    avoid: z.array(z.string().max(200)).max(20).optional(),
+    tags: z.array(z.string().max(64)).max(20).optional(),
+  }).passthrough()).optional(),
 }).passthrough().superRefine((cfg, ctx) => {
   const enabled = new Set(cfg.messengers ?? [])
 

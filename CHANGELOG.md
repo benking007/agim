@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Focus no longer hard-pulls via goal-critic**: on-track critic now
+  treats the **current-turn user ask** as the only hard objective.
+  Active Focus is background context (and may still enable `goal-only`
+  mode). Concrete asks (e.g.「折叠侧栏」while Focus=投资分析) are never
+  hard-stopped just for not advancing Focus; soft-steer at most.
+  Continuations like「继续」still anchor on Focus. Injection copy and
+  docs aligned (`focus.md` / naming).
+
 ### Added
 
 - **CLI Subagent fan-out (`call_agents`)**: shared MCP sidecar (Codex /

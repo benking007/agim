@@ -63,7 +63,12 @@ import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goa
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
-import { resolveCriticMode, runGoalCritic } from '../../../core/llm/goal-critic.js'
+import {
+  isConcreteTurnAsk,
+  resolveCriticMode,
+  runGoalCritic,
+  shouldHardStopOnOffTrack,
+} from '../../../core/llm/goal-critic.js'
 import {
   resolveDefaultThinking,
   mapVariantToThinkingLevel,
@@ -468,7 +473,10 @@ function composeOffTrackRecap(reason: string, redirect?: string): string {
     `原因：${reason.slice(0, 300)}`,
   ]
   if (redirect?.trim()) lines.push(`建议：${redirect.trim().slice(0, 300)}`)
-  lines.push('', '你可以回「继续」按建议调整，或 /focus show 核对当前 Focus。')
+  lines.push(
+    '',
+    '你可以回「继续」按建议调整。Focus 只是背景；若本轮本在做别的事，可直接重述该请求，不必先改 Focus。',
+  )
   return lines.join('\n')
 }
 
@@ -1330,18 +1338,25 @@ export class NativeAgentAdapter implements AgentAdapter {
               offTrackDetail = verdict.redirect
                 ? `${verdict.reason} || redirect: ${verdict.redirect}`
                 : verdict.reason
+              // Concrete current-turn asks outrank Focus. Soft-steer at most;
+              // never hard-stop just to yank the model back to Focus (that is
+              // Loop's job). Continuations / empty prompts may still hard-stop.
+              const allowHardStop = shouldHardStopOnOffTrack({ prompt })
               if (!offTrackSoftSteerUsed) {
                 offTrackSoftSteerUsed = true
                 ephemeralSteer = [
-                  '[loop steer — goal critic]',
-                  `Off-track: ${verdict.reason.slice(0, 400)}`,
+                  '[loop steer — on-track critic]',
+                  `Off-track vs current ask: ${verdict.reason.slice(0, 400)}`,
                   verdict.redirect ? `Redirect: ${verdict.redirect.slice(0, 400)}` : '',
-                  'Resume toward the active goal; do not continue the previous digression.',
+                  isConcreteTurnAsk(prompt)
+                    ? 'Serve the user\'s current-turn ask first. Focus is background context only — do not abandon this ask to chase Focus.'
+                    : 'Resume toward the active Focus; do not continue the previous digression.',
                 ].filter(Boolean).join('\n')
-              } else {
+              } else if (allowHardStop) {
                 stopReason = 'off_track'
                 requestLoopStop()
               }
+              // else: already soft-steered once for a concrete ask — keep going
             }
           }
         }

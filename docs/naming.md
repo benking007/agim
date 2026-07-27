@@ -41,7 +41,7 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | **Agent Loop（L2）** | Single-agent Observe→Think→Tools→Results while not done | pi-agent / native tool loop — **not** `/loop` |
 | **≠ Claude Code `/loop`** | Claude 博客里的 `/loop` 是**定时再跑 prompt**（time-based）；Agim `/loop` ≈ 他们的 **`/goal` 级使命闭环**。定时触发属 Heartbeat/R6，不占用 `/loop` | 见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §对照 |
 | **goal**（retired） | Former sustained-objective slash/tools — product surface removed; storage reused by Focus | see [`architecture/goal-residue.md`](./architecture/goal-residue.md) |
-| **goal-critic** | In-process cheap on-track check — **not** a Subagent / not Loop observer; product copy may say focus-critic | `AGIM_NATIVE_CRITIC_*` |
+| **goal-critic**（on-track critic） | In-process cheap check that tools still serve the **current-turn ask**. Focus may enable it (`goal-only`) but is **background only** — must not hard-pull back to Focus. **Not** Loop | `AGIM_NATIVE_CRITIC_*` |
 | **ACP**（retired） | Former inbound `:9090` agent endpoint + outbound remote agents | removed; SSRF helpers in `src/core/url-guard.ts` |
 | **Heartbeat** | Wall-clock “anything to do?” — must **not** share LoopRun paths | `AGIM_HEARTBEAT_*` |
 | **Handoff / sticky switch** | User conversation control moves to another backend (`/cc`, `/oc`, …) — **not** a Subagent | session sticky |

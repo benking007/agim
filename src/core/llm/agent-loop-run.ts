@@ -5,7 +5,7 @@
 
 import { logger as rootLogger } from '../logger.js'
 import type { ChatResult, LlmMessage } from './provider-base.js'
-import { runGoalCritic, resolveCriticMode } from './goal-critic.js'
+import { runGoalCritic, resolveCriticMode, shouldHardStopOnOffTrack } from './goal-critic.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from './hallucination-detector.js'
 import { validateAgainstSchema, formatValidationErrors } from './schema-validate.js'
 import type { AgentLoopInput, AgentLoopResult, ToolCallReport } from './agent-loop-types.js'
@@ -698,28 +698,39 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         modelUsed: verdict.modelUsed,
       })
       if (!verdict.onTrack) {
-        log.warn({
-          event: 'agent-loop.off_track_detected',
-          iter,
-          reason: verdict.reason,
-          redirect: verdict.redirect,
-        }, `goal-critic flagged off-track at iter ${iter}: ${verdict.reason}`)
-        signal.cleanup()
-        return {
-          // v1.2.117 — preserve accumulated partials.
-          text: lengthRecoveryPrefix,
-          iterations: iter + 1,
-          toolCalls,
-          usage: usageAcc,
-          finishReason: 'off_track',
-          // Smuggle the critic's reason + redirect into `error` so
-          // the native adapter can surface it verbatim in the recap
-          // without re-importing goal-critic. Yes, abusing `error`
-          // for non-error info is mildly ugly; alternative is adding
-          // a new field to AgentLoopResult — overkill for one knob.
-          error: verdict.redirect
-            ? `${verdict.reason} || redirect: ${verdict.redirect}`
-            : verdict.reason,
+        // Concrete current-turn asks outrank Focus — do not hard-stop the
+        // loop merely because tools are not advancing Focus. (Soft steer
+        // lives in the Agim Agent adapter; this path has no steer channel.)
+        if (!shouldHardStopOnOffTrack({ prompt: input.criticAnchor.prompt })) {
+          log.info({
+            event: 'agent-loop.off_track_ignored_for_concrete_ask',
+            iter,
+            reason: verdict.reason,
+          }, `goal-critic off-track ignored (current ask wins over Focus) at iter ${iter}`)
+        } else {
+          log.warn({
+            event: 'agent-loop.off_track_detected',
+            iter,
+            reason: verdict.reason,
+            redirect: verdict.redirect,
+          }, `goal-critic flagged off-track at iter ${iter}: ${verdict.reason}`)
+          signal.cleanup()
+          return {
+            // v1.2.117 — preserve accumulated partials.
+            text: lengthRecoveryPrefix,
+            iterations: iter + 1,
+            toolCalls,
+            usage: usageAcc,
+            finishReason: 'off_track',
+            // Smuggle the critic's reason + redirect into `error` so
+            // the native adapter can surface it verbatim in the recap
+            // without re-importing goal-critic. Yes, abusing `error`
+            // for non-error info is mildly ugly; alternative is adding
+            // a new field to AgentLoopResult — overkill for one knob.
+            error: verdict.redirect
+              ? `${verdict.reason} || redirect: ${verdict.redirect}`
+              : verdict.reason,
+          }
         }
       }
     }

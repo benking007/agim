@@ -70,8 +70,10 @@ Wire-only（不写进 session.messages 持久副本），例如：
 [agim context — focus ON for this thread]
 Title: …
 Body: …
-Stay on this focus unless the user explicitly changes topic or turns focus off.
+Focus is background context only. The user's current-turn ask always wins; …
 ```
+
+**与目标巡检（goal-critic）**：有 Focus 时默认会启用巡检（`AGIM_NATIVE_CRITIC` 默认 `goal-only`），但巡检的**硬目标是本轮用户 prompt**，Focus 只作背景。用户这轮在干别的事（未开 `/loop`）时，**不得**因未推进 Focus 而硬停并拉回 Focus。闭环硬拉回属于 Loop。
 
 边界：title/body 截断策略可复用今日 goal 的预算（body store cap / snippet cap），实施时从 `goals.ts` 迁出或共用 helper。
 
@@ -157,7 +159,7 @@ Loop 本体定义见 [`loop-engineering.md`](./loop-engineering.md)（L3，不�
 | `mcp__agim__long_task` | 已退役；使用 `mcp__agim__focus_set` |
 | `mcp__agim__complete_goal` | 已退役；用 Loop / `loop_verdict` 做闭环 |
 | `docs/goals.md` | 顶部加废弃声明，指向本文 |
-| goal-critic 名字 | 可暂留代码名；产品文案改为「focus-critic / on-track critic」，避免再强化 goal |
+| goal-critic 名字 | 可暂留代码名；产品文案为 on-track critic；**不得**把 Focus 当硬任务门闸 |
 
 兼容期已结束；Focus/Loop 是现行产品面。
 

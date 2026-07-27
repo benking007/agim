@@ -175,7 +175,9 @@ export function buildFocusSnippet(platform: string, channelId: string, threadId:
     lines.push(truncated)
   }
   lines.push(
-    'Stay on this focus unless the user explicitly changes topic or turns focus off.',
+    'Focus is background context only. The user\'s current-turn ask always wins; '
+    + 'do not refuse or abandon that ask to chase Focus. '
+    + 'Prefer Focus when the user continues without a new concrete ask, or turns Focus off to drop it.',
   )
   lines.push('')
   return lines.join('\n')

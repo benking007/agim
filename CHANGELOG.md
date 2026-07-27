@@ -11,8 +11,8 @@ All notable changes to this project will be documented in this file.
   Active Focus is background context (and may still enable `goal-only`
   mode). Concrete asks (e.g.「折叠侧栏」while Focus=投资分析) are never
   hard-stopped just for not advancing Focus; soft-steer at most.
-  Continuations like「继续」still anchor on Focus. Injection copy and
-  docs aligned (`focus.md` / naming).
+  Continuations like「继续」still anchor on Focus. Docs: `focus.md`
+  §2.3.1 + desktop-regression + naming.
 
 ### Added
 

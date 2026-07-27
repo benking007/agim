@@ -202,3 +202,4 @@ Loop 本体定义见 [`loop-engineering.md`](./loop-engineering.md)（L3，不�
 | 日期 | 变更 |
 |---|---|
 | 2026-07-24 | 初稿：Focus 契约；与 Loop 边界；废弃 Goal |
+| 2026-07-27 | §2.3.1：on-track critic 以本轮请求为硬目标；禁止因 Focus 硬拉回 |

@@ -33,7 +33,8 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | Name | Meaning | Typical knobs |
 |------|---------|---------------|
 | **A2A** | Transport/guardrails for calling **another registered** `AgentAdapter` (`callAgentByName` / `call_agent`) | `AGIM_A2A_*` |
-| **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` / `mcp__agim__call_agents` (`role`/`backend`/`isolate`); specialty via [`agent-profiles`](./architecture/agent-profiles.md); [`architecture/subagent.md`](./architecture/subagent.md) |
+| **Subagent** | Nested worker while the **parent keeps** user-facing control (agents-as-tools). Same-family (`agim` + role/backend/isolate) **or** cross-adapter via A2A | `mcp__agim__call_agent` / `mcp__agim__call_agents` (`role`/`backend`/`isolate`); [`architecture/subagent.md`](./architecture/subagent.md) |
+| **Agent specialty profiles**（派工能力画像） | Per **non-Agim** CLI: summary / strengths / avoid / tags — tells Agim which Subagent fits. Agim itself is omitted (orchestrator) | `config.agentProfiles` (sparse); Settings → Agents; SSOT [`architecture/agent-profiles.md`](./architecture/agent-profiles.md) |
 | **Subagent parallel fan-out** | One parent turn joins multiple SubagentRuns (batch tool) | `AGIM_SUBAGENT_PARALLEL` (default on), `AGIM_SUBAGENT_PARALLEL_MAX` (default 3), `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default 3) |
 | **Focus** | Per-thread attention anchor: auto-inject when **on**, stop inject when **off**, optional clear | `/focus`; SSOT [`architecture/focus.md`](./architecture/focus.md) |
 <<<<<<< HEAD

@@ -1,11 +1,11 @@
 # Subagent 设计（概念与架构）
 
-> 状态：**现行设计（planning）** · 2026-07-24  
-> 实施阶段见 [`orchestration-roadmap.md`](./orchestration-roadmap.md)（Phase A 起）。  
-> 关联：[`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
+> 状态：**现行设计（living）** · 2026-07-27  
+> 实施阶段见 [`orchestration-roadmap.md`](./orchestration-roadmap.md)（Phase A/B 已齐；C=Focus+Loop R1–R5+门禁已齐）。  
+> 关联：[`../naming.md`](../naming.md) · [`agent-profiles.md`](./agent-profiles.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
 
-本文先钉死 **Subagent 是什么 / 不是什么**，以及它与 **A2A、多 Agent、sticky 切换** 的关系。  
-实现之前以本文为准；落地后若有偏差，回写「落地差异」一节。
+本文钉死 **Subagent 是什么 / 不是什么**，以及它与 **A2A、多 Agent、sticky 切换** 的关系。  
+落地偏差见 §10「落地差异」。
 
 ---
 
@@ -211,10 +211,12 @@
 这个子问题是否会污染主上下文 / 很长 / 可独立？
   否 → 自己用工具做完
   是 → 写自包含 brief
-        → 需要别家 CLI 能力？ → adapter 目标（A2A）
+        → 需要别家 CLI 能力？ → 查 specialty catalog（agent-profiles）选 adapter（A2A）
         → 只需隔离上下文或换便宜模型？ → 同族 agim + role/backend
-        → 多路独立？ →（Phase B）一次派出多个
+        → 多路独立？ → call_agents 一次派出多个
 ```
+
+跨 adapter 选型目录见 [`agent-profiles.md`](./agent-profiles.md)（全文在 Agim system；工具 description 仅短提示）。
 
 ### 5.4 评估（后续）
 
@@ -330,6 +332,7 @@
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
 | 2026-07-24 | **loop_verdict 墙钟**：同样 `timeoutMs:0`（嵌套独立验收可 >60s）；mutation 成功后不以假超时覆盖（见 Loop §6.2） | #243 |
 | 2026-07-24 | **子代理产出契约**：最终消息须含关键发现；落盘须绝对路径；禁空「见上文」 | — |
+| 2026-07-27 | **派工能力画像**：非 Agim CLI specialty catalog；Settings 可维护；system 全文 + `call_agent(s)` 短提示 | #272 |
 
 ### 落地差异（相对 §4.3）
 
@@ -346,6 +349,5 @@
 
 > **Subagent 是「父还在开会对用户负责」时的隔离子工人。**  
 > 同 Agim 换 pro/flash、或派 Claude/Codex，都是 Subagent；A2A 是跨 adapter 的管子。  
-> 子代理工具代审免卡；提问与 Loop 验收只归父侧。  
-> 难关在拆解与 brief，不在再写一个调度中台。  
-> 先打通同族 spawn + 统一观测，再并行，再 Focus + Loop（见 [`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)）。
+> 跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；子代理工具代审免卡；提问与 Loop 验收只归父侧。  
+> 难关在拆解与 brief，不在再写一个调度中台。

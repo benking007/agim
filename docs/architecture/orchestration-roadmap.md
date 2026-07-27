@@ -1,13 +1,12 @@
 # Subagent / 编排演进计划（Orchestration Roadmap）
 
-> 状态：**现行计划（living）** · 2026-07-24  
+> 状态：**现行计划（living）** · 2026-07-27  
 > 立场：在现有桥接架构上**加薄编排层**，不推倒重来。  
-> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`focus.md`](./focus.md)（Focus）· [`loop-engineering.md`](./loop-engineering.md)（Loop / Phase C）  
+> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`agent-profiles.md`](./agent-profiles.md)（派工画像）· [`focus.md`](./focus.md)（Focus）· [`loop-engineering.md`](./loop-engineering.md)（Loop / Phase C）  
 > 关联：[`current.md`](./current.md) · [`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../goals.md`](../goals.md)（deprecated）· [`../session-model.md`](../session-model.md)
 
-本文是**实施计划**；Subagent / A2A / handoff 以 [`subagent.md`](./subagent.md) 为准；  
-**Focus 以 [`focus.md`](./focus.md) 为准；Loop（Phase C）以 [`loop-engineering.md`](./loop-engineering.md) 为准（文档先行，未拍板前不写运行时）**。  
-**实施顺序固定为 Phase A → B → C0(Focus) → C1+(Loop)**；每阶段单独开 PR，合入后再开下一阶段。
+本文是**实施计划**与阶段勾选；概念以各 SSOT 为准。  
+**Phase A / B / C（R1–R5 + 门禁）已落地；R6（Heartbeat 触发 Loop）暂缓。**
 
 ---
 
@@ -40,24 +39,26 @@
 
 ## 2. 现状底座与缺口
 
-### 2.1 已具备
+> **历史快照（Phase A 开刀前）**。下列「缺口」在 A/B/C 落地后大多已闭合；现行能力以各 SSOT + §4 勾选为准。保留本节便于对照演进动机。
+
+### 2.1 已具备（开刀前底座）
 
 | 能力 | 落点 | 说明 |
 |---|---|---|
-| 跨 adapter 委派 | `a2a.ts` `callAgentByName` | job 父子 / depth / artifacts |
-| 工具入口 | `mcp__agim__call_agent` | 仅 `agent`+`prompt`；默认禁自调用 |
-| llm roles | `llmRoles.cheap` 等 | flash 等已可配，**尚未**接到 subagent spawn |
-| 实时步骤 | WS `activity-step` | Portal 单槽「Waiting for subagent」 |
-| 委派 soft SOP | Agim Agent prompt | verification subagent；缺缩放启发式 |
+| 跨 adapter 委派 | `a2a.ts` `callAgentByName` | job 父子 / timeout / artifacts |
+| 工具入口 | `mcp__agim__call_agent` | 当时仅 `agent`+`prompt`；默认禁自调用 |
+| llm roles | `llmRoles.cheap` 等 | flash 等已可配 |
+| 实时步骤 | WS `activity-step` | 当时 Portal 单槽 Waiting |
+| 委派 soft SOP | Agim Agent prompt | verification subagent |
 
-### 2.2 关键缺口（相对 [`subagent.md`](./subagent.md)）
+### 2.2 当时关键缺口（现已关闭）
 
-1. **同族 spawn 被 self-call 禁令挡住** → 无法「agim(pro) → agim(flash/pro 隔离子循环）」。  
-2. 工具无 `role` / `backend` 参数。  
-3. 多 Subagent UI / 与 job 树对齐不足。  
-4. 父侧「何时拆、如何写 brief」指引弱。  
-5. 同 turn 并行未开（Phase B）。  
-6. Focus / Loop 未建（Phase C）。
+1. ~~同族 spawn 被 self-call 禁令挡住~~ → **A1** 已开 `role`/`backend`/`isolate`。  
+2. ~~工具无 `role` / `backend`~~ → **A1**。  
+3. ~~多 Subagent UI 不足~~ → **A2**。  
+4. ~~拆解指引弱~~ → **A3** + **agent-profiles**（跨 CLI fit）。  
+5. ~~同 turn 并行未开~~ → **B** `call_agents`。  
+6. ~~Focus / Loop 未建~~ → **C** R1–R5 + 门禁；**R6** 仍暂缓。
 
 ---
 
@@ -215,13 +216,14 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 > **概念 SSOT**：[`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)（已按三层图重对齐）。  
 > 依赖：Phase A + B（子代理 fan-out）。  
 > 历史名：Long-engineering / EngineeringRun → 用户面 **Loop**。  
-> **注意**：现行 `/loop` 仅为 **C1 占位壳**，≠ 完整 L3。
+> **现行**：R1–R5 + 派工/验收硬门禁已构成可演示 L3（≠ 早期 C1 占位壳）。详见 [`loop-engineering.md`](./loop-engineering.md)。
 
 #### C0. 文档
 
 - [x] [`focus.md`](./focus.md) — Focus 契约；废弃 goal  
 - [x] [`loop-engineering.md`](./loop-engineering.md) — L3 定义 / 状态机 / 与 L2 边界（2026-07-24 重写）  
 - [x] naming / README / current / goals / roadmap 交叉链接  
+- [x] [`agent-profiles.md`](./agent-profiles.md) — 跨 CLI 派工 specialty catalog（#272）
 
 #### 落地节奏（详见 loop-engineering §7）
 
@@ -235,13 +237,14 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | R5 | Portal 对焦/立即行动/结案底栏 docks + 结束总结 — **已落地**（#236 → #242；其后去掉小精灵 Loop 气泡，见 #268/#269） |
 | + | Claude 文吸收 A/B/C：对照表、cheap 独立验收、Loop 用量 — **已落地** |
 | 加固 | 派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` 超时修复 — **已落地**（#238–#243） |
+| 派工画像 | 非 Agim CLI specialty catalog → Agim system + `call_agent(s)` 短提示 — **已落地**（#272） |
 | R6 | 可选触发器（仅 start，仍走对焦）— **暂缓** |
 
-**R1–R5 + A/B/C + 加固后暂停；R6 另开刀。** 细节 SSOT：[`loop-engineering.md`](./loop-engineering.md) §6–§7。
+**R1–R5 + A/B/C + 加固 + 派工画像后暂停；R6 另开刀。** 细节 SSOT：[`loop-engineering.md`](./loop-engineering.md) §6–§7 · [`agent-profiles.md`](./agent-profiles.md)。
 
 #### 非本阶段
 
-多执行者 DAG、自动合并 PR、跨机器编排；见 loop-engineering §8。
+多执行者 DAG、自动合并 PR、跨机器编排；结构化 profile scorer；见 loop-engineering §8 · agent-profiles §5。
 
 ---
 
@@ -311,11 +314,13 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 2026-07-24 | A2–A3 | #223 | 多 Subagent UI / 消息流卡片 / Stop / 启发式；`phase-a-acceptance` 27/27 |
 | 2026-07-24 | B | #228 | `call_agents` 并行 fan-out；验收 13/13 |
 | 2026-07-24 | C0 文档 | （本 PR） | `focus.md` + `loop-engineering.md`；废弃 goal；无运行时 |
+| 2026-07-24… | C R1–R5 + 加固 | #232–#252 等 | ALIGNING→结案；派工/验收门禁；Portal 底栏；见 loop-engineering §7 |
+| 2026-07-27 | 派工画像 | #272 | `agent-profiles`；Settings；system catalog + tool 短提示 |
 
 ---
 
 ## 9. TL;DR
 
 > **Subagent 先于「多 Agent」：同族 pro/flash 与跨 adapter 都是子工人；A2A 是跨 adapter 的管子。**  
-> **先打通同族 + 看得见（A），再并行（B），再 Focus + Loop Engineering L3（C：壳已有 → C2 调度/验收）。**  
-> 拆解靠 brief/启发式 + 硬预算，不靠第二套中台。
+> **A / B / C（R1–R5+门禁）已齐；跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；R6 触发暂缓。**  
+> 拆解靠 brief/启发式 + 硬预算 + specialty catalog，不靠第二套中台。

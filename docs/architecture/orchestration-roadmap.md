@@ -232,7 +232,7 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | R2 | Mission SSOT 持久化 — **已落地**（#233） |
 | R3 | PLAN + DISPATCH — **已落地**（#234） |
 | R4 | VERIFY + REFLECT — **已落地**（#235） |
-| R5 | Portal 对焦/立即行动底栏 + 小精灵 Loop 状态 + 结束总结 — **已落地**（#236 → #242） |
+| R5 | Portal 对焦/立即行动/结案底栏 docks + 结束总结 — **已落地**（#236 → #242；其后去掉小精灵 Loop 气泡，见 #268/#269） |
 | + | Claude 文吸收 A/B/C：对照表、cheap 独立验收、Loop 用量 — **已落地** |
 | 加固 | 派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` 超时修复 — **已落地**（#238–#243） |
 | R6 | 可选触发器（仅 start，仍走对焦）— **暂缓** |

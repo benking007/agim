@@ -84,12 +84,16 @@ node tools/phase-a-acceptance.mjs
 
 | 标记 / 场景 | 期望 |
 |---|---|
-| `/loop`（空）或 `/loop 目标文案`（无退出） | Portal **待对焦**底栏：目标 + 退出条件 + **正文（可选）**；小精灵「待对焦」；填齐两硬字段 →「确定并开始」后进入待派工；有正文时 slash 含 `；正文：…`，`/loop status` / Agent snippet 可见 |
+| `/loop`（空）或 `/loop 目标文案`（无退出） | Portal **待对焦**底栏：目标 + 退出条件 + **正文（可选）**；**无**小精灵 Loop 状态气泡；填齐两硬字段 →「确定并开始」后进入待派工；有正文时 slash 含 `；正文：…`，`/loop status` / Agent snippet 可见 |
 | 已有 Focus 时 `/loop` | **目标不预填 Focus**；正文预填并带 `【当前 Agent 聚焦内容】` 标注；用户仍须填写目标与退出条件 |
-| `LOOP_SELF_RESEARCH_TEST`（已确认使命） | 父侧不可自行调研；须 `call_agents`；小精灵/底栏「待派工」→「立即行动」可推进 |
+| 已有 Focus 时 `/loop start <目标文案>` | **目标预填**该文案；正文仍为 Focus 附录；退出条件仍须手填；小精灵**无** Loop 琥珀色气泡 |
+| 对焦正文很长（>240 字） | 「正文」默认折叠，显示「展开 · N 字」；展开后可编辑 |
+| 长 Context 下主输入 | 对焦 dock 打开时主 composer 连续输入应跟手（无整页卡顿） |
+| `LOOP_SELF_RESEARCH_TEST`（已确认使命） | 父侧不可自行调研；须 `call_agents`；底栏「待派工」→「立即行动」可推进 |
 | `LOOP_E2E_TEST` | 派工后验收；`loop_verdict` stop+met；结束总结；**不**残留待验收条 |
 | `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死（无 pending ask / live 子代理时） |
-| 子代理进行中 | 本轮 `liveSubagents>0` 时小精灵「子代理进行中」；**不**弹出待验收；单子代理结束不触发评审 |
+| 子代理进行中 | 本轮 `liveSubagents>0` 时**不**弹出待验收「立即行动」；单子代理结束不触发评审 |
+| Loop 审计 `/tasks/loops` | 默认「全部」有历史；改状态筛选须点「应用」；API 失败显示错误而非空列表 |
 | VERIFY 中途提问 | **仅父侧**且子代理已齐；结论不确定时可 `ask_user`；子代理不得提问；`live>0` 父侧也不得提问解阻塞 |
 | 子代理调研 | 同线程子代理不被 `loop-parent-wait` 禁 `web_fetch`/`exec`（门禁仅 depth=0） |
 | 子代理审批 | `AGIM_AUTO_APPROVE=0` 时：主 turn 仍弹卡；子代理 exec/write **不弹卡**（代审） |

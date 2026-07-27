@@ -107,6 +107,17 @@ Workspace / 文件 / skill 以蓝色 chip 显示在输入区；光标在文本�
 
 用户气泡强制 `overflow-wrap` / `word-break`，避免超长无空格串撑破布局。
 
+### Subagent 卡片（消息流）
+
+与桌面共用 `ChatSubagentCard`：
+
+| 状态 | 展示 |
+|------|------|
+| 运行中 | `SUBAGENT` 徽章旁 **teal 已执行时间**（每秒刷新）；右侧 **Stop** |
+| 完成 | preview 可含 `439.9s · 4501 chars`；点击行打开半浮层看 brief / 结果 |
+
+契约见 [`architecture/subagent.md`](./architecture/subagent.md) §7.1。
+
 ## 小精灵（Portal Pet）
 
 停在输入框右上沿；仅脚部被 composer 遮挡（`bottom: calc(100% - 0.55rem)`）。忙时脉搏、任务角标与完成飘字见 `portal-pet.tsx`。

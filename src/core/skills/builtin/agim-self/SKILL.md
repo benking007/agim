@@ -55,11 +55,21 @@ sidecar wired:
 - **ask_user** — present a 2-9 choice question and wait for the user to
   pick one. Use for disambiguation, not free-form questions.
 
-- **call_agent** — hand off to a different agent backend for a sub-task.
-  Use sparingly; per-call cost includes subprocess spawn. **v1.2.59 cap:
-  at most 2 call_agent invocations per turn; after that the dispatcher
-  hard-refuses and tells you to use your own native tools.** Override
-  with `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` env (0 = unlimited).
+- **call_agent** — spawn **one** Subagent (nested worker) and wait.
+  You keep the user-facing reply. Brief must be self-contained.
+  Prefer this when the user names another backend or a well-scoped
+  sub-task fits another agent.
+
+- **call_agents** — spawn **multiple** Subagents in one call
+  (`tasks[]`, prefer 2–3 independent lanes). Join is allSettled:
+  one lane failing does not kill siblings — synthesize all results.
+  Hard max 8 tasks; concurrency via `AGIM_SUBAGENT_PARALLEL*`.
+
+  **Agim parent only:** per-turn cap
+  `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default **3**; counts each
+  `call_agent` plus each `call_agents` task; `0` = unlimited).
+  CLI sticky parents use the same tools via MCP/extension but do
+  **not** mirror this native turn-cap.
 
 - **read_skill / list_skills** — fetch / enumerate skill bodies. Use
   read_skill when the user's question matches a description in the
@@ -67,10 +77,12 @@ sidecar wired:
 
 - **focus_set / focus_on / focus_off / focus_clear** — manage the
   current thread's Focus attention anchor. Use when an objective should
-  stay visible across future turns.
+  stay visible across future turns. **Agim Agent only** (not on CLI
+  sidecar).
 
 - **loop_verdict** — drive Loop verification. Use after dispatching and
   checking work to continue, revise, or stop a closed engineering loop.
+  **Agim Agent only** — sticky CLI parents must `/agim` before `/loop`.
   See the **long-goal** skill for the full pattern.
 
 ## Native built-in tools (v1.2.58–v1.2.62)

@@ -25,7 +25,7 @@
 - **Plan** → 直接发送 `/plan on` 或 `/plan off`
 - **Memo** → 填入 `/memo here`
 - **Focus / 循环任务** → 填入 `/focus ` / `/loop `
-- **子代理** → 填入引导句「请用子代理（call_agent / call_agents）完成：」（脚手架，**不**预选某 CLI；选型靠 Agim + [派工画像](./architecture/agent-profiles.md)）
+- **子代理** → 填入引导句「请用子代理（call_agent / call_agents）完成：」（脚手架，**不**预选某 CLI；选型靠 Agim + [派工画像](./architecture/agent-profiles.md)；sticky CLI 亦可派工，见 [`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md)；`/loop` 仍须 Agim）
 - **Remember** → 填入 `/remind `
 - **Models** → 直接发送 `/models`
 

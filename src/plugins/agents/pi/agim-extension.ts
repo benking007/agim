@@ -7,6 +7,12 @@
 
 import { randomUUID } from 'node:crypto'
 import { createConnection, type Socket } from 'node:net'
+import {
+  CALL_AGENTS_TASKS_HARD_MAX,
+  getSubagentParallelMax,
+  isSubagentParallelEnabled,
+  mapPool,
+} from '../../../core/subagent-parallel.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -390,7 +396,102 @@ export default function agimPiExtension(pi: PiExtensionApi): void {
   registerRpcTool(pi, {
     name: 'mcp__agim__call_agent',
     label: 'Agim call agent',
-    description: 'Call another registered Agim agent and wait for its result.',
+    description:
+      'Spawn ONE Subagent and wait for its result. For 2+ independent lanes use '
+      + 'mcp__agim__call_agents. Loop Engineering (/loop, loop_verdict) stays Agim-only.',
     type: 'a2a',
+  })
+  pi.registerTool({
+    name: 'mcp__agim__call_agents',
+    label: 'Agim call agents',
+    description:
+      'Spawn MULTIPLE Subagents in one call (fan-out / join). Prefer 2–3 independent lanes. '
+      + `Hard max ${CALL_AGENTS_TASKS_HARD_MAX} tasks. Loop Engineering stays Agim-only.`,
+    promptSnippet: 'Fan-out Subagent dispatch (call_agents).',
+    parameters: {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          minItems: 1,
+          maxItems: CALL_AGENTS_TASKS_HARD_MAX,
+          items: {
+            type: 'object',
+            properties: {
+              agent: { type: 'string' },
+              prompt: { type: 'string' },
+              timeoutMs: { type: 'number' },
+            },
+            required: ['agent', 'prompt'],
+            additionalProperties: true,
+          },
+        },
+      },
+      required: ['tasks'],
+      additionalProperties: false,
+    },
+    async execute(_toolCallId, params, signal) {
+      const raw = Array.isArray(params.tasks) ? params.tasks : []
+      if (raw.length === 0) {
+        return textResult({ ok: false, error: 'call_agents requires a non-empty `tasks` array.' }, true)
+      }
+      if (raw.length > CALL_AGENTS_TASKS_HARD_MAX) {
+        return textResult({
+          ok: false,
+          error:
+            `call_agents refused: tasks.length=${raw.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`,
+        }, true)
+      }
+      const tasks = raw.map((t, i) => {
+        const row = t && typeof t === 'object' && !Array.isArray(t) ? t as JsonObject : null
+        if (!row || typeof row.agent !== 'string' || typeof row.prompt !== 'string') {
+          throw new Error(`call_agents tasks[${i}] requires both agent and prompt strings.`)
+        }
+        return row
+      })
+      const parallelOn = isSubagentParallelEnabled()
+      const concurrency = parallelOn ? Math.min(getSubagentParallelMax(), tasks.length) : 1
+      const bus = getClient()
+      try {
+        const lanes = await mapPool(tasks, concurrency, async (task, index) => {
+          const r = await bus.request('a2a', task, { signal })
+          if (r.ok === false) {
+            return {
+              ok: false as const,
+              index,
+              agent: String(task.agent),
+              error: typeof r.error === 'string' ? r.error : 'failed',
+            }
+          }
+          return {
+            ok: true as const,
+            index,
+            agent: typeof r.agent === 'string' ? r.agent : String(task.agent),
+            jobId: r.jobId,
+            durationMs: r.durationMs,
+            result: r.result,
+            ...(r.artifactsDir ? { artifactsDir: r.artifactsDir } : {}),
+            ...(r.outputs ? { outputs: r.outputs } : {}),
+            ...(r.warnings ? { warnings: r.warnings } : {}),
+          }
+        })
+        const okCount = lanes.filter((l) => l.ok).length
+        const payload = { ok: true, okCount, parallel: parallelOn, concurrency, lanes }
+        return {
+          content: [{
+            type: 'text' as const,
+            text: [
+              `[call_agents join] ${okCount}/${lanes.length} succeeded `
+              + `(parallel=${parallelOn ? 'on' : 'off'}, concurrency=${concurrency}).`,
+              'Synthesize the lane results below into one user reply; do not dump raw transcripts.',
+              JSON.stringify(payload),
+            ].join('\n'),
+          }],
+          details: payload,
+        }
+      } catch (err) {
+        return textResult({ ok: false, error: err instanceof Error ? err.message : String(err) }, true)
+      }
+    },
   })
 }

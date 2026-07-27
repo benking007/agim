@@ -16,6 +16,12 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { createConnection, type Socket } from 'node:net'
 import { randomUUID } from 'node:crypto'
+import {
+  CALL_AGENTS_TASKS_HARD_MAX,
+  getSubagentParallelMax,
+  isSubagentParallelEnabled,
+  mapPool,
+} from '../../../core/subagent-parallel.js'
 
 const SERVER_NAME = 'agim'
 const TOOL_NAME = 'request'
@@ -658,6 +664,93 @@ class ApprovalClient {
         }
       })
     })
+  }
+
+  /**
+   * Parallel / serial fan-out of independent A2A lanes (CLI Subagent dispatch).
+   * Reuses the same `a2a` bus path as `requestCallAgent`; join is allSettled-style.
+   * Loop parent tools (`loop_verdict` / Focus) stay Agim-only — not exposed here.
+   */
+  async requestCallAgents(
+    tasks: Array<{
+      agent: string
+      prompt: string
+      timeoutMs?: number
+      inputs?: Parameters<ApprovalClient['requestCallAgent']>[0]['inputs']
+      expectOutputs?: string[]
+    }>,
+  ): Promise<{
+    ok: true
+    parallel: boolean
+    concurrency: number
+    okCount: number
+    lanes: Array<
+      | {
+          ok: true
+          index: number
+          agent: string
+          jobId: number
+          durationMs: number
+          result: string
+          artifactsDir?: string
+          outputs?: A2aOutputFile[]
+          warnings?: string[]
+        }
+      | { ok: false; index: number; agent: string; error: string }
+    >
+  } | { ok: false; error: string }> {
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return { ok: false, error: 'call_agents requires a non-empty `tasks` array.' }
+    }
+    if (tasks.length > CALL_AGENTS_TASKS_HARD_MAX) {
+      return {
+        ok: false,
+        error:
+          `call_agents refused: tasks.length=${tasks.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`,
+      }
+    }
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i]
+      if (!t || typeof t !== 'object') {
+        return { ok: false, error: `call_agents tasks[${i}] must be an object.` }
+      }
+      if (typeof t.agent !== 'string' || !t.agent.trim() || typeof t.prompt !== 'string' || !t.prompt.trim()) {
+        return { ok: false, error: `call_agents tasks[${i}] requires both agent and prompt strings.` }
+      }
+    }
+
+    const parallelOn = isSubagentParallelEnabled()
+    const concurrency = parallelOn ? Math.min(getSubagentParallelMax(), tasks.length) : 1
+    const lanes = await mapPool(tasks, concurrency, async (task, index) => {
+      const r = await this.requestCallAgent({
+        agent: task.agent.trim(),
+        prompt: task.prompt,
+        ...(typeof task.timeoutMs === 'number' ? { timeoutMs: task.timeoutMs } : {}),
+        ...(task.inputs ? { inputs: task.inputs } : {}),
+        ...(task.expectOutputs ? { expectOutputs: task.expectOutputs } : {}),
+      })
+      if (r.ok) {
+        return {
+          ok: true as const,
+          index,
+          agent: r.agent,
+          jobId: r.jobId,
+          durationMs: r.durationMs,
+          result: r.result,
+          ...(r.artifactsDir ? { artifactsDir: r.artifactsDir } : {}),
+          ...(r.outputs ? { outputs: r.outputs } : {}),
+          ...(r.warnings ? { warnings: r.warnings } : {}),
+        }
+      }
+      return {
+        ok: false as const,
+        index,
+        agent: task.agent.trim(),
+        error: r.error,
+      }
+    })
+    const okCount = lanes.filter((l) => l.ok).length
+    return { ok: true, parallel: parallelOn, concurrency, okCount, lanes }
   }
 
   async close(): Promise<void> {
@@ -1350,92 +1443,68 @@ export function buildServer(client: ApprovalClient): McpServer {
     wrapMemory('delete'),
   )
 
-  // ─── A2A — agent-to-agent call ────────────────────────────────────
-  // Lets the running agent program-call another registered agent and wait
-  // for the result inside its own tool loop. Bus enforces depth + self-call rejection + workspace
-  // whitelist; the callee runs in a fresh inline-job row with
-  // parent_id pointing back at this run.
+  // ─── A2A — agent-to-agent call (CLI Subagent dispatch) ────────────
+  // Lets the running sticky CLI program-call another registered agent and wait
+  // for the result inside its own tool loop. Bus enforces depth + self-call
+  // rejection + workspace whitelist; the callee runs in a fresh inline-job row.
+  //
+  // Product split: CLI parents MAY spawn Subagents (call_agent / call_agents).
+  // Loop Engineering (`/loop`, loop_verdict, Focus tools) stays Agim-only —
+  // switch sticky to Agim for L3 orchestration.
+  const a2aInputFields = {
+    timeoutMs: z.number().int().positive().optional().describe(
+      'Optional override for the wait timeout. Defaults to AGIM_A2A_TIMEOUT_DEFAULT_MS. '
+      + 'The callee keeps running on timeout, but you stop waiting and get an error.',
+    ),
+    inputs: z.array(
+      z.object({
+        name: z.string().describe('Filename inside the callee _agim-input/ dir (no slashes, no "..").'),
+        fromAbsolutePath: z.string().optional().describe(
+          'Absolute path on the host to copy from. Hard-linked when same fs, else copied. '
+          + 'Exactly one of fromAbsolutePath / fromCallerOutput / content must be set.',
+        ),
+        fromCallerOutput: z.string().optional().describe(
+          'Filename in YOUR own _agim-output/ — useful for chaining A→B→C, where B forwards '
+          + 'something it just produced as input to C. Resolved relative to caller jobId.',
+        ),
+        content: z.string().optional().describe(
+          'Inline UTF-8 text content. Use for short text inputs; large blobs prefer fromAbsolutePath.',
+        ),
+      }),
+    ).optional().describe(
+      'Files to provision in the callee\'s _agim-input/ before it runs. Each input must '
+      + 'specify exactly one source.',
+    ),
+    expectOutputs: z.array(z.string()).optional().describe(
+      'Filenames you expect the callee to leave in its _agim-output/. Soft contract — '
+      + 'missing files become entries in `warnings`, not a hard error.',
+    ),
+  }
+
   server.registerTool(
     'call_agent',
     {
       title: 'Call another agent',
       description:
-        '**USE THIS TOOL whenever the user names a different agent and asks you to do something via it.** ' +
-        'Hand the sub-task to that agent and wait for its reply, then continue your reasoning. ' +
-        'Do NOT respond "I can\'t call X" — this tool is exactly that capability. ' +
-        '\n\n' +
-        '**Trigger phrases (Chinese)** — call this tool, do not refuse: ' +
-        '「用 codex 帮我 …」「让 copilot 看一下 …」「让 opencode 跑 …」「叫 qoder 看一下 …」' +
-        '「把这个交给 kimi」「让 mimo 总结 …」「codex / copilot / opencode / pi 帮我处理 …」. ' +
-        '\n\n' +
-        '**Trigger phrases (English)**: "ask codex to …", "have opencode run …", ' +
-        '"use kimi for …", "let copilot handle …", "let mimo handle …". ' +
-        '\n\n' +
-        '**Decision rule**: if the user explicitly names a registered callee agent or alias ' +
-        '(for example claude-code / codex / copilot / opencode / kimi-code / qoder / pi / mimo) ' +
-        'and asks for an action — call this tool. Don\'t second-guess "I could ' +
-        'do it myself" — the user picked that other agent on purpose. ' +
-        '\n\n' +
-        '**Good fits when the user did NOT name an agent**: ' +
-        '(a) delegate a well-scoped sub-task another agent is clearly better at (e.g. codex for ' +
-        'shell-heavy investigation, opencode for sandboxed one-off code changes); ' +
-        '(b) get a second opinion on a tricky design before committing. ' +
-        '\n\n' +
-        '**Don\'t use for** (when no agent was named): trivial tasks you can do yourself, ' +
-        'fetching external data (use a real tool / web_search), or "let another agent re-summarize ' +
-        'what I already said". ' +
-        '\n\n' +
-        'agim enforces depth limit (default 3) + self-call ban + workspace whitelist so chains ' +
-        'can\'t run away. ' +
-        '\n\n' +
-        '**Files** (L2): pass `inputs` to drop files into the callee\'s _agim-input/ before it ' +
-        'runs (the callee gets a workspace-block in its prompt listing them with absolute paths), ' +
-        'and pass `expectOutputs` to list filenames the callee should leave in _agim-output/. ' +
-        'On return you get `artifactsDir` + `outputs` (with sizes/mtimes) — read those files ' +
-        'with the Read tool. Expected outputs that didn\'t show up become entries in `warnings`, ' +
-        'never a hard failure. Skip both fields for pure string-in / string-out calls (L1). ' +
-        '\n\n' +
-        'Returns {ok, result, jobId, agent, durationMs, artifactsDir?, outputs?, warnings?} on ' +
-        'success or {ok: false, error}.',
+        'Spawn ONE Subagent (nested worker) and wait for its reply. You keep the user-facing reply. '
+        + '**USE THIS whenever the user names a different agent** (codex / claude-code / agim / …) '
+        + 'or when a well-scoped sub-task fits another backend. '
+        + 'Do NOT respond "I can\'t call X". '
+        + 'For 2+ independent lanes use `call_agents` instead. '
+        + 'Brief must be self-contained (callee does NOT see your history). '
+        + 'Agim enforces depth limit + self-call ban + workspace ACL. '
+        + '**Not for Loop Engineering** — `/loop` / `loop_verdict` are Agim-only; switch to Agim for L3. '
+        + 'Returns {ok, result, jobId, agent, durationMs, …} or {ok:false, error}.',
       inputSchema: {
         agent: z.string().describe(
-          'Target agent name or alias, for example claude-code, codex, copilot, opencode, kimi-code, qoder, pi, mimo, or native. ' +
-          'Must not be the calling agent itself.',
+          'Target agent name or alias, for example agim, claude-code, codex, copilot, opencode, '
+          + 'kimi-code, qoder, pi, mimo. Must not be the calling agent itself (unless isolate path).',
         ),
         prompt: z.string().describe(
-          'The full prompt to send to the target agent. Self-contained — the callee does NOT ' +
-          'see your conversation history. Include any code snippets, file paths, or context ' +
-          'the callee needs to do the job.',
+          'Self-contained brief: Objective + Output format + Boundaries + Done-when. '
+          + 'Require key findings in the child FINAL message; cite absolute paths if writing files.',
         ),
-        timeoutMs: z.number().int().positive().optional().describe(
-          'Optional override for the wait timeout. Defaults to 10 minutes ' +
-          '(AGIM_A2A_TIMEOUT_DEFAULT_MS). The callee keeps running on timeout, but you stop ' +
-          'waiting and get an error.',
-        ),
-        inputs: z.array(
-          z.object({
-            name: z.string().describe('Filename inside the callee _agim-input/ dir (no slashes, no "..").'),
-            fromAbsolutePath: z.string().optional().describe(
-              'Absolute path on the host to copy from. Hard-linked when same fs, else copied. ' +
-              'Exactly one of fromAbsolutePath / fromCallerOutput / content must be set.',
-            ),
-            fromCallerOutput: z.string().optional().describe(
-              'Filename in YOUR own _agim-output/ — useful for chaining A→B→C, where B forwards ' +
-              'something it just produced as input to C. Resolved relative to caller jobId.',
-            ),
-            content: z.string().optional().describe(
-              'Inline UTF-8 text content. Use for short text inputs; large blobs prefer fromAbsolutePath.',
-            ),
-          }),
-        ).optional().describe(
-          'Files to provision in the callee\'s _agim-input/ before it runs. Each input must ' +
-          'specify exactly one source.',
-        ),
-        expectOutputs: z.array(z.string()).optional().describe(
-          'Filenames you expect the callee to leave in its _agim-output/. Soft contract — ' +
-          'missing files become entries in `warnings`, not a hard error. The callee is told ' +
-          'about these via its prompt envelope.',
-        ),
+        ...a2aInputFields,
       },
     },
     async (args) => {
@@ -1447,6 +1516,66 @@ export function buildServer(client: ApprovalClient): McpServer {
         ...(Array.isArray(args.expectOutputs) ? { expectOutputs: args.expectOutputs as string[] } : {}),
       })
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
+  )
+
+  server.registerTool(
+    'call_agents',
+    {
+      title: 'Call multiple agents',
+      description:
+        'Spawn MULTIPLE Subagents in one call (fan-out / join). You keep the user-facing reply. '
+        + 'Use when 2–3 lanes are independent (research / verify / explore). '
+        + 'Each tasks[] item needs a self-contained brief. '
+        + 'Do not parallel-write the same file — split directories or serialize. '
+        + 'Failure mode: allSettled — one child fail does not kill siblings; synthesize all results. '
+        + `Hard max ${CALL_AGENTS_TASKS_HARD_MAX} tasks; concurrency via AGIM_SUBAGENT_PARALLEL*. `
+        + '**Not for Loop Engineering** — `/loop` / `loop_verdict` stay on Agim Agent. '
+        + 'Returns {ok:true, okCount, parallel, concurrency, lanes:[…]} or {ok:false, error}.',
+      inputSchema: {
+        tasks: z.array(
+          z.object({
+            agent: z.string().describe(
+              'Registry agent id or alias (agim / claude-code / codex / …).',
+            ),
+            prompt: z.string().describe(
+              'Self-contained brief: Objective + Output format + Boundaries + Done-when.',
+            ),
+            ...a2aInputFields,
+          }),
+        ).min(1).max(CALL_AGENTS_TASKS_HARD_MAX).describe(
+          `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). Prefer 2–3 lanes.`,
+        ),
+      },
+    },
+    async (args) => {
+      const raw = Array.isArray(args.tasks) ? args.tasks : []
+      const tasks = raw.map((t) => ({
+        agent: typeof t?.agent === 'string' ? t.agent : '',
+        prompt: typeof t?.prompt === 'string' ? t.prompt : '',
+        ...(typeof t?.timeoutMs === 'number' ? { timeoutMs: t.timeoutMs } : {}),
+        ...(Array.isArray(t?.inputs)
+          ? { inputs: t.inputs as Parameters<typeof client.requestCallAgent>[0]['inputs'] }
+          : {}),
+        ...(Array.isArray(t?.expectOutputs) ? { expectOutputs: t.expectOutputs as string[] } : {}),
+      }))
+      const result = await client.requestCallAgents(tasks)
+      if (!result.ok) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+      }
+      const text = [
+        `[call_agents join] ${result.okCount}/${result.lanes.length} succeeded `
+        + `(parallel=${result.parallel ? 'on' : 'off'}, concurrency=${result.concurrency}).`,
+        'Synthesize the lane results below into one user reply; do not dump raw transcripts.',
+        JSON.stringify({
+          ok: true,
+          okCount: result.okCount,
+          parallel: result.parallel,
+          concurrency: result.concurrency,
+          lanes: result.lanes,
+        }),
+      ].join('\n')
+      return { content: [{ type: 'text' as const, text }] }
     },
   )
 

@@ -226,6 +226,48 @@ describe('mcp-approval-server', () => {
     expect(String(payload.result)).toContain('agim-ok')
   })
 
+  it('exposes call_agent and call_agents for CLI Subagent dispatch', async () => {
+    const tools = await h.mcpClient.listTools()
+    const names = tools.tools.map((t) => t.name)
+    expect(names).toContain('call_agent')
+    expect(names).toContain('call_agents')
+    const batch = tools.tools.find((t) => t.name === 'call_agents')
+    expect(batch?.description ?? '').toMatch(/Loop Engineering|loop_verdict|Agim-only/i)
+  })
+
+  it('call_agents rejects oversized tasks[] via ApprovalClient', async () => {
+    const tooMany = Array.from({ length: 9 }, (_, i) => ({
+      agent: `x-${i}`,
+      prompt: `lane ${i}`,
+    }))
+    const payload = await h.client.requestCallAgents(tooMany)
+    expect(payload.ok).toBe(false)
+    if (payload.ok) throw new Error('expected refusal')
+    expect(payload.error).toMatch(/hard max/i)
+  })
+
+  it('call_agents joins allSettled lanes (unknown agents → per-lane errors)', async () => {
+    const result = await h.mcpClient.callTool({
+      name: 'call_agents',
+      arguments: {
+        tasks: [
+          { agent: 'no-such-agent-aaa', prompt: 'lane A: reply ping' },
+          { agent: 'no-such-agent-bbb', prompt: 'lane B: reply pong' },
+        ],
+      },
+    })
+    const content = result.content as Array<{ type: string; text: string }>
+    const text = content[0]!.text
+    expect(text).toMatch(/call_agents join/i)
+    const jsonLine = text.split('\n').find((l) => l.trim().startsWith('{'))
+    expect(jsonLine).toBeTruthy()
+    const payload = JSON.parse(jsonLine!)
+    expect(payload.ok).toBe(true)
+    expect(payload.lanes).toHaveLength(2)
+    expect(payload.okCount).toBe(0)
+    expect(payload.lanes.every((l: { ok: boolean }) => l.ok === false)).toBe(true)
+  })
+
   it('unknown runId is denied immediately', async () => {
     // Build a fresh client whose runId is never registered with the bus
     const sockPath = h.bus.getSocketPath()

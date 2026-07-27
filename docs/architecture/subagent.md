@@ -2,7 +2,7 @@
 
 > 状态：**现行设计（living）** · 2026-07-27  
 > 实施阶段见 [`orchestration-roadmap.md`](./orchestration-roadmap.md)（Phase A/B 已齐；C=Focus+Loop R1–R5+门禁已齐）。  
-> 关联：[`../naming.md`](../naming.md) · [`agent-profiles.md`](./agent-profiles.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
+> 关联：[`../naming.md`](../naming.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`agent-profiles.md`](./agent-profiles.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
 
 本文钉死 **Subagent 是什么 / 不是什么**，以及它与 **A2A、多 Agent、sticky 切换** 的关系。  
 落地偏差见 §10「落地差异」。
@@ -58,8 +58,11 @@
 | `agim` + `role=cheap` / 指定 backend（如 flash） | ✅ | 同族 spawn + role/backend 覆盖 |
 | `claude-code` / `codex` / … | ✅（广义） | **A2A**（`callAgentByName`） |
 | sticky `/cc` | ❌ | handoff，不是 subagent |
+| sticky Codex/Claude **再** `call_agent(s)` | ✅（父=CLI） | MCP sidecar → A2A；**不是** Loop 父 |
 
-架构要把它们**框进同一套 SubagentRun**，而不是两套产品话术。
+架构要把它们**框进同一套 SubagentRun**，而不是两套产品话术。  
+**分界**：CLI sticky 父可以派 Subagent；`/loop` + `loop_verdict` + Focus 工具 **只挂 Agim**。  
+细节 SSOT：[`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)。
 
 ---
 
@@ -330,6 +333,7 @@
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
+| 2026-07-27 | **CLI 父派工**：MCP sidecar + PI 暴露 `call_agents`（复用 A2A bus）；**Loop 仍仅 Agim**；SSOT [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) | — |
 | 2026-07-24 | **loop_verdict 墙钟**：同样 `timeoutMs:0`（嵌套独立验收可 >60s）；mutation 成功后不以假超时覆盖（见 Loop §6.2） | #243 |
 | 2026-07-24 | **子代理产出契约**：最终消息须含关键发现；落盘须绝对路径；禁空「见上文」 | — |
 | 2026-07-27 | **派工能力画像**：非 Agim CLI specialty catalog；Settings 可维护；system 全文 + `call_agent(s)` 短提示 | #272 |
@@ -348,6 +352,7 @@
 ## 11. TL;DR
 
 > **Subagent 是「父还在开会对用户负责」时的隔离子工人。**  
-> 同 Agim 换 pro/flash、或派 Claude/Codex，都是 Subagent；A2A 是跨 adapter 的管子。  
-> 跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；子代理工具代审免卡；提问与 Loop 验收只归父侧。  
+> 父可以是 Agim **或** sticky CLI（`call_agent` / `call_agents`）；同 Agim 换 pro/flash、或派 Claude/Codex，都是 Subagent；A2A 是跨 adapter 的管子。  
+> **Loop 父只归 Agim**（见 [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)）；跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)。  
+> 子代理工具代审免卡；提问与 Loop 验收只归父侧。  
 > 难关在拆解与 brief，不在再写一个调度中台。

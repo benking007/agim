@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **CLI Subagent fan-out (`call_agents`)**: shared MCP sidecar (Codex /
+  Claude Code / …) and PI extension now expose `mcp__agim__call_agents`
+  alongside existing `call_agent`. Parallel join reuses
+  `AGIM_SUBAGENT_PARALLEL*` + hard max. **Loop Engineering stays
+  Agim-only** (`loop_verdict` / Focus tools are not on the sidecar).
+  SSOT: `docs/architecture/cli-subagent-dispatch.md`. Smoke:
+  `tools/cli-agents-matrix-ws.mjs`.
+
 ### Removed
 
 - **Goal residual UI/tooling retired**: removed SPA `/tasks/goals`, REST
@@ -35,6 +45,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Docs: CLI Subagent dispatch**: expand
+  `docs/architecture/cli-subagent-dispatch.md` (product split, coverage
+  + sticky aliases, tool schemas, troubleshooting, acceptance);
+  cross-link README / agents / naming / skills / Subagent / Loop /
+  roadmap / Portal / SOP / desktop-regression; refresh `agim-self` /
+  `long-goal` skills for `call_agents` + Agim-only Loop.
 - **Docs: specialty profiles + orchestration status**: expand
   `agent-profiles.md` (API/UI/injection layers); cross-link Loop /
   Subagent / roadmap / naming / Portal / SOP; mark roadmap A/B/C

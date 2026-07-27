@@ -5,21 +5,23 @@ Agim can bridge one IM entry to multiple local or remote agent backends. This pa
 For the implementation checklist used when adding a new backend, see `agent-integration-sop.md`.  
 When Agim dispatches work to a non-Agim CLI via `call_agent(s)`, specialty fit comes from [`architecture/agent-profiles.md`](./architecture/agent-profiles.md) (Settings → Agents →「派工能力画像」).
 
+**Subagent dispatch:** sticky CLI parents can spawn nested workers via `mcp__agim__call_agent` / `call_agents` (shared MCP sidecar; PI uses its extension). **Loop Engineering (`/loop`) stays Agim-only** — switch sticky to Agim before starting a Loop. SSOT: [`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md).
+
 ## Supported backends
 
 | Agent ID | IM aliases | Install / login hint | Model switch | Agim tools |
 |---|---|---|---|---|
-| `agim` (alias `native`) | `/agim`, `/na`, `/llm` | No external CLI. Configure `llmBackends`. | Yes | In-process tools |
-| `claude-code` | `/cc`, `/claude` | Install Claude Code, then complete its login flow. | CLI default | MCP + approval |
-| `codex` | `/cx` | Install Codex CLI, then complete its login flow. | CLI default | MCP + approval |
-| `copilot` | `/co`, `/gh-copilot`, `/github-copilot` | `npm install -g @github/copilot`, then `copilot login`. | Yes | MCP + approval |
-| `opencode` | `/oc` | Install OpenCode and configure providers. | Yes | MCP + approval |
-| `cursor` | `/cs`, `/cur` | Install `cursor-agent`, then `cursor-agent login`. | Yes | MCP + approval |
-| `kimi-code` | `/kimi`, `/km` | Install Kimi Code, then run `kimi` once to login. | Yes | MCP + approval |
-| `qoder` | `/qd`, `/qodercli` | Install Qoder CLI, then `qodercli login`. | Yes | MCP + approval |
-| `pi` | `/pi`, `/pi-agent` | Install PI CLI and complete auth. | Yes | Extension bridge + approval |
-| `mimo` | `/mo`, `/mimo-code` | Install MiMo Code, then `mimo auth login`. | Yes | MCP + approval |
-| `antigravity` | `/agy`, `/gemini`, `/ag` | Install Antigravity CLI, then run `agy` once to login. | CLI default | MCP + approval |
+| `agim` (alias `native`) | `/agim`, `/na`, `/llm` | No external CLI. Configure `llmBackends`. | Yes | In-process tools **+ Loop parent** |
+| `claude-code` | `/cc`, `/claude` | Install Claude Code, then complete its login flow. | CLI default | MCP + approval + **Subagent dispatch** |
+| `codex` | `/cx` | Install Codex CLI, then complete its login flow. | CLI default | MCP + approval + **Subagent dispatch** |
+| `copilot` | `/co`, `/gh-copilot`, `/github-copilot` | `npm install -g @github/copilot`, then `copilot login`. | Yes | MCP + approval + **Subagent dispatch** |
+| `opencode` | `/oc` | Install OpenCode and configure providers. | Yes | MCP + approval + **Subagent dispatch** |
+| `cursor` | `/cs`, `/cur` | Install `cursor-agent`, then `cursor-agent login`. | Yes | MCP + approval + **Subagent dispatch** |
+| `kimi-code` | `/kimi`, `/km` | Install Kimi Code, then run `kimi` once to login. | Yes | MCP + approval + **Subagent dispatch** |
+| `qoder` | `/qd`, `/qodercli` | Install Qoder CLI, then `qodercli login`. | Yes | MCP + approval + **Subagent dispatch** |
+| `pi` | `/pi`, `/pi-agent` | Install PI CLI and complete auth. | Yes | Extension bridge + approval + **Subagent dispatch** |
+| `mimo` | `/mo`, `/mimo-code` | Install MiMo Code, then `mimo auth login`. | Yes | MCP + approval + **Subagent dispatch** |
+| `antigravity` | `/agy`, `/gemini`, `/ag` | Install Antigravity CLI, then run `agy` once to login. | CLI default | MCP + approval + **Subagent dispatch** |
 `/models` and `/model` work only for agents with a model driver. If an agent is listed as `CLI default`, set the model in that CLI's own configuration.
 
 ## First setup flow

@@ -21,6 +21,7 @@ describe('PI Agim extension', () => {
     expect(names).toContain('agim_edit')
     expect(names).toContain('mcp__agim__memory_query')
     expect(names).toContain('mcp__agim__call_agent')
+    expect(names).toContain('mcp__agim__call_agents')
     expect(names).not.toContain('agim_exec')
     expect(names).not.toContain('bash')
     expect(names).not.toContain('write')

@@ -133,3 +133,17 @@ node tools/phase-b-acceptance.mjs
 
 覆盖：`call_agents` 三路 fan-out、`toolCallId#i` activity、三 `jobId`、mock `peakSlow≥2`（真并行）、墙钟低于串行、`agim/cheap` 标签。
 
+## 4b. CLI sticky 父派 Subagent（B5）
+
+契约：[`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md)。  
+需各 CLI 在 PATH（云测可用 stub）+ mock LLM（嵌套工人 `agim`）+ `AGIM_WEB_AUTH=off`。
+
+```bash
+node dist/cli.js start </dev/null
+# 另开终端 — 10 个非 Agim CLI × call_agent + call_agents
+node tools/cli-agents-matrix-ws.mjs
+```
+
+手工抽检：Chat sticky `/cc`（或 `/cx` …）→「用 call_agent 派 agim」→ Subagents: 1；再「call_agents 两路」→ okCount: 2。  
+`/loop` 仅在 sticky **Agim** 下验收（CLI sticky **无** `loop_verdict`）。
+

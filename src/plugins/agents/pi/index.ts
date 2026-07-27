@@ -48,6 +48,7 @@ export const PI_AGIM_TOOL_NAMES = [
   'mcp__agim__ask_user',
   'mcp__agim__push_message',
   'mcp__agim__call_agent',
+  'mcp__agim__call_agents',
 ] as const
 
 export const PI_AGIM_MUTATION_TOOL_NAMES = [

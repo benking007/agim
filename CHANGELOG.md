@@ -32,6 +32,17 @@ All notable changes to this project will be documented in this file.
   writes also strip those keys. `agim config acp` prints a retired hint
   (use `config web` / `config agents`).
 
+### Added
+
+- **CLI agent specialty profiles**: builtin capability cards for all
+  non-Agim agents (`claude-code`, `codex`, `copilot`, `opencode`,
+  `antigravity`, `cursor`, `kimi-code`, `qoder`, `pi`, `mimo`). Operators
+  edit them under Settings → Agents; sparse overrides live in
+  `config.agentProfiles`. Agim injects the **full catalog into the system
+  prompt**; `call_agent` / `call_agents` tool descriptions only get a short
+  “prefer specialty fit” hint (not a schema dump). SSOT:
+  `docs/architecture/agent-profiles.md`.
+
 ### Changed
 
 - **Docs: CLI Subagent dispatch**: expand
@@ -40,6 +51,10 @@ All notable changes to this project will be documented in this file.
   cross-link README / agents / naming / skills / Subagent / Loop /
   roadmap / Portal / SOP / desktop-regression; refresh `agim-self` /
   `long-goal` skills for `call_agents` + Agim-only Loop.
+- **Docs: specialty profiles + orchestration status**: expand
+  `agent-profiles.md` (API/UI/injection layers); cross-link Loop /
+  Subagent / roadmap / naming / Portal / SOP; mark roadmap A/B/C
+  (R1–R5+gates) landed and drop stale “C1 shell only” / planning wording.
 
 - **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.
   `common`/`errors` load for the active language only; page namespaces
@@ -68,6 +83,21 @@ All notable changes to this project will be documented in this file.
   `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
+- **Loop parent must be Agim Agent**: sticky CLI agents (Codex / Claude Code /
+  …) cannot parent `/loop` — they lack `call_agents` / `loop_verdict`, and
+  packing Loop+Focus context into spawn argv often fails with
+  `spawn E2BIG`. Gate `/loop` start/confirm + parent turns; Portal hides
+  Act now and prompts to switch to Agim (CLI agents remain valid
+  Subagents). Friendly E2BIG message on CLI spawn overflow.
+- **Agim orchestrates, CLI workers**: session `preferredWorkerAgent` remembers
+  the last non-Agim sticky agent (e.g. Codex). Portal offers one-click
+  「用 Agim 编排」; Loop snippet + Act now prefer `call_agents` with that
+  worker. Full CLI-as-parent remains deferred.
+- **Pre-dispatch CLI probe**: `call_agent` / `call_agents` refuse targets that
+  fail `isAvailable` (or auth quarantine) before creating Loop-counting jobs.
+  Auth/subscription-shaped failures mark the agent unavailable ~5m so the
+  next preferred-worker hint skips it. `--version` alone still cannot prove
+  login; quarantine covers the first real failure.
 - **Loop Portal UX**: after Loop starts, stop mirroring status onto the pet
   speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
   Loop 审计 surfaces list API errors and only applies status filter on
@@ -203,6 +233,10 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- **Loop Portal UX 文档对齐（#268/#269）**：`loop-engineering.md` §3/§6.3
+ （无小精灵 Loop 气泡；`/loop start <text>` 预填目标；审计「应用」筛选；
+  长正文折叠）；`portal-composer.md` 底栏/输入性能；`desktop-regression`
+  §3.2；`focus.md` / `orchestration-roadmap` / `naming`；`/loop help`。
 - **Composer 审批芯片文档**：`portal-composer.md` 状态栏专节；
   `security-hardening` / `subagent` / `current` 对齐「替我审批」与
   `/api/policy/auto-approve`。

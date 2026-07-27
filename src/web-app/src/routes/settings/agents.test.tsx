@@ -94,16 +94,17 @@ describe('/settings/agents — built-in adapters', () => {
     mockStandardFetch()
     renderPage()
     await waitFor(() => expect(screen.getAllByText('claude-code').length).toBeGreaterThan(0))
-    expect(screen.getByText('codex')).toBeInTheDocument()
-    expect(screen.getByText('opencode')).toBeInTheDocument()
-    expect(screen.getByText('Antigravity')).toBeInTheDocument()
-    expect(screen.getByText('cursor')).toBeInTheDocument()
-    expect(screen.getByText('Kimi Code')).toBeInTheDocument()
-    expect(screen.getByText('Qoder')).toBeInTheDocument()
-    expect(screen.getByText('PI')).toBeInTheDocument()
-    expect(screen.getByText('MiMo Code')).toBeInTheDocument()
-    // Note: claude-code appears twice (row + default picker trigger).
-    expect(screen.getAllByText('claude-code').length).toBe(2)
+    expect(screen.getAllByText('codex').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('opencode').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Antigravity').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('cursor').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Kimi Code').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Qoder').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('PI').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('MiMo Code').length).toBeGreaterThan(0)
+    // claude-code appears in the agent row, default picker, and specialty profiles.
+    expect(screen.getAllByText('claude-code').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/派工能力画像|Dispatch specialty profiles/i)).toBeInTheDocument()
     // claude-code is online (true) — but at least one row should have
     // the "online" badge. Use getAllByText to be tolerant of i18n.
     expect(screen.getAllByText(/online|在线/i).length).toBeGreaterThan(0)

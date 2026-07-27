@@ -1,15 +1,15 @@
 /**
- * /settings/agents — built-in adapters.
+ * /settings/agents — built-in adapters + specialty profiles.
  *
- * PUT /api/config writes `agents[]` and `defaultAgent` atomically so
- * the default never goes out of sync with the enabled list.
+ * PUT /api/config writes `agents[]`, `defaultAgent`, and `agentProfiles`
+ * atomically so dispatch metadata stays consistent with the enabled list.
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
-  Bot, Loader2, RefreshCcw, Save, X,
+  Bot, ChevronDown, Loader2, RefreshCcw, RotateCcw, Save, X,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,7 @@ import {
 import { describeError } from '@/lib/api/errors'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
+import type { AgentProfile } from '@/types/api'
 
 /** Mirror of v1 settings.html:BUILTIN_AGENTS. Hardcoded because
  *  backend doesn't expose this metadata yet; the table changes
@@ -83,14 +84,21 @@ export default function SettingsAgentsRoute(): JSX.Element {
    *  next paint". */
   const [draftEnabled, setDraftEnabled] = useState<string[] | null>(null)
   const [draftDefault, setDraftDefault] = useState<string | null>(null)
+  const [draftProfiles, setDraftProfiles] = useState<Record<string, AgentProfile> | null>(null)
+  const [openProfile, setOpenProfile] = useState<string | null>(null)
 
   useEffect(() => {
     if (cfg && draftEnabled == null) setDraftEnabled(cfg.agents ?? [])
     if (cfg && draftDefault == null) setDraftDefault(cfg.defaultAgent ?? '')
-  }, [cfg, draftEnabled, draftDefault])
+    if (cfg && draftProfiles == null) {
+      setDraftProfiles({ ...(cfg.agentProfiles ?? {}) })
+    }
+  }, [cfg, draftEnabled, draftDefault, draftProfiles])
 
   const enabled = draftEnabled ?? cfg?.agents ?? []
   const defaultAgent = draftDefault ?? cfg?.defaultAgent ?? ''
+  const profiles = draftProfiles ?? cfg?.agentProfiles ?? {}
+  const defaults = cfg?.agentProfileDefaults ?? {}
 
   const isDirty = useMemo(() => {
     if (!cfg) return false
@@ -98,8 +106,9 @@ export default function SettingsAgentsRoute(): JSX.Element {
       enabled.length === (cfg.agents?.length ?? 0)
       && enabled.every((a) => cfg.agents?.includes(a))
     const defaultSame = defaultAgent === (cfg.defaultAgent ?? '')
-    return !enabledSame || !defaultSame
-  }, [cfg, enabled, defaultAgent])
+    const profilesSame = JSON.stringify(profiles) === JSON.stringify(cfg.agentProfiles ?? {})
+    return !enabledSame || !defaultSame || !profilesSame
+  }, [cfg, enabled, defaultAgent, profiles])
 
   /** Eligible defaults = installed + enabled. Picker disables when
    *  empty (no agent is both). In-process `native` follows the same
@@ -119,6 +128,24 @@ export default function SettingsAgentsRoute(): JSX.Element {
     if (!on && name === defaultAgent) setDraftDefault('')
   }
 
+  function updateProfile(name: string, next: AgentProfile): void {
+    setDraftProfiles((prev) => ({
+      ...(prev ?? cfg?.agentProfiles ?? {}),
+      [name]: next,
+    }))
+  }
+
+  function resetProfile(name: string): void {
+    const def = defaults[name]
+    if (!def) return
+    updateProfile(name, {
+      summary: def.summary,
+      strengths: [...def.strengths],
+      avoid: [...def.avoid],
+      tags: [...def.tags],
+    })
+  }
+
   async function onSave(): Promise<void> {
     if (!cfg) return
     try {
@@ -126,11 +153,13 @@ export default function SettingsAgentsRoute(): JSX.Element {
         ...cfg,
         agents: enabled,
         defaultAgent: defaultAgent || cfg.defaultAgent,
+        agentProfiles: profiles,
       })
       toast.success(t('agents.toast.saved'))
       // Reset drafts so the next paint reads from refreshed cfg.
       setDraftEnabled(null)
       setDraftDefault(null)
+      setDraftProfiles(null)
     } catch (err) {
       toast.error(describeError(err, t).message)
     }
@@ -139,6 +168,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
   function onDiscard(): void {
     setDraftEnabled(null)
     setDraftDefault(null)
+    setDraftProfiles(null)
   }
 
   return (
@@ -216,6 +246,58 @@ export default function SettingsAgentsRoute(): JSX.Element {
               placeholder={t('agents.noEligible')}
               onChange={setDraftDefault}
             />
+          </section>
+
+          {/* Specialty profiles for call_agents / Loop */}
+          <section className="rounded-md border border-border bg-surface p-4">
+            <h3 className="text-sm font-semibold">{t('agents.profiles.title')}</h3>
+            <p className="mt-1 text-xs text-text-dim">{t('agents.profiles.subtitle')}</p>
+            <div className="mt-3 flex flex-col divide-y divide-border rounded-md border border-border">
+              {BRIDGED_AGENT_NAMES.map((name) => {
+                const profile = profiles[name] ?? defaults[name] ?? {
+                  summary: '', strengths: [], avoid: [], tags: [],
+                }
+                const def = defaults[name]
+                const customized = def
+                  ? JSON.stringify(profile) !== JSON.stringify(def)
+                  : false
+                const open = openProfile === name
+                return (
+                  <div key={`profile-${name}`} className="bg-surface">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-2/60"
+                      onClick={() => setOpenProfile(open ? null : name)}
+                      aria-expanded={open}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {agentDisplayName(name)}
+                      </span>
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        {customized
+                          ? t('agents.profiles.customized')
+                          : t('agents.profiles.defaultBadge')}
+                      </Badge>
+                      <ChevronDown className={cn(
+                        'h-4 w-4 shrink-0 text-text-dim transition-transform',
+                        open && 'rotate-180',
+                      )} />
+                    </button>
+                    {open ? (
+                      <ProfileEditor
+                        profile={profile}
+                        onChange={(next) => updateProfile(name, next)}
+                        onReset={def ? () => resetProfile(name) : undefined}
+                      />
+                    ) : (
+                      <p className="px-3 pb-2.5 text-xs text-text-dim line-clamp-2">
+                        {profile.summary || '—'}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </section>
 
           {/* Save bar */}
@@ -343,6 +425,83 @@ function AgentRow({
         onChange={(e) => onToggle(e.target.checked)}
         className="h-4 w-4 mt-2 accent-accent cursor-pointer"
       />
+    </div>
+  )
+}
+
+function linesToList(text: string): string[] {
+  return text
+    .split(/\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function listToLines(list: string[]): string {
+  return list.join('\n')
+}
+
+function ProfileEditor({
+  profile,
+  onChange,
+  onReset,
+}: {
+  profile: AgentProfile
+  onChange: (next: AgentProfile) => void
+  onReset?: () => void
+}): JSX.Element {
+  const { t } = useTranslation('settings')
+  const fieldClass = cn(
+    'mt-1 w-full rounded-md border border-border bg-surface-2 px-2.5 py-2 text-sm',
+    'text-text outline-none focus:border-accent',
+  )
+  return (
+    <div className="space-y-2.5 border-t border-border px-3 py-3">
+      <label className="block">
+        <span className="text-[11px] font-medium text-text-dim">{t('agents.profiles.summary')}</span>
+        <textarea
+          className={cn(fieldClass, 'min-h-[3.5rem] resize-y')}
+          value={profile.summary}
+          onChange={(e) => onChange({ ...profile, summary: e.target.value })}
+          rows={2}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[11px] font-medium text-text-dim">{t('agents.profiles.strengths')}</span>
+        <textarea
+          className={cn(fieldClass, 'min-h-[5rem] resize-y font-mono text-xs')}
+          value={listToLines(profile.strengths)}
+          onChange={(e) => onChange({ ...profile, strengths: linesToList(e.target.value) })}
+          rows={4}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[11px] font-medium text-text-dim">{t('agents.profiles.avoid')}</span>
+        <textarea
+          className={cn(fieldClass, 'min-h-[4rem] resize-y font-mono text-xs')}
+          value={listToLines(profile.avoid)}
+          onChange={(e) => onChange({ ...profile, avoid: linesToList(e.target.value) })}
+          rows={3}
+        />
+      </label>
+      <label className="block">
+        <span className="text-[11px] font-medium text-text-dim">{t('agents.profiles.tags')}</span>
+        <input
+          className={cn(fieldClass, 'font-mono text-xs')}
+          value={profile.tags.join(', ')}
+          onChange={(e) => onChange({
+            ...profile,
+            tags: e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+          })}
+        />
+      </label>
+      {onReset ? (
+        <div className="flex justify-end pt-0.5">
+          <Button type="button" size="sm" variant="ghost" onClick={onReset} className="gap-1.5">
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t('agents.profiles.reset')}
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

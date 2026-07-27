@@ -104,6 +104,17 @@
     "discard": "放弃改动",
     "toast": {
       "saved": "已保存"
+    },
+    "profiles": {
+      "title": "派工能力画像",
+      "subtitle": "告诉 Agim 各 CLI Agent 擅长什么，便于 Loop / call_agents 派活。Agim Agent 本身是编排者，不在此列表。可覆盖内置默认；保存时只持久化有改动的项。",
+      "summary": "一句话擅长",
+      "strengths": "擅长（每行一条）",
+      "avoid": "避免指派（每行一条）",
+      "tags": "标签（逗号分隔）",
+      "reset": "恢复默认",
+      "customized": "已自定义",
+      "defaultBadge": "默认"
     }
   },
   "policy": {

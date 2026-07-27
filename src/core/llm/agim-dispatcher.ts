@@ -45,9 +45,14 @@ import { callAgentByName } from '../a2a.js'
 import { shouldClearCallAgentHistoryForLoopRound } from '../loop-call-agent-cap.js'
 import { resolveSubagentSpawn } from '../subagent.js'
 import {
+  formatAgentDispatchUnavailable,
+  isAgentAvailableCached,
+} from '../onboarding.js'
+import {
   buildCallAgentToolDescription,
   buildCallAgentsToolDescription,
 } from '../subagent-heuristics.js'
+import { getAgentProfilesCatalogForPrompt } from '../agent-profiles.js'
 import {
   CALL_AGENTS_TASKS_HARD_MAX,
   getCallAgentMaxPerTurn,
@@ -366,6 +371,7 @@ export function getAgimTools(): ToolDef[] {
       description: buildCallAgentToolDescription({
         backends: listProviders().map((p) => p.name),
         roles: Object.keys(describeRegistry().roles),
+        agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
       }),
       parameters: {
         type: 'object',
@@ -415,6 +421,7 @@ export function getAgimTools(): ToolDef[] {
       description: buildCallAgentsToolDescription({
         backends: listProviders().map((p) => p.name),
         roles: Object.keys(describeRegistry().roles),
+        agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
       }),
       parameters: {
         type: 'object',
@@ -1014,6 +1021,24 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
                 })
               } catch { /* observer must not break dispatch */ }
               return err(`call_agents tasks[${i}] refused: ${spawn.error}`)
+            }
+            // Probe before noteLoopDispatch so an unusable CLI (missing /
+            // login quarantine) cannot count as the Loop round's required
+            // dispatch. Fail the whole batch so the parent replans.
+            if (!(await isAgentAvailableCached(spawn.agent))) {
+              const refuse = formatAgentDispatchUnavailable(spawn.agent)
+              try {
+                ctx.onToolActivity?.({
+                  id: stepId,
+                  kind: 'agent',
+                  label: spawn.label || spawn.agent,
+                  status: 'error',
+                  startedAt: Date.now(),
+                  finishedAt: Date.now(),
+                  preview: refuse.slice(0, 180),
+                })
+              } catch { /* observer must not break dispatch */ }
+              return err(`call_agents tasks[${i}] refused: ${refuse}`)
             }
             prepared.push({
               index: i,

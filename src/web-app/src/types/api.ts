@@ -804,10 +804,22 @@ export interface LoginResponse extends OkResponse {
  * Config (read-only DTO; settings page narrows it later)
  * ============================================================ */
 
+/** Specialty profile for a non-Agim CLI agent (call_agents routing). */
+export interface AgentProfile {
+  summary: string
+  strengths: string[]
+  avoid: string[]
+  tags: string[]
+}
+
 export interface AppConfig {
   messengers: string[]
   agents: string[]
   defaultAgent: string
+  /** Effective specialty profiles (defaults ⊕ overrides). */
+  agentProfiles?: Record<string, AgentProfile>
+  /** Builtin defaults for Settings「恢复默认」. */
+  agentProfileDefaults?: Record<string, AgentProfile>
   webPort?: number
   telegram?: { botToken?: string; channelId?: string }
   feishu?: { appId?: string; appSecret?: string; channelId?: string }

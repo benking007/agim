@@ -131,6 +131,13 @@ export interface Session {
   threadId: string
   platform: string
   agent: string
+  /**
+   * Preferred Loop Subagent / worker (usually a CLI like `codex`).
+   * Agim remains the Loop parent; this steers `call_agents` task.agent.
+   * Updated when the user picks a non-Agim sticky agent, or when switching
+   * that CLI → Agim. Cleared by /new.
+   */
+  preferredWorkerAgent?: string
   createdAt: Date
   lastActivity: Date
   ttl: number
@@ -625,5 +632,15 @@ export interface Config {
   messengers: string[]
   agents: string[]
   defaultAgent: string
+  /**
+   * Sparse overrides of builtin CLI specialty profiles
+   * (`src/core/agent-profiles.ts`). Agim Agent is never profiled here.
+   */
+  agentProfiles?: Record<string, {
+    summary?: string
+    strengths?: string[]
+    avoid?: string[]
+    tags?: string[]
+  }>
   [key: string]: unknown
 }

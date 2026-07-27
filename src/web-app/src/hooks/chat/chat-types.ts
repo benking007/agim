@@ -137,6 +137,8 @@ export interface ChatState {
   activeRunId: string | null
   agents: string[]
   agent: string                  // currently selected
+  /** Preferred Loop Subagent while Agim is parent (e.g. codex). */
+  preferredWorkerAgent: string
   status: WsStatus
   /** When non-null, an assistant message is being streamed; chunks
    *  accumulate into messages[currentReplyId].content. */

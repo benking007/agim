@@ -56,8 +56,13 @@ export const CALL_AGENTS_TOOL_DESCRIPTION = [
  * Complements the shorter tool description with decision heuristics.
  * Also read by Subagents (same system prompt) — deliverable rules apply when YOU are the child.
  */
-export function buildSubagentDelegationGuidance(): string {
-  return [
+export function buildSubagentDelegationGuidance(extra?: {
+  backends?: string[]
+  roles?: string[]
+  /** Preformatted specialty catalog (from agent-profiles). */
+  agentProfilesCatalog?: string
+}): string {
+  const lines = [
     'Subagent delegation (mcp__agim__call_agent / mcp__agim__call_agents):',
     '  - You stay the user-facing owner. Subagents are nested workers (same-family Agim or cross-adapter A2A), not a sticky handoff.',
     '  - When to spawn: long / context-polluting / independently parallelizable work. Single-fact answers and short edits → do it yourself;',
@@ -71,10 +76,16 @@ export function buildSubagentDelegationGuidance(): string {
     '    put clarifying needs / blockers in your FINAL message and return.',
     '  - Same-family: prefer backend:"<llmBackends.name>" (concrete). isolate:true reuses default model.',
     '    role:"cheap" is only an optional alias when llmRoles.cheap exists — do not assume it.',
+    '  - Cross-adapter: pick agent= using the specialty catalog below (and availability). Prefer fit over habit.',
     '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
     '  - Verification: after a substantive result, a fresh verifier Subagent can be valuable — give an exact claim + how to check it.',
     '  - Synthesize, don\'t delegate understanding: merge child summaries into one Chinese user reply; never dump raw child transcripts.',
-  ].join('\n')
+  ]
+  const catalog = (extra?.agentProfilesCatalog || '').trim()
+  if (catalog) {
+    lines.push('', catalog)
+  }
+  return lines.join('\n')
 }
 
 /** Append live backend/role roster so the model can pick real names. */
@@ -99,13 +110,22 @@ function appendBackendRoleRoster(
 export function buildCallAgentToolDescription(extra?: {
   backends?: string[]
   roles?: string[]
+  agentProfilesCatalog?: string
 }): string {
-  return appendBackendRoleRoster(CALL_AGENT_TOOL_DESCRIPTION, extra)
+  const base = appendBackendRoleRoster(CALL_AGENT_TOOL_DESCRIPTION, extra)
+  const catalog = (extra?.agentProfilesCatalog || '').trim()
+  if (!catalog) return base
+  // Keep tool schema compact — one-line hint; full catalog is in system prompt.
+  return `${base} Prefer cross-adapter agent= using specialty fit (see system specialty catalog).`
 }
 
 export function buildCallAgentsToolDescription(extra?: {
   backends?: string[]
   roles?: string[]
+  agentProfilesCatalog?: string
 }): string {
-  return appendBackendRoleRoster(CALL_AGENTS_TOOL_DESCRIPTION, extra)
+  const base = appendBackendRoleRoster(CALL_AGENTS_TOOL_DESCRIPTION, extra)
+  const catalog = (extra?.agentProfilesCatalog || '').trim()
+  if (!catalog) return base
+  return `${base} Prefer each tasks[].agent by specialty fit (see system specialty catalog).`
 }

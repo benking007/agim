@@ -1930,11 +1930,20 @@ export function buildLoopSnippet(
   platform: string,
   channelId: string,
   threadId: string,
+  opts?: { preferredWorkerAgent?: string },
 ): string {
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return ''
   const lines: string[] = []
   lines.push(`[agim context — loop ACTIVE #${run.id.slice(0, 8)} status=${run.status}]`)
+
+  const preferredWorker = (opts?.preferredWorkerAgent || '').trim()
+  if (preferredWorker) {
+    lines.push(
+      `Preferred worker agent: "${preferredWorker}" `
+        + `(user selected this CLI; prefer it in call_agents task.agent when suitable).`,
+    )
+  }
 
   const view = getMissionView(run)
   if (run.status === 'aligning') {
@@ -2029,13 +2038,17 @@ export function buildLoopSnippet(
         + 'loop_verdict until liveSubagents=0 for this round.',
     )
   } else if ((run.dispatchesThisRound || 0) < 1) {
+    const workerHint = preferredWorker
+      ? ` Prefer agent:"${preferredWorker}" on call_agents tasks unless another agent is clearly better.`
+      : ' Cross-adapter CLI agents (codex / claude-code / …) are allowed when registered.'
     lines.push(
       'MUST decompose the objective into tasks and call mcp__agim__call_agents '
         + '(or call_agent) at least once this round before loop_verdict continue/revise. '
         + 'HARD GATE: do NOT web_fetch / web_search / exec / write the mission yourself '
         + 'until after the first call_agents — those tools are refused (AGIM_LOOP_DISPATCH_GATE). '
-        + 'Write a short todo plan if needed, then immediately call_agents. '
-        + 'Serial dispatch is fine. loop_verdict stop may end without dispatch. User can /loop stop.',
+        + 'Write a short todo plan if needed, then immediately call_agents.'
+        + workerHint
+        + ' Serial dispatch is fine. loop_verdict stop may end without dispatch. User can /loop stop.',
     )
   } else {
     lines.push(

@@ -28,6 +28,7 @@ export type ChatAction =
       kind: 'HISTORY'
       messages: ChatMessage[]
       agent: string
+      preferredWorkerAgent?: string
       planMode?: boolean
       thinkVariant?: string
       sessionModel?: string
@@ -50,7 +51,7 @@ export type ChatAction =
       error?: string
     }
   | { kind: 'AGENTS'; agents: string[] }
-  | { kind: 'AGENT_SWITCHED'; agent: string }
+  | { kind: 'AGENT_SWITCHED'; agent: string; preferredWorkerAgent?: string }
   | { kind: 'SEND_USER'; message: ChatMessage; placeholder: ChatMessage }
   | { kind: 'CHUNK'; replyId: string; text: string }
   | { kind: 'DONE'; replyId: string; finalText: string; runId?: string; messageId?: string }
@@ -90,6 +91,7 @@ export const initialChatState: ChatState = {
   activeRunId: null,
   agents: [],
   agent: '',
+  preferredWorkerAgent: '',
   status: 'connecting',
   currentReplyId: null,
   error: null,
@@ -235,6 +237,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         return {
           ...s,
           agent: a.agent || s.agent,
+          preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
           planMode: a.planMode ?? s.planMode,
           thinkVariant: a.thinkVariant ?? s.thinkVariant,
           sessionModel: a.sessionModel ?? s.sessionModel,
@@ -245,6 +248,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         ...s,
         messages: a.messages.length > 0 ? a.messages : s.messages,
         agent: a.agent || s.agent,
+        preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
         currentReplyId: a.messages.length > 0 ? null : s.currentReplyId,
         activeRunId: a.messages.length > 0 ? null : s.activeRunId,
         planMode: a.planMode ?? s.planMode,
@@ -335,7 +339,11 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
     case 'AGENTS':
       return { ...s, agents: a.agents }
     case 'AGENT_SWITCHED':
-      return { ...s, agent: a.agent }
+      return {
+        ...s,
+        agent: a.agent,
+        preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
+      }
     case 'SEND_USER':
       return {
         ...s,
@@ -743,6 +751,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         thinkVariant: 'auto',
         sessionModel: '',
         compactRate: 'auto',
+        preferredWorkerAgent: '',
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }

@@ -1,6 +1,11 @@
 // /loop — L3 Loop Engineering. See docs/architecture/loop-engineering.md
 
 import type { RouteContext } from '../router.js'
+import { sessionManager } from '../session.js'
+import {
+  canParentLoop,
+  formatLoopParentRequired,
+} from '../loop-parent-agent.js'
 import {
   confirmLoopMission,
   formatAligningPrompt,
@@ -30,6 +35,10 @@ const HELP = [
   '  | 定时再跑 prompt| **`/loop` /schedule** | Heartbeat / 提醒（R6 暂缓） |',
   '  | Focus 注意力   | （会话上下文）      | `/focus`（不是 Loop）         |',
   '',
+  '**父编排 Agent**：必须是 **Agim Agent**（Portal 顶部选 Agim）。',
+  'Codex / Claude Code 等 CLI 只能作 **子代理**（由 `call_agents` 派工），',
+  '不能当 Loop 父进程（无 `call_agents`/`loop_verdict`，且易 `spawn E2BIG`）。',
+  '',
   '硬输入（缺一不可，确认前不派子代理）：',
   '  **目标** + **退出条件**',
   '',
@@ -37,7 +46,7 @@ const HELP = [
   '  `/loop 目标…；退出条件为…`  尽量一次给齐（也可用「退出：…」）',
   '  `/loop 目标…；退出条件为…；正文：…`  可附带可选正文（也可用「补充：」「body:」）',
   '  `/loop` / `/loop start`  Focus 已 on：聚焦内容写入正文（标注），目标/退出仍须确认',
-  '  `/loop start <note>`     Focus 已 on：附带说明启动对焦（note 不进目标）',
+  '  `/loop start <note>`     Focus 已 on：note 预填对焦「目标」；Focus 仍进正文；退出仍须确认',
   '  `/loop objective <text>` 对焦中补目标（可含「；验收：…」）',
   '  `/loop exit <text>`      对焦中补退出条件',
   '  `/loop body <text>`      可选正文/补充提示（写入 Mission，非硬门禁）',
@@ -62,6 +71,23 @@ const HELP = [
   '路径 A：先 `/focus …` 再 `/loop` → 结束不关 Focus',
   '路径 B：直接 `/loop <text>` → 代开 Focus，结束 Focus off',
 ].join('\n')
+
+async function resolveStickyAgentId(ctx: RouteContext): Promise<string> {
+  try {
+    const session = await sessionManager.getExistingSession(
+      ctx.platform, ctx.channelId, ctx.threadId,
+    )
+    if (session?.agent) return session.agent
+  } catch { /* fall through */ }
+  return ctx.defaultAgent
+}
+
+/** Block Loop start/confirm when sticky agent cannot parent (CLI backends). */
+async function gateLoopParent(ctx: RouteContext): Promise<string | null> {
+  const agentId = await resolveStickyAgentId(ctx)
+  if (canParentLoop(agentId)) return null
+  return formatLoopParentRequired(agentId, 'zh')
+}
 
 export async function handleLoopCommand(args: string, ctx: RouteContext): Promise<string> {
   const trimmed = args.trim()
@@ -123,6 +149,8 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
   }
 
   if (sub === 'confirm' || sub === 'ok' || sub === '确认') {
+    const blocked = await gateLoopParent(ctx)
+    if (blocked) return blocked
     const r = confirmLoopMission(ctx.platform, ctx.channelId, ctx.threadId)
     if (!r.ok) {
       if (r.error === 'incomplete') {
@@ -141,6 +169,8 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
       if (active.status === 'aligning') return formatAligningPrompt(active)
       return formatLoopStatus(active)
     }
+    const blocked = await gateLoopParent(ctx)
+    if (blocked) return blocked
     return respondStart(startLoop({
       platform: ctx.platform,
       channelId: ctx.channelId,
@@ -157,6 +187,8 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
   }
 
   // start | bare text → startLoop
+  const blocked = await gateLoopParent(ctx)
+  if (blocked) return blocked
   let text = trimmed
   if (sub === 'start') {
     text = rest
@@ -186,16 +218,18 @@ function mapAlignError(error: string): string {
   }
 }
 
-function maybeConfirmOrPrompt(ctx: RouteContext, run: LoopRun): string {
+async function maybeConfirmOrPrompt(ctx: RouteContext, run: LoopRun): Promise<string> {
   const view = getMissionView(run)
   if (view.objective && view.exitDescription) {
+    const blocked = await gateLoopParent(ctx)
+    if (blocked) return `${formatAligningPrompt(run)}\n\n${blocked}`
     const confirmed = confirmLoopMission(ctx.platform, ctx.channelId, ctx.threadId)
     if (confirmed.ok) return formatConfirmed(confirmed.run)
   }
   return formatAligningPrompt(run)
 }
 
-function applyAligningText(ctx: RouteContext, text: string): string {
+async function applyAligningText(ctx: RouteContext, text: string): Promise<string> {
   const parsed = parseLoopStartText(text)
   if (parsed.objective) {
     const r = setLoopObjective(ctx.platform, ctx.channelId, ctx.threadId, parsed.objective)

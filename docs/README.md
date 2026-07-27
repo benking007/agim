@@ -22,11 +22,12 @@
 - [`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md)：桥接 + Agim Agent 产品立场（旧名 `architecture-bridge-and-native.md` 仅作跳转）
 - [`architecture/subagent.md`](./architecture/subagent.md)：**现行设计** — Subagent 概念、与 A2A/handoff 边界、同族 role/backend、拆解原则、**子代理代审免卡**
 - [`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md)：**现行设计** — sticky CLI 派 `call_agent(s)`；**Loop 仍仅 Agim**
+- [`architecture/agent-profiles.md`](./architecture/agent-profiles.md)：**现行设计** — 非 Agim CLI 派工能力画像（Settings 可维护；全文进 Agim system，工具侧短提示）
 - [`architecture/focus.md`](./architecture/focus.md)：**现行设计** — Focus：聚焦注入 / on / off（废弃 `/goal`）
-- [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；父侧 `ask_user`；结案浮窗；门禁仅 depth=0；Portal）
+- [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；父侧 `ask_user`；结案浮窗；门禁仅 depth=0；Portal 底栏 docks；Tasks Loop 审计）
 - [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点（UI/工具链已退役）
 - [`architecture/retirement-candidates.md`](./architecture/retirement-candidates.md)：退役清单（已落地 Goal/Hot/ACP + 下一波候选）
-- [`architecture/orchestration-roadmap.md`](./architecture/orchestration-roadmap.md)：**现行计划** — Subagent → 并行 → Loop（A/B/C；B5 CLI 父派工已齐，R6 暂缓）
+- [`architecture/orchestration-roadmap.md`](./architecture/orchestration-roadmap.md)：**现行计划** — Subagent → 并行 → Loop（A/B/C：R1–R5+门禁与 B5 CLI 父派工已齐，R6 暂缓；派工见 agent-profiles）
 - [`architecture/agent-cwd-and-memory.md`](./architecture/agent-cwd-and-memory.md)：工作目录与记忆隔离（已实施）
 - [`architecture/reminders.md`](./architecture/reminders.md)：提醒与主动通知链路
 - [`endpoint-contracts.md`](./endpoint-contracts.md)：Web 路由清单与 SPA API 合同维护
@@ -52,7 +53,7 @@
 ## 能力专题
 
 - [`skills.md`](./skills.md)：Skills 机制（内置 38 = Agim 12 + ECC 精选 26）
-- [`portal-composer.md`](./portal-composer.md)：Portal（`/m/chat`）输入框 `/`·`@`、状态栏「替我审批」、chip、小精灵/Loop 底栏、长文折叠与附件预览
+- [`portal-composer.md`](./portal-composer.md)：Portal（`/m/chat`）输入框 `/`·`@`、状态栏「替我审批」、chip、小精灵、Loop 底栏 docks、输入性能与附件预览
 - [`goals.md`](./goals.md)：`/goal` 现行实现（**已废弃设计** → Focus）
 - [`ask-user.md`](./ask-user.md)：结构化提问（ask_user）
 - [`memory-and-vector.md`](./memory-and-vector.md)：长期记忆与向量召回

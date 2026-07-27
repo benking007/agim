@@ -144,6 +144,7 @@ export async function sendSessionHistory(
           }),
         })),
         agent: history.session.agent,
+        preferredWorkerAgent: history.session.preferredWorkerAgent || '',
         planMode: !!history.session.planMode,
         thinkVariant: history.session.variant || 'auto',
         sessionModel: history.session.model || '',
@@ -154,6 +155,7 @@ export async function sendSessionHistory(
         type: 'history',
         messages: history.messages,
         agent: history.session.agent,
+        preferredWorkerAgent: history.session.preferredWorkerAgent || '',
         planMode: !!history.session.planMode,
         thinkVariant: history.session.variant || 'auto',
         sessionModel: history.session.model || '',
@@ -634,8 +636,12 @@ export async function handleClientMessage(
         return
       }
       client.agent = agent.name
-      await sessionManager.switchAgent('web', 'web', clientId, agent.name)
-      sendToClient(ws, { type: 'agent-switched', agent: agent.name })
+      const session = await sessionManager.switchAgent('web', 'web', clientId, agent.name)
+      sendToClient(ws, {
+        type: 'agent-switched',
+        agent: agent.name,
+        preferredWorkerAgent: session.preferredWorkerAgent || '',
+      })
       break
     }
 
@@ -697,7 +703,12 @@ export async function handleClientMessage(
       const { clearActiveRun } = await import('./active-runs.js')
       clearActiveRun(clientId)
       await sessionManager.resetConversation('web', 'web', clientId)
-      sendToClient(ws, { type: 'history', messages: [], agent: client.agent })
+      sendToClient(ws, {
+        type: 'history',
+        messages: [],
+        agent: client.agent,
+        preferredWorkerAgent: '',
+      })
       break
     }
   }

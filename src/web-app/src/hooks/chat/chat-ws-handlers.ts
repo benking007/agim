@@ -137,6 +137,7 @@ export function makeOnIncoming(
         dispatch({
           kind: 'HISTORY',
           agent: msg.agent,
+          preferredWorkerAgent: msg.preferredWorkerAgent || '',
           planMode: msg.planMode,
           thinkVariant: msg.thinkVariant,
           sessionModel: msg.sessionModel,
@@ -183,7 +184,11 @@ export function makeOnIncoming(
         dispatch({ kind: 'AGENTS', agents: msg.agents })
         return
       case 'agent-switched':
-        dispatch({ kind: 'AGENT_SWITCHED', agent: msg.agent })
+        dispatch({
+          kind: 'AGENT_SWITCHED',
+          agent: msg.agent,
+          preferredWorkerAgent: msg.preferredWorkerAgent || '',
+        })
         return
       case 'run-start':
         dispatch({

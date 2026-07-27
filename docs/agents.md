@@ -2,7 +2,8 @@
 
 Agim can bridge one IM entry to multiple local or remote agent backends. This page is the user-facing map for choosing, installing, and operating those backends.
 
-For the implementation checklist used when adding a new backend, see `agent-integration-sop.md`.
+For the implementation checklist used when adding a new backend, see `agent-integration-sop.md`.  
+When Agim dispatches work to a non-Agim CLI via `call_agent(s)`, specialty fit comes from [`architecture/agent-profiles.md`](./architecture/agent-profiles.md) (Settings → Agents →「派工能力画像」).
 
 **Subagent dispatch:** sticky CLI parents can spawn nested workers via `mcp__agim__call_agent` / `call_agents` (shared MCP sidecar; PI uses its extension). **Loop Engineering (`/loop`) stays Agim-only** — switch sticky to Agim before starting a Loop. SSOT: [`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md).
 

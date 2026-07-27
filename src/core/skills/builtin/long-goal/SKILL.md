@@ -18,6 +18,12 @@ agim now exposes long-running objectives through **Focus** and **Loop**:
 
 Use **Focus** when the user wants an objective to stay visible across many turns. Use **Loop** when the user wants a closed engineering mission with verification.
 
+**Parent gate:** Focus tools and `loop_verdict` are available only on
+**Agim Agent**. Sticky CLI parents (Codex / Claude / …) may still
+`call_agent` / `call_agents` to spawn Subagents, but for `/loop` the
+user should switch sticky to Agim first
+(`docs/architecture/cli-subagent-dispatch.md`).
+
 ## When to suggest Focus or Loop
 
 If the user says any of:

@@ -111,9 +111,21 @@ Status flags:
 - ⭐ available + `always:true`
 - ⏸ unavailable (with reason)
 
-## MCP tool — `mcp__agim__read_skill`
+## MCP tools on the CLI sidecar
 
-The CLI sidecar exposes:
+Sticky CLI parents share the Agim MCP sidecar (PI uses its extension).
+Besides skills, the sidecar exposes Subagent dispatch:
+
+| Tool | Purpose |
+|------|---------|
+| `mcp__agim__call_agent` | Spawn one nested worker; parent keeps the user reply |
+| `mcp__agim__call_agents` | Fan-out / join multiple workers (`tasks[]`) |
+
+**Loop Engineering stays Agim-only** — `loop_verdict` / Focus tools are
+**not** on the sidecar. Full contract:
+[`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md).
+
+### `mcp__agim__read_skill`
 
 ```ts
 mcp__agim__read_skill({

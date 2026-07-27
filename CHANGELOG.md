@@ -24,7 +24,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-<<<<<<< HEAD
+- **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.
+  `common`/`errors` load for the active language only; page namespaces
+  (`settings`, `tasks`, `memory`, …) load on demand via Vite
+  `import.meta.glob` chunks. Dropped unused `i18next-http-backend` and
+  `i18next-browser-languagedetector`.
 - **Loop history + Tasks audit**: every Loop run is archived under
   `~/.agim/loops/history/<runId>.json` (thread snapshot still at
   `<threadKey>.json`). Admin APIs `GET /api/loops` + `GET /api/loops/:id`
@@ -35,14 +39,8 @@ All notable changes to this project will be documented in this file.
 - **Loop path A Focus → body**: when Focus is already on, `/loop` no longer
   seeds `objective` from Focus. Focus title/body is appended to Mission
   `body` with the label `【当前 Agent 聚焦内容】` (Portal aligning dock
-  shows it under 正文). Objective and exit still require explicit confirm.
-=======
-- **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.
-  `common`/`errors` load for the active language only; page namespaces
-  (`settings`, `tasks`, `memory`, …) load on demand via Vite
-  `import.meta.glob` chunks. Dropped unused `i18next-http-backend` and
-  `i18next-browser-languagedetector`.
->>>>>>> origin/cursor/i18n-lazy-namespaces-fda5
+  shows it under 正文). Bare `/loop start <text>` still prefills the
+  Aligning **目标** field from that start text; exit still requires confirm.
 - **Curate builtin ECC pack to 26 skills**: ship only the operator-selected
   harness/methodology/product/security set (`agent-*`, `autonomous-*`,
   `blueprint`, `tdd-workflow`, `api-design`, `backend-patterns`,
@@ -53,6 +51,10 @@ All notable changes to this project will be documented in this file.
   `ECC_TOP_PICKS_DEFAULT` matches the shipped 26.
 
 ### Fixed
+- **Loop Portal UX**: after Loop starts, stop mirroring status onto the pet
+  speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
+  Loop 审计 surfaces list API errors and only applies status filter on
+  「应用」(empty filtered copy no longer looks like “no data at all”).
 - **Loop CR follow-ups**: Focus path A seeds Mission `body` (not objective);
   post-end report offer uses cumulative `loopJobIds` for the dock count
   (Agent writes the report via chat prompt; no thread-wide assemble);

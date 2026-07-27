@@ -50,10 +50,11 @@ export default function TasksLoopsRoute(): JSX.Element {
   const [filter, setFilter] = useState('')
   const [appliedFilter, setAppliedFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'ended'>('all')
+  const [appliedStatus, setAppliedStatus] = useState<'all' | 'active' | 'ended'>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const listQuery = useLoopsList({
-    status: statusFilter === 'all' ? undefined : statusFilter,
+    status: appliedStatus === 'all' ? undefined : appliedStatus,
     threadId: appliedFilter || undefined,
     limit: 200,
     lang,
@@ -61,9 +62,16 @@ export default function TasksLoopsRoute(): JSX.Element {
   const rows = useMemo(() => listQuery.data?.loops ?? [], [listQuery.data])
   const detailQuery = useLoopDetail(expandedId, lang)
   const detail = detailQuery.data?.loop
+  const hasExtraFilter = !!appliedFilter || appliedStatus !== 'all'
+  const listError = listQuery.isError
+    ? (listQuery.error instanceof Error
+      ? listQuery.error.message
+      : String(listQuery.error || t('loops.loadError', { defaultValue: '加载失败' })))
+    : null
 
   function applyFilter(): void {
     setAppliedFilter(filter.trim())
+    setAppliedStatus(statusFilter)
   }
 
   return (
@@ -119,6 +127,7 @@ export default function TasksLoopsRoute(): JSX.Element {
             setFilter('')
             setAppliedFilter('')
             setStatusFilter('all')
+            setAppliedStatus('all')
           }}
         >
           {t('loops.clearFilter')}
@@ -130,9 +139,13 @@ export default function TasksLoopsRoute(): JSX.Element {
           <Loader2 className="h-4 w-4 animate-spin" />
           {t('states.loading', { ns: 'common' })}
         </div>
+      ) : listError ? (
+        <p className="text-sm text-danger">
+          {t('loops.loadError', { defaultValue: '加载失败' })}: {listError}
+        </p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-text-muted">
-          {appliedFilter ? t('loops.emptyFiltered') : t('loops.empty')}
+          {hasExtraFilter ? t('loops.emptyFiltered') : t('loops.empty')}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
@@ -342,8 +355,8 @@ function LoopDetailPanel({
           <p className="text-text-muted">—</p>
         ) : (
           <ul className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border bg-background p-2">
-            {[...detail.timeline].reverse().map((e, i) => (
-              <li key={`${e.at}-${i}`} className="flex gap-2 text-xs">
+            {[...detail.timeline].reverse().map((e) => (
+              <li key={`${e.at}-${e.kind}-${e.summary.slice(0, 48)}`} className="flex gap-2 text-xs">
                 <span className="shrink-0 tabular-nums text-text-muted">{fmtTime(e.at)}</span>
                 <span className="shrink-0 font-medium text-text-dim">{e.kind}</span>
                 <span className="min-w-0 break-words text-text">{e.summary}</span>

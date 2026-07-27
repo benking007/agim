@@ -397,7 +397,8 @@
     "applyFilter": "应用",
     "clearFilter": "清空",
     "empty": "暂无 Loop。",
-    "emptyFiltered": "无匹配。",
+    "emptyFiltered": "无匹配。可切换「全部」或清空筛选。",
+    "loadError": "加载失败",
     "detailError": "加载失败",
     "col": {
       "status": "状态",

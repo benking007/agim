@@ -83,7 +83,6 @@ import { resolveTheme, type Theme } from './portal-theme'
 import { usePortalVoice } from './use-portal-voice'
 import { usePortalPetTasks } from './use-portal-pet-tasks'
 import { PortalHeader, type AgentCatalogEntry } from './portal-header'
-import type { PetTaskItem } from './portal-pet'
 import { PortalEmptyChat } from './portal-empty-chat'
 import { PortalMessageList } from './portal-message-list'
 import { PortalExplore, type ExploreCategory } from './portal-explore'
@@ -223,7 +222,6 @@ export function AgentPortal(): JSX.Element {
 
   const portalThreadId = state.clientId
   const loopRefreshKey = `${state.messages.length}:${canStop ? 1 : 0}`
-  const [loopTask, setLoopTask] = useState<PetTaskItem | null>(null)
   const hasBlockingDock = state.pendingApprovals.some((a) => !a.outcome)
     || state.pendingAsks.some((a) => !a.finalText)
 
@@ -235,7 +233,6 @@ export function AgentPortal(): JSX.Element {
     pendingApprovals: state.pendingApprovals,
     pendingAsks: state.pendingAsks,
     portalThreadId,
-    loopTask,
     demoPet,
   })
 
@@ -639,7 +636,6 @@ export function AgentPortal(): JSX.Element {
                 <PortalLoopDock
                   threadId={portalThreadId}
                   refreshKey={loopRefreshKey}
-                  onLoopPetTask={setLoopTask}
                   dark={dark}
                   busy={canStop}
                   hasBlockingDock={hasBlockingDock}

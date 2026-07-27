@@ -1346,7 +1346,10 @@ function mergeMissionBody(userBody: string | undefined, focusAppendix: string): 
   return `${user}\n\n${focus}`.slice(0, BODY_MAX)
 }
 
-/** Path A bare `/loop note` is a start note, not an objective override. */
+/**
+ * Path A: `目标：…` / `objective:` / exit pair is an explicit mission override.
+ * Bare `/loop start <text>` is a start note (still prefills draft objective).
+ */
 function isExplicitObjectiveText(raw: string, parsed: { objective: string; exitDescription: string }): boolean {
   const t = raw.trim()
   if (!t) return false
@@ -1407,12 +1410,14 @@ export function startLoop(input: {
   let startNote: string | undefined
   // Path A: Focus already on — never seed objective from Focus.
   // Append Focus into mission.body (labeled) so the aligning dock shows it
-  // under 正文, not 目标.
+  // under 正文, not 目标. Bare `/loop start <text>` still prefills objective
+  // from the user's typed goal (start note) so Aligning doesn't open blank.
   if (path === 'A') {
     if (isExplicitObjectiveText(rawText, parsed)) {
       objective = (parsed.objective || '').slice(0, 500)
     } else if (rawText) {
       startNote = rawText.slice(0, 500)
+      objective = startNote
     }
   } else {
     objective = (parsed.objective || rawText).slice(0, 500)

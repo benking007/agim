@@ -4,7 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-<<<<<<< HEAD
 ### Fixed
 
 - **Focus no longer hard-pulls via goal-critic**: on-track critic now
@@ -14,13 +13,13 @@ All notable changes to this project will be documented in this file.
   hard-stopped just for not advancing Focus; soft-steer at most.
   Continuations like「继续」still anchor on Focus. Docs: `focus.md`
   §2.3.1 + desktop-regression + naming.
-=======
+
 ### Changed
 
 - **Subagent live elapsed**: running Subagent rows show a ticking
   elapsed time next to the SUBAGENT badge (e.g. `12.3s` / `1m 5s`),
-  matching the completed preview duration style.
->>>>>>> 943dd2ce (feat(web): show live elapsed time on running Subagent rows)
+  matching the completed preview duration style. Docs: portal-composer /
+  desktop-regression / subagent.
 
 ### Added
 

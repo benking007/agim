@@ -2,7 +2,7 @@
 
 > **状态**：现行 · 2026-07-27  
 > **产品分界**：**CLI 可派工，不可当 Loop 父**  
-> **关联**：[Subagent](./subagent.md) · [Loop](./loop-engineering.md) · [编排路线图](./orchestration-roadmap.md) · [Agent 后端表](../agents.md) · [命名](../naming.md) · [接入 SOP](../agent-integration-sop.md) · [桌面回归 §4b](../desktop-regression.md)
+> **关联**：[Subagent](./subagent.md) · [Loop](./loop-engineering.md) · [派工画像](./agent-profiles.md) · [编排路线图](./orchestration-roadmap.md) · [Agent 后端表](../agents.md) · [命名](../naming.md) · [接入 SOP](../agent-integration-sop.md) · [桌面回归 §4b](../desktop-regression.md)
 
 ## 0. 一句话
 

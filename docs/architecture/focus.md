@@ -73,9 +73,22 @@ Body: …
 Focus is background context only. The user's current-turn ask always wins; …
 ```
 
-**与目标巡检（goal-critic）**：有 Focus 时默认会启用巡检（`AGIM_NATIVE_CRITIC` 默认 `goal-only`），但巡检的**硬目标是本轮用户 prompt**，Focus 只作背景。用户这轮在干别的事（未开 `/loop`）时，**不得**因未推进 Focus 而硬停并拉回 Focus。闭环硬拉回属于 Loop。
-
 边界：title/body 截断策略可复用今日 goal 的预算（body store cap / snippet cap），实施时从 `goals.ts` 迁出或共用 helper。
+
+### 2.3.1 与目标巡检（on-track / goal-critic）
+
+Focus **不是**硬任务。有 Focus 时默认会**启用**巡检（`AGIM_NATIVE_CRITIC` 缺省 `goal-only`），但判定锚点如下：
+
+| 本轮用户输入 | 巡检硬目标 | 因「没推 Focus」硬停？ |
+|---|---|---|
+| 具体请求（如「折叠侧栏」） | **该请求**；Focus 仅背景 | **否**（最多 soft-steer） |
+| 「继续」/ 空续作 | Focus（若有） | 可以（防空转） |
+| 无 Focus 且默认 `goal-only` | 不跑巡检 | — |
+
+- 关掉巡检：`AGIM_NATIVE_CRITIC=off`  
+- 始终巡检（有 prompt 也跑）：`AGIM_NATIVE_CRITIC=always`  
+- 实现：`src/core/llm/goal-critic.ts`（`isConcreteTurnAsk` / `shouldHardStopOnOffTrack`）  
+- **闭环硬拉回属于 `/loop`，不属于 Focus。**
 
 ### 2.4 工具面（草案）
 
@@ -167,18 +180,19 @@ Loop 本体定义见 [`loop-engineering.md`](./loop-engineering.md)（L3，不�
 
 ## 7. 验收（Focus 落地时）
 
-- [ ] `/focus set` 后下一 turn 可见注入  
-- [ ] `/focus off` 后不再注入，再 `/focus on` 恢复同一内容  
-- [ ] `/focus clear` 后无注入、无残留内容  
-- [ ] `/goal` 兼容路径有明确废弃提示或等价转发  
-- [ ] 文档与 naming 不再把 Focus 写成「可验收任务」
+- [x] `/focus set` 后下一 turn 可见注入  
+- [x] `/focus off` 后不再注入，再 `/focus on` 恢复同一内容  
+- [x] `/focus clear` 后无注入、无残留内容  
+- [x] `/goal` 兼容路径有明确废弃提示或等价转发  
+- [x] 文档与 naming 不再把 Focus 写成「可验收任务」  
+- [x] 有 Focus 时做无关具体请求：**不**被 on-track critic 硬停拉回 Focus（见 §2.3.1 / 桌面回归）
 
 ---
 
 ## 8. TL;DR
 
-> **Focus = 开/关注入的注意力锚点。**  
-> **Goal 废弃。**  
+> **Focus = 开/关注入的注意力锚点；本轮用户请求永远优先。**  
+> **Goal 废弃。闭环硬约束归 `/loop`，不归 Focus / goal-critic。**  
 > **Loop：可先 focus 再 loop（结束保留 focus），或 `/loop <text>` 代开（结束 focus off）。**
 
 ---

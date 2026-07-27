@@ -136,6 +136,8 @@ node tools/phase-b-acceptance.mjs
 
 覆盖：`call_agents` 三路 fan-out、`toolCallId#i` activity、三 `jobId`、mock `peakSlow≥2`（真并行）、墙钟低于串行、`agim/cheap` 标签。
 
+手测防回归（幽灵卡）：在 `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN=3` 下先成功 `call_agents` 三路（有 Stop → completed），再让模型同 turn 再派一批 → 新卡应迅速变为 **failed**（cap 文案），**不得**留下无 Stop 的永久 Waiting。
+
 ## 4b. CLI sticky 父派 Subagent（B5）
 
 契约：[`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md)。  

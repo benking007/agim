@@ -1222,16 +1222,49 @@ export class NativeAgentAdapter implements AgentAdapter {
             turnSignal,
           )
           if (decision === 'deny') {
-            emitToolActivity({
-              id: ev.toolCallId,
-              kind: callAgentPendingLabel ? 'agent' : undefined,
-              label: callAgentPendingLabel ?? ev.toolName,
-              status: 'denied',
-              startedAt: Date.now(),
-              finishedAt: Date.now(),
-              preview: `denied by policy: ${ev.toolName}`,
-            })
-            return { block: true, reason: `denied by policy: ${ev.toolName}` }
+            const denyPreview = `denied by policy: ${ev.toolName}`
+            // call_agents already painted `${toolCallId}#i` pending cards —
+            // deny must close those lanes (parent toolCallId alone leaves ghosts).
+            if (isCallAgentsTool(ev.toolName)) {
+              const input = (ev.input ?? {}) as Record<string, unknown>
+              const tasks = Array.isArray(input.tasks) ? input.tasks : []
+              const now = Date.now()
+              for (let i = 0; i < tasks.length; i++) {
+                const t = (tasks[i] && typeof tasks[i] === 'object')
+                  ? tasks[i] as Record<string, unknown>
+                  : {}
+                const agentArg = typeof t.agent === 'string' ? t.agent : 'agent'
+                const parsed = parseCallAgentTarget(agentArg)
+                const backendArg = (typeof t.backend === 'string' ? t.backend : undefined)
+                  || parsed.backend
+                const roleArg = backendArg
+                  ? undefined
+                  : ((typeof t.role === 'string' ? t.role : undefined) || parsed.role)
+                emitToolActivity({
+                  id: `${ev.toolCallId}#${i}`,
+                  kind: 'agent',
+                  label: formatSubagentLabel(parsed.agent || agentArg, {
+                    role: roleArg,
+                    backend: backendArg,
+                  }),
+                  status: 'denied',
+                  startedAt: now,
+                  finishedAt: now,
+                  preview: denyPreview,
+                })
+              }
+            } else {
+              emitToolActivity({
+                id: ev.toolCallId,
+                kind: callAgentPendingLabel ? 'agent' : undefined,
+                label: callAgentPendingLabel ?? ev.toolName,
+                status: 'denied',
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                preview: denyPreview,
+              })
+            }
+            return { block: true, reason: denyPreview }
           }
         }
         dispatchedToolCalls += 1
@@ -1479,6 +1512,68 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (ev.toolCallId) {
         const startedAt = toolStartAt.get(ev.toolCallId) ?? Date.now()
         toolStartAt.delete(ev.toolCallId)
+        // Belt-and-suspenders: call_agent(s) parent tool rows are suppressed
+        // below, but a refused batch must still close `${toolCallId}#i` pending
+        // cards (dispatcher also emits; this covers any early-return gap).
+        if (
+          ev.isError === true
+          && ev.toolName
+          && isCallAgentsTool(ev.toolName)
+        ) {
+          const input = (ev.input ?? {}) as Record<string, unknown>
+          const tasks = Array.isArray(input.tasks) ? input.tasks : []
+          const now = Date.now()
+          const errPreview = (preview || 'call_agents failed').slice(0, 180)
+          for (let i = 0; i < tasks.length; i++) {
+            const t = (tasks[i] && typeof tasks[i] === 'object')
+              ? tasks[i] as Record<string, unknown>
+              : {}
+            const agentArg = typeof t.agent === 'string' ? t.agent : 'agent'
+            const parsed = parseCallAgentTarget(agentArg)
+            const backendArg = (typeof t.backend === 'string' ? t.backend : undefined)
+              || parsed.backend
+            const roleArg = backendArg
+              ? undefined
+              : ((typeof t.role === 'string' ? t.role : undefined) || parsed.role)
+            emitToolActivity({
+              id: `${ev.toolCallId}#${i}`,
+              kind: 'agent',
+              label: formatSubagentLabel(parsed.agent || agentArg, {
+                role: roleArg,
+                backend: backendArg,
+              }),
+              status: 'error',
+              startedAt,
+              finishedAt: now,
+              preview: errPreview,
+            })
+          }
+        } else if (
+          ev.isError === true
+          && ev.toolName
+          && isCallAgentTool(ev.toolName)
+        ) {
+          const input = (ev.input ?? {}) as Record<string, unknown>
+          const agentArg = typeof input.agent === 'string' ? input.agent : 'agent'
+          const parsed = parseCallAgentTarget(agentArg)
+          const backendArg = (typeof input.backend === 'string' ? input.backend : undefined)
+            || parsed.backend
+          const roleArg = backendArg
+            ? undefined
+            : ((typeof input.role === 'string' ? input.role : undefined) || parsed.role)
+          emitToolActivity({
+            id: ev.toolCallId,
+            kind: 'agent',
+            label: formatSubagentLabel(parsed.agent || agentArg, {
+              role: roleArg,
+              backend: backendArg,
+            }),
+            status: 'error',
+            startedAt,
+            finishedAt: Date.now(),
+            preview: (preview || 'call_agent failed').slice(0, 180),
+          })
+        }
         emitToolActivity({
           id: ev.toolCallId,
           label: ev.toolName ?? 'unknown_tool',

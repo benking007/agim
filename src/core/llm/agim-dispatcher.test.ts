@@ -360,6 +360,48 @@ describe('buildAgimDispatcher', () => {
       } finally { restoreEnv() }
     })
 
+    it('cap refuse closes pending `${call.id}#i` cards (no ghost Waiting rows)', async () => {
+      // Cap check runs before fan-out / availability probe — batch of 3 with
+      // cap=2 is enough to reproduce the ghost-card bug without spawning.
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '2'
+      process.env.AGIM_A2A_ENABLED = '0'
+      const steps: Array<{ id: string; status: string; kind?: string }> = []
+      try {
+        const d = buildAgimDispatcher({
+          ...CTX,
+          callerAgent: 'agim',
+          onToolActivity: (step) => { steps.push(step) },
+        })
+        const r = await d(
+          {
+            id: 'batch-ghost',
+            name: 'mcp__agim__call_agents',
+            arguments: {
+              tasks: [
+                { agent: 'agim', prompt: 'extra 1', isolate: true },
+                { agent: 'agim', prompt: 'extra 2', isolate: true },
+                { agent: 'agim', prompt: 'extra 3', isolate: true },
+              ],
+            },
+          },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/cap=2/i)
+
+        const closed = steps.filter((s) => (
+          s.id.startsWith('batch-ghost#') && s.kind === 'agent' && s.status === 'error'
+        ))
+        expect(closed.map((s) => s.id).sort()).toEqual([
+          'batch-ghost#0',
+          'batch-ghost#1',
+          'batch-ghost#2',
+        ])
+        // No jobId on refuse — these would have been Stop-less Waiting ghosts.
+        expect(closed.every((s) => (s as { jobId?: number }).jobId == null)).toBe(true)
+      } finally { restoreEnv() }
+    })
+
     it('fan-out with A2A disabled returns allSettled-style join (per-lane errors)', async () => {
       process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
       process.env.AGIM_A2A_ENABLED = '0'

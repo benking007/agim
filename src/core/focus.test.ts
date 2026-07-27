@@ -34,6 +34,7 @@ describe('focus', () => {
     const snip = buildFocusSnippet(T.platform, T.channelId, T.threadId)
     expect(snip).toContain('focus ON')
     expect(snip).toContain('Ship focus')
+    expect(snip).toContain('current-turn ask always wins')
     expect(snip).not.toContain('complete_goal')
 
     const off = focusOff(T.platform, T.channelId, T.threadId)

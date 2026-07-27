@@ -1,5 +1,5 @@
 // goal-critic — periodic semantic check that a native turn is still on
-// track for the user's goal.
+// track for the **current user ask**.
 //
 // Motivation (v1.2.98):
 //   v1.2.95's stuck-loop detector catches the MECHANICAL case (same
@@ -10,11 +10,18 @@
 //   for ten turns. That's a SEMANTIC failure mode and only an LLM can
 //   judge it.
 //
+// Product split vs Focus (2026-07-27):
+//   Focus is **context injection**, not a hard mission. The critic's
+//   primary anchor is the **current-turn user prompt**. An active Focus
+//   may enable the critic (default `goal-only` mode) and appears as
+//   background — it must NOT veto a turn that is faithfully serving a
+//   different explicit ask (e.g. Focus=投资分析, user asks 折叠侧栏).
+//   Hard pull-back to Focus is Loop's job (`/loop`), not Focus/critic.
+//
 //   The critic is a single cheap LLM call run periodically inside the
 //   agent loop. It sees:
-//     - the original user prompt for this turn
-//     - the active long-task goal (if any — gives a longer-horizon
-//       anchor than the per-turn prompt)
+//     - the original user prompt for this turn (primary)
+//     - optional Focus title/body as background context
 //     - a compact transcript of recent tool calls + brief previews
 //   It returns: { onTrack, reason, redirect? }
 //
@@ -31,6 +38,7 @@
 //   - Not a replacement for the mechanical stuck-loop detector
 //     (v1.2.95). They're complementary: mechanical first (free + fast),
 //     semantic second (LLM cost + latency).
+//   - Not a Focus enforcer. Focus ≠ Loop objective.
 //
 // Cost model:
 //   - Default OFF unless the env switch is set OR active Focus-backed
@@ -50,13 +58,12 @@ import type { LlmProvider, LlmMessage, LlmUsage } from './provider-base.js'
 const log = rootLogger.child({ component: 'goal-critic' })
 
 export interface CriticInput {
-  /** The user's original prompt for the current turn. Optional but
-   *  highly recommended — the critic needs SOMETHING to anchor "what
-   *  was the goal" against. If both prompt AND goalTitle are empty,
-   *  the critic refuses to judge (returns onTrack=true). */
+  /** The user's original prompt for the current turn. Primary objective
+   *  for on-track judgment when it is a concrete ask. */
   prompt?: string
-  /** The thread's active long-task goal title + body. Stronger anchor
-   *  than per-turn prompt when present — survives across turns. */
+  /** Active Focus title/body — **background context only**. Must not
+   *  override a concrete current-turn ask. Used as primary only when the
+   *  turn prompt is empty / a bare continuation ("继续"). */
   goalTitle?: string
   goalBody?: string
   /** Compact transcript of the latest tool calls. Capped at the last
@@ -93,17 +100,38 @@ export interface CompletionCriticVerdict {
   modelUsed?: string
 }
 
-const DEFAULT_SYSTEM_PROMPT =
-  '你是 agim 的 goal-keeper（目标守门员）。任务：判断"刚才那一串工具调用"是否还在为用户的原始目标做事，' +
-  '还是已经偏离 / 在死循环里磨。' +
-  '\n\n判定准则：' +
-  '\n  · 工具结果有进展（信息量增加 / 接近目标） → onTrack=true' +
-  '\n  · 工具反复失败、模型只做表面调整（参数微改 / 同一个错继续撞） → onTrack=false' +
-  '\n  · 已偏离原始话题（在做 user 没要的事） → onTrack=false' +
-  '\n  · 不确定 / 信息不足 → onTrack=true（保守，避免误杀）' +
-  '\n\n输出**只能**是合法 JSON，结构：' +
-  '\n  { "onTrack": boolean, "reason": "一句中文，≤ 60 字", "redirect": "如果偏离，建议什么新方向，≤ 60 字；不偏离填空字符串" }' +
-  '\n\n不要解释、不要寒暄、不要 markdown 围栏。直接给 JSON。'
+/** Bare continuation phrases — Focus may act as the objective. */
+const CONTINUATION_RE =
+  /^(继续|接着|接着干|接着做|然后|再来|往下|go on|continue|keep going|proceed)([。.!！?\s]*)$/i
+
+/**
+ * Whether the current-turn prompt is a concrete ask that outranks Focus.
+ * Focus stays background; critic must not hard-pull back to Focus.
+ */
+export function isConcreteTurnAsk(prompt?: string): boolean {
+  const p = (prompt ?? '').trim()
+  if (!p) return false
+  if (CONTINUATION_RE.test(p)) return false
+  return true
+}
+
+export const DEFAULT_SYSTEM_PROMPT =
+  '你是 agim 的 on-track critic（目标巡检）。任务：判断"刚才那一串工具调用"是否还在为**本轮用户请求**做事，'
+  + '还是已经偏离本轮请求 / 在死循环里磨。'
+  + '\n\n优先级（不可颠倒）：'
+  + '\n  1. **本轮用户 prompt 是唯一硬目标**（若存在且不是「继续」类空话）'
+  + '\n  2. Focus / long-task 只是背景 context，**不是**本轮硬目标'
+  + '\n  3. 工具在忠实服务本轮请求 → 即使与 Focus 主题无关 → onTrack=true'
+  + '\n  4. 禁止仅因「没做 Focus 里的事」判偏离；那不是巡检的职责（闭环推进是 /loop）'
+  + '\n\n判定准则：'
+  + '\n  · 工具结果对本轮请求有进展 → onTrack=true'
+  + '\n  · 工具反复失败、模型只做表面调整（参数微改 / 同一个错继续撞） → onTrack=false'
+  + '\n  · 已偏离**本轮**请求（在做 user 这轮没要的事） → onTrack=false'
+  + '\n  · 本轮请求空 / 仅「继续」，才用 Focus 作目标锚点'
+  + '\n  · 不确定 / 信息不足 → onTrack=true（保守，避免误杀）'
+  + '\n\n输出**只能**是合法 JSON，结构：'
+  + '\n  { "onTrack": boolean, "reason": "一句中文，≤ 60 字", "redirect": "如果偏离，建议什么新方向，≤ 60 字；不偏离填空字符串" }'
+  + '\n\n不要解释、不要寒暄、不要 markdown 围栏。直接给 JSON。'
 
 /** v1.2.99 (CR finding A2): three-valued knob.
  *  - `off` / `0` / `false`  → hard kill, never fire critic
@@ -161,6 +189,49 @@ function buildTranscript(calls: CriticInput['recentToolCalls']): string {
   }).join('\n')
 }
 
+/** Build the user message for the critic. Exported for unit tests. */
+export function buildCriticUserBlock(input: CriticInput): string {
+  const prompt = input.prompt?.trim() ?? ''
+  const concrete = isConcreteTurnAsk(prompt)
+  const hasFocus = !!(input.goalTitle?.trim() || input.goalBody?.trim())
+  const parts: string[] = []
+
+  if (concrete) {
+    parts.push(`[本轮用户请求 — 唯一硬目标]\n${prompt.slice(0, 1000)}`)
+    if (hasFocus) {
+      parts.push(
+        '[Focus 背景 — 仅 context，不是本轮硬目标；勿因未推进 Focus 判偏离]\n'
+        + `${input.goalTitle ?? ''}`
+        + (input.goalBody ? `\n${input.goalBody.slice(0, 1000)}` : ''),
+      )
+    }
+  } else {
+    if (prompt) {
+      parts.push(`[本轮用户请求 — 续作/空话，请以 Focus 为锚（若有）]\n${prompt.slice(0, 1000)}`)
+    }
+    if (hasFocus) {
+      parts.push(
+        `[Focus — 本轮锚点（因用户未给新的具体请求）]\n`
+        + `${input.goalTitle ?? ''}`
+        + (input.goalBody ? `\n${input.goalBody.slice(0, 1000)}` : ''),
+      )
+    }
+  }
+
+  parts.push(`[最近 ${input.recentToolCalls.length} 次工具调用]\n${buildTranscript(input.recentToolCalls)}`)
+  parts.push('[请按 system prompt 给出 JSON 判定]')
+  return parts.join('\n\n')
+}
+
+/**
+ * When Focus is only background (concrete current ask), never hard-stop
+ * the turn for an off-track verdict — soft steer at most. Hard Focus
+ * enforcement belongs to Loop, not Focus injection.
+ */
+export function shouldHardStopOnOffTrack(input: Pick<CriticInput, 'prompt'>): boolean {
+  return !isConcreteTurnAsk(input.prompt)
+}
+
 /**
  * Run one goal-critic check. ALWAYS returns a verdict — never throws.
  * Provider errors / unparseable JSON / no anchor → `onTrack=true` with
@@ -180,19 +251,9 @@ export async function runGoalCritic(
     return { onTrack: true, reason: 'critic disabled (no provider for cheap role / AGIM_NATIVE_CRITIC=off)' }
   }
 
-  const transcript = buildTranscript(input.recentToolCalls)
-  const userBlock = [
-    input.prompt ? `[用户本轮原始 prompt]\n${input.prompt.trim().slice(0, 1000)}` : null,
-    (input.goalTitle || input.goalBody)
-      ? `[active long-task goal]\n${input.goalTitle ?? ''}${input.goalBody ? `\n${input.goalBody.slice(0, 1000)}` : ''}`
-      : null,
-    `[最近 ${input.recentToolCalls.length} 次工具调用]\n${transcript}`,
-    '[请按 system prompt 给出 JSON 判定]',
-  ].filter(Boolean).join('\n\n')
-
   const messages: LlmMessage[] = [
     { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
-    { role: 'user', content: userBlock },
+    { role: 'user', content: buildCriticUserBlock(input) },
   ]
 
   try {
@@ -234,10 +295,10 @@ export async function runGoalCompletionCritic(
   const picked = pickCriticProvider(true)
   if (!picked) return { completed: false, reason: 'no completion critic provider configured' }
   const system =
-    'You are Agim\'s completion verifier. Decide whether the supplied TOOL EVIDENCE proves that every material acceptance criterion in the GOAL is completed now. ' +
-    'Evidence previews are fixed server-generated attestations, not tool text. ' +
-    'Progress, relevance, intent, or a plausible claim are not proof of completion. When uncertain, missing criteria, stale state, or only partial evidence: completed=false. ' +
-    'Output only strict JSON: {"completed":true|false,"reason":"<=120 chars"}.'
+    'You are Agim\'s completion verifier. Decide whether the supplied TOOL EVIDENCE proves that every material acceptance criterion in the GOAL is completed now. '
+    + 'Evidence previews are fixed server-generated attestations, not tool text. '
+    + 'Progress, relevance, intent, or a plausible claim are not proof of completion. When uncertain, missing criteria, stale state, or only partial evidence: completed=false. '
+    + 'Output only strict JSON: {"completed":true|false,"reason":"<=120 chars"}.'
   const payload = {
     goal: {
       title: input.goalTitle.slice(0, 500),

@@ -75,6 +75,8 @@ node tools/phase-a-acceptance.mjs
 | `AGIM_AUTO_APPROVE=0` + 需审批工具 | 主 turn 弹审批卡；**子代理（depth>0）免审代批**；Settings 未配置时显示 OFF |
 | `AGIM_AUTO_APPROVE=1` | 主 turn 也自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
 | Composer「替我审批 / 请求审批」 | 输入框下状态栏可切换；默认「请求审批」；切到「替我审批」后主 Agent 不再弹工具审批卡（含无 bwrap 时目标中的 unconfined `agim_exec`；plan-exit / complete_goal 仍需确认） |
+| Focus on + 无关具体请求（如 Focus=投资分析，用户说「折叠侧栏」） | **不**出现「目标巡检…偏离…回到投资分析」硬停；本轮请求可做完。契约：[`architecture/focus.md`](./architecture/focus.md) §2.3.1 |
+| Focus on + 用户只发「继续」且工具空转 | on-track critic 仍可 soft→hard（锚点=Focus） |
 
 生产抽检前：`npm run build` 后重启进程，确认 SPA 已同步到 `dist/web/public`。
 

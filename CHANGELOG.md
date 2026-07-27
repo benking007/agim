@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
   alongside existing `call_agent`. Parallel join reuses
   `AGIM_SUBAGENT_PARALLEL*` + hard max. **Loop Engineering stays
   Agim-only** (`loop_verdict` / Focus tools are not on the sidecar).
+  SSOT: `docs/architecture/cli-subagent-dispatch.md`. Smoke:
+  `tools/cli-agents-matrix-ws.mjs`.
 
 ### Removed
 
@@ -31,6 +33,11 @@ All notable changes to this project will be documented in this file.
   (use `config web` / `config agents`).
 
 ### Changed
+
+- **Docs: CLI Subagent dispatch**: add
+  `docs/architecture/cli-subagent-dispatch.md` (product split, coverage
+  table, knobs, acceptance); cross-link README / agents / naming /
+  Subagent / Loop / roadmap / Portal / SOP / desktop-regression.
 
 - **SPA i18n lazy namespaces**: entry no longer inlines locale JSON.
   `common`/`errors` load for the active language only; page namespaces

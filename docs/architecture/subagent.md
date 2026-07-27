@@ -2,7 +2,7 @@
 
 > 状态：**现行设计（planning）** · 2026-07-24  
 > 实施阶段见 [`orchestration-roadmap.md`](./orchestration-roadmap.md)（Phase A 起）。  
-> 关联：[`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
+> 关联：[`../naming.md`](../naming.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
 
 本文先钉死 **Subagent 是什么 / 不是什么**，以及它与 **A2A、多 Agent、sticky 切换** 的关系。  
 实现之前以本文为准；落地后若有偏差，回写「落地差异」一节。
@@ -61,7 +61,8 @@
 | sticky Codex/Claude **再** `call_agent(s)` | ✅（父=CLI） | MCP sidecar → A2A；**不是** Loop 父 |
 
 架构要把它们**框进同一套 SubagentRun**，而不是两套产品话术。  
-**分界**：CLI sticky 父可以派 Subagent；`/loop` + `loop_verdict` + Focus 工具 **只挂 Agim**。
+**分界**：CLI sticky 父可以派 Subagent；`/loop` + `loop_verdict` + Focus 工具 **只挂 Agim**。  
+细节 SSOT：[`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)。
 
 ---
 
@@ -348,7 +349,7 @@
 ## 11. TL;DR
 
 > **Subagent 是「父还在开会对用户负责」时的隔离子工人。**  
-> 同 Agim 换 pro/flash、或派 Claude/Codex，都是 Subagent；A2A 是跨 adapter 的管子。  
+> 父可以是 Agim **或** sticky CLI（`call_agent` / `call_agents`）；A2A 是跨 adapter 的管子。  
+> **Loop 父只归 Agim**（见 [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)）。  
 > 子代理工具代审免卡；提问与 Loop 验收只归父侧。  
-> 难关在拆解与 brief，不在再写一个调度中台。  
-> 先打通同族 spawn + 统一观测，再并行，再 Focus + Loop（见 [`focus.md`](./focus.md) · [`loop-engineering.md`](./loop-engineering.md)）。
+> 难关在拆解与 brief，不在再写一个调度中台。

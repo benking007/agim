@@ -338,7 +338,7 @@ Memo 是用户显式记事，与 Memory 不同。
 | Reminder | `create_reminder` / `list_reminders` / `cancel_reminder` / `snooze_reminder` | 提醒创建、查询、取消、稍后提醒 |
 | Ask user | `ask_user` | Agent 能通过 IM 结构化询问用户 |
 | Push | `push_message` | Agent 能主动向当前 IM thread 发消息 |
-| A2A / Subagent | `call_agent` / `call_agents` | CLI 父可派 Subagent（单路/批量 fan-out）；bus 带 parent/depth |
+| A2A / Subagent | `call_agent` / `call_agents` | CLI 父可派 Subagent（单路/批量 fan-out）；bus 带 parent/depth。SSOT：[`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md) |
 | Focus / Loop | `focus_*` / `loop_verdict` | **仅 Agim Agent**（CLI sidecar **不**暴露；`/loop` 请 sticky 到 Agim） |
 | Location | `request_location_capture` 等 | 地点记忆闭环 |
 

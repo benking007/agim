@@ -1,13 +1,12 @@
 # Subagent / 编排演进计划（Orchestration Roadmap）
 
-> 状态：**现行计划（living）** · 2026-07-24  
+> 状态：**现行计划（living）** · 2026-07-27  
 > 立场：在现有桥接架构上**加薄编排层**，不推倒重来。  
-> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`focus.md`](./focus.md)（Focus）· [`loop-engineering.md`](./loop-engineering.md)（Loop / Phase C）  
+> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)（CLI 父派工）· [`focus.md`](./focus.md)（Focus）· [`loop-engineering.md`](./loop-engineering.md)（Loop / Phase C）  
 > 关联：[`current.md`](./current.md) · [`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../goals.md`](../goals.md)（deprecated）· [`../session-model.md`](../session-model.md)
 
-本文是**实施计划**；Subagent / A2A / handoff 以 [`subagent.md`](./subagent.md) 为准；  
-**Focus 以 [`focus.md`](./focus.md) 为准；Loop（Phase C）以 [`loop-engineering.md`](./loop-engineering.md) 为准（文档先行，未拍板前不写运行时）**。  
-**实施顺序固定为 Phase A → B → C0(Focus) → C1+(Loop)**；每阶段单独开 PR，合入后再开下一阶段。
+本文是**实施计划**与阶段勾选；概念以各 SSOT 为准。  
+**Phase A / B（含 B5 CLI 父 `call_agents`）/ C（R1–R5 + 门禁）已落地；R6 暂缓。Loop 父 = Agim only。**
 
 ---
 
@@ -205,9 +204,12 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 #### B5. CLI 父也可派 Subagent（已开刀）
 
+> SSOT：[`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)
+
 - [x] MCP sidecar（Codex / Claude / … 共用）暴露 `call_agents`；PI extension 同步  
 - [x] 复用 `AGIM_SUBAGENT_PARALLEL*` + `CALL_AGENTS_TASKS_HARD_MAX`；allSettled join  
-- [x] 产品分界：**CLI 可派工，不可当 Loop 父**（`loop_verdict` / `focus_*` 仍仅 Agim）
+- [x] 产品分界：**CLI 可派工，不可当 Loop 父**（`loop_verdict` / `focus_*` 仍仅 Agim）  
+- [x] 验收：`tools/cli-agents-matrix-ws.mjs`（10 CLI × 单路/批量）
 
 #### B6. 非本阶段
 
@@ -316,7 +318,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 2026-07-24 | A1 运行时 | #223 | `subagent.ts` + call_agent role/backend/isolate |
 | 2026-07-24 | A2–A3 | #223 | 多 Subagent UI / 消息流卡片 / Stop / 启发式；`phase-a-acceptance` 27/27 |
 | 2026-07-24 | B | #228 | `call_agents` 并行 fan-out；验收 13/13 |
-| 2026-07-27 | B5 CLI 父 | （本 PR） | sidecar + PI `call_agents`；Loop 仍 Agim-only |
+| 2026-07-27 | B5 CLI 父 | #273 | sidecar + PI `call_agents`；SSOT `cli-subagent-dispatch.md`；matrix 20/20 |
 | 2026-07-24 | C0 文档 | （本 PR） | `focus.md` + `loop-engineering.md`；废弃 goal；无运行时 |
 
 ---
@@ -324,5 +326,5 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 ## 9. TL;DR
 
 > **Subagent 先于「多 Agent」：同族 pro/flash 与跨 adapter 都是子工人；A2A 是跨 adapter 的管子。**  
-> **先打通同族 + 看得见（A），再并行（B），再 Focus + Loop Engineering L3（C：壳已有 → C2 调度/验收）。**  
-> 拆解靠 brief/启发式 + 硬预算，不靠第二套中台。
+> **A / B（含 CLI 父 `call_agents`）/ C（R1–R5+门禁）已齐；Loop 父仅 Agim；R6 暂缓。**  
+> 拆解靠 brief/启发式 + 硬预算，不靠第二套中台。详见 [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)。

@@ -241,7 +241,7 @@ type LoopRun = {
 |------|------|
 | **Focus** | 使命文案与注入；Loop **不**替代 Focus；完成门闸在 Loop |
 | **Subagent** | Loop 的默认劳动力；L3 负责「何时派、派几个、如何验收」 |
-| **CLI sticky 父** | Codex / Claude 等可通过 MCP `call_agent(s)` **派** Subagent；**不能**当 Loop 父（无 `loop_verdict` / Focus 工具）。要跑 `/loop` → sticky 到 Agim |
+| **CLI sticky 父** | Codex / Claude 等可通过 MCP `call_agent(s)` **派** Subagent；**不能**当 Loop 父（无 `loop_verdict` / Focus 工具）。要跑 `/loop` → sticky 到 Agim。SSOT：[`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |
 | **Agent Loop (L2)** | 每个子代理内部仍是 L2；L3 不重写 L2 |
 | **Heartbeat** | 墙钟「有没有事」；**不是** Loop。定时触发可 *启动* 一个 Loop，但不共用状态机 |
 | **goal（废弃）** | 勿复活；Loop 的 objective ≠ 旧 `/goal` 完成 CAS |
@@ -515,3 +515,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **结案确认前不铺结论**：`pending_user_confirm` 期间父侧只短提示；确认结束后才写 `formatLoopEndedSummary` 进会话 |
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问；同意则向 Agent 发总结指令（`PROJECTS/loops/` 落盘约定），取消则关闭 |
 | 2026-07-25 | **详细报告=Agent 撰写**：移除确定性拼接 / `generate-report` API；累计 `loopJobIds` 仅用于底栏「约 N 个子代理」提示 |
+| 2026-07-27 | **文档**：CLI sticky 可派工、不可当 Loop 父 → [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |

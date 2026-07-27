@@ -283,9 +283,10 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 ## 13. 演进计划（编排）
 
 - [`subagent.md`](./subagent.md)：**Subagent 概念 SSOT**（≠ 多 sticky Agent；同族 pro/flash 与跨 adapter A2A 统一为 SubagentRun）
-- [`focus.md`](./focus.md)：**Focus 概念 SSOT**（注意力锚点；废弃 goal；文档先行）
-- [`loop-engineering.md`](./loop-engineering.md)：**Loop 概念 SSOT**（Focus 上的执行–观察闭环；`/loop`；Phase C；文档先行）
-- [`orchestration-roadmap.md`](./orchestration-roadmap.md)：分阶段实施（Phase A → B → C）
+- [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)：**CLI sticky 父派工**（`call_agent(s)`；Loop 仍仅 Agim）
+- [`focus.md`](./focus.md)：**Focus 概念 SSOT**（注意力锚点；废弃 goal）
+- [`loop-engineering.md`](./loop-engineering.md)：**Loop 概念 SSOT**（L3；父编排者 = Agim）
+- [`orchestration-roadmap.md`](./orchestration-roadmap.md)：分阶段实施（A/B/C 已齐；B5 CLI 父派工；R6 暂缓）
 
 在现有 job 树 / activity-WS /（将迁为）focus+critic 之上加薄编排；跨 adapter 仍走 `callAgentByName`，同族 spawn 补齐 role/backend。
 
@@ -294,7 +295,7 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 1. [`../../README.md`](../../README.md) / [`../../README.zh-CN.md`](../../README.zh-CN.md)  
 2. [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md)  
 3. 本文（模块地图与数据流）  
-4. [`subagent.md`](./subagent.md) · [`loop-engineering.md`](./loop-engineering.md) · [`orchestration-roadmap.md`](./orchestration-roadmap.md)（若做 Subagent / 长工程）  
+4. [`subagent.md`](./subagent.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`loop-engineering.md`](./loop-engineering.md) · [`orchestration-roadmap.md`](./orchestration-roadmap.md)（若做 Subagent / Loop）  
 5. [`../endpoint-contracts.md`](../endpoint-contracts.md)  
 6. [`../security-hardening.md`](../security-hardening.md)  
 7. [`../llm-backends.md`](../llm-backends.md) · [`../runbook.md`](../runbook.md) · [`../adr/`](../adr/)  

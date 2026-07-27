@@ -269,6 +269,7 @@
 | 能力 | 行为 |
 |---|---|
 | **消息流卡片** | 父 turn 下按 `jobId` 渲染 Subagent 卡片（状态 / 标签 / Todo 级联） |
+| **运行中已执行时间** | live 行在 `SUBAGENT` 徽章旁显示 ticking 时长（`12.3s` / `1m 5s`，每秒刷新）；完成态仍用 preview 的 `Ns · N chars` |
 | **半浮层详情** | 点击卡片 → 半浮层（portal 到 `[data-agim-composer-sheet-root]`，与内容列居中对齐）；展示父 brief + 子结果（`GET /api/jobs/:id`） |
 | **长内容** | 默认半高 + 内部滚动；expand / collapse（mock：`PHASE_A_LONG_SHEET_TEST`） |
 | **Plan 叠放** | Todo/Plan 在 Subagent 卡片**上方**；`activityFollowSignal` 驱动中途刷新（不只看 `steps.length`） |
@@ -331,6 +332,7 @@
 | 2026-07-25 | **替我审批覆盖 unconfined `agim_exec`**（无 bwrap + 目标进行中）；plan-exit / complete_goal 仍硬显式 | #251 |
 | 2026-07-25 | **Loop R2 turn-cap 死锁加固**：新一轮首派清 stale history；重置 cap 不清 UI Agents | #252 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
+| 2026-07-27 | **Live elapsed**：运行中行在 SUBAGENT 旁显示已执行时间 | #275 |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
 | 2026-07-27 | **CLI 父派工**：MCP sidecar + PI 暴露 `call_agents`（复用 A2A bus）；**Loop 仍仅 Agim**；SSOT [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) | — |

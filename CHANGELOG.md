@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
   Continuations like「继续」still anchor on Focus. Docs: `focus.md`
   §2.3.1 + desktop-regression + naming.
 
+### Changed
+
+- **Subagent live elapsed**: running Subagent rows show a ticking
+  elapsed time next to the SUBAGENT badge (e.g. `12.3s` / `1m 5s`),
+  matching the completed preview duration style. Docs: portal-composer /
+  desktop-regression / subagent.
+
 ### Added
 
 - **CLI Subagent fan-out (`call_agents`)**: shared MCP sidecar (Codex /

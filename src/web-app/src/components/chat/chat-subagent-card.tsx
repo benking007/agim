@@ -25,6 +25,29 @@ import {
 import { cn } from '@/lib/utils'
 import { SubagentDetailDialog } from './subagent-detail-dialog'
 
+/** Tick wall clock while a Subagent is live so elapsed time updates. */
+function useNow(enabled: boolean, intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!enabled) return
+    setNow(Date.now())
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs)
+    return () => window.clearInterval(id)
+  }, [enabled, intervalMs])
+  return now
+}
+
+/** Match activity / completed-preview style: `12.3s`, `1m 5s`. */
+export function formatSubagentElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '0s'
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`
+  const sec = ms / 1000
+  if (sec < 60) return `${sec < 10 ? sec.toFixed(1) : Math.round(sec)}s`
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return `${m}m ${s}s`
+}
+
 export interface ChatSubagentCardProps {
   activity: ChatActivity
   dark?: boolean
@@ -97,6 +120,10 @@ function SubagentRow({
 }): JSX.Element {
   const { t } = useTranslation()
   const live = isSubagentLive(step)
+  const now = useNow(live)
+  // Live rows: tick elapsed next to the SUBAGENT badge. Completed rows already
+  // surface duration in the preview line (`439.9s · 4501 chars`).
+  const elapsedMs = live ? Math.max(0, now - step.startedAt) : null
   const detail = (step.preview || '').trim()
   const canStop = live && !!onStop
 
@@ -131,6 +158,19 @@ function SubagentRow({
           >
             {t('chat.activitySubagentBadge', { defaultValue: 'subagent' })}
           </span>
+          {elapsedMs != null && (
+            <span
+              className={cn(
+                'shrink-0 tabular-nums text-[11px] tracking-tight',
+                dark ? 'text-teal-400/90' : 'text-teal-700',
+              )}
+              title={t('chat.subagentElapsedLive', { defaultValue: 'Elapsed time' })}
+              data-testid="subagent-elapsed-live"
+              aria-label={t('chat.subagentElapsedLive', { defaultValue: 'Elapsed time' })}
+            >
+              {formatSubagentElapsed(elapsedMs)}
+            </span>
+          )}
         </div>
         {detail && (
           <p className={cn(

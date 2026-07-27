@@ -72,6 +72,7 @@ node tools/phase-a-acceptance.mjs
 | `PHASE_A_TODO_PROGRESS_TEST` | Todo/Plan **中途**出现并更新（不必等整 turn 结束） |
 | `PHASE_A_TODO_AND_SUBAGENT_TEST` | Plan 叠在 Subagent **上方**；二者同时可见 |
 | 运行中卡片右侧 **Stop** | 子代理停止；父 turn 收到阶段性摘要并继续（非整 turn 硬失败） |
+| 运行中 `SUBAGENT` 旁已执行时间 | live 行显示 ticking 时长（如 `12.3s` / `1m 5s`）；完成后该位置消失，preview 仍可有 `Ns · N chars` |
 | `AGIM_AUTO_APPROVE=0` + 需审批工具 | 主 turn 弹审批卡；**子代理（depth>0）免审代批**；Settings 未配置时显示 OFF |
 | `AGIM_AUTO_APPROVE=1` | 主 turn 也自动放行；`agim_todo_write` 不因原生 gate 卡住 Plan |
 | Composer「替我审批 / 请求审批」 | 输入框下状态栏可切换；默认「请求审批」；切到「替我审批」后主 Agent 不再弹工具审批卡（含无 bwrap 时目标中的 unconfined `agim_exec`；plan-exit / complete_goal 仍需确认） |

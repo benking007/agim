@@ -342,8 +342,8 @@ function LoopDetailPanel({
           <p className="text-text-muted">—</p>
         ) : (
           <ul className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border bg-background p-2">
-            {[...detail.timeline].reverse().map((e, i) => (
-              <li key={`${e.at}-${i}`} className="flex gap-2 text-xs">
+            {[...detail.timeline].reverse().map((e) => (
+              <li key={`${e.at}-${e.kind}-${e.summary.slice(0, 48)}`} className="flex gap-2 text-xs">
                 <span className="shrink-0 tabular-nums text-text-muted">{fmtTime(e.at)}</span>
                 <span className="shrink-0 font-medium text-text-dim">{e.kind}</span>
                 <span className="min-w-0 break-words text-text">{e.summary}</span>

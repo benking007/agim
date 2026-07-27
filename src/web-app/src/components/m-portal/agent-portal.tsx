@@ -171,19 +171,38 @@ export function AgentPortal(): JSX.Element {
   const [atQuery, setAtQuery] = useState('')
   const [slashActive, setSlashActive] = useState(0)
   const [atActive, setAtActive] = useState(0)
-  const [textCaret, setTextCaret] = useState(0)
   const [slashTriggerStart, setSlashTriggerStart] = useState(0)
   const [atTriggerStart, setAtTriggerStart] = useState(0)
   const messagesListRef = useRef<HTMLDivElement>(null)
   const composerFormRef = useRef<HTMLFormElement>(null)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
+  /** Caret for /@ commit — ref so typing does not re-render the portal. */
+  const textCaretRef = useRef(0)
   const slashQueryRef = useRef('')
   const atQueryRef = useRef('')
   const slashOpenRef = useRef(false)
   const atOpenRef = useRef(false)
+  const slashTriggerStartRef = useRef(0)
+  const atTriggerStartRef = useRef(0)
+  // Stable callbacks for memo(PortalMessageList / PortalLoopDock) across keystrokes.
+  const stopSubagentRef = useRef(stopSubagent)
+  stopSubagentRef.current = stopSubagent
+  const sendRef = useRef(send)
+  sendRef.current = send
+  const onStopSubagent = useCallback((jobId: number) => stopSubagentRef.current(jobId), [])
+  const onLoopSend = useCallback((text: string) => {
+    if (state.status !== 'open') {
+      toast.error('Not connected')
+      return
+    }
+    sendRef.current(text)
+  }, [state.status])
+  const onFillPrompt = useCallback((p: string) => {
+    setInputMessage(p)
+  }, [])
 
   const agentId = state.agent || state.agents[0] || 'agim'
-  const visual = agentVisual(agentId)
+  const visual = useMemo(() => agentVisual(agentId), [agentId])
   const AgentIcon = visual.icon
   const isTyping = state.currentReplyId != null
   const demoWidth = typeof window !== 'undefined'
@@ -342,32 +361,46 @@ export function AgentPortal(): JSX.Element {
   })
 
   const syncTriggers = useCallback((caret: number, plainText: string) => {
-    setTextCaret(caret)
+    textCaretRef.current = caret
     const slash = detectSlashTrigger(plainText, caret)
     const at = !slash ? detectAtTrigger(plainText, caret) : null
     if (slash) {
       const queryChanged = slashQueryRef.current !== slash.query
       const wasClosed = !slashOpenRef.current
+      const startChanged = slashTriggerStartRef.current !== slash.start
+      const atWasOpen = atOpenRef.current
       slashQueryRef.current = slash.query
       slashOpenRef.current = true
       atOpenRef.current = false
-      setSlashOpen(true)
-      setAtOpen(false)
-      setSlashQuery(slash.query)
-      setSlashTriggerStart(slash.start)
-      if (wasClosed || queryChanged) setSlashActive(0)
-    } else if (at) {
+      slashTriggerStartRef.current = slash.start
+      if (wasClosed) setSlashOpen(true)
+      if (atWasOpen) setAtOpen(false)
+      if (wasClosed || queryChanged) {
+        setSlashQuery(slash.query)
+        setSlashActive(0)
+      }
+      if (wasClosed || startChanged) setSlashTriggerStart(slash.start)
+      return
+    }
+    if (at) {
       const queryChanged = atQueryRef.current !== at.query
       const wasClosed = !atOpenRef.current
+      const startChanged = atTriggerStartRef.current !== at.start
+      const slashWasOpen = slashOpenRef.current
       atQueryRef.current = at.query
       atOpenRef.current = true
       slashOpenRef.current = false
-      setAtOpen(true)
-      setSlashOpen(false)
-      setAtQuery(at.query)
-      setAtTriggerStart(at.start)
-      if (wasClosed || queryChanged) setAtActive(0)
-    } else {
+      atTriggerStartRef.current = at.start
+      if (wasClosed) setAtOpen(true)
+      if (slashWasOpen) setSlashOpen(false)
+      if (wasClosed || queryChanged) {
+        setAtQuery(at.query)
+        setAtActive(0)
+      }
+      if (wasClosed || startChanged) setAtTriggerStart(at.start)
+      return
+    }
+    if (slashOpenRef.current || atOpenRef.current) {
       slashQueryRef.current = ''
       atQueryRef.current = ''
       slashOpenRef.current = false
@@ -385,13 +418,14 @@ export function AgentPortal(): JSX.Element {
 
   function onPickSkill(skill: PortalSkillItem): void {
     bumpSkillUsage(skill.name)
-    const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+    const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaretRef.current)
     const chip = makeChip({
       kind: 'skill',
       marker: skillMarker(skill.name),
       label: mentionLabel('skill', skill.name),
     })
     setInputMessage(serializeComposer([...chips, chip], text))
+    slashOpenRef.current = false
     setSlashOpen(false)
     requestAnimationFrame(() => composerInputRef.current?.focus())
   }
@@ -400,8 +434,9 @@ export function AgentPortal(): JSX.Element {
     bumpSlashUsage(cmd.id)
     const action = cmd.action
     if (action.type === 'toggle-plan') {
-      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaretRef.current)
       setInputMessage(serializeComposer(chips, text))
+      slashOpenRef.current = false
       setSlashOpen(false)
       if (state.status !== 'open') {
         toast.error('Not connected')
@@ -411,8 +446,9 @@ export function AgentPortal(): JSX.Element {
       return
     }
     if (action.type === 'send') {
-      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaret)
+      const { chips, text } = clearTriggerFromText(slashTriggerStart, textCaretRef.current)
       setInputMessage(serializeComposer(chips, text))
+      slashOpenRef.current = false
       setSlashOpen(false)
       if (state.status !== 'open') {
         toast.error('Not connected')
@@ -422,10 +458,12 @@ export function AgentPortal(): JSX.Element {
       return
     }
     // fill
-    const { chips } = clearTriggerFromText(slashTriggerStart, textCaret)
+    const caret = textCaretRef.current
+    const { chips } = clearTriggerFromText(slashTriggerStart, caret)
     const { text: rest } = chipsFromValue(inputMessage)
-    const after = rest.slice(textCaret)
+    const after = rest.slice(caret)
     setInputMessage(serializeComposer(chips, `${action.text}${after}`))
+    slashOpenRef.current = false
     setSlashOpen(false)
     requestAnimationFrame(() => {
       const ta = composerInputRef.current
@@ -438,19 +476,20 @@ export function AgentPortal(): JSX.Element {
   }
 
   function onPickWorkspace(): void {
-    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaret)
+    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaretRef.current)
     const chip = makeChip({
       kind: 'workspace',
       marker: workspaceMarker(),
       label: mentionLabel('workspace'),
     })
     setInputMessage(serializeComposer([...chips, chip], text))
+    atOpenRef.current = false
     setAtOpen(false)
     requestAnimationFrame(() => composerInputRef.current?.focus())
   }
 
   function onPickWorkspaceFile(relPath: string, isDir: boolean): void {
-    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaret)
+    const { chips, text } = clearTriggerFromText(atTriggerStart, textCaretRef.current)
     const kind = isDir ? 'dir' as const : 'file' as const
     const chip = makeChip({
       kind,
@@ -459,6 +498,7 @@ export function AgentPortal(): JSX.Element {
       path: relPath,
     })
     setInputMessage(serializeComposer([...chips, chip], text))
+    atOpenRef.current = false
     setAtOpen(false)
     requestAnimationFrame(() => composerInputRef.current?.focus())
   }
@@ -477,6 +517,8 @@ export function AgentPortal(): JSX.Element {
       }
       if (e.key === 'Escape') {
         e.preventDefault()
+        slashOpenRef.current = false
+        atOpenRef.current = false
         setSlashOpen(false)
         setAtOpen(false)
         return
@@ -496,7 +538,7 @@ export function AgentPortal(): JSX.Element {
     }
   }
 
-  function fillComposer(text: string): void {
+  const fillComposer = useCallback((text: string): void => {
     setInputMessage(text)
     requestAnimationFrame(() => {
       const ta = composerInputRef.current
@@ -507,7 +549,17 @@ export function AgentPortal(): JSX.Element {
       ta.setSelectionRange(pos, pos)
       syncTriggers(pos, plain)
     })
-  }
+  }, [syncTriggers])
+
+  const emptyChatSlot = useMemo(() => (
+    <PortalEmptyChat
+      dark={theme === 'dark'}
+      agentId={agentId}
+      visual={visual}
+      AgentIcon={AgentIcon}
+      onFillPrompt={onFillPrompt}
+    />
+  ), [theme, agentId, visual, AgentIcon, onFillPrompt])
 
   function selectAgent(id: string): void {
     switchAgent(id)
@@ -600,16 +652,8 @@ export function AgentPortal(): JSX.Element {
           portalThreadId={portalThreadId}
           listRef={messagesListRef}
           onFillComposer={fillComposer}
-          onStopSubagent={stopSubagent}
-          emptySlot={
-            <PortalEmptyChat
-              dark={dark}
-              agentId={agentId}
-              visual={visual}
-              AgentIcon={AgentIcon}
-              onFillPrompt={(p) => setInputMessage(p)}
-            />
-          }
+          onStopSubagent={onStopSubagent}
+          emptySlot={emptyChatSlot}
         />
 
         {/* Explore */}
@@ -644,13 +688,7 @@ export function AgentPortal(): JSX.Element {
                   busy={canStop}
                   hasBlockingDock={hasBlockingDock}
                   flush
-                  onSend={(text) => {
-                    if (state.status !== 'open') {
-                      toast.error('Not connected')
-                      return
-                    }
-                    send(text)
-                  }}
+                  onSend={onLoopSend}
                 />
               </Suspense>
               <ApprovalDock
@@ -711,12 +749,7 @@ export function AgentPortal(): JSX.Element {
                   <PortalComposerInput
                     dark={dark}
                     value={inputMessage}
-                    onChange={(next) => {
-                      setInputMessage(next)
-                      const { text } = chipsFromValue(next)
-                      const caret = composerInputRef.current?.selectionStart ?? text.length
-                      syncTriggers(caret, text)
-                    }}
+                    onChange={setInputMessage}
                     disabled={uploading}
                     enterNewline={enterNewline}
                     placeholder={t('chat.portal.messagePlaceholder', { agent: displayAgentName(agentId) })}

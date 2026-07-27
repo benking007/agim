@@ -273,7 +273,8 @@
 | **半浮层详情** | 点击卡片 → 半浮层（portal 到 `[data-agim-composer-sheet-root]`，与内容列居中对齐）；展示父 brief + 子结果（`GET /api/jobs/:id`） |
 | **长内容** | 默认半高 + 内部滚动；expand / collapse（mock：`PHASE_A_LONG_SHEET_TEST`） |
 | **Plan 叠放** | Todo/Plan 在 Subagent 卡片**上方**；`activityFollowSignal` 驱动中途刷新（不只看 `steps.length`） |
-| **Stop** | 运行中卡片右侧 Stop → WS `{ type: 'stop-subagent', jobId }` → `cancelJob`；保留 partial，格式化为 `formatSubagentStoppedResult`，以 **`ok: true, cancelled: true`** 交回父 turn，父继续 summarize / 推进 |
+| **Stop** | 运行中卡片右侧 Stop → WS `{ type: 'stop-subagent', jobId }` → `cancelJob`；保留 partial，格式化为 `formatSubagentStoppedResult`，以 **`ok: true, cancelled: true`** 交回父 turn，父继续 summarize / 推进。**仅当 step 已绑定 `jobId`（或 id=`a2a-<n>`）时显示** |
+| **Pending → jobId** | `tool_call` 先画 `${toolCallId}#i` pending 卡（尚无 Stop）；A2A 用同一 `activityStepId` 就地升级为 running+`jobId`。若 `call_agents` / `call_agent` 在派工前被拒（turn cap、ALIGNING、校验、policy deny），**必须**把这些 pending 卡标成 error/denied，否则会出现「多出一排无 Stop 的 Waiting」幽灵行 |
 
 ---
 
@@ -333,6 +334,7 @@
 | 2026-07-25 | **Loop R2 turn-cap 死锁加固**：新一轮首派清 stale history；重置 cap 不清 UI Agents | #252 |
 | 2026-07-24 | **Stop Subagent**：卡片 Stop → `stop-subagent` WS；abort 保留 partial → 父侧 summarize 并继续 | #223 |
 | 2026-07-27 | **Live elapsed**：运行中行在 SUBAGENT 旁显示已执行时间 | #275 |
+| 2026-07-27 | **Ghost pending 卡**：`call_agents`/`call_agent` 派工前拒绝时关闭 `${toolCallId}#i` pending（否则无 Stop 的 Waiting 幽灵行） | — |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
 | 2026-07-27 | **CLI 父派工**：MCP sidecar + PI 暴露 `call_agents`（复用 A2A bus）；**Loop 仍仅 Agim**；SSOT [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) | — |

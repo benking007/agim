@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Subagent ghost cards after refused `call_agents`**: pending lane
+  cards (`${toolCallId}#i`) painted at `tool_call` were left
+  `Waiting` forever (no `jobId` → no Stop) when the batch was refused
+  before A2A (per-turn cap, ALIGNING gate, validation, policy deny, or
+  mid-prepare spawn/probe failure). Dispatcher + adapter now close every
+  pending lane as error/denied. Typical symptom: first fan-out of N
+  completes with Stop, a second fan-out adds N stuck rows without Stop.
+  Helper: `src/core/subagent-activity.ts`. Docs: `subagent.md` §7.1.
+
 - **Focus no longer hard-pulls via goal-critic**: on-track critic now
   treats the **current-turn user ask** as the only hard objective.
   Active Focus is background context (and may still enable `goal-only`

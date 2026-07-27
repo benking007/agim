@@ -60,6 +60,10 @@ import {
   isSubagentParallelEnabled,
   mapPool,
 } from '../subagent-parallel.js'
+import {
+  failCallAgentPendingLane,
+  failCallAgentsPendingLanes,
+} from '../subagent-activity.js'
 import { describeRegistry, listProviders } from './registry.js'
 import {
   createReminder,
@@ -836,12 +840,26 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
         case 'call_agent': {
           {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agent')
-            if (gate) return err(gate)
+            if (gate) {
+              // Pending card already shown at tool_call — close it or it hangs
+              // forever without Stop (no jobId).
+              failCallAgentPendingLane(ctx.onToolActivity, {
+                toolCallId: call.id,
+                label: typeof args.agent === 'string' ? args.agent : 'agent',
+                preview: gate,
+              })
+              return err(gate)
+            }
           }
           await maybeClearCallAgentCapForLoopRound()
           const agentName = typeof args.agent === 'string' ? args.agent : ''
           const prompt = typeof args.prompt === 'string' ? args.prompt : ''
           if (!agentName || !prompt) {
+            failCallAgentPendingLane(ctx.onToolActivity, {
+              toolCallId: call.id,
+              label: agentName || 'agent',
+              preview: 'call_agent requires both `agent` (string) and `prompt` (string).',
+            })
             return err('call_agent requires both `agent` (string) and `prompt` (string).')
           }
           const roleArg = typeof args.role === 'string' ? args.role : undefined
@@ -854,17 +872,11 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           if (!spawn.ok) {
             // Pending Subagent card (toolCallId) would otherwise stay forever —
             // call_agent tool_result activity is suppressed in the adapter.
-            try {
-              ctx.onToolActivity?.({
-                id: call.id,
-                kind: 'agent',
-                label: agentName,
-                status: 'error',
-                startedAt: Date.now(),
-                finishedAt: Date.now(),
-                preview: spawn.error.slice(0, 180),
-              })
-            } catch { /* observer must not break dispatch */ }
+            failCallAgentPendingLane(ctx.onToolActivity, {
+              toolCallId: call.id,
+              label: agentName,
+              preview: spawn.error,
+            })
             return err(`call_agent refused: ${spawn.error}`)
           }
 
@@ -878,7 +890,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               history: callAgentHistory,
               threadId: ctx.threadId,
             }, `call_agent cap exceeded (${callAgentHistory.length}/${callAgentMaxPerTurn}) — refusing further delegation`)
-            return err(capExceededError(1, await loopCapExceededHint()))
+            const refuse = capExceededError(1, await loopCapExceededHint())
+            failCallAgentPendingLane(ctx.onToolActivity, {
+              toolCallId: call.id,
+              label: spawn.label || agentName,
+              preview: refuse,
+            })
+            return err(refuse)
           }
           const promptHead = prompt.slice(0, 60).replace(/\s+/g, ' ')
           log.info({
@@ -932,7 +950,15 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
         case 'call_agents': {
           {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'call_agents')
-            if (gate) return err(gate)
+            if (gate) {
+              // tool_call already painted `${call.id}#i` pending cards.
+              failCallAgentsPendingLanes(ctx.onToolActivity, {
+                toolCallId: call.id,
+                input: args,
+                preview: gate,
+              })
+              return err(gate)
+            }
           }
           await maybeClearCallAgentCapForLoopRound()
           const rawTasks = Array.isArray(args.tasks) ? args.tasks : null
@@ -940,9 +966,15 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             return err('call_agents requires a non-empty `tasks` array.')
           }
           if (rawTasks.length > CALL_AGENTS_TASKS_HARD_MAX) {
-            return err(
-              `call_agents refused: tasks.length=${rawTasks.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`,
-            )
+            const msg =
+              `call_agents refused: tasks.length=${rawTasks.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`
+            failCallAgentsPendingLanes(ctx.onToolActivity, {
+              toolCallId: call.id,
+              input: args,
+              taskCount: rawTasks.length,
+              preview: msg,
+            })
+            return err(msg)
           }
 
           type TaskIn = {
@@ -956,13 +988,27 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
           for (let i = 0; i < rawTasks.length; i++) {
             const t = rawTasks[i]
             if (!t || typeof t !== 'object') {
-              return err(`call_agents tasks[${i}] must be an object.`)
+              const msg = `call_agents tasks[${i}] must be an object.`
+              failCallAgentsPendingLanes(ctx.onToolActivity, {
+                toolCallId: call.id,
+                input: args,
+                taskCount: rawTasks.length,
+                preview: msg,
+              })
+              return err(msg)
             }
             const rec = t as Record<string, unknown>
             const agent = typeof rec.agent === 'string' ? rec.agent : ''
             const prompt = typeof rec.prompt === 'string' ? rec.prompt : ''
             if (!agent || !prompt) {
-              return err(`call_agents tasks[${i}] requires both agent and prompt strings.`)
+              const msg = `call_agents tasks[${i}] requires both agent and prompt strings.`
+              failCallAgentsPendingLanes(ctx.onToolActivity, {
+                toolCallId: call.id,
+                input: args,
+                taskCount: rawTasks.length,
+                preview: msg,
+              })
+              return err(msg)
             }
             tasks.push({
               agent,
@@ -986,7 +1032,16 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               history: callAgentHistory,
               threadId: ctx.threadId,
             }, `call_agents cap exceeded (${callAgentHistory.length}+${tasks.length}/${callAgentMaxPerTurn})`)
-            return err(capExceededError(tasks.length, await loopCapExceededHint()))
+            const refuse = capExceededError(tasks.length, await loopCapExceededHint())
+            // Close every pending `${call.id}#i` card — otherwise the SPA shows
+            // ghost "Waiting for subagent" rows with no Stop (no jobId).
+            failCallAgentsPendingLanes(ctx.onToolActivity, {
+              toolCallId: call.id,
+              input: args,
+              taskCount: tasks.length,
+              preview: refuse,
+            })
+            return err(refuse)
           }
 
           const prepared: Array<{
@@ -1009,17 +1064,14 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             )
             const stepId = `${call.id}#${i}`
             if (!spawn.ok) {
-              try {
-                ctx.onToolActivity?.({
-                  id: stepId,
-                  kind: 'agent',
-                  label: task.agent,
-                  status: 'error',
-                  startedAt: Date.now(),
-                  finishedAt: Date.now(),
-                  preview: spawn.error.slice(0, 180),
-                })
-              } catch { /* observer must not break dispatch */ }
+              // Fail the whole batch's pending cards (not only lane i) — earlier
+              // lanes were never started and would otherwise hang without Stop.
+              failCallAgentsPendingLanes(ctx.onToolActivity, {
+                toolCallId: call.id,
+                input: args,
+                taskCount: tasks.length,
+                preview: spawn.error,
+              })
               return err(`call_agents tasks[${i}] refused: ${spawn.error}`)
             }
             // Probe before noteLoopDispatch so an unusable CLI (missing /
@@ -1027,17 +1079,12 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             // dispatch. Fail the whole batch so the parent replans.
             if (!(await isAgentAvailableCached(spawn.agent))) {
               const refuse = formatAgentDispatchUnavailable(spawn.agent)
-              try {
-                ctx.onToolActivity?.({
-                  id: stepId,
-                  kind: 'agent',
-                  label: spawn.label || spawn.agent,
-                  status: 'error',
-                  startedAt: Date.now(),
-                  finishedAt: Date.now(),
-                  preview: refuse.slice(0, 180),
-                })
-              } catch { /* observer must not break dispatch */ }
+              failCallAgentsPendingLanes(ctx.onToolActivity, {
+                toolCallId: call.id,
+                input: args,
+                taskCount: tasks.length,
+                preview: refuse,
+              })
               return err(`call_agents tasks[${i}] refused: ${refuse}`)
             }
             prepared.push({

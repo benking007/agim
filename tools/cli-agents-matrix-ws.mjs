@@ -1,6 +1,9 @@
 /**
  * Drive Agim web chat WS: for each sticky CLI agent, run call_agent + call_agents.
  * Writes JSON report under /opt/cursor/artifacts/cli-call-agents-matrix/
+ *
+ * Product contract: docs/architecture/cli-subagent-dispatch.md
+ * Requires: local `agim start`, CLI binaries on PATH (stubs OK), mock LLM for nested agim.
  */
 import WebSocket from 'ws'
 import { writeFileSync, mkdirSync } from 'fs'

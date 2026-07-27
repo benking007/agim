@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ChatSubagentCard } from './chat-subagent-card'
+import { ChatSubagentCard, formatSubagentElapsed } from './chat-subagent-card'
 import type { ChatActivity } from '@/hooks/use-chat'
 import '@/i18n'
 
@@ -51,9 +51,67 @@ function activity(over: Partial<ChatActivity> = {}): ChatActivity {
   }
 }
 
+describe('formatSubagentElapsed', () => {
+  it('formats ms / seconds / minutes', () => {
+    expect(formatSubagentElapsed(0)).toBe('0ms')
+    expect(formatSubagentElapsed(420)).toBe('420ms')
+    expect(formatSubagentElapsed(2300)).toBe('2.3s')
+    expect(formatSubagentElapsed(12_400)).toBe('12s')
+    expect(formatSubagentElapsed(65_000)).toBe('1m 5s')
+  })
+})
+
 describe('ChatSubagentCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('shows live elapsed time next to the SUBAGENT badge', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-27T10:00:10.000Z'))
+    try {
+      render(<ChatSubagentCard activity={activity({
+        steps: [{
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'codex',
+          status: 'running',
+          startedAt: Date.parse('2026-07-27T10:00:00.000Z'),
+          jobId: 9,
+          preview: 'Objective: fix bugs',
+        }],
+      })}
+      />)
+      const elapsed = screen.getByTestId('subagent-elapsed-live')
+      expect(elapsed).toHaveTextContent('10s')
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(screen.getByTestId('subagent-elapsed-live')).toHaveTextContent('11s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not show live elapsed on completed rows', () => {
+    render(<ChatSubagentCard activity={activity({
+      status: 'success',
+      steps: [{
+        id: 'a2a-10',
+        kind: 'agent',
+        label: 'codex',
+        status: 'success',
+        startedAt: 1,
+        finishedAt: 2,
+        jobId: 10,
+        preview: '439.9s · 4501 chars',
+      }],
+    })}
+    />)
+    // Expand collapsed done card.
+    const header = screen.getByRole('button', { name: /Subagents · 1|子代理 · 1/ })
+    expect(header).toBeInTheDocument()
+    expect(screen.queryByTestId('subagent-elapsed-live')).not.toBeInTheDocument()
   })
 
   it('renders nothing without agent steps', () => {

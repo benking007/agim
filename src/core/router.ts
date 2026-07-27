@@ -28,7 +28,11 @@ import { handleFocusCommand } from './commands/focus.js'
 import { handleLoopCommand } from './commands/loop.js'
 import { buildFocusSnippet } from './focus.js'
 import { buildLoopSnippet, getActiveLoop } from './loop-run.js'
-import { canParentLoop, formatLoopParentRequired } from './loop-parent-agent.js'
+import {
+  canParentLoop,
+  formatLoopParentRequired,
+  resolvePreferredWorkerAgent,
+} from './loop-parent-agent.js'
 import { handleSkillCommand } from './commands/skill.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
@@ -742,7 +746,20 @@ export async function callAgentWithHistory(
   })
   // Focus (replaces goal injection) + optional Loop status — wire-only.
   const focusSnippet = buildFocusSnippet(ctx.platform, ctx.channelId, ctx.threadId)
-  const loopSnippet = buildLoopSnippet(ctx.platform, ctx.channelId, ctx.threadId)
+  // Session-scoped compression rate + preferred Loop worker (Usage「压缩率」/ /ctx).
+  // Looked up once so Loop snippet can steer call_agents toward the user's CLI.
+  let compactRate: ReturnType<typeof normalizeCompactRate> | undefined
+  let preferredWorkerAgent: string | undefined
+  try {
+    const sess = await sessionManager.getExistingSession(
+      ctx.platform, ctx.channelId, storageThreadId,
+    )
+    if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
+    preferredWorkerAgent = resolvePreferredWorkerAgent(sess?.agent ?? agent.name, sess?.preferredWorkerAgent)
+  } catch { /* ignore — defaults to auto / no worker hint */ }
+  const loopSnippet = buildLoopSnippet(ctx.platform, ctx.channelId, ctx.threadId, {
+    preferredWorkerAgent,
+  })
   // P0 #3 (Stage 3) — inject the agim skills tier-1 summary so every
   // agent reply sees what skills are configured. Empty when no skills
   // installed; filter(Boolean) below drops it cleanly.
@@ -788,15 +805,6 @@ export async function callAgentWithHistory(
       if (pj > 0) ctx.parentJobId = pj
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }
-
-  // Session-scoped compression rate (Usage「压缩率」/ /ctx). Best-effort lookup.
-  let compactRate: ReturnType<typeof normalizeCompactRate> | undefined
-  try {
-    const sess = await sessionManager.getExistingSession(
-      ctx.platform, ctx.channelId, storageThreadId,
-    )
-    if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
-  } catch { /* ignore — defaults to auto */ }
 
   const generator = agent.sendPrompt(sessionId, wirePrompt, effectiveHistory, {
     model,

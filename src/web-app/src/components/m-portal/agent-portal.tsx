@@ -682,6 +682,8 @@ export function AgentPortal(): JSX.Element {
                   refreshKey={loopRefreshKey}
                   dark={dark}
                   agentId={agentId}
+                  preferredWorkerAgent={state.preferredWorkerAgent}
+                  onSwitchToAgimParent={() => switchAgent('agim')}
                   busy={canStop}
                   hasBlockingDock={hasBlockingDock}
                   flush

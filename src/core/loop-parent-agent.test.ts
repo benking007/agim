@@ -2,6 +2,9 @@ import { describe, expect, it } from 'bun:test'
 import {
   canParentLoop,
   formatLoopParentRequired,
+  isLoopWorkerAgent,
+  nextPreferredWorkerAgent,
+  resolvePreferredWorkerAgent,
 } from './loop-parent-agent.js'
 
 describe('loop parent agent gate', () => {
@@ -23,11 +26,22 @@ describe('loop parent agent gate', () => {
     expect(zh).toContain('Agim Agent')
     expect(zh).toContain('codex')
     expect(zh).toContain('E2BIG')
-    expect(zh).toContain('子代理')
+    expect(zh).toContain('call_agents')
 
     const en = formatLoopParentRequired('claude-code', 'en')
     expect(en).toContain('Agim Agent')
     expect(en).toContain('claude-code')
-    expect(en).toContain('Subagents')
+    expect(en).toContain('call_agents')
+  })
+
+  it('tracks preferred Loop worker across sticky switches', () => {
+    expect(isLoopWorkerAgent('codex')).toBe(true)
+    expect(isLoopWorkerAgent('agim')).toBe(false)
+    expect(nextPreferredWorkerAgent('agim', 'codex')).toBe('codex')
+    expect(nextPreferredWorkerAgent('codex', 'agim')).toBe('codex')
+    expect(nextPreferredWorkerAgent('codex', 'claude-code')).toBe('claude-code')
+    expect(nextPreferredWorkerAgent('agim', 'agim', 'codex')).toBe('codex')
+    expect(resolvePreferredWorkerAgent('agim', 'codex')).toBe('codex')
+    expect(resolvePreferredWorkerAgent('codex', undefined)).toBe('codex')
   })
 })

@@ -19,6 +19,7 @@ import { clearPendingDownvoteHint, feedbackThreadKey } from './message-feedback-
 import { logger as rootLogger } from './logger.js'
 import { AGIM_HOME } from './agim-paths.js'
 import { scheduleRetireAgimAgentSession } from './agim-agent-session-lifecycle.js'
+import { isLoopWorkerAgent, nextPreferredWorkerAgent } from './loop-parent-agent.js'
 
 const log = rootLogger.child({ component: 'session' })
 
@@ -166,6 +167,9 @@ function deserializeSession(value: unknown): Session | null {
     copilotSessionId: parsed.copilotSessionId,
     cursorSessionId: parsed.cursorSessionId,
     planMode: parsed.planMode,
+    preferredWorkerAgent: typeof parsed.preferredWorkerAgent === 'string'
+      ? parsed.preferredWorkerAgent
+      : undefined,
   }
 }
 
@@ -291,6 +295,7 @@ class SessionManager {
         lastActivity: now,
         ttl: DEFAULT_TTL,
         messages: [],
+        ...(isLoopWorkerAgent(agent) ? { preferredWorkerAgent: agent } : {}),
       }
 
       this.sessions.set(key, session)
@@ -368,6 +373,11 @@ class SessionManager {
       const retiredId = existing?.id
 
       const now = new Date()
+      const preferredWorkerAgent = nextPreferredWorkerAgent(
+        existing?.agent,
+        newAgent,
+        existing?.preferredWorkerAgent,
+      )
       const session: Session = {
         id: `${platform}-${channelId}-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
         channelId,
@@ -395,6 +405,7 @@ class SessionManager {
         cursorSessionId: existing?.cursorSessionId,
         planMode: existing?.planMode,
         compactRate: existing?.compactRate,
+        ...(preferredWorkerAgent ? { preferredWorkerAgent } : {}),
       }
 
       this.sessions.set(key, session)
@@ -875,6 +886,8 @@ class SessionManager {
         delete session.planMode
         // Compression rate is also per-conversation; /new returns to auto.
         delete session.compactRate
+        // Preferred Loop worker is conversation-scoped.
+        delete session.preferredWorkerAgent
         clearPlanModeForThread(key)
         // Drop any per-thread auto-allow approval rules so the new conversation
         // starts back at "ask every time".
@@ -1106,6 +1119,7 @@ class SessionManager {
         threadId: session.threadId,
         platform: session.platform,
         agent: session.agent,
+        preferredWorkerAgent: session.preferredWorkerAgent,
         model: session.model,
         variant: session.variant,
         compactRate: session.compactRate,

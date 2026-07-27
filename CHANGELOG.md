@@ -57,6 +57,10 @@ All notable changes to this project will be documented in this file.
   `spawn E2BIG`. Gate `/loop` start/confirm + parent turns; Portal hides
   Act now and prompts to switch to Agim (CLI agents remain valid
   Subagents). Friendly E2BIG message on CLI spawn overflow.
+- **Agim orchestrates, CLI workers**: session `preferredWorkerAgent` remembers
+  the last non-Agim sticky agent (e.g. Codex). Portal offers one-click
+  「用 Agim 编排」; Loop snippet + Act now prefer `call_agents` with that
+  worker. Full CLI-as-parent remains deferred.
 - **Loop Portal UX**: after Loop starts, stop mirroring status onto the pet
   speech bubble; Path A `/loop start <goal>` prefills Aligning objective;
   Loop 审计 surfaces list API errors and only applies status filter on

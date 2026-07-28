@@ -6,12 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+<<<<<<< HEAD
 - **`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` default 3 → 6**: per-turn
   Subagent budget (`call_agent` + each `call_agents` task) raised so a
   single fan-out of ~5–6 lanes is not refused. In-batch concurrency
   (`AGIM_SUBAGENT_PARALLEL_MAX`, default 3) and hard max tasks (8)
   unchanged. Set `0` to disable; Settings → Security / Native Agent
   labels updated.
+=======
+- **`AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` default 50 → 100**: Agim Agent
+  per-turn tool-call budget (the “已达工具调用预算” stop). Clamp remains
+  [1, 1000]. `AGIM_NATIVE_AGENT_MAX_ITER` default stays 50.
+>>>>>>> 9f656e91 (docs: changelog for MAX_TOOL_CALLS default 100)
 
 ### Fixed
 

@@ -50,4 +50,11 @@ describe('subagent heuristics (Phase A3)', () => {
     expect(live).toMatch(/Configured llmBackends.*mock-pro/)
     expect(live).toMatch(/Optional llmRoles aliases: cheap/)
   })
+  it('embeds operator dispatch cheat sheet when provided', () => {
+    const g = buildSubagentDelegationGuidance({
+      dispatchCheatSheet: 'Task → dispatch cheat sheet\n  - Coding → agent=codex',
+    })
+    expect(g).toMatch(/Task → dispatch cheat sheet/)
+    expect(g).toMatch(/agent=codex/)
+  })
 })

@@ -26,6 +26,7 @@ import { sanitizeForInjection, scanForInjectionAttempts } from '../../../core/pr
 import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { buildSubagentDelegationGuidance } from '../../../core/subagent-heuristics.js'
 import { getAgentProfilesCatalogForPrompt } from '../../../core/agent-profiles.js'
+import { getDispatchCheatSheetForPrompt } from '../../../core/dispatch-routes.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
@@ -153,6 +154,7 @@ export function buildSystemPrompt(
     '',
     buildSubagentDelegationGuidance({
       agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
+      dispatchCheatSheet: getDispatchCheatSheetForPrompt(),
     }),
   )
   return lines.join('\n')

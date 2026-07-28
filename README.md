@@ -134,7 +134,8 @@ Security reference: `docs/security-hardening.md`
     }
   ],
   "llmRoles": {
-    "cheap": "default-agim"
+    "cheap": "default-agim",
+    "finance": "default-agim"
   }
 }
 ```

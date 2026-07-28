@@ -6,8 +6,9 @@
 ## 1. 核心原则
 
 - Agim Agent 只需要至少一个可用 backend（`baseUrl + model + apiKey`）。
-- `llmRoles` 是可选策略层，用于精细路由（如 cheap/evaluator）。
+- `llmRoles` 是可选策略层，用于精细路由（如 `cheap` / `finance` / `evaluator` / `native-chat`）。
 - 未配置角色时，会自动回退到任意可用 backend。
+- **任务派发速查**（Settings → LLM）：用下拉配置「编码 / 金融分析 / 批量采集」的 agent 与 backend；分析绑 `llmRoles.finance`，采集绑 `llmRoles.cheap`，注入 Agim 系统提示（见 §6.1）。
 
 ## 2. 配置方式
 
@@ -45,11 +46,19 @@
   "llmRoles": {
     "native-chat": "deepseek-v4-pro",
     "cheap": "deepseek-v4-flash",
+    "finance": "deepseek-v4-pro",
     "evaluator": "deepseek-v4-flash"
+  },
+  "dispatchRoutes": {
+    "codingAgents": ["codex", "claude-code"],
+    "financeAgent": "agim",
+    "dataAgent": "agim"
   },
   "defaultAgent": "agim"
 }
 ```
+
+> **任务派发速查（Settings → LLM）**：用下拉选择「编码 / 金融分析 / 批量采集」对应的 agent 与 backend。Backend 写入 `llmRoles.finance`（分析）与 `llmRoles.cheap`（采集）；**不硬编码 deepseek**——选你已配置的任意 backend。速查表注入 Agim 系统提示。SSOT：`src/core/dispatch-routes.ts`。
 
 > **Recommended first-run:** `agim setup llm quick`（默认 DeepSeek / `deepseek-v4-pro`，粘贴 API Key 一键启用双模型）。Web `/settings/llm`、桌面聊天与 `/m/chat` 在 Agim 未配置时也会引导同一流程；可切换其他厂商预设。
 >
@@ -157,13 +166,30 @@ OpenAI / Anthropic **不再**作为内置预设；用 `custom` 填入兼容 `bas
 
 常见角色：
 
-- `cheap`：低成本任务（摘要、分类、日常推理）
-- `evaluator`：通知评估等判定任务
-- `native-chat`：指定聊天主角色（可选）
+| 角色 | 用途 |
+|------|------|
+| `cheap` | 低成本任务（摘要、分类、日常推理）；**任务派发速查「批量采集」**同步绑定此角色 |
+| `finance` | **任务派发速查「金融分析 / 报告」**用的 backend（任意已配置模型，不限 deepseek） |
+| `evaluator` | 通知评估等判定任务 |
+| `native-chat` | 指定聊天主角色（可选） |
 
-一键启用时：`native-chat` → 主模型，`cheap` / `evaluator` → 廉价模型（若有）。
+一键启用时：`native-chat` → 主模型，`cheap` / `evaluator` → 廉价模型（若有）。`finance` 需在 Settings「任务派发速查」或角色绑定里另行选择。
 
 即使不配置这些角色，只要有可用 backend，Agim Agent（`agim`）仍可运行。
+
+### 6.1 任务派发速查（`dispatchRoutes`）
+
+Web：**Settings → LLM → 任务派发速查**（全部下拉，无需手输）。
+
+| 任务行 | Agent 配置 | Backend 配置 |
+|--------|------------|--------------|
+| 编码 / 修 bug | `dispatchRoutes.codingAgents`（默认 `codex`、`claude-code`） | —（CLI） |
+| 中文金融分析 / 报告 | `dispatchRoutes.financeAgent`（默认 `agim`） | `llmRoles.finance` |
+| 批量采集 / 行情 | `dispatchRoutes.dataAgent`（默认 `agim`） | `llmRoles.cheap` |
+
+- 未选 backend 时，系统提示只写「去 Settings 绑定」，**不会硬编码 deepseek 等厂商名**。
+- 实现 SSOT：`src/core/dispatch-routes.ts`；注入：`getDispatchCheatSheetForPrompt()` → Agim `buildSystemPrompt`。
+- 产品设计补充：[`architecture/agent-profiles.md`](./architecture/agent-profiles.md) §2.4。
 
 ## 7. 常用 CLI
 

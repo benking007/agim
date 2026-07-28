@@ -13,7 +13,7 @@
 - [`deployment.md`](./deployment.md)：部署与上线清单
 - [`naming.md`](./naming.md)：命名术语表（Agim Agent / `agim` / A2A / tenants）
 - [`migration-naming-v2.md`](./migration-naming-v2.md)：Naming v2 新老迁移指引
-- [`llm-backends.md`](./llm-backends.md)：Agim Agent 大模型 API 配置与排障（含 SSRF / 私网 hatch）
+- [`llm-backends.md`](./llm-backends.md)：Agim Agent 大模型 API 配置与排障（含 SSRF / 私网 hatch；§6.1 任务派发速查）
 - [`agim-agent-context-budget.md`](./agim-agent-context-budget.md)：上下文预算（L1/L2 / compact / 指标）
 
 ## 架构
@@ -22,7 +22,7 @@
 - [`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md)：桥接 + Agim Agent 产品立场（旧名 `architecture-bridge-and-native.md` 仅作跳转）
 - [`architecture/subagent.md`](./architecture/subagent.md)：**现行设计** — Subagent 概念、与 A2A/handoff 边界、同族 role/backend、拆解原则、**子代理代审免卡**
 - [`architecture/cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md)：**现行设计** — sticky CLI 派 `call_agent(s)`；**Loop 仍仅 Agim**
-- [`architecture/agent-profiles.md`](./architecture/agent-profiles.md)：**现行设计** — 非 Agim CLI 派工能力画像（Settings 可维护；全文进 Agim system，工具侧短提示）
+- [`architecture/agent-profiles.md`](./architecture/agent-profiles.md)：**现行设计** — 非 Agim CLI 派工能力画像 + §2.4 任务派发速查（Settings→LLM 下拉；`llmRoles.finance`/`cheap`）
 - [`architecture/focus.md`](./architecture/focus.md)：**现行设计** — Focus：聚焦注入 / on / off（废弃 `/goal`）
 - [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；父侧 `ask_user`；结案浮窗；门禁仅 depth=0；Portal 底栏 docks；Tasks Loop 审计）
 - [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点（UI/工具链已退役）

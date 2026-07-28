@@ -18,6 +18,13 @@ import {
   readAgentProfileOverrides,
   type AgentProfile,
 } from '../core/agent-profiles.js'
+import {
+  DEFAULT_DISPATCH_CODING_AGENTS,
+  DEFAULT_DISPATCH_SAME_FAMILY_AGENT,
+  dispatchRoutesForPersist,
+  readDispatchRoutesStored,
+  type DispatchRoutesStored,
+} from '../core/dispatch-routes.js'
 import { isMasked } from './env-mask.js'
 import { readBody, sendJson, sendError } from './http-utils.js'
 import { requireAdmin, getRequestActor } from './auth.js'
@@ -91,6 +98,15 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
     const profileOverrides = readAgentProfileOverrides(config)
     const agentProfiles = mergeAgentProfiles(profileOverrides)
 
+    const storedDispatch = readDispatchRoutesStored(config)
+    const dispatchRoutes: DispatchRoutesStored = {
+      codingAgents: storedDispatch.codingAgents?.length
+        ? storedDispatch.codingAgents
+        : [...DEFAULT_DISPATCH_CODING_AGENTS],
+      financeAgent: storedDispatch.financeAgent || DEFAULT_DISPATCH_SAME_FAMILY_AGENT,
+      dataAgent: storedDispatch.dataAgent || DEFAULT_DISPATCH_SAME_FAMILY_AGENT,
+    }
+
     sendJson(res, 200, {
       messengers: visibleMessengers,
       agents: config.agents,
@@ -99,6 +115,8 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       agentProfiles,
       /** Builtin defaults — Settings「恢复默认」用. */
       agentProfileDefaults: DEFAULT_AGENT_PROFILES,
+      /** Task → agent picks for dispatch cheat sheet (backends via llmRoles). */
+      dispatchRoutes,
       telegram: showGlobalIm && config.telegram && !blocked('telegram')
         ? { botToken: mask(config.telegram.botToken), channelId: config.telegram.channelId }
         : undefined,
@@ -256,6 +274,12 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
         // SPA sends effective profiles; persist sparse overrides vs builtins.
         const effective = mergeAgentProfiles(val as Record<string, Partial<AgentProfile>>)
         merged.agentProfiles = agentProfileOverridesFromEffective(effective)
+        continue
+      }
+      if (key === 'dispatchRoutes' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
+        const sparse = dispatchRoutesForPersist(val as DispatchRoutesStored)
+        if (sparse) merged.dispatchRoutes = sparse
+        else delete merged.dispatchRoutes
         continue
       }
       // Read-only companion field from GET — never persist.

@@ -573,4 +573,61 @@ describe('/settings/llm quick setup', () => {
     expect(screen.getByText(/does not accept the temperature parameter/i)).toBeInTheDocument()
     expect(screen.getByText(/temperature.*deprecated/i)).toBeInTheDocument()
   })
+
+  it('shows dispatch cheat sheet and binds finance backend via dropdown (no typing)', async () => {
+    const fetchSpy = mockLlmFetch({
+      backends: [
+        {
+          name: 'kimi-k3',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.moonshot.cn/v1',
+          model: 'kimi-k3',
+          label: 'moonshot',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_KIMI_K3' },
+        },
+        {
+          name: 'kimi-k2.6',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.moonshot.cn/v1',
+          model: 'kimi-k2.6',
+          label: 'moonshot',
+          secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_KIMI_K2_6' },
+        },
+      ],
+      roles: { 'native-chat': 'kimi-k3', cheap: 'kimi-k2.6' },
+      config: {
+        agents: ['agim', 'codex', 'claude-code'],
+        defaultAgent: 'agim',
+        dispatchRoutes: {
+          codingAgents: ['codex', 'claude-code'],
+          financeAgent: 'agim',
+          dataAgent: 'agim',
+        },
+      },
+    })
+    renderPage()
+
+    expect(await screen.findByText('Task dispatch cheat sheet')).toBeInTheDocument()
+    expect(screen.getByText('Finance analysis / report')).toBeInTheDocument()
+    expect(screen.getByText('Bulk fetch / quotes')).toBeInTheDocument()
+
+    const financeBackend = await screen.findByTestId('dispatch-finance-backend')
+    await waitFor(() => expect(financeBackend).not.toBeDisabled())
+    Element.prototype.scrollIntoView = vi.fn()
+    Element.prototype.hasPointerCapture = vi.fn(() => false) as never
+    Element.prototype.setPointerCapture = vi.fn() as never
+    Element.prototype.releasePointerCapture = vi.fn() as never
+    fireEvent.click(financeBackend)
+    fireEvent.click(await screen.findByRole('option', { name: /^kimi-k3$/ }))
+
+    await waitFor(() => {
+      expect(
+        fetchSpy.mock.calls.some(
+          (c) => String(c[0]) === '/api/llm/roles'
+            && (c[1] as RequestInit | undefined)?.method === 'PUT'
+            && JSON.parse(String((c[1] as RequestInit).body)).finance === 'kimi-k3',
+        ),
+      ).toBe(true)
+    })
+  })
 })

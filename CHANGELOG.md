@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable task dispatch cheat sheet**: Settings → LLM →「任务派发速查」
+  dropdowns for coding agents, finance agent+backend, and bulk-collect
+  agent+backend (no free-text). Backends bind `llmRoles.finance` /
+  `llmRoles.cheap`; agents live in `dispatchRoutes`. Injected into the
+  Agim system prompt with concrete names only — never hardcodes
+  deepseek. SSOT: `src/core/dispatch-routes.ts`. Docs: `llm-backends.md`,
+  `agent-profiles.md` §2.4.
+
 ### Fixed
 
 - **Subagent ghost cards after refused `call_agents`**: pending lane

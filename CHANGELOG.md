@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Loop confirm-met dock Markdown**: Portal「结论已就绪 — 请确认」摘要用
+  `MarkdownView`（GFM 表格 / 加粗 / 行内代码）渲染，长文 `max-h-56` +
+  `overflow-y-auto`，不再整段裸 `**` / `|` 糊成一坨。
+
 ### Added
 
 - **Configurable task dispatch cheat sheet**: Settings → LLM →「任务派发速查」

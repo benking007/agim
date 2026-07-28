@@ -1,8 +1,8 @@
 # Agent specialty profiles（派工能力画像）
 
-> **状态**：现行 · 2026-07-27  
-> **用户面**：Settings → Agents →「派工能力画像」  
-> **消费方**：Agim Agent **系统提示**（完整目录）+ `call_agent` / `call_agents` **工具说明**（短提示指向目录）  
+> **状态**：现行 · 2026-07-28  
+> **用户面**：Settings → Agents →「派工能力画像（CLI / Agim backend）」  
+> **消费方**：Agim Agent **系统提示**（完整目录 + capability caps）+ `call_agent` / `call_agents` **工具说明**（短提示指向目录）  
 > **关联**：[Subagent](./subagent.md) · [Loop](./loop-engineering.md) · [编排路线图](./orchestration-roadmap.md) · [命名](../naming.md) · [接入 SOP](../agent-integration-sop.md)
 
 ## 0. 一句话
@@ -38,8 +38,36 @@ Agim Agent 是编排者（Loop 父 / `call_agents` 调用方），**不在**画�
 | `strengths[]` | 擅长什么 |
 | `avoid[]` | 不宜派什么 |
 | `tags[]` | 短标签（匹配 / UI） |
+| `capabilities` | **结构化能力维度**（见 §1.1） |
+| `capabilityNotes?` | 维度备注（如 finance=`非专长`） |
 
-新增内置 CLI adapter 时：在 `DEFAULT_AGENT_PROFILES` 补一条默认画像（见 [`agent-integration-sop.md`](../agent-integration-sop.md)）。
+新增内置 CLI adapter 时：在 `DEFAULT_AGENT_PROFILES` 补一条默认画像（含 capabilities）（见 [`agent-integration-sop.md`](../agent-integration-sop.md)）。
+
+### 1.1 能力维度（CLI 与 Agim backend 共用刻度）
+
+| dim | 含义 | 示例（强） |
+|-----|------|-----------|
+| `coding` | 编码/重构 | codex / claude-code |
+| `finance` | 金融分析 | deepseek-v4-pro（中文金融语料） |
+| `zhWriting` | 中文长文写作 | deepseek / kimi（母语级） |
+| `reasoning` | 多步推理 | codex / deepseek / claude |
+| `dataCheck` | 数据校验 | codex / deepseek |
+
+等级：`strong` \| `medium` \| `weak`。
+
+**对比示例（内置启发式）**：
+
+| 能力 | codex（CLI） | deepseek-v4-pro（Agim backend） |
+|------|--------------|--------------------------------|
+| 编码/重构 | 强 | 中 |
+| 金融分析 | 中（非专长） | **强**（中文金融语料丰富） |
+| 中文长文写作 | 中（翻译腔明显） | **强**（母语级） |
+| 多步推理 | 强 | **强** |
+| 数据校验 | 强 | 强 |
+
+- CLI 画像：`config.agentProfiles` / `src/core/agent-profiles.ts`  
+- Backend 画像：按 `llmBackends.name`+`model` 启发式（`src/core/backend-profiles.ts`），稀疏覆盖 `config.backendProfiles`  
+- Prompt catalog **同时**列出 CLI（`agent=`）与 backends（`backend=`），带 `caps: coding=strong finance=medium(非专长) …`
 
 ---
 
@@ -47,37 +75,50 @@ Agim Agent 是编排者（Loop 父 / `call_agents` 调用方），**不在**画�
 
 ### 2.1 稀疏覆盖
 
-`~/.agim/config.json` 只存相对内置默认有改动的项：
+`~/.agim/config.json` 只存相对默认有改动的项：
 
 ```json
 {
   "agentProfiles": {
     "codex": {
       "summary": "自定义一句话",
+      "capabilities": { "coding": "strong", "finance": "medium" },
+      "capabilityNotes": { "finance": "非专长" },
       "strengths": ["…"],
       "avoid": ["…"],
       "tags": ["code", "fix"]
+    }
+  },
+  "backendProfiles": {
+    "deepseek-v4-pro": {
+      "capabilities": { "coding": "medium", "finance": "strong", "zhWriting": "strong" },
+      "capabilityNotes": { "finance": "中文金融语料丰富", "zhWriting": "母语级" }
     }
   }
 }
 ```
 
-- 未出现的 Agent → 用内置默认  
-- 未知 id / Agim id → 忽略（写入时规范化到 `NON_AGIM_AGENT_IDS`）  
-- Settings 保存：生效值 → `agentProfileOverridesFromEffective` → 只持久化差异
+- 未出现的 CLI Agent → 用内置默认  
+- 未出现的 backend → 用 name/model 启发式  
+- 未知 CLI id / Agim id → 忽略  
+- Settings 保存：生效值 → 稀疏 overrides
 
 ### 2.2 REST
 
 | 方向 | 行为 |
 |------|------|
-| `GET /api/config` | `agentProfiles` = **生效值**（defaults ⊕ overrides）；另附 `agentProfileDefaults` 供「恢复默认」 |
-| `PUT /api/config` | 接受完整生效表；服务端写成稀疏 `agentProfiles`；忽略客户端回传的 `agentProfileDefaults` |
+| `GET /api/config` | `agentProfiles` / `backendProfiles` = **生效值**；另附 `agentProfileDefaults` / `backendProfileDefaults` |
+| `PUT /api/config` | 接受完整生效表；服务端写成稀疏 overrides；忽略 `*Defaults` 回传 |
 
-Schema：`src/core/config-schema.ts`（`agentProfiles` record）。
+Schema：`src/core/config-schema.ts`（`agentProfiles` + `backendProfiles`）。
 
 ### 2.3 Settings UI
 
-Settings → Agents →「派工能力画像」：按 Agent 手风琴编辑 `summary` / strengths / avoid / tags；可单项重置为默认。  
+Settings → Agents：
+
+1. **派工能力画像（CLI）** — 维度评分 + summary / strengths / avoid / tags  
+2. **派工能力画像（Agim backend）** — 已配置 `llmBackends` 的维度评分（空则提示先去 LLM 页添加）
+
 i18n：`settings` 命名空间（zh/en）。
 
 ---
@@ -149,9 +190,9 @@ toolDesc += "Prefer agent= by specialty fit (see system specialty catalog)."
 
 ## 5. 非目标（本轮）
 
-- 结构化能力打分 / 自动 ranking API（prompt catalog 已够用）  
+- 自动 ranking API / 硬匹配分数（仍靠 prompt catalog + 模型选型；capabilities 是可比矩阵，不是打分器）  
 - 把完整 catalog 塞进每个 `call_agent(s)` tool JSON schema  
-- 为 Agim 自身建 specialty 行  
+- 为 Agim **编排者本身**建 specialty 行（工人用 backend= / agent=）  
 - 用画像代替 CLI auth / version 探测  
 - Portal `/`「子代理」脚手架句自动展开某 Agent 名（仍是引导句；真实选型靠父模型 + catalog）
 

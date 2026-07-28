@@ -80,6 +80,7 @@ export function buildSubagentDelegationGuidance(extra?: {
     '    role:"cheap" / role:"finance" are optional aliases when those llmRoles are configured — do not assume they exist.',
     '  - Cross-adapter: pick agent= using the specialty catalog below (and availability). Prefer fit over habit.',
     '  - Follow the Task → dispatch cheat sheet below when present (operator-configured agent/backend).',
+    '  - Capability fit (see catalog caps=): coding → CLI like codex/claude-code; finance / zhWriting → Agim + configured finance backend (or caps-strong backend); reasoning/dataCheck → either when strong.',
     '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
     '  - Verification: after a substantive result, a fresh verifier Subagent can be valuable — give an exact claim + how to check it.',
     '  - Synthesize, don\'t delegate understanding: merge child summaries into one Chinese user reply; never dump raw child transcripts.',

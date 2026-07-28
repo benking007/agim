@@ -261,6 +261,29 @@ export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
     strengths: z.array(z.string().max(200)).max(20).optional(),
     avoid: z.array(z.string().max(200)).max(20).optional(),
     tags: z.array(z.string().max(64)).max(20).optional(),
+    capabilities: z.object({
+      coding: z.enum(['strong', 'medium', 'weak']).optional(),
+      finance: z.enum(['strong', 'medium', 'weak']).optional(),
+      zhWriting: z.enum(['strong', 'medium', 'weak']).optional(),
+      reasoning: z.enum(['strong', 'medium', 'weak']).optional(),
+      dataCheck: z.enum(['strong', 'medium', 'weak']).optional(),
+    }).passthrough().optional(),
+    capabilityNotes: z.record(z.string(), z.string().max(80)).optional(),
+  }).passthrough()).optional(),
+  /**
+   * Capability profiles for Agim llmBackends (same-family backend= routing).
+   * Sparse overrides of name/model heuristics — see `src/core/backend-profiles.ts`.
+   */
+  backendProfiles: z.record(z.string(), z.object({
+    summary: z.string().max(500).optional(),
+    capabilities: z.object({
+      coding: z.enum(['strong', 'medium', 'weak']).optional(),
+      finance: z.enum(['strong', 'medium', 'weak']).optional(),
+      zhWriting: z.enum(['strong', 'medium', 'weak']).optional(),
+      reasoning: z.enum(['strong', 'medium', 'weak']).optional(),
+      dataCheck: z.enum(['strong', 'medium', 'weak']).optional(),
+    }).passthrough().optional(),
+    capabilityNotes: z.record(z.string(), z.string().max(80)).optional(),
   }).passthrough()).optional(),
 }).passthrough().superRefine((cfg, ctx) => {
   const enabled = new Set(cfg.messengers ?? [])

@@ -328,6 +328,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 2026-07-24… | C R1–R5 + 加固 | #232–#252 等 | ALIGNING→结案；派工/验收门禁；Portal 底栏；见 loop-engineering §7 |
 | 2026-07-27 | 派工画像 | #272 | `agent-profiles`；Settings；system catalog + tool 短提示 |
 | 2026-07-28 | 任务派发速查 | #278 | Settings→LLM 下拉；`dispatchRoutes` + `llmRoles.finance`/`cheap`；注入 system |
+| 2026-07-28 | 能力维度 caps | #277 | CLI+backend 五维评分；prompt `caps=`；Settings→Agents 双矩阵 |
 
 ---
 

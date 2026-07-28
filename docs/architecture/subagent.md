@@ -347,6 +347,7 @@
 | 2026-07-24 | **子代理产出契约**：最终消息须含关键发现；落盘须绝对路径；禁空「见上文」 | — |
 | 2026-07-27 | **派工能力画像**：非 Agim CLI specialty catalog；Settings 可维护；system 全文 + `call_agent(s)` 短提示 | #272 |
 | 2026-07-28 | **任务派发速查**：Settings→LLM 下拉配置编码/金融/采集 → `dispatchRoutes` + `llmRoles.finance`/`cheap`；注入 system；不硬编码 deepseek | #278 |
+| 2026-07-28 | **能力维度 caps**：CLI + Agim backend 共用 `coding/finance/zhWriting/reasoning/dataCheck`；catalog 带 `caps=`；Settings→Agents 可编辑 | #277 |
 
 ### 落地差异（相对 §4.3）
 

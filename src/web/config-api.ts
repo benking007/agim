@@ -19,12 +19,21 @@ import {
   type AgentProfile,
 } from '../core/agent-profiles.js'
 import {
+  backendProfileOverridesFromEffective,
+  inferBackendProfile,
+  normalizeBackendProfile,
+  readBackendProfileOverrides,
+  resolveBackendProfile,
+  type BackendProfile,
+} from '../core/backend-profiles.js'
+import {
   DEFAULT_DISPATCH_CODING_AGENTS,
   DEFAULT_DISPATCH_SAME_FAMILY_AGENT,
   dispatchRoutesForPersist,
   readDispatchRoutesStored,
   type DispatchRoutesStored,
 } from '../core/dispatch-routes.js'
+import { listProviders } from '../core/llm/registry.js'
 import { isMasked } from './env-mask.js'
 import { readBody, sendJson, sendError } from './http-utils.js'
 import { requireAdmin, getRequestActor } from './auth.js'
@@ -97,6 +106,15 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
 
     const profileOverrides = readAgentProfileOverrides(config)
     const agentProfiles = mergeAgentProfiles(profileOverrides)
+    const backendOverrides = readBackendProfileOverrides(config)
+    const providers = listProviders()
+    const backendProfiles: Record<string, BackendProfile> = {}
+    const backendProfileDefaults: Record<string, BackendProfile> = {}
+    for (const p of providers) {
+      const ref = { name: p.name, model: p.model, provider: p.providerType }
+      backendProfileDefaults[p.name] = inferBackendProfile(ref)
+      backendProfiles[p.name] = resolveBackendProfile(ref, backendOverrides)
+    }
 
     const storedDispatch = readDispatchRoutesStored(config)
     const dispatchRoutes: DispatchRoutesStored = {
@@ -115,6 +133,10 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       agentProfiles,
       /** Builtin defaults — Settings「恢复默认」用. */
       agentProfileDefaults: DEFAULT_AGENT_PROFILES,
+      /** Effective Agim backend capability profiles (heuristic ⊕ overrides). */
+      backendProfiles,
+      /** Inference defaults for Settings「恢复默认」. */
+      backendProfileDefaults,
       /** Task → agent picks for dispatch cheat sheet (backends via llmRoles). */
       dispatchRoutes,
       telegram: showGlobalIm && config.telegram && !blocked('telegram')
@@ -276,14 +298,43 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
         merged.agentProfiles = agentProfileOverridesFromEffective(effective)
         continue
       }
+      if (key === 'backendProfiles' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
+        const raw = val as Record<string, Partial<BackendProfile>>
+        const backends = listProviders().map((p) => ({
+          name: p.name,
+          model: p.model,
+          provider: p.providerType,
+        }))
+        const effective: Record<string, BackendProfile> = {}
+        for (const b of backends) {
+          const over = raw[b.name]
+          effective[b.name] = normalizeBackendProfile(over, inferBackendProfile(b))
+        }
+        // Also accept overrides for names not currently in the registry
+        // (operator edited then removed a backend — keep sparse for restore).
+        for (const [name, over] of Object.entries(raw)) {
+          if (effective[name]) continue
+          effective[name] = normalizeBackendProfile(over, inferBackendProfile({ name }))
+        }
+        merged.backendProfiles = backendProfileOverridesFromEffective(
+          effective,
+          [
+            ...backends,
+            ...Object.keys(effective)
+              .filter((n) => !backends.some((b) => b.name === n))
+              .map((name) => ({ name })),
+          ],
+        )
+        continue
+      }
       if (key === 'dispatchRoutes' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
         const sparse = dispatchRoutesForPersist(val as DispatchRoutesStored)
         if (sparse) merged.dispatchRoutes = sparse
         else delete merged.dispatchRoutes
         continue
       }
-      // Read-only companion field from GET — never persist.
-      if (key === 'agentProfileDefaults') continue
+      // Read-only companion fields from GET — never persist.
+      if (key === 'agentProfileDefaults' || key === 'backendProfileDefaults') continue
       if (typeof val === 'string' && isMasked(val)) {
         continue
       }

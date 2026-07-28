@@ -104,7 +104,7 @@ describe('/settings/agents — built-in adapters', () => {
     expect(screen.getAllByText('MiMo Code').length).toBeGreaterThan(0)
     // claude-code appears in the agent row, default picker, and specialty profiles.
     expect(screen.getAllByText('claude-code').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText(/派工能力画像|Dispatch specialty profiles/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/派工能力画像|Dispatch specialty profiles/i).length).toBeGreaterThanOrEqual(2)
     // claude-code is online (true) — but at least one row should have
     // the "online" badge. Use getAllByText to be tolerant of i18n.
     expect(screen.getAllByText(/online|在线/i).length).toBeGreaterThan(0)

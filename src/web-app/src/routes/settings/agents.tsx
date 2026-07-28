@@ -1,8 +1,8 @@
 /**
  * /settings/agents — built-in adapters + specialty profiles.
  *
- * PUT /api/config writes `agents[]`, `defaultAgent`, and `agentProfiles`
- * atomically so dispatch metadata stays consistent with the enabled list.
+ * PUT /api/config writes `agents[]`, `defaultAgent`, `agentProfiles`, and
+ * `backendProfiles` atomically so dispatch metadata stays consistent.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -30,7 +30,50 @@ import {
 import { describeError } from '@/lib/api/errors'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
-import type { AgentProfile } from '@/types/api'
+import type {
+  AgentProfile,
+  BackendProfile,
+  CapabilityDim,
+  CapabilityLevel,
+  CapabilityMap,
+} from '@/types/api'
+
+const CAPABILITY_DIMS: CapabilityDim[] = [
+  'coding',
+  'finance',
+  'zhWriting',
+  'reasoning',
+  'dataCheck',
+]
+
+const CAPABILITY_LEVELS: CapabilityLevel[] = ['strong', 'medium', 'weak']
+
+const NEUTRAL_CAPS: CapabilityMap = {
+  coding: 'medium',
+  finance: 'medium',
+  zhWriting: 'medium',
+  reasoning: 'medium',
+  dataCheck: 'medium',
+}
+
+function ensureAgentProfile(raw: Partial<AgentProfile> | undefined): AgentProfile {
+  return {
+    summary: raw?.summary ?? '',
+    strengths: raw?.strengths ?? [],
+    avoid: raw?.avoid ?? [],
+    tags: raw?.tags ?? [],
+    capabilities: { ...NEUTRAL_CAPS, ...(raw?.capabilities ?? {}) },
+    ...(raw?.capabilityNotes ? { capabilityNotes: { ...raw.capabilityNotes } } : {}),
+  }
+}
+
+function ensureBackendProfile(raw: Partial<BackendProfile> | undefined): BackendProfile {
+  return {
+    summary: raw?.summary ?? '',
+    capabilities: { ...NEUTRAL_CAPS, ...(raw?.capabilities ?? {}) },
+    ...(raw?.capabilityNotes ? { capabilityNotes: { ...raw.capabilityNotes } } : {}),
+  }
+}
 
 /** Mirror of v1 settings.html:BUILTIN_AGENTS. Hardcoded because
  *  backend doesn't expose this metadata yet; the table changes
@@ -85,20 +128,36 @@ export default function SettingsAgentsRoute(): JSX.Element {
   const [draftEnabled, setDraftEnabled] = useState<string[] | null>(null)
   const [draftDefault, setDraftDefault] = useState<string | null>(null)
   const [draftProfiles, setDraftProfiles] = useState<Record<string, AgentProfile> | null>(null)
+  const [draftBackendProfiles, setDraftBackendProfiles] = useState<Record<string, BackendProfile> | null>(null)
   const [openProfile, setOpenProfile] = useState<string | null>(null)
+  const [openBackend, setOpenBackend] = useState<string | null>(null)
 
   useEffect(() => {
     if (cfg && draftEnabled == null) setDraftEnabled(cfg.agents ?? [])
     if (cfg && draftDefault == null) setDraftDefault(cfg.defaultAgent ?? '')
     if (cfg && draftProfiles == null) {
-      setDraftProfiles({ ...(cfg.agentProfiles ?? {}) })
+      const next: Record<string, AgentProfile> = {}
+      for (const [k, v] of Object.entries(cfg.agentProfiles ?? {})) {
+        next[k] = ensureAgentProfile(v)
+      }
+      setDraftProfiles(next)
     }
-  }, [cfg, draftEnabled, draftDefault, draftProfiles])
+    if (cfg && draftBackendProfiles == null) {
+      const next: Record<string, BackendProfile> = {}
+      for (const [k, v] of Object.entries(cfg.backendProfiles ?? {})) {
+        next[k] = ensureBackendProfile(v)
+      }
+      setDraftBackendProfiles(next)
+    }
+  }, [cfg, draftEnabled, draftDefault, draftProfiles, draftBackendProfiles])
 
   const enabled = draftEnabled ?? cfg?.agents ?? []
   const defaultAgent = draftDefault ?? cfg?.defaultAgent ?? ''
   const profiles = draftProfiles ?? cfg?.agentProfiles ?? {}
   const defaults = cfg?.agentProfileDefaults ?? {}
+  const backendProfiles = draftBackendProfiles ?? cfg?.backendProfiles ?? {}
+  const backendDefaults = cfg?.backendProfileDefaults ?? {}
+  const backendNames = Object.keys(backendProfiles).sort()
 
   const isDirty = useMemo(() => {
     if (!cfg) return false
@@ -107,8 +166,9 @@ export default function SettingsAgentsRoute(): JSX.Element {
       && enabled.every((a) => cfg.agents?.includes(a))
     const defaultSame = defaultAgent === (cfg.defaultAgent ?? '')
     const profilesSame = JSON.stringify(profiles) === JSON.stringify(cfg.agentProfiles ?? {})
-    return !enabledSame || !defaultSame || !profilesSame
-  }, [cfg, enabled, defaultAgent, profiles])
+    const backendsSame = JSON.stringify(backendProfiles) === JSON.stringify(cfg.backendProfiles ?? {})
+    return !enabledSame || !defaultSame || !profilesSame || !backendsSame
+  }, [cfg, enabled, defaultAgent, profiles, backendProfiles])
 
   /** Eligible defaults = installed + enabled. Picker disables when
    *  empty (no agent is both). In-process `native` follows the same
@@ -131,19 +191,27 @@ export default function SettingsAgentsRoute(): JSX.Element {
   function updateProfile(name: string, next: AgentProfile): void {
     setDraftProfiles((prev) => ({
       ...(prev ?? cfg?.agentProfiles ?? {}),
-      [name]: next,
+      [name]: ensureAgentProfile(next),
     }))
   }
 
   function resetProfile(name: string): void {
     const def = defaults[name]
     if (!def) return
-    updateProfile(name, {
-      summary: def.summary,
-      strengths: [...def.strengths],
-      avoid: [...def.avoid],
-      tags: [...def.tags],
-    })
+    updateProfile(name, ensureAgentProfile(def))
+  }
+
+  function updateBackendProfile(name: string, next: BackendProfile): void {
+    setDraftBackendProfiles((prev) => ({
+      ...(prev ?? cfg?.backendProfiles ?? {}),
+      [name]: ensureBackendProfile(next),
+    }))
+  }
+
+  function resetBackendProfile(name: string): void {
+    const def = backendDefaults[name]
+    if (!def) return
+    updateBackendProfile(name, ensureBackendProfile(def))
   }
 
   async function onSave(): Promise<void> {
@@ -154,12 +222,14 @@ export default function SettingsAgentsRoute(): JSX.Element {
         agents: enabled,
         defaultAgent: defaultAgent || cfg.defaultAgent,
         agentProfiles: profiles,
+        backendProfiles,
       })
       toast.success(t('agents.toast.saved'))
       // Reset drafts so the next paint reads from refreshed cfg.
       setDraftEnabled(null)
       setDraftDefault(null)
       setDraftProfiles(null)
+      setDraftBackendProfiles(null)
     } catch (err) {
       toast.error(describeError(err, t).message)
     }
@@ -169,6 +239,7 @@ export default function SettingsAgentsRoute(): JSX.Element {
     setDraftEnabled(null)
     setDraftDefault(null)
     setDraftProfiles(null)
+    setDraftBackendProfiles(null)
   }
 
   return (
@@ -252,12 +323,13 @@ export default function SettingsAgentsRoute(): JSX.Element {
           <section className="rounded-md border border-border bg-surface p-4">
             <h3 className="text-sm font-semibold">{t('agents.profiles.title')}</h3>
             <p className="mt-1 text-xs text-text-dim">{t('agents.profiles.subtitle')}</p>
+            <p className="mt-1 text-[11px] text-text-muted">{t('agents.profiles.capsHint')}</p>
             <div className="mt-3 flex flex-col divide-y divide-border rounded-md border border-border">
               {BRIDGED_AGENT_NAMES.map((name) => {
-                const profile = profiles[name] ?? defaults[name] ?? {
-                  summary: '', strengths: [], avoid: [], tags: [],
-                }
-                const def = defaults[name]
+                const profile = ensureAgentProfile(
+                  profiles[name] ?? defaults[name],
+                )
+                const def = defaults[name] ? ensureAgentProfile(defaults[name]) : undefined
                 const customized = def
                   ? JSON.stringify(profile) !== JSON.stringify(def)
                   : false
@@ -272,6 +344,13 @@ export default function SettingsAgentsRoute(): JSX.Element {
                     >
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">
                         {agentDisplayName(name)}
+                      </span>
+                      <span className="hidden shrink-0 font-mono text-[10px] text-text-muted sm:inline">
+                        {t('agents.profiles.capShort', {
+                          coding: profile.capabilities.coding,
+                          finance: profile.capabilities.finance,
+                          zh: profile.capabilities.zhWriting,
+                        })}
                       </span>
                       <Badge variant="outline" className="shrink-0 text-[10px]">
                         {customized
@@ -298,6 +377,71 @@ export default function SettingsAgentsRoute(): JSX.Element {
                 )
               })}
             </div>
+          </section>
+
+          {/* Agim backend capability matrix (same-family backend=) */}
+          <section className="rounded-md border border-border bg-surface p-4">
+            <h3 className="text-sm font-semibold">{t('agents.backendProfiles.title')}</h3>
+            <p className="mt-1 text-xs text-text-dim">{t('agents.backendProfiles.subtitle')}</p>
+            {backendNames.length === 0 ? (
+              <p className="mt-3 text-xs text-text-muted">{t('agents.backendProfiles.empty')}</p>
+            ) : (
+              <div className="mt-3 flex flex-col divide-y divide-border rounded-md border border-border">
+                {backendNames.map((name) => {
+                  const profile = ensureBackendProfile(
+                    backendProfiles[name] ?? backendDefaults[name],
+                  )
+                  const def = backendDefaults[name]
+                    ? ensureBackendProfile(backendDefaults[name])
+                    : undefined
+                  const customized = def
+                    ? JSON.stringify(profile) !== JSON.stringify(def)
+                    : false
+                  const open = openBackend === name
+                  return (
+                    <div key={`backend-profile-${name}`} className="bg-surface">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-2/60"
+                        onClick={() => setOpenBackend(open ? null : name)}
+                        aria-expanded={open}
+                      >
+                        <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium">
+                          {name}
+                        </span>
+                        <span className="hidden shrink-0 font-mono text-[10px] text-text-muted sm:inline">
+                          {t('agents.profiles.capShort', {
+                            coding: profile.capabilities.coding,
+                            finance: profile.capabilities.finance,
+                            zh: profile.capabilities.zhWriting,
+                          })}
+                        </span>
+                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                          {customized
+                            ? t('agents.profiles.customized')
+                            : t('agents.profiles.defaultBadge')}
+                        </Badge>
+                        <ChevronDown className={cn(
+                          'h-4 w-4 shrink-0 text-text-dim transition-transform',
+                          open && 'rotate-180',
+                        )} />
+                      </button>
+                      {open ? (
+                        <BackendProfileEditor
+                          profile={profile}
+                          onChange={(next) => updateBackendProfile(name, next)}
+                          onReset={def ? () => resetBackendProfile(name) : undefined}
+                        />
+                      ) : (
+                        <p className="px-3 pb-2.5 text-xs text-text-dim line-clamp-2">
+                          {profile.summary || '—'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </section>
 
           {/* Save bar */}
@@ -440,6 +584,79 @@ function listToLines(list: string[]): string {
   return list.join('\n')
 }
 
+function CapabilityMatrix({
+  capabilities,
+  notes,
+  onChange,
+}: {
+  capabilities: CapabilityMap
+  notes?: Partial<Record<CapabilityDim, string>>
+  onChange: (next: {
+    capabilities: CapabilityMap
+    capabilityNotes?: Partial<Record<CapabilityDim, string>>
+  }) => void
+}): JSX.Element {
+  const { t } = useTranslation('settings')
+  return (
+    <div className="space-y-2">
+      <span className="text-[11px] font-medium text-text-dim">
+        {t('agents.profiles.capabilities')}
+      </span>
+      <div className="grid gap-2 sm:grid-cols-1">
+        {CAPABILITY_DIMS.map((dim) => (
+          <div
+            key={dim}
+            className="flex flex-col gap-1 rounded-md border border-border/70 bg-surface-2/40 px-2.5 py-2 sm:flex-row sm:items-center sm:gap-2"
+          >
+            <span className="w-36 shrink-0 text-xs font-medium text-text">
+              {t(`agents.profiles.dims.${dim}`)}
+            </span>
+            <Select
+              value={capabilities[dim]}
+              onValueChange={(v) => {
+                const level = v as CapabilityLevel
+                onChange({
+                  capabilities: { ...capabilities, [dim]: level },
+                  capabilityNotes: notes,
+                })
+              }}
+            >
+              <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CAPABILITY_LEVELS.map((level) => (
+                  <SelectItem key={level} value={level} className="text-xs">
+                    {t(`agents.profiles.levels.${level}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              className={cn(
+                'h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-xs',
+                'text-text outline-none focus:border-accent',
+              )}
+              placeholder={t('agents.profiles.notePlaceholder')}
+              value={notes?.[dim] ?? ''}
+              onChange={(e) => {
+                const nextNotes = { ...(notes ?? {}) }
+                const v = e.target.value.trim()
+                if (v) nextNotes[dim] = v
+                else delete nextNotes[dim]
+                onChange({
+                  capabilities,
+                  capabilityNotes: Object.keys(nextNotes).length > 0 ? nextNotes : undefined,
+                })
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ProfileEditor({
   profile,
   onChange,
@@ -456,6 +673,15 @@ function ProfileEditor({
   )
   return (
     <div className="space-y-2.5 border-t border-border px-3 py-3">
+      <CapabilityMatrix
+        capabilities={profile.capabilities}
+        notes={profile.capabilityNotes}
+        onChange={({ capabilities, capabilityNotes }) => onChange({
+          ...profile,
+          capabilities,
+          capabilityNotes,
+        })}
+      />
       <label className="block">
         <span className="text-[11px] font-medium text-text-dim">{t('agents.profiles.summary')}</span>
         <textarea
@@ -492,6 +718,52 @@ function ProfileEditor({
             ...profile,
             tags: e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
           })}
+        />
+      </label>
+      {onReset ? (
+        <div className="flex justify-end pt-0.5">
+          <Button type="button" size="sm" variant="ghost" onClick={onReset} className="gap-1.5">
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t('agents.profiles.reset')}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function BackendProfileEditor({
+  profile,
+  onChange,
+  onReset,
+}: {
+  profile: BackendProfile
+  onChange: (next: BackendProfile) => void
+  onReset?: () => void
+}): JSX.Element {
+  const { t } = useTranslation('settings')
+  const fieldClass = cn(
+    'mt-1 w-full rounded-md border border-border bg-surface-2 px-2.5 py-2 text-sm',
+    'text-text outline-none focus:border-accent',
+  )
+  return (
+    <div className="space-y-2.5 border-t border-border px-3 py-3">
+      <CapabilityMatrix
+        capabilities={profile.capabilities}
+        notes={profile.capabilityNotes}
+        onChange={({ capabilities, capabilityNotes }) => onChange({
+          ...profile,
+          capabilities,
+          capabilityNotes,
+        })}
+      />
+      <label className="block">
+        <span className="text-[11px] font-medium text-text-dim">{t('agents.profiles.summary')}</span>
+        <textarea
+          className={cn(fieldClass, 'min-h-[3.5rem] resize-y')}
+          value={profile.summary}
+          onChange={(e) => onChange({ ...profile, summary: e.target.value })}
+          rows={2}
         />
       </label>
       {onReset ? (

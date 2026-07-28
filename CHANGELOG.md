@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
   deepseek. SSOT: `src/core/dispatch-routes.ts`. Docs: `llm-backends.md`,
   `agent-profiles.md` §2.4.
 
+- **Capability dims for dispatch profiles**: shared
+  `coding|finance|zhWriting|reasoning|dataCheck` ratings
+  (`strong|medium|weak`) on CLI specialty profiles **and** Agim
+  `llmBackends` (heuristic for deepseek / kimi / gpt / claude, …).
+  Prompt catalog lists both `agent=` and `backend=` with `caps=…` so
+  Agim can prefer e.g. codex for coding vs deepseek for finance /
+  Chinese long-form. Settings → Agents edits both matrices.
+  SSOT: `capability-dims.ts` / `backend-profiles.ts` / `agent-profiles.md` §1.1.
+
 ### Fixed
 
 - **Subagent ghost cards after refused `call_agents`**: pending lane

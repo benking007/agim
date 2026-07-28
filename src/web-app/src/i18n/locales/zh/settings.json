@@ -106,8 +106,24 @@
       "saved": "已保存"
     },
     "profiles": {
-      "title": "派工能力画像",
+      "title": "派工能力画像（CLI）",
       "subtitle": "告诉 Agim 各 CLI Agent 擅长什么，便于 Loop / call_agents 派活。Agim Agent 本身是编排者，不在此列表。可覆盖内置默认；保存时只持久化有改动的项。",
+      "capsHint": "能力维度（强/中/弱）：编码/重构 · 金融分析 · 中文长文 · 多步推理 · 数据校验。与下方 Agim backend 共用同一套刻度，便于对比（例如 codex 编码强、deepseek 金融/中文强）。",
+      "capShort": "编={{coding}} 金={{finance}} 中={{zh}}",
+      "capabilities": "能力维度评分",
+      "notePlaceholder": "备注（可选，如「非专长」）",
+      "dims": {
+        "coding": "编码/重构",
+        "finance": "金融分析",
+        "zhWriting": "中文长文写作",
+        "reasoning": "多步推理",
+        "dataCheck": "数据校验"
+      },
+      "levels": {
+        "strong": "强",
+        "medium": "中",
+        "weak": "弱"
+      },
       "summary": "一句话擅长",
       "strengths": "擅长（每行一条）",
       "avoid": "避免指派（每行一条）",
@@ -115,6 +131,11 @@
       "reset": "恢复默认",
       "customized": "已自定义",
       "defaultBadge": "默认"
+    },
+    "backendProfiles": {
+      "title": "派工能力画像（Agim backend）",
+      "subtitle": "同族 Subagent 用 backend=\"<name>\" 时，按这些维度选型（例如金融/中文长文优先 deepseek）。默认按模型名启发式推断；可覆盖。未配置 LLM backend 时此处为空。",
+      "empty": "尚未配置 llmBackends。请先到「Agim Agent」页添加模型（如 deepseek-v4-pro），再回这里查看/调整能力维度。"
     }
   },
   "policy": {

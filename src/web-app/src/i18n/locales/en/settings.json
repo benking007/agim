@@ -106,8 +106,24 @@
       "saved": "Saved"
     },
     "profiles": {
-      "title": "Dispatch specialty profiles",
+      "title": "Dispatch specialty profiles (CLI)",
       "subtitle": "Tell Agim what each CLI agent is good at so Loop / call_agents can assign work. Agim Agent is the orchestrator and is omitted. Overrides builtin defaults; only changed profiles are persisted.",
+      "capsHint": "Capability dims (strong/medium/weak): coding · finance · Chinese long-form · reasoning · data validation. Same scale as Agim backends below (e.g. codex strong at coding; deepseek strong at finance / Chinese).",
+      "capShort": "code={{coding}} fin={{finance}} zh={{zh}}",
+      "capabilities": "Capability ratings",
+      "notePlaceholder": "Note (optional, e.g. “not a specialty”)",
+      "dims": {
+        "coding": "Coding / refactor",
+        "finance": "Finance analysis",
+        "zhWriting": "Chinese long-form",
+        "reasoning": "Multi-step reasoning",
+        "dataCheck": "Data validation"
+      },
+      "levels": {
+        "strong": "strong",
+        "medium": "medium",
+        "weak": "weak"
+      },
       "summary": "One-line specialty",
       "strengths": "Strengths (one per line)",
       "avoid": "Avoid assigning (one per line)",
@@ -115,6 +131,11 @@
       "reset": "Reset to default",
       "customized": "Customized",
       "defaultBadge": "Default"
+    },
+    "backendProfiles": {
+      "title": "Dispatch specialty profiles (Agim backends)",
+      "subtitle": "When spawning same-family Subagents with backend=\"<name>\", pick by these dims (e.g. finance / Chinese long-form → deepseek). Defaults are inferred from model name; overrides persist sparsely. Empty until llmBackends are configured.",
+      "empty": "No llmBackends yet. Add a model on the Agim Agent settings page (e.g. deepseek-v4-pro), then return here to review capability dims."
     }
   },
   "policy": {

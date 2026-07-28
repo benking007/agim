@@ -57,4 +57,11 @@ describe('subagent heuristics (Phase A3)', () => {
     expect(g).toMatch(/Task → dispatch cheat sheet/)
     expect(g).toMatch(/agent=codex/)
   })
+
+  it('steers capability fit (coding vs finance/zhWriting)', () => {
+    const g = buildSubagentDelegationGuidance()
+    expect(g).toMatch(/Capability fit/)
+    expect(g).toMatch(/finance/)
+    expect(g).toMatch(/zhWriting/)
+  })
 })

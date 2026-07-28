@@ -804,12 +804,33 @@ export interface LoginResponse extends OkResponse {
  * Config (read-only DTO; settings page narrows it later)
  * ============================================================ */
 
+/** Shared capability dims for CLI agents + Agim backends. */
+export type CapabilityDim =
+  | 'coding'
+  | 'finance'
+  | 'zhWriting'
+  | 'reasoning'
+  | 'dataCheck'
+
+export type CapabilityLevel = 'strong' | 'medium' | 'weak'
+
+export type CapabilityMap = Record<CapabilityDim, CapabilityLevel>
+
 /** Specialty profile for a non-Agim CLI agent (call_agents routing). */
 export interface AgentProfile {
   summary: string
   strengths: string[]
   avoid: string[]
   tags: string[]
+  capabilities: CapabilityMap
+  capabilityNotes?: Partial<Record<CapabilityDim, string>>
+}
+
+/** Capability profile for an Agim llmBackends entry (backend= routing). */
+export interface BackendProfile {
+  summary: string
+  capabilities: CapabilityMap
+  capabilityNotes?: Partial<Record<CapabilityDim, string>>
 }
 
 export interface AppConfig {
@@ -820,6 +841,10 @@ export interface AppConfig {
   agentProfiles?: Record<string, AgentProfile>
   /** Builtin defaults for Settings「恢复默认」. */
   agentProfileDefaults?: Record<string, AgentProfile>
+  /** Effective Agim backend capability profiles. */
+  backendProfiles?: Record<string, BackendProfile>
+  /** Inference defaults for backend profiles. */
+  backendProfileDefaults?: Record<string, BackendProfile>
   /** Task → agent picks for dispatch cheat sheet (backends via llmRoles). */
   dispatchRoutes?: {
     codingAgents?: string[]

@@ -12,6 +12,7 @@ import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Compass, FileText, Play, Target, X } from 'lucide-react'
 
+import { MarkdownView } from '@/components/chat/markdown-view'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -22,6 +23,9 @@ import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
 import { buildAlignPayload } from './portal-loop-align-payload'
 import { buildLoopReportPrompt } from './portal-loop-report-prompt'
+
+/** Max height for the confirm-met summary so long Markdown scrolls inside the dock. */
+export const CONFIRM_MET_SUMMARY_MAX_CLASS = 'max-h-56'
 
 type ReportOffer = {
   threadId: string
@@ -276,11 +280,27 @@ function ConfirmMetDock({
         </div>
 
         <div className="space-y-2.5 px-3 py-3">
-          <div className={cn(
-            'rounded-lg px-2.5 py-2 text-sm leading-relaxed',
-            dark ? 'bg-zinc-900 text-zinc-200' : 'bg-zinc-50 text-zinc-700',
-          )}>
-            {summary || (zh ? '（无摘要）' : '(no summary)')}
+          <div
+            data-testid="loop-confirm-summary"
+            className={cn(
+              'min-w-0 overflow-y-auto overflow-x-hidden rounded-lg px-2.5 py-2 text-sm leading-relaxed',
+              CONFIRM_MET_SUMMARY_MAX_CLASS,
+              dark ? 'bg-zinc-900 text-zinc-200' : 'bg-zinc-50 text-zinc-700',
+            )}
+          >
+            {summary ? (
+              <MarkdownView
+                content={summary}
+                className={cn(
+                  'break-words text-sm leading-relaxed',
+                  dark ? 'text-zinc-200' : 'text-zinc-700',
+                )}
+              />
+            ) : (
+              <span className={dark ? 'text-zinc-400' : 'text-zinc-500'}>
+                {zh ? '（无摘要）' : '(no summary)'}
+              </span>
+            )}
           </div>
           {pending?.gaps?.length ? (
             <p className={cn('text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>

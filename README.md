@@ -142,13 +142,14 @@ Security reference: `docs/security-hardening.md`
 
 IM is optional — leave `messengers` empty for web-console-only, then add WeChat / Feishu / DingTalk from Settings or `agim config`.
 
-Secrets are stored separately from this file.
+Secrets are stored separately from this file. Task dispatch (coding / finance / collect) can be configured via dropdowns under **Settings → LLM → Task dispatch cheat sheet** (see [`docs/llm-backends.md`](docs/llm-backends.md) §6.1).
 
 ## Operations
 
 - Deployment guide: `docs/deployment.md`
 - Runbook: `docs/runbook.md`
 - Architecture stance: `docs/architecture-bridge-and-agim-agent.md`
+- LLM backends & dispatch cheat sheet: `docs/llm-backends.md`
 - Full changelog: `CHANGELOG.md`
 
 ## Docs index

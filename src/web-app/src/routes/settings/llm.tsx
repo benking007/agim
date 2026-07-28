@@ -3,8 +3,9 @@
  *
  * Front-end for the `/api/llm/*` REST surface that landed in Stage 4.
  * Operators add an OpenAI-compatible or Anthropic API, paste an API
- * key, optionally bind roles (cheap / evaluator / native-chat), and
- * tune built-in Agim Agent runtime behavior without hand-editing
+ * key, optionally bind roles (cheap / finance / evaluator / native-chat),
+ * configure the task→agent/backend dispatch cheat sheet via dropdowns,
+ * and tune Agim Agent runtime behavior without hand-editing
  * ~/.agim/config.json.
  *
  * Intentionally minimal styling — focused on doing the job; matches
@@ -70,8 +71,10 @@ import {
 import { NativeAgentSettingsPanel } from '@/routes/settings/native-agent'
 import { cn } from '@/lib/utils'
 
-const KNOWN_ROLES = ['cheap', 'evaluator', 'native-chat'] as const
+const KNOWN_ROLES = ['cheap', 'finance', 'evaluator', 'native-chat'] as const
 const UNBIND_SENTINEL = '__unbind__'
+const AGENT_NONE_SENTINEL = '__none__'
+const DEFAULT_CODING_AGENTS = ['codex', 'claude-code'] as const
 
 interface ProbeErrorState {
   backend: string
@@ -138,6 +141,7 @@ export function SettingsLlmPanel({
             onRefresh={() => { void listQuery.refetch() }}
           />
           {!embedded && <LlmNextStepCard data={listQuery.data} />}
+          <DispatchRoutesCard data={listQuery.data} />
           <AdvancedLlmSection data={listQuery.data} embedded={embedded} />
         </>
       )}
@@ -876,6 +880,236 @@ function LlmProbeErrorDialog({
   )
 }
 
+/* ─────────────── Dispatch cheat sheet (task → agent/backend) ─────────────── */
+
+function DispatchRoutesCard({
+  data,
+}: {
+  data: ReturnType<typeof useLlmList>['data']
+}): JSX.Element {
+  const { t } = useTranslation(['settings', 'common'])
+  const cfgQuery = useConfig()
+  const updateConfig = useUpdateConfig()
+  const putRoles = useLlmPutRoles()
+  const backendNames = (data?.backends ?? []).map((b) => b.name)
+  const roles = data?.roles ?? {}
+  const enabledAgents = cfgQuery.data?.agents ?? []
+  const cliAgents = useMemo(() => {
+    const fromEnabled = enabledAgents.filter((a) => a && a !== 'agim' && a !== 'native')
+    const extras = DEFAULT_CODING_AGENTS.filter((a) => !fromEnabled.includes(a))
+    return [...fromEnabled, ...extras]
+  }, [enabledAgents])
+  const agentChoices = useMemo(
+    () => ['agim', ...cliAgents.filter((a) => a !== 'agim')],
+    [cliAgents],
+  )
+
+  const dispatch = cfgQuery.data?.dispatchRoutes
+  const coding = dispatch?.codingAgents?.length
+    ? dispatch.codingAgents
+    : [...DEFAULT_CODING_AGENTS]
+  const codingPrimary = coding[0] ?? AGENT_NONE_SENTINEL
+  const codingSecondary = coding[1] ?? AGENT_NONE_SENTINEL
+  const financeAgent = dispatch?.financeAgent || 'agim'
+  const dataAgent = dispatch?.dataAgent || 'agim'
+  const financeBackend = roles.finance ?? UNBIND_SENTINEL
+  const dataBackend = roles.cheap ?? UNBIND_SENTINEL
+  const busy = updateConfig.isPending || putRoles.isPending
+
+  async function patchDispatch(patch: {
+    codingAgents?: string[]
+    financeAgent?: string
+    dataAgent?: string
+  }): Promise<void> {
+    const next = {
+      codingAgents: patch.codingAgents ?? coding.filter((a) => a && a !== AGENT_NONE_SENTINEL),
+      financeAgent: patch.financeAgent ?? financeAgent,
+      dataAgent: patch.dataAgent ?? dataAgent,
+    }
+    try {
+      await updateConfig.mutateAsync({ dispatchRoutes: next })
+      toast.success(t('llm.dispatch.saved'))
+    } catch (err) {
+      toast.error(((err as Error)?.message ?? String(err)))
+    }
+  }
+
+  async function onCodingSlot(slot: 0 | 1, value: string): Promise<void> {
+    const next = [codingPrimary, codingSecondary].map((v, i) => {
+      if (i === slot) return value
+      return v
+    }).filter((v) => v && v !== AGENT_NONE_SENTINEL)
+    // Dedupe while preserving order
+    const seen = new Set<string>()
+    const agents = next.filter((a) => {
+      if (seen.has(a)) return false
+      seen.add(a)
+      return true
+    })
+    await patchDispatch({ codingAgents: agents.length ? agents : [...DEFAULT_CODING_AGENTS] })
+  }
+
+  async function onRoleBackend(role: 'finance' | 'cheap', value: string): Promise<void> {
+    try {
+      await putRoles.mutateAsync({
+        [role]: value === UNBIND_SENTINEL ? null : value,
+      })
+      toast.success(t('llm.dispatch.saved'))
+    } catch (err) {
+      toast.error(((err as Error)?.message ?? String(err)))
+    }
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-surface">
+      <header className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold">{t('llm.dispatch.title')}</h2>
+        <p className="mt-1 text-xs text-text-dim">{t('llm.dispatch.subtitle')}</p>
+      </header>
+      <div className="divide-y divide-border">
+        {/* Coding */}
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-[minmax(0,11rem)_1fr]">
+          <div>
+            <p className="text-sm font-medium">{t('llm.dispatch.codingLabel')}</p>
+            <p className="mt-0.5 text-[11px] text-text-dim">{t('llm.dispatch.codingHint')}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-text-dim">{t('llm.dispatch.agentPrimary')}</Label>
+              <Select
+                value={codingPrimary}
+                onValueChange={(v) => void onCodingSlot(0, v)}
+                disabled={busy}
+              >
+                <SelectTrigger className="font-mono text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {cliAgents.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-text-dim">{t('llm.dispatch.agentSecondary')}</Label>
+              <Select
+                value={codingSecondary}
+                onValueChange={(v) => void onCodingSlot(1, v)}
+                disabled={busy}
+              >
+                <SelectTrigger className="font-mono text-xs">
+                  <SelectValue placeholder={t('llm.unset')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AGENT_NONE_SENTINEL}>{t('llm.dispatch.noSecondary')}</SelectItem>
+                  {cliAgents.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Finance */}
+        <div
+          className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-[minmax(0,11rem)_1fr]"
+          data-testid="dispatch-finance-row"
+        >
+          <div>
+            <p className="text-sm font-medium">{t('llm.dispatch.financeLabel')}</p>
+            <p className="mt-0.5 text-[11px] text-text-dim">{t('llm.dispatch.financeHint')}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-text-dim">{t('llm.dispatch.agent')}</Label>
+              <Select
+                value={financeAgent}
+                onValueChange={(v) => void patchDispatch({ financeAgent: v })}
+                disabled={busy}
+              >
+                <SelectTrigger className="font-mono text-xs" data-testid="dispatch-finance-agent">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {agentChoices.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-text-dim">{t('llm.dispatch.backend')}</Label>
+              <Select
+                value={financeBackend}
+                onValueChange={(v) => void onRoleBackend('finance', v)}
+                disabled={busy || backendNames.length === 0}
+              >
+                <SelectTrigger className="font-mono text-xs" data-testid="dispatch-finance-backend">
+                  <SelectValue placeholder={t('llm.unset')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNBIND_SENTINEL}>{t('llm.unbound')}</SelectItem>
+                  {backendNames.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Data collect */}
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-[minmax(0,11rem)_1fr]">
+          <div>
+            <p className="text-sm font-medium">{t('llm.dispatch.dataLabel')}</p>
+            <p className="mt-0.5 text-[11px] text-text-dim">{t('llm.dispatch.dataHint')}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-text-dim">{t('llm.dispatch.agent')}</Label>
+              <Select
+                value={dataAgent}
+                onValueChange={(v) => void patchDispatch({ dataAgent: v })}
+                disabled={busy}
+              >
+                <SelectTrigger className="font-mono text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {agentChoices.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-text-dim">{t('llm.dispatch.backend')}</Label>
+              <Select
+                value={dataBackend}
+                onValueChange={(v) => void onRoleBackend('cheap', v)}
+                disabled={busy || backendNames.length === 0}
+              >
+                <SelectTrigger className="font-mono text-xs">
+                  <SelectValue placeholder={t('llm.unset')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNBIND_SENTINEL}>{t('llm.unbound')}</SelectItem>
+                  {backendNames.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-text-dim">{t('llm.dispatch.dataBackendNote')}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /* ─────────────── Role bindings ─────────────── */
 
 function RolesCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): JSX.Element {
@@ -902,7 +1136,7 @@ function RolesCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): J
         <h2 className="text-sm font-semibold">{t('llm.rolesTitle')}</h2>
         <p className="mt-1 text-xs text-text-dim">{t('llm.rolesOptionalHint')}</p>
       </header>
-      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         {KNOWN_ROLES.map((role) => (
           <div key={role} className="flex flex-col gap-1">
             <Label className="text-xs font-medium">{role}</Label>

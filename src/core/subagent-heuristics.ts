@@ -61,6 +61,8 @@ export function buildSubagentDelegationGuidance(extra?: {
   roles?: string[]
   /** Preformatted specialty catalog (from agent-profiles). */
   agentProfilesCatalog?: string
+  /** Operator-configured task → agent/backend cheat sheet. */
+  dispatchCheatSheet?: string
 }): string {
   const lines = [
     'Subagent delegation (mcp__agim__call_agent / mcp__agim__call_agents):',
@@ -75,12 +77,17 @@ export function buildSubagentDelegationGuidance(extra?: {
     '  - When YOU are a Subagent: do NOT call mcp__agim__ask_user or loop_verdict — HITL and Loop verdict are parent-only;',
     '    put clarifying needs / blockers in your FINAL message and return.',
     '  - Same-family: prefer backend:"<llmBackends.name>" (concrete). isolate:true reuses default model.',
-    '    role:"cheap" is only an optional alias when llmRoles.cheap exists — do not assume it.',
+    '    role:"cheap" / role:"finance" are optional aliases when those llmRoles are configured — do not assume they exist.',
     '  - Cross-adapter: pick agent= using the specialty catalog below (and availability). Prefer fit over habit.',
+    '  - Follow the Task → dispatch cheat sheet below when present (operator-configured agent/backend).',
     '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
     '  - Verification: after a substantive result, a fresh verifier Subagent can be valuable — give an exact claim + how to check it.',
     '  - Synthesize, don\'t delegate understanding: merge child summaries into one Chinese user reply; never dump raw child transcripts.',
   ]
+  const cheat = (extra?.dispatchCheatSheet || '').trim()
+  if (cheat) {
+    lines.push('', cheat)
+  }
   const catalog = (extra?.agentProfilesCatalog || '').trim()
   if (catalog) {
     lines.push('', catalog)

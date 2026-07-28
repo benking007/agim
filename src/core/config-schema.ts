@@ -235,8 +235,18 @@ export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
    *  Ollama in Stage 2). Optional — when absent the registry returns
    *  no providers and every caller falls back to its CLI agent path. */
   llmBackends: z.array(llmBackendSchema).optional(),
-  /** D+ Stage 1: role → backend-name map. See llmRolesSchema. */
+  /** D+ Stage 1: role → backend-name map. See llmRolesSchema.
+   *  Dispatch cheat sheet also uses `finance` (analysis) and `cheap` (collect). */
   llmRoles: llmRolesSchema.optional(),
+  /**
+   * Task → agent picks for the dispatch cheat sheet (Settings → LLM).
+   * Backends bind via llmRoles.finance / llmRoles.cheap — not duplicated here.
+   */
+  dispatchRoutes: z.object({
+    codingAgents: z.array(z.string().max(64)).max(4).optional(),
+    financeAgent: z.string().max(64).optional(),
+    dataAgent: z.string().max(64).optional(),
+  }).passthrough().optional(),
   /** D+ Stage 2 sub-PR #2: external MCP servers to attach. Their tools
    *  are exposed to the native agent loop. Optional — when absent, only
    *  the built-in agim MCP server's tools (mcp__agim__*) are available

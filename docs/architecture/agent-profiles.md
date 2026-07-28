@@ -82,11 +82,26 @@ i18n：`settings` 命名空间（zh/en）。
 
 ---
 
+## 2.4 任务派发速查（与画像互补）
+
+Settings → **LLM → 任务派发速查**：三行下拉（编码 agent；金融 agent+backend；采集 agent+backend）。
+
+| 任务 | Agent | Backend 绑定 |
+|------|-------|----------------|
+| 编码 / 修 bug | `dispatchRoutes.codingAgents`（默认 codex / claude-code） | — |
+| 中文金融分析 / 报告 | `dispatchRoutes.financeAgent`（默认 agim） | `llmRoles.finance` |
+| 批量采集 / 行情 | `dispatchRoutes.dataAgent`（默认 agim） | `llmRoles.cheap` |
+
+未绑定 backend 时，prompt 只提示去 Settings 选择，**不会捏造 deepseek 等厂商名**。  
+实现：`src/core/dispatch-routes.ts` · 注入：`getDispatchCheatSheetForPrompt()` → `buildSubagentDelegationGuidance`。
+
+---
+
 ## 3. 运行时注入（两层，勿混）
 
 | 层 | 内容 | 落点 |
 |----|------|------|
-| **系统提示（完整目录）** | `getAgentProfilesCatalogForPrompt()` → `formatAgentProfilesForPrompt` | Agim `buildSystemPrompt` / 委派启发式（`subagent-heuristics`） |
+| **系统提示（完整目录）** | 派发速查表 + `getAgentProfilesCatalogForPrompt()` | Agim `buildSystemPrompt` / 委派启发式（`subagent-heuristics`） |
 | **工具 description（短提示）** | 有目录时追加一句「按 specialty fit 选 `agent=`；详见 system catalog」 | `mcp__agim__call_agent` / `mcp__agim__call_agents` |
 
 设计意图：

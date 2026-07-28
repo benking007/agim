@@ -45,11 +45,19 @@
   "llmRoles": {
     "native-chat": "deepseek-v4-pro",
     "cheap": "deepseek-v4-flash",
+    "finance": "deepseek-v4-pro",
     "evaluator": "deepseek-v4-flash"
+  },
+  "dispatchRoutes": {
+    "codingAgents": ["codex", "claude-code"],
+    "financeAgent": "agim",
+    "dataAgent": "agim"
   },
   "defaultAgent": "agim"
 }
 ```
+
+> **任务派发速查（Settings → LLM）**：用下拉选择「编码 / 金融分析 / 批量采集」对应的 agent 与 backend。Backend 写入 `llmRoles.finance`（分析）与 `llmRoles.cheap`（采集）；**不硬编码 deepseek**——选你已配置的任意 backend。速查表注入 Agim 系统提示。SSOT：`src/core/dispatch-routes.ts`。
 
 > **Recommended first-run:** `agim setup llm quick`（默认 DeepSeek / `deepseek-v4-pro`，粘贴 API Key 一键启用双模型）。Web `/settings/llm`、桌面聊天与 `/m/chat` 在 Agim 未配置时也会引导同一流程；可切换其他厂商预设。
 >

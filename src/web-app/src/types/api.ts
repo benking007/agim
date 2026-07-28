@@ -820,6 +820,12 @@ export interface AppConfig {
   agentProfiles?: Record<string, AgentProfile>
   /** Builtin defaults for Settings「恢复默认」. */
   agentProfileDefaults?: Record<string, AgentProfile>
+  /** Task → agent picks for dispatch cheat sheet (backends via llmRoles). */
+  dispatchRoutes?: {
+    codingAgents?: string[]
+    financeAgent?: string
+    dataAgent?: string
+  }
   webPort?: number
   telegram?: { botToken?: string; channelId?: string }
   feishu?: { appId?: string; appSecret?: string; channelId?: string }

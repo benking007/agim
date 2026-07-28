@@ -172,13 +172,13 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 > 目标：一次 turn 可**并行**派出多个 SubagentRun（同族或跨 adapter），join 后交回父 agent。  
 > 依赖：Phase A（同族路径 + 多行 UI 已就绪）。  
-> 产品默认（2026-07-24）：**并行开**、批量工具、`MAX_PER_TURN=3`。
+> 产品默认（2026-07-29）：**并行开**、批量工具、`MAX_PER_TURN=6`（批内并发仍默认 3）。
 
 #### B1. 运行时
 
 - [x] 批量工具 `mcp__agim__call_agents({ tasks[] })` → 内部 `mapPool` + `callAgentByName`（同族/跨 adapter）。  
 - [x] **Env 门控** `AGIM_SUBAGENT_PARALLEL`（**默认 ON**；`0|off|false|no` 串行化 batch）。  
-- [x] 预算：`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` 默认 **3**（单次 + batch 任务均计入）+ `AGIM_SUBAGENT_PARALLEL_MAX` 默认 **3**。  
+- [x] 预算：`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` 默认 **6**（单次 + batch 任务均计入）+ `AGIM_SUBAGENT_PARALLEL_MAX` 默认 **3**。  
 - [x] 每个 callee：独立 job / activity stepId（`${toolCallId}#i`）/ trace。  
 - [x] 父 turn 仍占 thread-queue（嵌套等 join）——不放开双 sticky。  
 - [x] 失败策略：`allSettled`（工具层 ok，按 lane 报告 ok/error）。
@@ -282,7 +282,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 键（草案） | 阶段 | 默认 | 含义 |
 |---|---|---|---|
 | （复用）`AGIM_A2A_MAX_DEPTH` | A/B/C | 8 | 嵌套深度 |
-| （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B/C | **3** | 每 turn 委派上限（`call_agent` + `call_agents` 任务均计入）；Loop `continue\|revise` / 新一轮首派会重置计数（不清 UI job） |
+| （复用）`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | B/C | **6** | 每 turn 委派上限（`call_agent` + `call_agents` 任务均计入）；Loop `continue\|revise` / 新一轮首派会重置计数（不清 UI job） |
 | `AGIM_SUBAGENT_PARALLEL` | B | **on**（unset=on） | `call_agents` 是否并行；`0/off` 串行 |
 | `AGIM_SUBAGENT_PARALLEL_MAX` | B | `3` | 单次 batch 同时运行上限 |
 | `AGIM_ENGINEERING_MODE`（或实现期 `AGIM_LOOP_*`） | C | `off` | 是否允许进入 Loop（见 loop-engineering.md） |

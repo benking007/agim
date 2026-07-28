@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` default 3 → 6**: per-turn
+  Subagent budget (`call_agent` + each `call_agents` task) raised so a
+  single fan-out of ~5–6 lanes is not refused. In-batch concurrency
+  (`AGIM_SUBAGENT_PARALLEL_MAX`, default 3) and hard max tasks (8)
+  unchanged. Set `0` to disable; Settings → Security / Native Agent
+  labels updated.
+
 ### Fixed
 
 - **Subagent detail RESULT Markdown**: composer-docked Subagent preview

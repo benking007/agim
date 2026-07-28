@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Subagent detail RESULT Markdown**: composer-docked Subagent preview
+  sheet renders completed `result` with `MarkdownView` (GFM headings /
+  tables / bold / code) instead of monospace `<pre>` raw markers. Fail /
+  loading / empty / running stay plain text. Test:
+  `subagent-detail-dialog.test.tsx`.
+
 - **Loop confirm-met dock Markdown**: Portal「结论已就绪 — 请确认」摘要用
   `MarkdownView`（GFM 表格 / 加粗 / 行内代码）渲染，长文 `max-h-56` +
   `overflow-y-auto`，不再整段裸 `**` / `|` 糊成一坨。

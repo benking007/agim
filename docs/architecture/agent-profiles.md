@@ -82,7 +82,7 @@ i18n：`settings` 命名空间（zh/en）。
 
 ---
 
-## 2.4 任务派发速查（与画像互补）
+### 2.4 任务派发速查（与画像互补）
 
 Settings → **LLM → 任务派发速查**：三行下拉（编码 agent；金融 agent+backend；采集 agent+backend）。
 

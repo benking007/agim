@@ -327,11 +327,12 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 2026-07-24 | C0 文档 | （本 PR） | `focus.md` + `loop-engineering.md`；废弃 goal；无运行时 |
 | 2026-07-24… | C R1–R5 + 加固 | #232–#252 等 | ALIGNING→结案；派工/验收门禁；Portal 底栏；见 loop-engineering §7 |
 | 2026-07-27 | 派工画像 | #272 | `agent-profiles`；Settings；system catalog + tool 短提示 |
+| 2026-07-28 | 任务派发速查 | #278 | Settings→LLM 下拉；`dispatchRoutes` + `llmRoles.finance`/`cheap`；注入 system |
 
 ---
 
 ## 9. TL;DR
 
 > **Subagent 先于「多 Agent」：同族 pro/flash 与跨 adapter 都是子工人；A2A 是跨 adapter 的管子。**  
-> **A / B（含 CLI 父 `call_agents`）/ C（R1–R5+门禁）已齐；Loop 父仅 Agim；跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；R6 暂缓。**  
+> **A / B（含 CLI 父 `call_agents`）/ C（R1–R5+门禁）已齐；Loop 父仅 Agim；跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；任务类型默认派工靠「任务派发速查」（#278）；R6 暂缓。**  
 > 拆解靠 brief/启发式 + 硬预算 + specialty catalog，不靠第二套中台。详见 [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)。

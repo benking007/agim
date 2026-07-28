@@ -132,20 +132,22 @@ Agim Agent 配置详见：`docs/llm-backends.md`
     }
   ],
   "llmRoles": {
-    "cheap": "default-agim"
+    "cheap": "default-agim",
+    "finance": "default-agim"
   }
 }
 ```
 
 IM 可选——`messengers` 留空即为纯 Web 控制台；之后再在设置或 `agim config` 里加微信 / 飞书 / 钉钉。
 
-密钥与配置文件分离存储。
+密钥与配置文件分离存储。任务派发（编码 / 金融分析 / 采集）可在 **Settings → LLM → 任务派发速查** 用下拉配置（见 [`docs/llm-backends.md`](docs/llm-backends.md) §6.1）。
 
 ## 运维与架构
 
 - 部署：`docs/deployment.md`
 - 运维手册：`docs/runbook.md`
 - 架构立场：`docs/architecture-bridge-and-agim-agent.md`
+- 大模型与派发速查：`docs/llm-backends.md`
 - 版本记录：`CHANGELOG.md`
 
 ## 文档导航

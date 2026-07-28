@@ -171,4 +171,5 @@ toolDesc += "Prefer agent= by specialty fit (see system specialty catalog)."
 
 > **画像 = Agim 派 CLI Subagent 时的「谁擅长什么」目录。**  
 > Settings 可改；稀疏落盘；**全文进 system，工具只点一句。**  
+> **任务派发速查**（§2.4）= 「这类任务默认派谁」：编码 CLI / 金融与采集用 Agim+已绑 backend；下拉配置，不硬编码厂商。  
 > 适合谁 ≠ 能不能用；Loop/Subagent 仍走既有门禁与 brief。

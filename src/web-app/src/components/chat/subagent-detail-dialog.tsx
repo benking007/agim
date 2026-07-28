@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 
+import { MarkdownView } from '@/components/chat/markdown-view'
 import { api } from '@/lib/api/endpoints'
 import type { Job } from '@/types/api'
 import type { ChatActivityStep } from '@/hooks/use-chat'
@@ -236,18 +237,33 @@ export function SubagentDetailDialog({
                 >
                   {failText}
                 </pre>
+              ) : result ? (
+                <div
+                  data-testid="subagent-result-markdown"
+                  className={cn(
+                    'min-w-0 break-words rounded-xl px-3 py-2.5 text-sm leading-relaxed',
+                    dark ? 'bg-zinc-900 text-zinc-200' : 'bg-surface-2 text-text',
+                  )}
+                >
+                  <MarkdownView
+                    content={result}
+                    className={cn(
+                      'break-words text-sm leading-relaxed',
+                      dark ? 'text-zinc-200' : 'text-text',
+                    )}
+                  />
+                </div>
               ) : (
                 <pre className={cn(
                   'whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 font-mono text-[12px] leading-relaxed',
                   dark ? 'bg-zinc-900 text-zinc-300' : 'bg-surface-2 text-text-dim',
                 )}
                 >
-                  {result
-                    || (live
-                      ? t('chat.subagentResultRunning', { defaultValue: 'Subagent still running…' })
-                      : (loading
-                          ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
-                          : t('chat.subagentResultEmpty', { defaultValue: 'No result recorded.' })))}
+                  {live
+                    ? t('chat.subagentResultRunning', { defaultValue: 'Subagent still running…' })
+                    : (loading
+                        ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
+                        : t('chat.subagentResultEmpty', { defaultValue: 'No result recorded.' }))}
                 </pre>
               )}
               {error && (

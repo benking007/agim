@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Subagent detail Parent prompt Markdown**: composer-docked Subagent
+  preview sheet renders `prompt` with `MarkdownView` (GFM), matching the
+  Result pane — no more raw `##` / `**` / `|` in PARENT PROMPT. Loading /
+  empty stay plain text.
+
 - **Allow Agent reads of chat uploads under `~/.agim/media/`**: sensitive-path
   denylist no longer blocks Web/IM attachment paths (`agim_read_file` /
   Bash / `agim_exec`). Secrets under other `~/.agim/*` (env, tokens, …)

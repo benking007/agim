@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Stuck-loop stop summarizes tool failures**: when the Agim Agent
+  early-stops on repeated identical tool errors, the chat reply includes
+  a compact「失败原因汇总」(tool ×N + reason) so permission / policy
+  denials are readable — not only「检测到死循环，已提前停止」.
+
 - **Subagent detail Parent prompt Markdown**: composer-docked Subagent
   preview sheet renders `prompt` with `MarkdownView` (GFM), matching the
   Result pane — no more raw `##` / `**` / `|` in PARENT PROMPT. Loading /

@@ -33,11 +33,14 @@ function resolveMaxIterations(): number {
   return Math.min(n, 100)
 }
 
+/** Per-turn tool-call budget (parallel batches share this). Default 100; clamp [1,1000]. */
+const MAX_TOOL_CALLS_DEFAULT = 100
+
 function resolveMaxToolCalls(): number {
   const raw = process.env.AGIM_NATIVE_AGENT_MAX_TOOL_CALLS
-  if (!raw?.trim()) return 50
+  if (!raw?.trim()) return MAX_TOOL_CALLS_DEFAULT
   const n = Number.parseInt(raw, 10)
-  if (!Number.isFinite(n) || n <= 0) return 50
+  if (!Number.isFinite(n) || n <= 0) return MAX_TOOL_CALLS_DEFAULT
   return Math.min(n, 1000)
 }
 

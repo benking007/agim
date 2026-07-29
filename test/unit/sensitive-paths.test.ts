@@ -21,10 +21,21 @@ import {
 const HOME = homedir()
 
 describe('isSensitivePath', () => {
-  it('rejects paths under ~/.agim/', () => {
+  it('rejects paths under ~/.agim/ (except media uploads)', () => {
     expect(isSensitivePath(join(HOME, '.agim', 'env')).sensitive).toBe(true)
     expect(isSensitivePath(join(HOME, '.agim', 'tokens.json')).sensitive).toBe(true)
     expect(isSensitivePath(join(HOME, '.agim', 'subdir', 'file')).sensitive).toBe(true)
+  })
+
+  it('allows ~/.agim/media/ (Web/IM chat uploads)', () => {
+    expect(isSensitivePath(join(HOME, '.agim', 'media', 'web', 'web-abc', 'note.md')).sensitive).toBe(false)
+    expect(isSensitivePath(join(HOME, '.agim', 'media', 'web', 'web-abc', 'shot.png')).sensitive).toBe(false)
+    expect(isSensitivePath('~/.agim/media/web/t/file.txt').sensitive).toBe(false)
+  })
+
+  it('still denies sensitive basenames even under media/', () => {
+    expect(isSensitivePath(join(HOME, '.agim', 'media', 'web', 't', '.env')).sensitive).toBe(true)
+    expect(isSensitivePath(join(HOME, '.agim', 'media', 'web', 't', 'id_rsa')).sensitive).toBe(true)
   })
 
   it('rejects legacy ~/.agim/ paths (upgraded installs)', () => {
@@ -157,6 +168,15 @@ describe('checkSensitiveToolUse — file-path tools', () => {
 describe('checkSensitiveToolUse — Bash', () => {
   it('blocks "cat ~/.agim/env"', () => {
     expect(checkSensitiveToolUse('Bash', { command: 'cat ~/.agim/env' }).deny).toBe(true)
+  })
+
+  it('allows shell reads under ~/.agim/media/ (chat uploads)', () => {
+    expect(checkSensitiveToolUse('Bash', {
+      command: 'cat ~/.agim/media/web/web-abc/note.md',
+    }).deny).toBe(false)
+    expect(checkSensitiveToolUse('agim_exec', {
+      command: 'head /root/.agim/media/web/t/spec.md',
+    }).deny).toBe(false)
   })
 
   it('blocks "tail /etc/shadow"', () => {

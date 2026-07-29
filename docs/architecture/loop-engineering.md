@@ -443,6 +443,10 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | `AGIM_LOOPS_DIR` | `~/.agim/loops` | Loop JSON 目录（测试可覆盖） |
 | `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | `6` | 每 **user turn** 的 `call_agent` + `call_agents` 任务预算（Loop 多轮共用同一 turn 时见 §6.6） |
 
+> 与「工具调用预算」无关：`AGIM_NATIVE_AGENT_MAX_TOOL_CALLS`（默认 **100**）/
+> `AGIM_NATIVE_AGENT_MAX_ITER`（默认 **50**）约束父 Agim 本 turn 的工具循环，
+> 见 [`architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) §10。
+
 ### 6.6 Turn 委托上限 × 派工门（防 R2 死锁）
 
 **症状（HKTECH 类）**：R1 `call_agents` 用尽本 turn cap（默认 6）→ R2 再派被拒（`already delegated … cap=N`）→ 父侧改 `web_search`/`agim_exec` 又被 `loop-dispatch-gate` 拦住 → 只能 `loop_verdict stop`。

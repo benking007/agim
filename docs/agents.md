@@ -61,6 +61,20 @@ For example:
 AGIM_QODER_CWD=/srv/agim/qoder
 ```
 
+## Agim Agent turn limits
+
+When sticky/`defaultAgent` is Agim Agent (`agim`), a single user turn is
+bounded by:
+
+| Env | Default | What it stops |
+|-----|---------|---------------|
+| `AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` | **100** | Total tool invocations（「已达工具调用预算」） |
+| `AGIM_NATIVE_AGENT_MAX_ITER` | **50** | Model↔tools loop rounds |
+| `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | **6** | Subagent slots via `call_agent` / `call_agents` |
+
+Tune in Settings → Agim Agent, or set the env and restart. Details:
+[`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md) §10.
+
 ## Tool safety
 
 Agim tools include memory, memo, reminder, ask-user, push message, A2A, skills, web search/fetch, and approval-gated file or command tools.

@@ -238,14 +238,32 @@ The bridge identity stays. The peer set grows.
 > heartbeat, ask_user, /router compare) works on every peer
 > automatically.
 
-## 10. v1.2.145 — Agim Agent harness upgrade + honest deviations
+## 10. Agim Agent per-turn runtime caps
+
+These knobs bound a **single user turn** of the in-process Agim Agent
+(`agim` / legacy `native`). They are **not** Subagent / Loop delegation
+budgets (`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` — see
+[`architecture/subagent.md`](./architecture/subagent.md) §5.2).
+
+| Env | Default | Clamp | Meaning |
+|-----|---------|-------|---------|
+| `AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` | **100** | [1, 1000] | Max **tool invocations** this turn (parallel batches share the count). Hitting it surfaces「已达工具调用预算」. |
+| `AGIM_NATIVE_AGENT_MAX_ITER` | **50** | [1, 100] | Max **model↔tools loop iterations** this turn (one iter may dispatch multiple tools). |
+| `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | **6** | ≥0 (`0` = off) | Max Subagent slots (`call_agent` + each `call_agents` task). Agim parent only. |
+
+Operator UI: Settings → **Agim Agent** (`/settings/native-agent`) —
+Iteration card exposes both tool-call and iteration caps; A2A card
+exposes the per-turn Subagent cap. SSOT: `src/plugins/agents/agim-agent/factory.ts`
++ `src/core/subagent-parallel.ts`.
+
+## 11. v1.2.145 — Agim Agent harness upgrade + honest deviations
 
 A round of "harness engineering" (distilled from
 [agentic-harness-patterns](https://github.com/keli-wen/agentic-harness-patterns-skill))
 hardened the Agim Agent adapter **without** breaking the peer model. None of
 these added a `kind`-based branch in router / approval / audit.
 
-### 10.1 What changed in Agim Agent
+### 11.1 What changed in Agim Agent
 
 | Area | Change | Where |
 |---|---|---|
@@ -257,7 +275,7 @@ these added a `kind`-based branch in router / approval / audit.
 | Trust gate | `AGIM_NATIVE_TRUST_WORKSPACE=off` makes Agim Agent skip all workspace-discovered role files (multi-tenant / A2A prompt-injection defence) | Agim Agent adapter (`isWorkspaceTrusted`) |
 | Audit traceId | Agim Agent now uses the inbound turn's `traceId` (plumbed via `AgentSendOpts.traceId`) instead of a self-minted id, so its audit rows correlate to the originating IM message (ADR-0002) | `types.ts`, `router.ts`, Agim Agent adapter |
 
-### 10.2 Honest deviations from the peer model
+### 11.2 Honest deviations from the peer model
 
 These use hardcoded **`agim` / `native`** id checks (not
 `adapter.kind`), but they still break peer symmetry unless operators

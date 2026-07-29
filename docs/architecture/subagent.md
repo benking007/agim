@@ -342,7 +342,8 @@
 | 2026-07-27 | **Ghost pending 卡**：`call_agents`/`call_agent` 派工前拒绝时关闭 `${toolCallId}#i` pending（否则无 Stop 的 Waiting 幽灵行） | — |
 | 2026-07-24 | **call_agent 墙钟**：`timeoutMs:0` 跳出 Native tool-bridge 默认 60s；超时 abort 不再误标「Stopped by user」 | — |
 | 2026-07-24 | **Phase B**：`mcp__agim__call_agents` 批量 fan-out；`AGIM_SUBAGENT_PARALLEL` 默认开；`MAX_PER_TURN=3`；allSettled | — |
-| 2026-07-29 | **`MAX_PER_TURN` 默认 3 → 6**（批内并发 `PARALLEL_MAX` 仍为 3；tasks 硬顶 8） | — |
+| 2026-07-29 | **`MAX_PER_TURN` 默认 3 → 6**（批内并发 `PARALLEL_MAX` 仍为 3；tasks 硬顶 8） | #282 |
+| 2026-07-29 | **`AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` 默认 50 → 100**（与委托 cap 独立；见 bridge §10） | #283 |
 | 2026-07-27 | **CLI 父派工**：MCP sidecar + PI 暴露 `call_agents`（复用 A2A bus）；**Loop 仍仅 Agim**；SSOT [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) | — |
 | 2026-07-24 | **loop_verdict 墙钟**：同样 `timeoutMs:0`（嵌套独立验收可 >60s）；mutation 成功后不以假超时覆盖（见 Loop §6.2） | #243 |
 | 2026-07-24 | **子代理产出契约**：最终消息须含关键发现；落盘须绝对路径；禁空「见上文」 | — |

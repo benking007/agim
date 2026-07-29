@@ -56,8 +56,9 @@ interface Draft {
   planModeDefault: boolean
   planIntentAuto: boolean
   planIntentPhrases: string
-  // Per-turn iteration cap (AGIM_NATIVE_AGENT_MAX_ITER)
+  // Per-turn iteration / tool-call caps
   maxIter: string
+  maxToolCalls: string
   // Late compaction (default ON — prefer AGIM_CTX_*; legacy NATIVE_COMPACTION also disables)
   compactEnabled: boolean
   compactReserveTokens: string
@@ -89,6 +90,7 @@ function draftFromEnv(env: Record<string, string>): Draft {
     planIntentAuto:     isTruthy(env.AGIM_PLAN_INTENT_AUTO),
     planIntentPhrases:  env.AGIM_PLAN_INTENT_PHRASES ?? '',
     maxIter:            env.AGIM_NATIVE_AGENT_MAX_ITER ?? '',
+    maxToolCalls:       env.AGIM_NATIVE_AGENT_MAX_TOOL_CALLS ?? '',
     // Default ON: only explicit off/0/false/no disables (canonical or legacy).
     compactEnabled: !isFlagOff(env.AGIM_CTX_COMPACT) && !isFlagOff(env.AGIM_NATIVE_COMPACTION),
     compactReserveTokens: env.AGIM_CTX_COMPACT_RESERVE_TOKENS ?? '',
@@ -220,9 +222,12 @@ export function NativeAgentSettingsPanel({ embedded = false }: NativeAgentSettin
     if (draft.planIntentPhrases !== current.planIntentPhrases) {
       updates.AGIM_PLAN_INTENT_PHRASES = draft.planIntentPhrases.trim() || null
     }
-    // Per-turn iteration cap
+    // Per-turn iteration / tool-call caps
     if (draft.maxIter !== current.maxIter) {
       updates.AGIM_NATIVE_AGENT_MAX_ITER = draft.maxIter.trim() || null
+    }
+    if (draft.maxToolCalls !== current.maxToolCalls) {
+      updates.AGIM_NATIVE_AGENT_MAX_TOOL_CALLS = draft.maxToolCalls.trim() || null
     }
     // Late compaction (default ON → write 'off' to disable; clear both keys to restore default)
     if (draft.compactEnabled !== current.compactEnabled) {
@@ -707,6 +712,18 @@ function IterationCard({ draft, setField }: CardProps): JSX.Element {
       </header>
       <p className="px-4 pt-2 text-xs text-text-dim">{t('nativeAgent.iterationDesc')}</p>
       <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <Field
+          label={t('nativeAgent.maxToolCalls')}
+          hint={t('nativeAgent.maxToolCallsHint')}
+        >
+          <Input
+            type="number"
+            value={draft.maxToolCalls}
+            onChange={(e) => setField('maxToolCalls', e.target.value)}
+            placeholder="100"
+            className="font-mono text-xs"
+          />
+        </Field>
         <Field
           label={t('nativeAgent.maxIter')}
           hint={t('nativeAgent.maxIterHint')}

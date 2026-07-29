@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Allow Agent reads of chat uploads under `~/.agim/media/`**: sensitive-path
+  denylist no longer blocks Web/IM attachment paths (`agim_read_file` /
+  Bash / `agim_exec`). Secrets under other `~/.agim/*` (env, tokens, …)
+  stay denied; basename denials (`.env`, keys) still apply inside media.
+
 - **Web thread ownership mismatch no longer hard-errors**: when
   `get-history` asks to rekey to a `threadId` owned by another token,
   the server keeps this connection’s claimed id, emits

@@ -99,6 +99,24 @@ describe('fs-dispatcher', () => {
       expect(r.text).toMatch(/sensitive/i)
     })
 
+    it('allows reading chat uploads under ~/.agim/media/', async () => {
+      const { homedir } = await import('node:os')
+      const mediaFile = join(homedir(), '.agim', 'media', 'web', 'web-test', 'upload.md')
+      await mkdir(join(mediaFile, '..'), { recursive: true })
+      await writeFile(mediaFile, '# uploaded\nhello\n')
+      try {
+        const d = buildFsDispatcher({ cwd: workspace })
+        const r = await d(
+          { id: 't', name: 'agim_read_file', arguments: { path: mediaFile } },
+          NEVER_ABORT,
+        )
+        expect(r.isError).toBe(false)
+        expect(r.text).toContain('uploaded')
+      } finally {
+        await rm(mediaFile, { force: true })
+      }
+    })
+
     it('refuses sensitive paths even when AGIM_NATIVE_FS_RESTRICT=0', async () => {
       process.env.AGIM_NATIVE_FS_RESTRICT = '0'
       const d = buildFsDispatcher({ cwd: workspace })

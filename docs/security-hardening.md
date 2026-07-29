@@ -235,7 +235,8 @@ export AGIM_VIEWER_TUNNEL_MODE=off
 `src/core/sensitive-paths.ts:checkSensitiveToolUse()` 在 approval-bus 的 readonly-auto-allow 之前跑，命中**直接返 `behavior: 'deny'`，不弹审批卡**。运维即使想"放过"也无法 —— 必须改源码。
 
 **前缀阻止**：
-- `~/.agim/`、`~/.agim/`（旧 home）
+- `~/.agim/`（**例外**：`~/.agim/media/` 与 `AGIM_MEDIA_ROOT` — Web/IM
+  用户上传目录，Agent 须能读 `[文件附件：…]`；`env` / `tokens.json` 等仍拒）
 - `~/.ssh/`、`~/.aws/`、`~/.gcp/`、`~/.azure/`、`~/.kube/`、`~/.docker/`
 - `/etc/shadow`、`/etc/sudoers`、`/etc/sudoers.d/`、`/etc/ssh/`、`/etc/ssl/private/`
 - `/proc/self/environ`、`/proc/self/maps`

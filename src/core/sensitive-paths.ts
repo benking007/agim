@@ -34,9 +34,40 @@
 
 import { homedir } from 'node:os'
 import { realpathSync } from 'node:fs'
-import { resolve, isAbsolute, normalize, basename, dirname, join } from 'node:path'
+import { resolve, isAbsolute, normalize, basename, dirname, join, sep } from 'node:path'
 
 const HOME = homedir()
+
+/**
+ * Chat / IM uploads land under `…/media/` (default `~/.agim/media/web/<thread>/`).
+ * That tree must stay readable by Agent tools — otherwise `[文件附件：…]` markers
+ * are unusable. Secrets (env, tokens.json, …) remain under other `~/.agim/` paths
+ * and stay denied.
+ */
+function mediaAllowRoots(): string[] {
+  const roots = new Set<string>()
+  roots.add(join(HOME, '.agim', 'media'))
+  const homeOverride = process.env.AGIM_HOME?.trim()
+  if (homeOverride) roots.add(join(homeOverride, 'media'))
+  const mediaRoot = process.env.AGIM_MEDIA_ROOT?.trim()
+  if (mediaRoot) roots.add(resolve(mediaRoot))
+  return [...roots]
+}
+
+function isUnderDir(abs: string, root: string): boolean {
+  const rootNorm = normalize(root)
+  const rootWithSep = rootNorm.endsWith(sep) ? rootNorm : `${rootNorm}${sep}`
+  return abs === rootNorm || abs.startsWith(rootWithSep)
+}
+
+/** True when `abs` is under an allowed upload/media root (not other ~/.agim state). */
+export function isAllowedAgimMediaPath(abs: string): boolean {
+  if (typeof abs !== 'string' || !abs) return false
+  for (const root of mediaAllowRoots()) {
+    if (isUnderDir(abs, root)) return true
+  }
+  return false
+}
 
 /** `/proc/<pid|self|thread-self>/{root,cwd}/…` are symlinks into the real
  *  filesystem (root = the process's `/`), so they let an agent reach e.g.
@@ -152,8 +183,8 @@ const SENSITIVE_BASENAMES: string[] = [
  *  legitimately needs to `grep AGENTS.md` to navigate a project just
  *  has to ask the operator out-of-band) — false negatives are not. */
 const SENSITIVE_BASH_PATTERNS: Array<{ re: RegExp; reason: string }> = [
-  { re: /(?:^|\s|\/)\.agim(?:\/|\s|$)/i, reason: 'attempts to access ~/.agim/' },
-  { re: /(?:^|\s|\/)\.agim(?:\/|\s|$)/i, reason: 'attempts to access ~/.agim/' },
+  // Allow `…/.agim/media/…` (chat uploads); still block env/tokens/etc.
+  { re: /(?:^|\s|\/)\.agim(?!\/media(?:\/|\s|$))(?:\/|\s|$)/i, reason: 'attempts to access ~/.agim/' },
   { re: /(?:^|\s|\/)tokens?\.json\b/i, reason: 'attempts to access tokens.json' },
   { re: /(?:^|\s|\/)admin-bootstrap-token\b/i, reason: 'attempts to access admin-bootstrap-token' },
   { re: /(?:^|\s|\/)acp-token\b/i, reason: 'attempts to access acp-token' },
@@ -186,6 +217,15 @@ export function isSensitivePath(p: string, opts?: { cwd?: string }): { sensitive
   const real = resolveReal(lit)
   const candidates = real === lit ? [lit] : [lit, real]
   for (const abs of candidates) {
+    // User-uploaded chat media (`~/.agim/media/…`) is intentionally outside
+    // the ~/.agim denylist — agents must read `[文件附件：…]` / `[图片附件：…]`.
+    if (isAllowedAgimMediaPath(abs)) {
+      // Still apply basename denials (e.g. someone renaming upload to `.env`).
+      if (SENSITIVE_BASENAMES.includes(basename(abs))) {
+        return { sensitive: true, reason: `file basename "${basename(abs)}" is protected` }
+      }
+      continue
+    }
     for (const prefix of SENSITIVE_ABS_PREFIXES) {
       if (abs === prefix.replace(/\/$/, '') || abs.startsWith(prefix)) {
         return { sensitive: true, reason: `path is under protected prefix ${prefix}` }

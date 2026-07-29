@@ -672,11 +672,21 @@ export async function handleClientMessage(
         const peer = tokenId ?? 'anon'
         const owner = threadOwners?.get(wantedThreadId)
         if (owner !== undefined && owner !== peer) {
+          // Stale localStorage from another token (rotated bootstrap,
+          // shared browser profile, …). Do NOT hijack that thread —
+          // keep this connection's already-claimed clientId and tell
+          // the SPA to adopt it as a fresh conversation instead of a
+          // hard error that leaves the chat unusable.
           webLog.warn({
             event: 'web.session.rekey_denied',
-            clientId, wantedThreadId, peer,
-          }, 'WS get-history rekey refused — threadId owned by a different token')
-          sendToClient(ws, { type: 'error', message: 'thread not owned by this session' })
+            clientId, wantedThreadId, peer, owner,
+          }, 'WS get-history rekey refused — starting fresh thread for this token')
+          sendToClient(ws, {
+            type: 'thread-reassigned',
+            threadId: clientId,
+            reason: 'ownership_mismatch',
+          })
+          await sendSessionHistory(ws, client, defaultAgent)
           return
         }
         // First-claim OK (owner === undefined) or same-owner reconnect.

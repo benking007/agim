@@ -278,6 +278,7 @@ web:web:<threadId>
 |---|---|
 | 浏览器 thread id | SPA 把 id 存在 `localStorage['agim-web-thread-id']`（`web-…` 形） |
 | 恢复协议 | 每次 WS `open` 发 `get-history { threadId }`；服务端 rekey 到该 id 并回放 `.log` |
+| 归属冲突 | localStorage 的 thread 已被**其他 token** 占用 → 不下发 `error`；发 `thread-reassigned`（本连接新 id）+ 空/新会话 `history`，SPA 改写 `agim-web-thread-id` |
 | 空历史 | session 仍在但消息已过 Web 消息 TTL 时仍发 `history`（可为空），用于恢复 sticky agent |
 | 「新对话」 | WS `new-conversation` → `resetConversation`；**同一** localStorage thread id，气泡清空 |
 | Agent 切换 | UI 气泡可保留；Agim Agent JSONL 按 §九 quarantine |

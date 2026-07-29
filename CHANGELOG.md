@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Web thread ownership mismatch no longer hard-errors**: when
+  `get-history` asks to rekey to a `threadId` owned by another token,
+  the server keeps this connection’s claimed id, emits
+  `thread-reassigned`, and continues with that session’s history
+  (fresh chat) instead of `error: thread not owned by this session`.
+  SPA updates `localStorage` + soft toast.
+
 ### Changed
 
 - **`AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` default 50 → 100**: Agim Agent

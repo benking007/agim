@@ -272,6 +272,22 @@ export function makeOnIncoming(
         flushChunks()
         dispatch({ kind: 'ERROR', message: msg.message })
         return
+      case 'thread-reassigned': {
+        // Foreign localStorage threadId — adopt the server-minted session
+        // (already owned by this token) instead of hard-erroring.
+        const next = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
+        if (next && /^web-[A-Za-z0-9_-]{4,64}$/.test(next)) {
+          try { localStorage.setItem('agim-web-thread-id', next) } catch { /* private mode */ }
+          dispatch({ kind: 'SET_CLIENT_ID', clientId: next })
+        }
+        if (msg.reason === 'ownership_mismatch') {
+          toast.message(i18n.t('chat.threadReassigned', {
+            ns: 'common',
+            defaultValue: 'Previous chat belongs to another login — started a new conversation.',
+          }))
+        }
+        return
+      }
       case 'approval-card':
         dispatch({
           kind: 'APPROVAL_CARD',

@@ -164,7 +164,7 @@ R12 ④ 加固：之前依赖 umask，现在每个 write/mkdir 显式带 mode。
 
 - `verifyClient` 走 token 鉴权 + Origin 同源校验（防 CSWSH）
 - ClientID 用 `randomBytes(12).toString('base64url')`（96 比特熵）
-- `threadOwners` map 防跨令牌劫持
+- `threadOwners` map 防跨令牌劫持：`get-history` 若带上**他人**已占用的 `threadId`，**不**放行 rekey；改为保留本连接已认领的 id，下发 `thread-reassigned` + 该会话 history（新对话），不再以硬错误卡死聊天
 - 每令牌上限 100 连接（`AGIM_MAX_WS_CLIENTS`）
 - **R13 G5 A4 新增按 IP 限流**：`AGIM_WS_MAX_PER_IP=20` 并发 + `AGIM_WS_MAX_NEW_PER_IP_PER_MIN=30` 滚动窗口；rate-limit 在鉴权**之前**跑，防止 sha256 暴力 CPU 占用
 

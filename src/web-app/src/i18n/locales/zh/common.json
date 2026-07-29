@@ -244,6 +244,7 @@
     },
     "notConnected": "未连接，正在重连…",
     "notConnectedRetry": "未连接，正在重连，请稍后重试。",
+    "threadReassigned": "原会话属于其他登录身份，已为你开启新对话。",
     "connecting": "正在连接 agim…",
     "disconnected": "已断开，自动重连中；可以继续输入。",
     "welcomeTitle": "开始对话",

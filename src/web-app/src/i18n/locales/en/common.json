@@ -244,6 +244,7 @@
     },
     "notConnected": "Not connected. Reconnecting…",
     "notConnectedRetry": "Not connected. Reconnecting — try again in a moment.",
+    "threadReassigned": "Previous chat belongs to another login — started a new conversation.",
     "connecting": "Connecting to agim…",
     "disconnected": "Disconnected. Reconnecting automatically; you can keep typing.",
     "welcomeTitle": "Start a conversation",

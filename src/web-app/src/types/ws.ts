@@ -66,6 +66,12 @@ export type ChatIncoming =
   | ActivityStepEvent
   | ActiveRunEvent
   | { type: 'error'; message: string }
+  /**
+   * Server refused rekey to a foreign threadId (owned by another token).
+   * SPA must persist `threadId` and continue — history for the new
+   * session follows. Not an `error` (chat stays usable).
+   */
+  | { type: 'thread-reassigned'; threadId: string; reason: 'ownership_mismatch' }
   /** Ack that a per-Subagent cancel was accepted (activity-step follows). */
   | { type: 'subagent-stopped'; jobId: number }
   | { type: 'approval-text'; text: string }

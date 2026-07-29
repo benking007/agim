@@ -484,15 +484,76 @@ function composeLengthTruncationNotice(text: string): string {
   return `${text.trimEnd()}\n\n（注意：本轮回复因输出长度上限被截断，内容可能不完整；可回「继续」让我接着写。）`
 }
 
+/** Collapse whitespace / truncate for a stable failure-reason key + display. */
+function normalizeToolFailureReason(preview: string | undefined): string {
+  const raw = (preview ?? '').replace(/\s+/g, ' ').trim()
+  if (!raw) return '（无错误详情）'
+  // Prefer the first clause — often "sensitive path: …" or "agim_exec denied: …"
+  const cut = raw.split(/(?<=[.。;；])\s+|;\s+partial output/i)[0] ?? raw
+  return cut.length > 160 ? `${cut.slice(0, 160)}…` : cut
+}
+
+/**
+ * Summarize distinct tool failures for stuck_loop early-stop so the user
+ * sees *why* (permission / timeout / …) instead of only "dead loop stopped".
+ */
+export function composeStuckLoopFailureSummary(
+  toolRuns: readonly NativeToolRun[],
+): string {
+  const failed = toolRuns.filter((r) => r.isError)
+  if (failed.length === 0) return ''
+
+  type Bucket = { name: string; reason: string; count: number }
+  const order: string[] = []
+  const buckets = new Map<string, Bucket>()
+  for (const run of failed) {
+    const reason = normalizeToolFailureReason(run.preview)
+    const key = `${run.name}\0${reason}`
+    const prev = buckets.get(key)
+    if (prev) {
+      prev.count += 1
+    } else {
+      buckets.set(key, { name: run.name, reason, count: 1 })
+      order.push(key)
+    }
+  }
+
+  const lines = ['失败原因汇总：']
+  for (const key of order.slice(0, 8)) {
+    const b = buckets.get(key)!
+    const times = b.count > 1 ? ` ×${b.count}` : ''
+    lines.push(`- \`${b.name}\`${times}：${b.reason}`)
+  }
+  if (order.length > 8) {
+    lines.push(`- …另有 ${order.length - 8} 种失败未列出`)
+  }
+  // Permission / policy denials dominate stuck loops in the field — tip only
+  // when the summary looks like one.
+  const blob = [...buckets.values()].map((b) => b.reason).join(' ')
+  if (/denied|sensitive path|protected|forbidden|权限|拒绝/i.test(blob)) {
+    lines.push('多为权限或策略拦截；换相同参数重试通常无效，请改路径/命令或调整相关限制后再试。')
+  }
+  return lines.join('\n')
+}
+
+function composeStuckLoopRecap(toolRuns: readonly NativeToolRun[]): string {
+  const summary = composeStuckLoopFailureSummary(toolRuns)
+  const head = '（检测到工具反复以相同参数失败的死循环，已提前停止）'
+  return summary ? `${head}\n\n${summary}` : head
+}
+
 function appendPartialToolDiagnostics(
   text: string,
   stopReason: NativeStopReason | null,
   maxIter: number,
   maxToolCalls: number,
+  toolRuns: readonly NativeToolRun[] = [],
 ): string {
   const diagnostics: string[] = []
   if (stopReason === 'stuck_loop') {
     diagnostics.push('检测到工具反复以相同参数失败，已提前停止；以上内容可能只覆盖已取得的信息。')
+    const summary = composeStuckLoopFailureSummary(toolRuns)
+    if (summary) diagnostics.push(`\n${summary}`)
   } else if (stopReason === 'max_iter') {
     diagnostics.push(`已达到最大迭代步数 ${maxIter}，已提前停止；以上内容可能不完整。`)
   } else if (stopReason === 'max_tool_calls') {
@@ -501,9 +562,9 @@ function appendPartialToolDiagnostics(
     diagnostics.push('目标巡检判定偏离，已提前停止；以上内容可能不完整。')
   }
 
-  // Tool failures are already visible in the activity / tool UI. Do not append
-  // a user-facing "诊断：本轮有 N 次工具调用失败…" footer — operators rarely
-  // want that noise in the chat transcript.
+  // Tool failures are already visible in the activity / tool UI for non-stuck
+  // stops. For stuck_loop we intentionally surface a compact reason summary
+  // in chat — otherwise permission denials look like a mysterious "dead loop".
 
   if (diagnostics.length === 0) return text
   return `${text.trimEnd()}\n\n（诊断：${diagnostics.join(' ')}）`
@@ -1782,7 +1843,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (stopReason) {
         emitOutcome({ status: 'partial', providerFailure: false, error: stopReason, stopReason })
         yield stopReason === 'stuck_loop'
-          ? '（检测到工具反复以相同参数失败的死循环，已提前停止）'
+          ? composeStuckLoopRecap(toolRuns)
           : stopReason === 'max_tool_calls'
             ? `（已达工具调用预算 ${maxToolCalls}，提前停止；可调高 AGIM_NATIVE_AGENT_MAX_TOOL_CALLS 后重试）`
             : stopReason === 'off_track'
@@ -1841,7 +1902,7 @@ export class NativeAgentAdapter implements AgentAdapter {
     // Non-empty answer. Append tool diagnostics; if the turn ALSO hit a
     // provider error after producing partial text, flag that the reply may be
     // incomplete and can be retried.
-    let out = appendPartialToolDiagnostics(text, stopReason, maxIter, maxToolCalls)
+    let out = appendPartialToolDiagnostics(text, stopReason, maxIter, maxToolCalls, toolRuns)
     if (result.stopReason === 'length' && !stopReason && !providerFailed && !providerAborted) {
       out = composeLengthTruncationNotice(out)
       emitOutcome({ status: 'partial', providerFailure: false, error: 'length', stopReason: 'length' })

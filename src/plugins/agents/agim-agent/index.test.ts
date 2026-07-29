@@ -1113,6 +1113,9 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
     expect(sawSteer).toBe(true)
     expect(calls).toBe(6) // soft-steer window + hard-stop window
     expect(out).toContain('死循环')
+    expect(out).toContain('失败原因汇总')
+    expect(out).toContain('`flaky`')
+    expect(out).toMatch(/upstream 503|失败/)
     expect(outcome?.status).toBe('partial')
     expect(outcome?.stopReason).toBe('stuck_loop')
     expect(outcome?.toolCalls).toBe(6)

@@ -1,7 +1,7 @@
 /**
  * Loop × per-turn call_agent cap — avoid dispatch-gate deadlock.
  *
- * Turn budget (`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`, default 3) is shared
+ * Turn budget (`AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`, default 6) is shared
  * across the whole user turn. Loop `continue|revise` advances rounds inside
  * that same turn; if history is not cleared, R2 cannot `call_agents` while
  * dispatch-gate also forbids parent research → hard deadlock.

@@ -51,6 +51,8 @@ describe('getSubagentParallelMax / getCallAgentMaxPerTurn', () => {
   it('uses Phase B defaults', () => {
     delete process.env.AGIM_SUBAGENT_PARALLEL_MAX
     delete process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN
+    expect(SUBAGENT_PARALLEL_MAX_DEFAULT).toBe(3)
+    expect(CALL_AGENT_MAX_PER_TURN_DEFAULT).toBe(6)
     expect(getSubagentParallelMax()).toBe(SUBAGENT_PARALLEL_MAX_DEFAULT)
     expect(getCallAgentMaxPerTurn()).toBe(CALL_AGENT_MAX_PER_TURN_DEFAULT)
   })

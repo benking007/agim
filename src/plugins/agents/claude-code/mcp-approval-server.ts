@@ -1525,7 +1525,7 @@ export function buildServer(client: ApprovalClient): McpServer {
       title: 'Call multiple agents',
       description:
         'Spawn MULTIPLE Subagents in one call (fan-out / join). You keep the user-facing reply. '
-        + 'Use when 2–3 lanes are independent (research / verify / explore). '
+        + 'Use when several lanes are independent (research / verify / explore). '
         + 'Each tasks[] item needs a self-contained brief. '
         + 'Do not parallel-write the same file — split directories or serialize. '
         + 'Failure mode: allSettled — one child fail does not kill siblings; synthesize all results. '
@@ -1544,7 +1544,7 @@ export function buildServer(client: ApprovalClient): McpServer {
             ...a2aInputFields,
           }),
         ).min(1).max(CALL_AGENTS_TASKS_HARD_MAX).describe(
-          `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). Prefer 2–3 lanes.`,
+          `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). Prefer ≤6 lanes.`,
         ),
       },
     },

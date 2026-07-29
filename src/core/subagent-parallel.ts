@@ -4,14 +4,14 @@
  * Concept: docs/architecture/orchestration-roadmap.md §Phase B
  * Naming: docs/naming.md (AGIM_SUBAGENT_PARALLEL*)
  *
- * Defaults (product choice 2026-07-24):
+ * Defaults (product choice 2026-07-29):
  *   AGIM_SUBAGENT_PARALLEL        ON when unset
- *   AGIM_SUBAGENT_PARALLEL_MAX    3
- *   AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN  3  (raised from 2)
+ *   AGIM_SUBAGENT_PARALLEL_MAX    3  (in-batch concurrency)
+ *   AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN  6  (raised from 3)
  */
 
 export const SUBAGENT_PARALLEL_MAX_DEFAULT = 3
-export const CALL_AGENT_MAX_PER_TURN_DEFAULT = 3
+export const CALL_AGENT_MAX_PER_TURN_DEFAULT = 6
 /** Hard ceiling on tasks[] length regardless of env (abuse guard). */
 export const CALL_AGENTS_TASKS_HARD_MAX = 8
 

@@ -113,6 +113,43 @@ export interface AgentCallOptions {
 const AGENT_COMMANDS = new Set(['test', 'review', 'commit', 'push', 'diff', 'shell', 'bug', 'explain'])
 
 /**
+ * Portal uploads / composer chips / IM media lines often sit *before*
+ * `/loop` or `@agent`. One leading marker token (bracket form).
+ * Keep in sync with web-media-upload + portal mention markers + IM adapters.
+ */
+const LEADING_MARKER_AT_START =
+  /^(?:\[(?:图片附件|文件附件|语音附件|视频附件|图片附件下载失败|文件附件下载失败|语音附件下载失败|视频附件下载失败|Image attachment|File attachment|Image download failed|File download failed|工作区文件|工作区目录|技能|workspace file|workspace dir|skill)[：:][^\]]*\]|\[(?:工作区|workspace)\])/i
+
+/**
+ * Peel leading media/mention markers so slash and @-agent routing still
+ * fire. Markers are reattached to args/prompt via {@link withLeadingMarkers}.
+ */
+export function splitLeadingMarkers(text: string): { prefix: string; rest: string } {
+  const prefixParts: string[] = []
+  let remaining = text
+  while (remaining.length > 0) {
+    const ws = remaining.match(/^\s*/)?.[0] ?? ''
+    const afterWs = remaining.slice(ws.length)
+    const m = afterWs.match(LEADING_MARKER_AT_START)
+    if (!m) break
+    prefixParts.push(m[0])
+    remaining = afterWs.slice(m[0].length)
+  }
+  if (prefixParts.length === 0) return { prefix: '', rest: text }
+  return {
+    prefix: prefixParts.join('\n'),
+    rest: remaining.replace(/^\s+/, ''),
+  }
+}
+
+function withLeadingMarkers(prefix: string, body: string): string {
+  const b = body.trim()
+  if (!prefix) return b
+  if (!b) return prefix
+  return `${prefix}\n${b}`
+}
+
+/**
  * Build the rate-limit user-facing error string. Picks the effective
  * limiter (workspace's own limiter for named workspaces, otherwise the
  * shared userLimiter) so the wait estimate matches the bucket that
@@ -144,11 +181,15 @@ export function parseMessage(text: string): ParsedMessage {
     return { type: 'default', prompt: '' }
   }
 
+  // Portal prepends `[文件附件：…]` / chips before the typed body; peel them
+  // so `/loop` and `@agent` still parse. Plain chat keeps the full text.
+  const { prefix: leadingMarkers, rest: commandText } = splitLeadingMarkers(trimmed)
+
   // Plan C (2026-05-22): user-facing coord-system tags. Lowercased and
   // matched on the *entire* message (no args) so casual replies like
   // "#wgs" / "#GCJ" / " #bd " are recognised but bare `#wgs but the
   // marker is still off` falls through to the default agent.
-  const coordTagMatch = trimmed.match(/^#(wgs|gcj|bd)0?2?(?:84)?(?:09)?$/i)
+  const coordTagMatch = commandText.match(/^#(wgs|gcj|bd)0?2?(?:84)?(?:09)?$/i)
   if (coordTagMatch) {
     const sys = coordTagMatch[1].toLowerCase()
     if (sys === 'wgs') return { type: 'coord', system: 'wgs84' }
@@ -159,11 +200,11 @@ export function parseMessage(text: string): ParsedMessage {
   // Batch 2 (#2 Stop) — natural-language abort phrases. Entire message
   // must match; "停止跑那个" / "stop please" still falls through to the
   // agent so it can decide. Borrowed from openclaw's `/stop` triggers.
-  if (/^(停止|停|中止|取消运行|esc|escape)$/i.test(trimmed)) {
+  if (/^(停止|停|中止|取消运行|esc|escape)$/i.test(commandText)) {
     return { type: 'stopAgent' }
   }
   // Standalone "stop" (English) — case-insensitive, no other text.
-  if (/^stop$/i.test(trimmed)) {
+  if (/^stop$/i.test(commandText)) {
     return { type: 'stopAgent' }
   }
 
@@ -174,10 +215,10 @@ export function parseMessage(text: string): ParsedMessage {
   // so any remaining `@…` at the head is a user-typed routing hint.
   // Only registered agent names / aliases match; otherwise it falls
   // through and the agent sees the @ as ordinary text.
-  const atMatch = trimmed.match(/^@([\w-]+)(?:\s+([\s\S]*))?$/)
+  const atMatch = commandText.match(/^@([\w-]+)(?:\s+([\s\S]*))?$/)
   if (atMatch) {
     const candidate = atMatch[1]
-    const rest = atMatch[2] || ''
+    const rest = withLeadingMarkers(leadingMarkers, atMatch[2] || '')
     const a = registry.findAgent(candidate)
     if (a) {
       return { type: 'agent', agent: a.name, prompt: rest }
@@ -185,13 +226,14 @@ export function parseMessage(text: string): ParsedMessage {
   }
 
   // Check for command prefix
-  const match = trimmed.match(/^\/(\S+)\s*(.*)/)
+  const match = commandText.match(/^\/(\S+)\s*([\s\S]*)/)
   if (!match) {
-    // No command prefix → default agent
+    // No command prefix → default agent (keep original markers + text)
     return { type: 'default', prompt: trimmed }
   }
 
-  const [, cmd, rest] = match
+  const [, cmd, rawRest] = match
+  const rest = withLeadingMarkers(leadingMarkers, rawRest || '')
 
   // Built-in commands
   if (cmd === 'start') return { type: 'command', command: 'start', args: rest }

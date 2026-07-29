@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Slash commands after file/image uploads**: Portal (and similar) prepend
+  `[文件附件：…]` / `[图片附件：…]` / mention chips before the typed body;
+  `parseMessage` now peels those leading markers so `/loop` and other
+  slash / `@agent` routes still fire, then reattaches markers to
+  args/prompt so the Agent still sees the attachments.
+
 - **Stuck-loop stop summarizes tool failures**: when the Agim Agent
   early-stops on repeated identical tool errors, the chat reply includes
   a compact「失败原因汇总」(tool ×N + reason) so permission / policy

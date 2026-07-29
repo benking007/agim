@@ -208,16 +208,33 @@ export function SubagentDetailDialog({
               >
                 {t('chat.subagentPromptHeading', { defaultValue: 'Parent prompt' })}
               </h3>
-              <pre className={cn(
-                'whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 font-mono text-[12px] leading-relaxed',
-                dark ? 'bg-zinc-900 text-zinc-300' : 'bg-surface-2 text-text-dim',
-              )}
-              >
-                {prompt
-                  || (loading
+              {prompt ? (
+                <div
+                  data-testid="subagent-prompt-markdown"
+                  className={cn(
+                    'min-w-0 break-words rounded-xl px-3 py-2.5 text-sm leading-relaxed',
+                    dark ? 'bg-zinc-900 text-zinc-200' : 'bg-surface-2 text-text',
+                  )}
+                >
+                  <MarkdownView
+                    content={prompt}
+                    className={cn(
+                      'break-words text-sm leading-relaxed',
+                      dark ? 'text-zinc-200' : 'text-text',
+                    )}
+                  />
+                </div>
+              ) : (
+                <pre className={cn(
+                  'whitespace-pre-wrap break-words rounded-xl px-3 py-2.5 font-mono text-[12px] leading-relaxed',
+                  dark ? 'bg-zinc-900 text-zinc-300' : 'bg-surface-2 text-text-dim',
+                )}
+                >
+                  {loading
                     ? t('chat.subagentLoading', { defaultValue: 'Loading…' })
-                    : t('chat.subagentPromptEmpty', { defaultValue: 'Prompt not available yet.' }))}
-              </pre>
+                    : t('chat.subagentPromptEmpty', { defaultValue: 'Prompt not available yet.' })}
+                </pre>
+              )}
             </section>
 
             <section className="space-y-1.5">

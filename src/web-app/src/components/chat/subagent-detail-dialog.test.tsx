@@ -1,5 +1,5 @@
 /**
- * Subagent detail sheet — Result pane must render GFM Markdown
+ * Subagent detail sheet — Parent prompt + Result panes render GFM Markdown
  * (headings / tables / bold), not dump raw `#` / `|` / `**`.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
@@ -7,6 +7,16 @@ import { render, screen, waitFor } from '@testing-library/react'
 
 import { SubagentDetailDialog } from './subagent-detail-dialog'
 import type { ChatActivityStep } from '@/hooks/use-chat'
+
+const markdownPrompt = [
+  '## 用户推荐的数据源',
+  '',
+  '请核对 **NDX 成分/权重** 与 `quality=B`。',
+  '',
+  '| 因子 | 权重 | 质量 |',
+  '|------|------|------|',
+  '| F1 估值 | 60% | B |',
+].join('\n')
 
 const markdownResult = [
   '# ETF 国家队监控系统',
@@ -26,7 +36,7 @@ vi.mock('@/lib/api/endpoints', () => ({
       job: {
         id: 2462,
         status: 'done',
-        prompt: 'Parent brief here',
+        prompt: markdownPrompt,
         result: markdownResult,
         agent: 'agim',
       },
@@ -34,7 +44,7 @@ vi.mock('@/lib/api/endpoints', () => ({
   },
 }))
 
-describe('SubagentDetailDialog result Markdown', () => {
+describe('SubagentDetailDialog Markdown', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div data-agim-composer-sheet-root></div>'
   })
@@ -42,6 +52,35 @@ describe('SubagentDetailDialog result Markdown', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
+  })
+
+  it('renders Parent prompt as Markdown (heading + bold + table)', async () => {
+    const step: ChatActivityStep = {
+      id: 'sa-1',
+      kind: 'subagent',
+      label: 'agim:deepseek-v4-pro',
+      status: 'done',
+      jobId: 2462,
+      startedAt: Date.now(),
+    }
+
+    render(
+      <SubagentDetailDialog
+        open
+        onOpenChange={() => {}}
+        step={step}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('subagent-prompt-markdown')).toBeInTheDocument()
+    })
+
+    const box = screen.getByTestId('subagent-prompt-markdown')
+    expect(box.querySelector('table')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: /用户推荐的数据源/ })).toBeInTheDocument()
+    expect(screen.getByText('NDX 成分/权重').tagName.toLowerCase()).toBe('strong')
+    expect(screen.queryByText(/^## 用户推荐/)).not.toBeInTheDocument()
   })
 
   it('renders Result as Markdown (heading + bold + table), not raw markers', async () => {
@@ -71,7 +110,6 @@ describe('SubagentDetailDialog result Markdown', () => {
     expect(screen.getByRole('heading', { name: /ETF 国家队监控系统/ })).toBeInTheDocument()
     expect(screen.getByText('国家队今天有没有逆市护盘？').tagName.toLowerCase()).toBe('strong')
     expect(screen.getByText('放量力度').tagName.toLowerCase()).toBe('strong')
-    // Raw markdown markers should not appear as visible text blobs
     expect(screen.queryByText(/^# ETF/)).not.toBeInTheDocument()
     expect(screen.queryByText(/\|\s*原名称\s*\|/)).not.toBeInTheDocument()
   })

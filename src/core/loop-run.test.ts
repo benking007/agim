@@ -35,6 +35,7 @@ import {
   stopLoop,
   discoverLoopReportPaths,
   noteLoopReportPath,
+  onLoopRunWritten,
   readLoopReportMarkdown,
   resolveLoopReportsDir,
   _historyPathForTests,
@@ -916,6 +917,30 @@ describe('loop history audit persistence', () => {
       expect(md.path).toContain(`${id}.md`)
     } finally {
       delete process.env.AGIM_LOOP_REPORTS_DIR
+    }
+  })
+})
+
+describe('onLoopRunWritten', () => {
+  it('fires after a successful startLoop write', () => {
+    reset()
+    const seen: string[] = []
+    const off = onLoopRunWritten((run) => { seen.push(run.id) })
+    try {
+      const started = startLoop({
+        ...base,
+        threadId: 'loop-written-hook',
+        text: '目标：写钩子；退出条件为最多1轮',
+      })
+      // Path B needs Focus persist; Bun skips better-sqlite3 — same soft-skip
+      // as other loop-run cases when Focus cannot be set.
+      if (!started.ok) {
+        if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+        return
+      }
+      expect(seen).toContain(started.run.id)
+    } finally {
+      off()
     }
   })
 })

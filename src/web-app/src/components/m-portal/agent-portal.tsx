@@ -240,7 +240,9 @@ export function AgentPortal(): JSX.Element {
   const canStop = isTyping || state.activeRunId != null
 
   const portalThreadId = state.clientId
-  const loopRefreshKey = `${state.messages.length}:${canStop ? 1 : 0}`
+  // Include WS status + activeRunId so reconnect / new run re-polls Loop
+  // even when messages.length stays flat (in-place chunk updates).
+  const loopRefreshKey = `${state.messages.length}:${canStop ? 1 : 0}:${state.activeRunId ?? ''}:${state.status}`
   const hasBlockingDock = state.pendingApprovals.some((a) => !a.outcome)
     || state.pendingAsks.some((a) => !a.finalText)
 

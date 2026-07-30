@@ -403,7 +403,8 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 - 取消：关闭底栏，不发消息。
 
 API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `bucketLabel` / `liveSubagents` / `canVerify` / `minRounds` / `usage` / `lastVerification`…）。  
-轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。
+轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。  
+**同步**：线程挂载期间持续轮询（不只 `active`）；WS `open` / `visibility` / `online` 与服务端 `loop-changed`（`writeRun` + `get-history` 引导）触发立刻重拉；轮询失败保留上次快照。结案后的「详细报告」询问若遇**新** Loop id 会让位给对焦/立即行动 dock。
 
 ### 6.3.1 落盘与 Tasks 审计
 

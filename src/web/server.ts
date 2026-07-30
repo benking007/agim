@@ -117,6 +117,16 @@ export async function startWebServer(options: {
   // first-claim and let another token hijack a thread.
   const { webThreadOwners: threadOwners } = await import('../core/web-thread-owners.js')
 
+  // Portal Loop docks poll GET /api/loop; also nudge on every successful
+  // writeRun so 结案后追问重启 / 状态迁移不等下一轮 4s 轮询。
+  const { onLoopRunWritten } = await import('../core/loop-run.js')
+  const offLoopWritten = onLoopRunWritten((run) => {
+    if (run.platform !== 'web') return
+    const c = clients.get(run.threadId)
+    if (!c || c.ws.readyState !== 1 /* WebSocket.OPEN */) return
+    sendToClient(c.ws, { type: 'loop-changed', threadId: run.threadId })
+  })
+
   // v1.1.10+: token-based auth for the web console.
   // ─ loopback peers (127.0.0.1 / ::1) bypass auth (local CLI / curl)
   // ─ public viewer pages (/v/:id, /loc, /l/<token>) remain public
@@ -979,6 +989,7 @@ export async function startWebServer(options: {
   return {
     port,
     close: () => {
+      offLoopWritten()
       // Close all WebSocket connections
       for (const [id, client] of clients) {
         client.ws.close()

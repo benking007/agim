@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Portal Loop status survives 结案追问 and network blips**: docks kept
+  polling only while `active`, wiped state on failed `GET /api/loop`, and
+  ReportOffer could mask a restarted Loop. Now: poll while the thread is
+  mounted; re-fetch on WS open / tab visible / online + `loop-changed`
+  nudges from `writeRun` / `get-history`; keep last snapshot on fetch
+  errors; clear ReportOffer when a new active Loop id appears.
+
 - **Stuck-loop stop summarizes tool failures**: when the Agim Agent
   early-stops on repeated identical tool errors, the chat reply includes
   a compact「失败原因汇总」(tool ×N + reason) so permission / policy

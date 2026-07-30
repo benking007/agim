@@ -188,6 +188,9 @@ export async function sendSessionHistory(
       })
     }
   }
+  // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
+  // get-history (chat bootstrap does not carry the Loop DTO).
+  sendToClient(ws, { type: 'loop-changed', threadId: client.id })
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────

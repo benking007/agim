@@ -109,6 +109,13 @@ export const PortalLoopDock = memo(function PortalLoopDock({
     setReportOffer((prev) => (prev && prev.threadId !== threadId ? null : prev))
   }, [threadId])
 
+  // After 结案, a follow-up may start a *new* Loop. ReportOffer must not
+  // mask Aligning / Act now for the new runId.
+  useEffect(() => {
+    if (!loop?.active || !reportOffer) return
+    if (loop.id !== reportOffer.loopId) setReportOffer(null)
+  }, [loop?.active, loop?.id, reportOffer])
+
   if (reportOffer && reportOffer.threadId === threadId) {
     return (
       <ReportOfferDock

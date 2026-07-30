@@ -340,6 +340,9 @@ export function makeOnIncoming(
       case 'metrics':
         // Dashboards (PR-N) consume these; the chat surface ignores.
         return
+      case 'loop-changed':
+        // Portal Loop docks subscribe via openChatWs in use-portal-loop.
+        return
       default:
         return
     }

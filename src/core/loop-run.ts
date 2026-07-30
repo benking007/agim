@@ -663,6 +663,26 @@ function writeHistoryRun(run: LoopRun): void {
   renameSync(tmp, hp)
 }
 
+/** Best-effort fans for Portal WS (and tests). Never throw to callers. */
+type LoopRunWrittenListener = (run: LoopRun) => void
+const loopRunWrittenListeners = new Set<LoopRunWrittenListener>()
+
+/** Subscribe to successful thread-snapshot writes (status transitions). */
+export function onLoopRunWritten(fn: LoopRunWrittenListener): () => void {
+  loopRunWrittenListeners.add(fn)
+  return () => { loopRunWrittenListeners.delete(fn) }
+}
+
+function notifyLoopRunWritten(run: LoopRun): void {
+  for (const fn of loopRunWrittenListeners) {
+    try {
+      fn(run)
+    } catch (err) {
+      log.warn({ event: 'loop.write_listener_failed', err: String(err) })
+    }
+  }
+}
+
 function writeRun(run: LoopRun): boolean {
   try {
     ensureDir()
@@ -677,6 +697,7 @@ function writeRun(run: LoopRun): boolean {
     } catch (histErr) {
       log.warn({ event: 'loop.history_write_failed', runId: run.id, err: String(histErr) })
     }
+    notifyLoopRunWritten(run)
     return true
   } catch (err) {
     log.warn({ event: 'loop.write_failed', err: String(err) })

@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Portal upload "upload 524"**: HTTP 524 is a Cloudflare/tunnel origin
+  timeout, not an Agim code. Large phone photos now recompress before
+  `POST /api/chat/media`, and gateway 502/504/524 toasts explain the
+  timeout (compress / smaller file / LAN) instead of bare `upload 524`.
+
 - **Stuck-loop stop summarizes tool failures**: when the Agim Agent
   early-stops on repeated identical tool errors, the chat reply includes
   a compact「失败原因汇总」(tool ×N + reason) so permission / policy

@@ -12,8 +12,9 @@ import {
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/stores/auth'
 import { SUBAGENT_COMPOSER_FILL } from './portal-slash-commands'
+
+export { uploadPendingAttachments } from '@/lib/chat-media-upload'
 
 export interface PendingAttachment {
   id: string
@@ -34,39 +35,6 @@ interface PortalComposerPlusProps {
   onFillInput: (text: string) => void
   onSendCommand: (text: string) => void
   onOpenChange?: (open: boolean) => void
-}
-
-async function uploadChatMedia(file: File, threadId: string): Promise<{ marker: string }> {
-  const tok = useAuth.getState().token
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/octet-stream',
-    'X-Agim-Filename': encodeURIComponent(file.name || 'file'),
-    'X-Agim-Mime': file.type || 'application/octet-stream',
-  }
-  if (tok) headers.Authorization = `Bearer ${tok}`
-  const res = await fetch(`/api/chat/media?threadId=${encodeURIComponent(threadId)}`, {
-    method: 'POST',
-    headers,
-    body: file,
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(body.slice(0, 200) || `upload ${res.status}`)
-  }
-  return res.json() as Promise<{ marker: string }>
-}
-
-/** Upload all pending attachments; return marker lines for the chat text. */
-export async function uploadPendingAttachments(
-  items: PendingAttachment[],
-  threadId: string,
-): Promise<string[]> {
-  const markers: string[] = []
-  for (const item of items) {
-    const { marker } = await uploadChatMedia(item.file, threadId)
-    markers.push(marker)
-  }
-  return markers
 }
 
 export function PortalComposerPlus({

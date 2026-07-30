@@ -495,6 +495,7 @@
       "attach": {
         "max": "Up to 8 attachments",
         "uploadFailed": "Attachment upload failed",
+        "uploadGatewayTimeout": "Upload timed out (gateway). Large files often fail behind Cloudflare/tunnels — compress the image, pick a smaller file, or open the console on LAN.",
         "preview": "Preview image",
         "closePreview": "Close preview",
         "loading": "Loading…",

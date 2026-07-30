@@ -6,12 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+<<<<<<< HEAD
 - **Portal Loop status survives 结案追问 and network blips**: docks kept
   polling only while `active`, wiped state on failed `GET /api/loop`, and
   ReportOffer could mask a restarted Loop. Now: poll while the thread is
   mounted; re-fetch on WS open / tab visible / online + `loop-changed`
   nudges from `writeRun` / `get-history`; keep last snapshot on fetch
   errors; clear ReportOffer when a new active Loop id appears.
+=======
+- **Slash commands after file/image uploads**: Portal (and similar) prepend
+  `[文件附件：…]` / `[图片附件：…]` / mention chips before the typed body;
+  `parseMessage` now peels those leading markers so `/loop` and other
+  slash / `@agent` routes still fire, then reattaches markers to
+  args/prompt so the Agent still sees the attachments.
+>>>>>>> origin/main
 
 - **Stuck-loop stop summarizes tool failures**: when the Agim Agent
   early-stops on repeated identical tool errors, the chat reply includes

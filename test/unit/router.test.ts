@@ -129,6 +129,40 @@ describe('parseMessage', () => {
         expect(parseMessage('/loop ship it')).toEqual({ type: 'loop', args: 'ship it' })
         expect(parseMessage('/loop status')).toEqual({ type: 'loop', args: 'status' })
       })
+      it('parses /loop after leading file/image attachment markers (Portal upload)', () => {
+        const fileMarker = '[文件附件：/home/u/.agim/media/web/t/report.md (report.md, 12 B)]'
+        const imageMarker = '[图片附件：/home/u/.agim/media/web/t/a.png]'
+        expect(parseMessage(`${fileMarker}\n/loop 根据报告优化`)).toEqual({
+          type: 'loop',
+          args: `${fileMarker}\n根据报告优化`,
+        })
+        expect(parseMessage(`${imageMarker}\n${fileMarker}\n/loop ship`)).toEqual({
+          type: 'loop',
+          args: `${imageMarker}\n${fileMarker}\nship`,
+        })
+        expect(parseMessage(`${fileMarker}\n/loop`)).toEqual({
+          type: 'loop',
+          args: fileMarker,
+        })
+      })
+      it('parses /loop after leading workspace/skill mention chips', () => {
+        expect(parseMessage('[工作区文件：docs/a.md] /loop review')).toEqual({
+          type: 'loop',
+          args: '[工作区文件：docs/a.md]\nreview',
+        })
+        expect(parseMessage('[技能：deploy]\n/status')).toEqual({
+          type: 'service',
+          action: 'status',
+          args: '[技能：deploy]',
+        })
+      })
+      it('keeps markers in default prompt when no slash follows', () => {
+        const marker = '[文件附件：/tmp/x.md (x.md, 1 B)]'
+        expect(parseMessage(`${marker}\nplease summarize`)).toEqual({
+          type: 'default',
+          prompt: `${marker}\nplease summarize`,
+        })
+      })
       it('treats retired goal slash commands as unknown', () => {
         for (const input of [
           '/goal',

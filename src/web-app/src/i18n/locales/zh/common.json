@@ -495,6 +495,7 @@
       "attach": {
         "max": "最多 8 个附件",
         "uploadFailed": "附件上传失败",
+        "uploadGatewayTimeout": "上传超时（网关）。经 Cloudflare/隧道时大文件易失败：请压缩图片或换较小文件，或改用局域网直连。",
         "preview": "预览图片",
         "closePreview": "关闭预览",
         "loading": "加载中…",

@@ -90,7 +90,7 @@ import { PortalExplore, type ExploreCategory } from './portal-explore'
 type Tab = 'chat' | 'explore'
 
 export function AgentPortal(): JSX.Element {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const prefs = usePrefs()
   const theme = resolveTheme(prefs.theme)
   const setTheme = (next: Theme): void => {
@@ -313,7 +313,9 @@ export function AgentPortal(): JSX.Element {
       let markers: string[] = []
       if (attachments.length > 0) {
         const threadId = state.clientId || 'web'
-        markers = await uploadPendingAttachments(attachments, threadId)
+        markers = await uploadPendingAttachments(attachments, threadId, {
+          zh: Boolean(i18n.language?.startsWith('zh')),
+        })
       }
       const body = [...markers, text].filter(Boolean).join('\n')
       for (const a of attachments) {

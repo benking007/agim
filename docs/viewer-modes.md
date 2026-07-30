@@ -106,6 +106,12 @@ agim falls back to the inline mode and IM messages contain the full
 markdown body. Either get a domain (mode `local`) or use the
 `remote` mode below.
 
+⚠️ **Portal attachments**: Cloudflare edges time out an origin that has
+not finished the response in ~100s (HTTP **524**). Large phone photos
+uploaded through a quick tunnel often hit this; the SPA recompresses
+stills before `POST /api/chat/media`, but very large non-image files
+may still fail — prefer LAN/`localhost` for big uploads.
+
 ## Mode `remote` — POST to a hosted paste server
 
 ```bash

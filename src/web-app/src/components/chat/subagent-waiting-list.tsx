@@ -43,9 +43,10 @@ export function SubagentWaitingList({
     ? (dark ? 'text-zinc-300' : 'text-zinc-700')
     : 'text-text-dim'
 
-  const headline = waiting.length === 1
+  const first = waiting[0]
+  const headline = waiting.length === 1 && first
     ? t('chat.activityWaitingSubagent', {
-        agent: waiting[0].label,
+        agent: first.label,
         defaultValue: 'Waiting for subagent',
       })
     : t('chat.activityWaitingSubagents', {
@@ -60,9 +61,9 @@ export function SubagentWaitingList({
         muted,
       )}>
         {headline}
-        {waiting.length === 1 ? (
+        {waiting.length === 1 && first ? (
           <span className={cn('ml-1 font-medium', rowText)}>
-            → {waiting[0].label}
+            → {first.label}
           </span>
         ) : null}
       </p>

@@ -10,8 +10,15 @@ All notable changes to this project will be documented in this file.
   `platform=web` (console + Portal) is refused so an open Loop page is
   not dropped mid-run. Use Settings → Service → Restart or
   `agim restart` instead. IM `/restart` (admin) unchanged. Documented in
-  `README` / `README.zh-CN`, `docs/runbook.md` §4,
-  `docs/security-hardening.md` §7.1, `docs/portal-composer.md`.
+  `docs/runbook.md` §4, `docs/security-hardening.md` §7.1,
+  `docs/portal-composer.md`.
+
+### Changed
+
+- **README / README.zh-CN capability sync**: Focus / Loop / Subagent
+  (drop retired `/goal`); fix ZH auto-approve default (off); name
+  `AGIM_ENABLE_GLOBAL_IM`; refresh essential chat commands + docs
+  pointers.
 
 - **Local RPC `mcp__agim__llm_complete` + static token**: independent
   same-host services (e.g. iFund) can call a configured `llmBackends`

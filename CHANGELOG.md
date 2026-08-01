@@ -13,13 +13,6 @@ All notable changes to this project will be documented in this file.
   `docs/runbook.md` §4, `docs/security-hardening.md` §7.1,
   `docs/portal-composer.md`.
 
-### Changed
-
-- **README / README.zh-CN capability sync**: Focus / Loop / Subagent
-  (drop retired `/goal`); fix ZH auto-approve default (off); name
-  `AGIM_ENABLE_GLOBAL_IM`; refresh essential chat commands + docs
-  pointers.
-
 - **Local RPC `mcp__agim__llm_complete` + static token**: independent
   same-host services (e.g. iFund) can call a configured `llmBackends`
   name over `~/.agim/rpc.sock` with `AGIM_RPC_STATIC_TOKEN`. Opt-in via
@@ -61,6 +54,11 @@ All notable changes to this project will be documented in this file.
   SPA updates `localStorage` + soft toast.
 
 ### Changed
+
+- **README / README.zh-CN capability sync**: Focus / Loop / Subagent
+  (drop retired `/goal`); fix ZH auto-approve default (off); name
+  `AGIM_ENABLE_GLOBAL_IM`; refresh essential chat commands + docs
+  pointers.
 
 - **`AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` default 50 → 100**: Agim Agent
   per-turn tool-call budget (the “已达工具调用预算” stop). Clamp remains

@@ -48,6 +48,13 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Docs + Settings for Agim turn caps**: document
+  `MAX_TOOL_CALLS=100` / `MAX_ITER=50` / `MAX_PER_TURN=6` in
+  `architecture-bridge-and-agim-agent.md` §10, `agents.md`,
+  `naming.md`, Loop/Subagent/CLI-dispatch cross-links. Settings →
+  Agim Agent Iteration card exposes `AGIM_NATIVE_AGENT_MAX_TOOL_CALLS`
+  (was env-only) and clarifies it ≠ iteration rounds.
+
 - **`AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` default 50 → 100**: Agim Agent
   per-turn tool-call budget (the “已达工具调用预算” stop). Clamp remains
   [1, 1000]. `AGIM_NATIVE_AGENT_MAX_ITER` default stays 50.

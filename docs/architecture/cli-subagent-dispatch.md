@@ -77,7 +77,7 @@ Join：**allSettled**（工具层 ok；按 lane 报 ok/error）。
 **Agim 独有（CLI 没有）**：
 
 - 同族 `role` / `backend` / `isolate` 参数  
-- 每 turn `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`（CLI 路径暂不镜像）  
+- 每 turn `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN`（默认 **6**；CLI 路径暂不镜像）  
 - Loop 门禁 + `loop_verdict` / Focus 工具  
 - specialty catalog **全文**注入（画像主要服务 Agim 父；CLI 父侧目前靠工具 description 短提示）
 

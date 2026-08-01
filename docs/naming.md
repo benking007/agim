@@ -67,6 +67,7 @@ qualifier (files vs access rules).
 | Approval timeout policy (`allow` \| `deny`) | `AGIM_APPROVAL_ON_TIMEOUT` | `AGIM_TIMEOUT_DEFAULT` |
 | Plan mode process default | `AGIM_PLAN_MODE` = `on` \| `off` \| `disabled` | `AGIM_NATIVE_PLAN_MODE` (truthy → on), `AGIM_DISABLE_PLAN_MODE=1` (→ disabled) |
 | Agim Agent behavioral knobs | `AGIM_NATIVE_*` (historical prefix) | Future: `AGIM_AGENT_*` with aliases — not renamed in this pass |
+| Agim Agent turn caps | `AGIM_NATIVE_AGENT_MAX_TOOL_CALLS` (default **100**), `AGIM_NATIVE_AGENT_MAX_ITER` (default **50**), `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default **6**) | See [`architecture-bridge-and-agim-agent.md`](./architecture-bridge-and-agim-agent.md) §10 |
 
 Boolean truthiness still varies by family (`on`/`off`, `1`/`0`). New knobs
 should prefer `on`/`off` and document the default explicitly.

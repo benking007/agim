@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Web / `/m/chat` cannot `/restart` Agim**: chat-driven restart from
+  `platform=web` (console + Portal) is refused so an open Loop page is
+  not dropped mid-run. Use Settings → Service → Restart or
+  `agim restart` instead. IM `/restart` (admin) unchanged.
+
 - **Local RPC `mcp__agim__llm_complete` + static token**: independent
   same-host services (e.g. iFund) can call a configured `llmBackends`
   name over `~/.agim/rpc.sock` with `AGIM_RPC_STATIC_TOKEN`. Opt-in via

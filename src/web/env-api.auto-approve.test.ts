@@ -25,7 +25,8 @@ function mockReq(method: string, body = ''): IncomingMessage {
     headers: {},
     url: '/api/policy/auto-approve',
     on(ev: string, cb: (...a: unknown[]) => void) {
-      ;(listeners[ev] ??= []).push(cb)
+      if (!listeners[ev]) listeners[ev] = []
+      listeners[ev].push(cb)
       if (ev === 'data') {
         queueMicrotask(() => {
           if (body) cb(Buffer.from(body))

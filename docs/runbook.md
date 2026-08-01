@@ -96,13 +96,15 @@ curl -I http://127.0.0.1:3000  # 应返 401 或 302（鉴权未通过/重定向�
 
 ## 4. 重启服务
 
-**三种触发方式都走 systemctl**（R14 §三 / §四）：
+**允许的触发方式都走 systemctl**（R14 §三 / §四）：
 
 | 方式 | 命令 | 备注 |
 |---|---|---|
 | Web 后台 | `/settings/service` → 重启按钮 | 自动 reap 残留进程 + `systemctl restart` |
 | IM 命令 | 管理员账号发 `/restart` 或 `"重启服务"` | 同上，IM 还会收到"🔄 重启中"+"✅ 已重启完成"通知 |
 | CLI | `agim restart` | systemd 模式下直接 `systemctl restart` |
+
+**护栏**：Web 控制台 `/` 与 Portal `/m/chat`（`platform=web`）**禁止**聊天 `/restart`，避免开着的 Loop 页在进程重启后状态中断。在这两处发 `/restart` 会收到拒绝文案；请改用上表 Settings / CLI / IM。
 
 **验证**：
 

@@ -37,7 +37,7 @@ Default Web console: `http://localhost:3000`
 - Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs — see [`docs/portal-composer.md`](docs/portal-composer.md))
 - Native shells: iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos) (both wrap `/m/chat`; see [`docs/macos-shell.md`](docs/macos-shell.md))
 - Tasks: `/tasks`
-- Settings: `/settings`
+- Settings: `/settings` (use **Service → Restart** here — `/restart` in Web/`/m/chat` is refused so an open Loop page is not bounced)
 
 If you forget the URL or token path:
 
@@ -97,6 +97,7 @@ Supported agent details: `docs/agents.md`
 - Auto-approve **disabled** by default (`AGIM_AUTO_APPROVE=0`): mutating tools go through IM/Web approval cards. Set `AGIM_AUTO_APPROVE=1` for single-operator convenience; with IM messengers configured, also set a strict `AGIM_ALLOWED_USERS=platform:userId,...` (or acknowledge open IM with `AGIM_AUTO_APPROVE_OPEN_IM=1`).
 - Sensitive files/paths are denied by policy (hard-deny, cannot be overridden).
 - Self-protect prevents agents from killing/restarting agim.
+- Chat `/restart` is **IM-admin only**. Web console and Portal `/m/chat` refuse it; restart via Settings → Service or `agim restart` (see [`docs/runbook.md`](docs/runbook.md) §4).
 - Global IM connectors can stay disabled in domestic deployments.
 
 Security reference: `docs/security-hardening.md`

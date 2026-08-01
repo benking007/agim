@@ -36,7 +36,7 @@ agim go
 - 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区引用等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
 - 原生壳：iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos)（均包装 `/m/chat`，见 [`docs/macos-shell.md`](docs/macos-shell.md)）
 - 任务：`/tasks`
-- 设置：`/settings`
+- 设置：`/settings`（重启请用 **服务 → Restart**；Web/`/m/chat` 内 `/restart` 会被拒绝，避免开着的 Loop 页被打断）
 
 忘记入口或 token 时：
 
@@ -95,6 +95,8 @@ Agim Agent 配置详见：`docs/llm-backends.md`
 - Web 默认开启 token 鉴权。
 - 工具自动审批**默认关闭**（`AGIM_AUTO_APPROVE=0`）：变更类工具走 IM/Web 审批卡。单人自用可设 `AGIM_AUTO_APPROVE=1`；若已接入 IM，还需配置严格 `AGIM_ALLOWED_USERS=platform:userId,...`（或显式 `AGIM_AUTO_APPROVE_OPEN_IM=1`）。
 - 敏感路径默认拒绝访问。
+- Self-protect 会拦截 Agent 杀/重启 agim 进程。
+- 聊天 `/restart` **仅 IM 管理员**可用。Web 控制台与 Portal `/m/chat` 会拒绝；请用设置 → 服务 → Restart，或终端 `agim restart`（见 [`docs/runbook.md`](docs/runbook.md) §4）。
 - 海外 IM 可按需启用，国内部署可保持关闭。
 
 安全详情：`docs/security-hardening.md`

@@ -345,7 +345,7 @@ export async function runStartForeground(): Promise<void> {
   try {
     const { startRpcServer } = await import('../core/llm/agim-rpc-server.js')
     const s = await startRpcServer()
-    if (s) console.log('✅ Local RPC bridge ready (bgjob → agim memo/skill/push)')
+    if (s) console.log('✅ Local RPC bridge ready (bgjob / static-token services → agim RPC)')
   } catch (err) {
     console.warn('⚠️  agim RPC bridge failed to start:',
       err instanceof Error ? err.message : String(err))

@@ -1,4 +1,5 @@
-// agim-rpc-server — local RPC bridge for bgjob-spawned subprocesses.
+// agim-rpc-server — local RPC bridge for bgjob-spawned subprocesses
+// and same-host independent services (e.g. iFund).
 //
 // Why this exists (v1.2.97, borrowed from Hermes Agent's "Python script
 // via RPC" pattern):
@@ -25,6 +26,13 @@
 //     RunContext (platform / channelId / threadId / userId). A subprocess
 //     that knows the token can ONLY drive that one IM thread — it
 //     cannot spam push_message into someone else's thread.
+//   - Optional **static** token (`AGIM_RPC_STATIC_TOKEN`) for same-host
+//     independent services that are NOT agim-spawned children (iFund
+//     systemd unit, cron jobs, …). Static tokens have an empty
+//     threadId — `llm_complete` is allowed; `push_message` is refused.
+//     Security boundary remains: socket 0600 + controlled tool surface
+//     (default whitelist is read/write-safe; `llm_complete` is opt-in
+//     via `AGIM_RPC_ALLOWED_TOOLS`).
 //   - Tool whitelist hard-coded to read-only / write-safe agim MCP
 //     tools. Operators can extend via AGIM_RPC_ALLOWED_TOOLS env.
 //     native_exec / fs writes / call_agent / long_task are NOT exposed
@@ -32,7 +40,7 @@
 //
 // Limits intentionally NOT in MVP:
 //   - Per-token rate limit (TODO when first noisy bgjob shows up)
-//   - Per-token cost budget for save_memo / push_message
+//   - Per-token cost budget for save_memo / push_message / llm_complete
 //   - Windows named-pipe alternative (no Windows production targets)
 
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
@@ -46,6 +54,7 @@ import { AGIM_HOME } from '../agim-paths.js'
 import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleSkillsOp } from '../skills-rpc.js'
+import { handleLlmOp, type LlmCompleteArgs } from './llm-rpc.js'
 
 const log = rootLogger.child({ component: 'agim-rpc' })
 
@@ -58,7 +67,8 @@ export interface RpcContext {
 
 interface TokenEntry {
   ctx: RpcContext
-  /** ms-epoch expiry. After this time the token is rejected. */
+  /** ms-epoch expiry. After this time the token is rejected.
+   *  Use Number.MAX_SAFE_INTEGER for non-expiring static tokens. */
   expiresAt: number
   /** Where the token was minted from — purely for diagnostic logs. */
   origin: string
@@ -73,6 +83,7 @@ const DEFAULT_TTL_MS = (() => {
   return Number.isFinite(n) && n > 0 ? n : 24 * 60 * 60 * 1000
 })()
 
+/** Default allowlist — intentionally excludes `llm_complete` (opt-in). */
 const DEFAULT_ALLOWED_TOOLS = [
   'mcp__agim__search_memos',
   'mcp__agim__save_memo',
@@ -107,6 +118,33 @@ export function revokeRpcToken(token: string): void {
   tokens.delete(token)
 }
 
+/**
+ * Register `AGIM_RPC_STATIC_TOKEN` (if set) into the token map for
+ * same-host independent services. Idempotent — re-registering the
+ * same value refreshes expiry. Returns true when a token was registered.
+ *
+ * TTL: `AGIM_RPC_STATIC_TOKEN_TTL_MS` (default 0 = never expires).
+ */
+export function registerStaticRpcTokenFromEnv(): boolean {
+  const token = (process.env.AGIM_RPC_STATIC_TOKEN || '').trim()
+  if (!token) return false
+  const ttlRaw = (process.env.AGIM_RPC_STATIC_TOKEN_TTL_MS || '').trim()
+  const ttlMs = ttlRaw ? Number.parseInt(ttlRaw, 10) : 0
+  const expiresAt = Number.isFinite(ttlMs) && ttlMs > 0
+    ? Date.now() + ttlMs
+    : Number.MAX_SAFE_INTEGER
+  tokens.set(token, {
+    ctx: { platform: 'service', channelId: '', threadId: '', userId: '' },
+    expiresAt,
+    origin: 'static',
+  })
+  log.info({
+    event: 'agim-rpc.static_token_registered',
+    expiresAt: expiresAt === Number.MAX_SAFE_INTEGER ? 'never' : expiresAt,
+  }, 'agim RPC static token registered for independent services')
+  return true
+}
+
 function pruneExpired(): void {
   const now = Date.now()
   for (const [t, entry] of tokens) {
@@ -128,7 +166,10 @@ let sweepTimer: NodeJS.Timeout | null = null
  * `null` so the rest of agim boots normally.
  */
 export async function startRpcServer(): Promise<Server | null> {
-  if (server) return server
+  if (server) {
+    registerStaticRpcTokenFromEnv()
+    return server
+  }
   const socketPath = resolveSocketPath()
   try {
     // Make sure the parent dir exists. AGIM_HOME may not have been
@@ -149,6 +190,7 @@ export async function startRpcServer(): Promise<Server | null> {
     server = s
     sweepTimer = setInterval(pruneExpired, 60_000)
     if (sweepTimer.unref) sweepTimer.unref()
+    registerStaticRpcTokenFromEnv()
     log.info({ event: 'agim-rpc.started', socketPath }, `agim RPC server listening on ${socketPath}`)
     return s
   } catch (err) {
@@ -226,7 +268,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       writeJson(res, 401, { ok: false, error: 'invalid or expired token', status: 401 })
       return
     }
-    const raw = await readBody(req)
+    // llm_complete payloads (system + fund bundle) can exceed the default
+    // 256 KiB memo/skill body cap — allow 1 MiB for that tool only.
+    const bodyCap = toolName === 'mcp__agim__llm_complete' ? 1024 * 1024 : 256 * 1024
+    const raw = await readBody(req, bodyCap)
     let parsed: { args?: Record<string, unknown> }
     try {
       parsed = raw ? JSON.parse(raw) : {}
@@ -281,7 +326,18 @@ async function dispatch(
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
     case 'mcp__agim__push_message': {
+      // Static service tokens have no IM thread — refuse push.
+      if (!ctx.threadId) {
+        return {
+          ok: false,
+          error: 'push_message requires a thread-bound RPC token (static service tokens cannot push)',
+        }
+      }
       const r = await handlePushOp(args as { text?: unknown; toThread?: unknown; kind?: unknown }, ctx)
+      return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
+    }
+    case 'mcp__agim__llm_complete': {
+      const r = await handleLlmOp(args as unknown as LlmCompleteArgs)
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
     default:
@@ -295,4 +351,18 @@ async function dispatch(
 /** Internal-only — used by tests to snapshot token state. */
 export function _peekTokensForTests(): Map<string, TokenEntry> {
   return tokens
+}
+
+/** Internal-only — dispatch without HTTP (unit tests). */
+export function _dispatchForTests(
+  toolName: string,
+  args: Record<string, unknown>,
+  ctx: RpcContext,
+): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
+  return dispatch(toolName, args, ctx)
+}
+
+/** Internal-only — whitelist resolution for tests. */
+export function _resolveAllowedToolsForTests(): Set<string> {
+  return resolveAllowedTools()
 }

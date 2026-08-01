@@ -5,6 +5,7 @@
 //   - mintRpcToken + token registry semantics
 //   - resolveSocketPath env override
 //   - the whitelist of tool names exported via DEFAULT
+//   - static token + llm_complete dispatch (mock provider)
 // The handler-with-real-socket integration is covered by manual smoke
 // once the bin/agim_rpc.py script is exercised in a live agim install.
 
@@ -13,8 +14,13 @@ import {
   mintRpcToken,
   revokeRpcToken,
   resolveSocketPath,
+  registerStaticRpcTokenFromEnv,
   _peekTokensForTests,
+  _dispatchForTests,
+  _resolveAllowedToolsForTests,
 } from './agim-rpc-server.js'
+import { loadFromConfig, _resetRegistry } from './registry.js'
+import { _resetLlmRpcRegistryLatchForTests } from './llm-rpc.js'
 
 describe('agim-rpc-server — token registry', () => {
   beforeEach(() => {
@@ -71,5 +77,99 @@ describe('agim-rpc-server — socket path resolution', () => {
   it('falls back to AGIM_HOME/rpc.sock when env is unset', () => {
     delete process.env.AGIM_RPC_SOCKET
     expect(resolveSocketPath()).toMatch(/rpc\.sock$/)
+  })
+})
+
+describe('agim-rpc-server — static token + llm_complete', () => {
+  const savedStatic = process.env.AGIM_RPC_STATIC_TOKEN
+  const savedStaticTtl = process.env.AGIM_RPC_STATIC_TOKEN_TTL_MS
+  const savedAllowed = process.env.AGIM_RPC_ALLOWED_TOOLS
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    const tokens = _peekTokensForTests()
+    for (const t of Array.from(tokens.keys())) tokens.delete(t)
+    delete process.env.AGIM_RPC_STATIC_TOKEN
+    delete process.env.AGIM_RPC_STATIC_TOKEN_TTL_MS
+    delete process.env.AGIM_RPC_ALLOWED_TOOLS
+    _resetRegistry()
+    _resetLlmRpcRegistryLatchForTests()
+    globalThis.fetch = originalFetch
+  })
+
+  afterEach(() => {
+    if (savedStatic === undefined) delete process.env.AGIM_RPC_STATIC_TOKEN
+    else process.env.AGIM_RPC_STATIC_TOKEN = savedStatic
+    if (savedStaticTtl === undefined) delete process.env.AGIM_RPC_STATIC_TOKEN_TTL_MS
+    else process.env.AGIM_RPC_STATIC_TOKEN_TTL_MS = savedStaticTtl
+    if (savedAllowed === undefined) delete process.env.AGIM_RPC_ALLOWED_TOOLS
+    else process.env.AGIM_RPC_ALLOWED_TOOLS = savedAllowed
+    _resetRegistry()
+    _resetLlmRpcRegistryLatchForTests()
+    globalThis.fetch = originalFetch
+  })
+
+  it('llm_complete is opt-in via AGIM_RPC_ALLOWED_TOOLS (not in default whitelist)', () => {
+    expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_complete')).toBe(false)
+    process.env.AGIM_RPC_ALLOWED_TOOLS = 'mcp__agim__llm_complete'
+    expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_complete')).toBe(true)
+  })
+
+  it('registers AGIM_RPC_STATIC_TOKEN with empty threadId and origin=static', () => {
+    const token = 'a'.repeat(64)
+    process.env.AGIM_RPC_STATIC_TOKEN = token
+    expect(registerStaticRpcTokenFromEnv()).toBe(true)
+    const entry = _peekTokensForTests().get(token)
+    expect(entry?.origin).toBe('static')
+    expect(entry?.ctx.platform).toBe('service')
+    expect(entry?.ctx.threadId).toBe('')
+    expect(entry?.expiresAt).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it('static token dispatch: llm_complete works; push_message is refused', async () => {
+    const { saveSecret, LLM_SECRETS_PATH } = await import('./secrets.js')
+    const { existsSync, unlinkSync } = await import('node:fs')
+    if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
+    saveSecret('deepseek-v4-pro', 'sk-test')
+    loadFromConfig({
+      llmBackends: [{
+        name: 'deepseek-v4-pro',
+        provider: 'openai-compat',
+        model: 'deepseek-chat',
+        baseUrl: 'https://example.invalid/v1',
+      }],
+    })
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      choices: [{ message: { role: 'assistant', content: 'rpc-ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch
+
+    const token = 'b'.repeat(64)
+    process.env.AGIM_RPC_STATIC_TOKEN = token
+    registerStaticRpcTokenFromEnv()
+    const entry = _peekTokensForTests().get(token)!
+
+    const llm = await _dispatchForTests(
+      'mcp__agim__llm_complete',
+      {
+        backend: 'deepseek-v4-pro',
+        messages: [{ role: 'user', content: 'ping' }],
+      },
+      entry.ctx,
+    )
+    expect(llm.ok).toBe(true)
+    if (llm.ok) {
+      expect((llm.result as { text?: string }).text).toBe('rpc-ok')
+    }
+
+    const push = await _dispatchForTests(
+      'mcp__agim__push_message',
+      { text: 'hello' },
+      entry.ctx,
+    )
+    expect(push.ok).toBe(false)
+    if (!push.ok) expect(push.error).toMatch(/thread-bound|static/)
+
+    if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
   })
 })

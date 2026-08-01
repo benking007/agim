@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, mock } from 'bun:test'
 import {
   callAgentsLaneLabel,
   countCallAgentsTasks,
@@ -46,7 +46,7 @@ describe('subagent-activity pending-lane cleanup', () => {
   })
 
   it('failCallAgentsPendingLanes is a no-op without emit or tasks', () => {
-    const emit = vi.fn()
+    const emit = mock(() => {})
     failCallAgentsPendingLanes(undefined, {
       toolCallId: 'x',
       input: { tasks: [{ agent: 'a', prompt: 'p' }] },

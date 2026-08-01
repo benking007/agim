@@ -142,7 +142,7 @@ describe('agim-rpc-server — static token + llm_complete', () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({
       choices: [{ message: { role: 'assistant', content: 'rpc-ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
 
     const token = 'b'.repeat(64)
     process.env.AGIM_RPC_STATIC_TOKEN = token

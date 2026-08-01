@@ -62,7 +62,7 @@ describe('handleLlmOp', () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({
       choices: [{ message: { role: 'assistant', content: '你好，我是模型。' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
 
     const r = await handleLlmOp({
       backend: 'deepseek-v4-pro',

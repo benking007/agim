@@ -323,8 +323,13 @@ function cleanList(raw: unknown, max = 20): string[] {
   return out
 }
 
+/** Sparse override/input — capabilities may omit dims (filled from fallback). */
+export type AgentProfilePatch = Omit<Partial<AgentProfile>, 'capabilities'> & {
+  capabilities?: Partial<CapabilityMap>
+}
+
 export function normalizeAgentProfile(
-  raw: Partial<AgentProfile> | null | undefined,
+  raw: AgentProfilePatch | null | undefined,
   fallback?: AgentProfile,
 ): AgentProfile {
   const base = fallback ?? {
@@ -349,7 +354,7 @@ export function normalizeAgentProfile(
   }
 }
 
-export type AgentProfileOverrides = Record<string, Partial<AgentProfile>>
+export type AgentProfileOverrides = Record<string, AgentProfilePatch>
 
 /** Merge builtin defaults with config overrides (canonical ids only). */
 export function mergeAgentProfiles(

@@ -51,16 +51,17 @@ export async function handleLoopApi(
     await handleListLoops(res, url)
     return true
   }
-  const report = /^\/api\/loops\/([^/]+)\/report$/.exec(p)
-  if (report && m === 'GET') {
+  // Named *Match bindings are scraped into tools/endpoints.json.
+  const loopReportMatch = p.match(/^\/api\/loops\/([^/]+)\/report$/)
+  if (loopReportMatch && m === 'GET') {
     if (!requireAdmin(req, res)) return true
-    await handleGetLoopReport(res, decodeURIComponent(report[1]!))
+    await handleGetLoopReport(res, decodeURIComponent(loopReportMatch[1]!))
     return true
   }
-  const detail = /^\/api\/loops\/([^/]+)$/.exec(p)
-  if (detail && m === 'GET') {
+  const loopIdMatch = p.match(/^\/api\/loops\/([^/]+)$/)
+  if (loopIdMatch && m === 'GET') {
     if (!requireAdmin(req, res)) return true
-    await handleGetLoopById(res, url, decodeURIComponent(detail[1]!))
+    await handleGetLoopById(res, url, decodeURIComponent(loopIdMatch[1]!))
     return true
   }
   return false

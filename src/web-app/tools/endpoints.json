@@ -33,7 +33,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 122,
+  "count": 124,
   "endpoints": [
     {
       "method": "DELETE",
@@ -279,6 +279,18 @@
       "method": "GET",
       "path": "/api/loops",
       "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/loops/:id",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/loops/:id/report",
+      "source": "dynamic",
       "authRequired": true
     },
     {

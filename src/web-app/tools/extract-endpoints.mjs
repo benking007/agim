@@ -55,6 +55,8 @@ const dynamicRoutes = {
   approvalResolveMatch: [['POST', '/api/approvals/:reqId/resolve']],
   removeMatch: [['DELETE', '/api/mcp/servers/:name']],
   healthMatch: [['POST', '/api/mcp/servers/:name/health']],
+  loopIdMatch: [['GET', '/api/loops/:id']],
+  loopReportMatch: [['GET', '/api/loops/:id/report']],
 }
 
 const ignoredDynamicMatches = new Set([

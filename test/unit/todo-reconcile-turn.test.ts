@@ -31,7 +31,7 @@ describe('reconcileTodoOnSuccessfulTurn', () => {
     expect(getTodoForThread(KEY)?.at(-1)?.status).toBe('completed')
   })
 
-  it('no-ops when pending items remain', async () => {
+  it('completes remaining pending items on successful turn end', async () => {
     const write = buildTodoDispatcher(KEY)
     await write({
       id: '1',
@@ -45,7 +45,8 @@ describe('reconcileTodoOnSuccessfulTurn', () => {
       },
     }, new AbortController().signal)
 
-    expect(reconcileTodoOnSuccessfulTurn(KEY)).toBeNull()
-    expect(getTodoForThread(KEY)?.at(-1)?.status).toBe('pending')
+    const next = reconcileTodoOnSuccessfulTurn(KEY)
+    expect(next?.every((it) => it.status === 'completed')).toBe(true)
+    expect(getTodoForThread(KEY)?.at(-1)?.status).toBe('completed')
   })
 })

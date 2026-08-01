@@ -9,11 +9,37 @@
 //     loop will surface the message to the model.
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { clearAgentCache } from '../onboarding.js'
+import { registry } from '../registry.js'
 import { buildAgimDispatcher, getAgimTools } from './agim-dispatcher.js'
+import { loadFromConfig, _resetRegistry } from './registry.js'
+import { LLM_SECRETS_PATH, saveSecret } from './secrets.js'
+
+let pluginsLoaded = false
+
+/** Register built-ins + mock LLM so Agim passes the call_agents dispatch probe. */
+async function seedAgimAvailable(): Promise<void> {
+  if (!pluginsLoaded) {
+    await registry.loadBuiltInPlugins()
+    pluginsLoaded = true
+  }
+  if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
+  saveSecret('native-mock', 'sk-test')
+  loadFromConfig({
+    llmBackends: [{ name: 'native-mock', provider: 'openai-compat', model: 'gpt' }],
+  })
+  clearAgentCache()
+}
+
+function clearAgimSeed(): void {
+  _resetRegistry()
+  clearAgentCache()
+  if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
+}
 
 const NOOP_SIGNAL = new AbortController().signal
 
@@ -306,6 +332,9 @@ describe('buildAgimDispatcher', () => {
       }
     }
 
+    beforeEach(async () => { await seedAgimAvailable() })
+    afterEach(() => clearAgimSeed())
+
     it('refuses empty tasks', async () => {
       const d = buildAgimDispatcher(CTX)
       const r = await d(
@@ -439,7 +468,8 @@ describe('buildAgimDispatcher', () => {
       parallel: process.env.AGIM_SUBAGENT_PARALLEL,
     }
 
-    beforeEach(() => {
+    beforeEach(async () => {
+      await seedAgimAvailable()
       dir = mkdtempSync(join(tmpdir(), 'loop-cap-reset-'))
       process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
       process.env.AGIM_A2A_ENABLED = '0'
@@ -448,6 +478,7 @@ describe('buildAgimDispatcher', () => {
     })
 
     afterEach(() => {
+      clearAgimSeed()
       if (SAVED.loops === undefined) delete process.env.AGIM_LOOPS_DIR
       else process.env.AGIM_LOOPS_DIR = SAVED.loops
       if (SAVED.a2a === undefined) delete process.env.AGIM_A2A_ENABLED

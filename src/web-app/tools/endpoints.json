@@ -33,7 +33,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 122,
+  "count": 124,
   "endpoints": [
     {
       "method": "DELETE",
@@ -273,6 +273,24 @@
       "method": "GET",
       "path": "/api/loop",
       "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/loops",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/loops/:id",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/loops/:id/report",
+      "source": "dynamic",
       "authRequired": true
     },
     {
@@ -578,12 +596,6 @@
     {
       "method": "POST",
       "path": "/api/loop/confirm-met",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/loop/generate-report",
       "source": "exact",
       "authRequired": true
     },

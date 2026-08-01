@@ -28,7 +28,12 @@ export interface BackendProfile {
   capabilityNotes?: CapabilityNotes
 }
 
-export type BackendProfileOverrides = Record<string, Partial<BackendProfile>>
+/** Sparse override/input — capabilities may omit dims (filled from inference). */
+export type BackendProfilePatch = Omit<Partial<BackendProfile>, 'capabilities'> & {
+  capabilities?: Partial<CapabilityMap>
+}
+
+export type BackendProfileOverrides = Record<string, BackendProfilePatch>
 
 /** Heuristic defaults when name/model looks like a known family. */
 export function inferBackendProfile(opts: {
@@ -121,7 +126,7 @@ export function inferBackendProfile(opts: {
 }
 
 export function normalizeBackendProfile(
-  raw: Partial<BackendProfile> | null | undefined,
+  raw: BackendProfilePatch | null | undefined,
   fallback: BackendProfile,
 ): BackendProfile {
   const summary = typeof raw?.summary === 'string' ? raw.summary.trim().slice(0, 500) : ''
@@ -148,7 +153,7 @@ export function readBackendProfileOverrides(config: unknown): BackendProfileOver
     const name = key.trim()
     if (!name) continue
     if (!val || typeof val !== 'object' || Array.isArray(val)) continue
-    out[name] = val as Partial<BackendProfile>
+    out[name] = val as BackendProfilePatch
   }
   return out
 }

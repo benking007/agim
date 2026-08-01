@@ -160,6 +160,7 @@ function SubagentRow({
           </span>
           {elapsedMs != null && (
             <span
+              role="timer"
               className={cn(
                 'shrink-0 tabular-nums text-[11px] tracking-tight',
                 dark ? 'text-teal-400/90' : 'text-teal-700',

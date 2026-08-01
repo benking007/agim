@@ -148,13 +148,25 @@ describe('todo-dispatcher (v1.2.124)', () => {
 
     it('rejects invalid status', async () => {
       const d = buildTodoDispatcher('thread-a')
+      // `done` / `complete` alias to completed; use a truly unknown token.
       const r = await d({
         id: 't8',
         name: 'agim_todo_write',
-        arguments: { items: [{ content: 'X', status: 'done' }] },
+        arguments: { items: [{ content: 'X', status: 'bogus' }] },
       }, SIG)
       expect(r.isError).toBe(true)
       expect(r.text).toMatch(/status must be one of/)
+    })
+
+    it('aliases done → completed', async () => {
+      const d = buildTodoDispatcher('thread-a')
+      const r = await d({
+        id: 't8b',
+        name: 'agim_todo_write',
+        arguments: { items: [{ content: 'X', status: 'done' }] },
+      }, SIG)
+      expect(r.isError).toBeFalsy()
+      expect(r.text).toMatch(/☑/)
     })
 
     it('rejects content > 500 chars', async () => {

@@ -68,7 +68,8 @@ function runWsTurn(text, { timeoutMs = 90_000 } = {}) {
 }
 
 async function cdpSend(ws, method, params = {}, sessionId) {
-  const id = cdpSend._id = (cdpSend._id || 0) + 1
+  cdpSend._id = (cdpSend._id || 0) + 1
+  const id = cdpSend._id
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`cdp timeout ${method}`)), 30_000)
     const onMsg = (raw) => {

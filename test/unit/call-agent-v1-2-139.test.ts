@@ -234,7 +234,11 @@ describe('v1.2.139 — CallAgentOpts.planMode propagation', () => {
     ctrl.abort()
 
     const result = await run
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toContain('aborted')
+    // Cancel is a soft outcome: parent gets partial guidance with ok=true.
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cancelled).toBe(true)
+      expect(result.result).toMatch(/stopped by user|Partial output/i)
+    }
   })
 })

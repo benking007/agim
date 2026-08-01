@@ -277,6 +277,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/loops",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/mcp",
       "source": "exact",
       "authRequired": true
@@ -578,12 +584,6 @@
     {
       "method": "POST",
       "path": "/api/loop/confirm-met",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/loop/generate-report",
       "source": "exact",
       "authRequired": true
     },

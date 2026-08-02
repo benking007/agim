@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **`AGIM_NATIVE_TURN_TIMEOUT_MS` default 30 → 60 minutes**: Agim Agent
+  whole-turn watchdog was aborting long Loop / multi-Subagent runs mid-
+  flight. Override still via env / Settings env keys.
+
 ### Fixed
 
 - **Loop still "continuing" after laptop sleep/wake**: when Subagents

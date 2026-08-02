@@ -8,6 +8,8 @@ import {
   createInlineJob,
   getJob,
   jobThreadKey,
+  markJobCompleted,
+  markJobRunning,
 } from './job-board.js'
 import {
   applyLoopVerdict,
@@ -24,6 +26,7 @@ import {
   listLoopRuns,
   noteLoopDispatch,
   noteLoopRoundJob,
+  notifyLoopJobTerminal,
   countLoopChildJobs,
   parseExitConstraints,
   parseLoopStartText,
@@ -38,6 +41,7 @@ import {
   onLoopRunWritten,
   readLoopReportMarkdown,
   resolveLoopReportsDir,
+  toLoopStatusDto,
   _historyPathForTests,
   _touchLoopCreatedAtForTests,
 } from './loop-run.js'
@@ -428,6 +432,61 @@ describe('loop-run R1 ALIGNING', () => {
     })
     expect(countRoundLiveSubagents(started.run)).toBe(0)
     void stray
+  })
+
+  it('notifyLoopJobTerminal writeRuns so docks leave 待派工 after Codex finishes', () => {
+    reset()
+    const threadId = 'loop-job-terminal-resync'
+    const focus = setFocus({ ...base, threadId, title: '上下文' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出：验收通过或最多3轮',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    noteLoopDispatch(base.platform, base.channelId, threadId, {
+      count: 1,
+      tasks: [{ id: '1', brief: 'fix login', agentHint: 'codex' }],
+    })
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const jobId = createInlineJob({
+      agent: 'codex',
+      prompt: 'fix login',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    if (jobId <= 0) return
+    noteLoopRoundJob(base.platform, base.channelId, threadId, jobId)
+    expect(markJobRunning(jobId)).toBe(true)
+    const liveRun = getActiveLoop(base.platform, base.channelId, threadId)
+    expect(liveRun).toBeTruthy()
+    if (!liveRun) return
+    expect(countRoundLiveSubagents(liveRun)).toBe(1)
+    expect(toLoopStatusDto(liveRun).canVerify).toBe(false)
+
+    let writes = 0
+    const off = onLoopRunWritten((run) => {
+      if (run.threadId === threadId) writes += 1
+    })
+    markJobCompleted(jobId, 'login fixed')
+    notifyLoopJobTerminal(base.platform, base.channelId, threadId, jobId, {
+      outcome: 'completed',
+      agent: 'codex',
+    })
+    off()
+
+    expect(writes).toBeGreaterThan(0)
+    const after = getActiveLoop(base.platform, base.channelId, threadId)
+    expect(after).toBeTruthy()
+    if (!after) return
+    expect(countRoundLiveSubagents(after)).toBe(0)
+    const dto = toLoopStatusDto(after)
+    expect(dto.bucket).toBe('verify')
+    expect(dto.canVerify).toBe(true)
+    expect(dto.liveSubagents).toBe(0)
+    expect(after.timeline.some((t) => t.kind === 'subagent_terminal')).toBe(true)
   })
 
   it('loop_verdict stop ends confirmed loop (path B focus off)', () => {

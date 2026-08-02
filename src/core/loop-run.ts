@@ -209,7 +209,7 @@ export interface LoopMission {
 
 export interface LoopTimelineEntry {
   at: number
-  kind: 'executor' | 'observer' | 'user' | 'system'
+  kind: 'executor' | 'observer' | 'user' | 'system' | 'subagent_terminal'
   summary: string
 }
 
@@ -1032,6 +1032,53 @@ export function noteLoopRoundJob(
   }
   run.updatedAt = Date.now()
   writeRun(run)
+}
+
+/**
+ * After an A2A Subagent job reaches a terminal status, touch the Loop
+ * snapshot so `loop-changed` fires and Portal docks recompute
+ * `liveSubagents` / `canVerify` immediately — not only on the next 4s poll.
+ *
+ * Without this, Codex (etc.) can finish while the dock stays on「待派工」
+ * until a coincidental writeRun (or the parent turn eventually continues).
+ */
+export function notifyLoopJobTerminal(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  jobId: number,
+  opts: { outcome?: string; agent?: string } = {},
+): void {
+  if (!Number.isFinite(jobId) || jobId <= 0) return
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run || run.status === 'aligning' || run.status === 'ended') return
+  const inRound = Array.isArray(run.roundJobIds) && run.roundJobIds.includes(jobId)
+  const inLoop = Array.isArray(run.loopJobIds) && run.loopJobIds.includes(jobId)
+  if (!inRound && !inLoop) return
+
+  const live = countRoundLiveSubagents(run)
+  const agent = (opts.agent || '').trim().slice(0, 40)
+  const outcome = (opts.outcome || 'terminal').trim().slice(0, 40)
+  const label = agent ? `${agent} #${jobId}` : `#${jobId}`
+  run.timeline = Array.isArray(run.timeline) ? run.timeline : []
+  run.timeline.push({
+    at: Date.now(),
+    kind: 'subagent_terminal',
+    summary: `Subagent ${label} → ${outcome}`
+      + (live > 0 ? `（本轮仍有 ${live} 个在跑）` : '（本轮 Subagent 已全部结束）'),
+  })
+  if (run.timeline.length > 200) run.timeline = run.timeline.slice(-200)
+  run.updatedAt = Date.now()
+  writeRun(run)
+  log.info({
+    event: 'loop.job_terminal',
+    threadId,
+    jobId,
+    outcome,
+    agent: agent || undefined,
+    liveRemaining: live,
+    canVerify: live === 0 && (run.dispatchesThisRound || 0) > 0,
+  }, `Loop job #${jobId} terminal; liveRemaining=${live}`)
 }
 
 function clearRoundJobs(run: LoopRun): void {

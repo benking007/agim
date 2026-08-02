@@ -40,12 +40,14 @@
     "truncatedBadge": "已截断",
     "save":      "保存",
     "saving":    "保存中…",
+    "download":  "下载",
     "savedMeta": "已保存 · {{size}} 字节 · {{at}}",
     "dirtyHint": "有未保存的修改",
     "loadFailed":"加载文件失败"
   },
   "toast": {
     "saved":     "已保存 {{path}}",
-    "created":   "已创建 {{path}}"
+    "created":   "已创建 {{path}}",
+    "downloaded":"已下载 {{path}}"
   }
 }

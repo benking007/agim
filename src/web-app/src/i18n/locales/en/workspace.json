@@ -40,12 +40,14 @@
     "truncatedBadge": "Truncated",
     "save":      "Save",
     "saving":    "Saving…",
+    "download":  "Download",
     "savedMeta": "Saved · {{size}} bytes · {{at}}",
     "dirtyHint": "Unsaved changes",
     "loadFailed":"Failed to load file"
   },
   "toast": {
     "saved":     "Saved {{path}}",
-    "created":   "Created {{path}}"
+    "created":   "Created {{path}}",
+    "downloaded":"Downloaded {{path}}"
   }
 }

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Workspace file editor Download**: Agent Files (`/workspace`) text
+  editor toolbar gains **Download** next to Save — exports the current
+  draft (incl. unsaved edits) via Save As / browser download. Useful for
+  research reports and notes. i18n: `workspace.editor.download`.
+
 ### Changed
 
 - **DeepSeek V4 compat hardening (P0–P3)**: Agim Agent thinking map now

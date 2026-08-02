@@ -40,12 +40,13 @@ agim 1.2.0 把长期记忆做成两层：
 ### 2.1 默认（仅 FTS5，最轻）
 
 ```bash
-# 在 IM 里发：
-/restart                                   # 或 web Safety 卡
-
-# 或终端
+# 写 env 后重启（任选其一）：
+#   · 终端：agim restart  /  systemctl restart agim
+#   · Web：设置 → 服务 → Restart
+#   · IM 管理员：/restart 或「重启服务」
+# 注意：Web 控制台 / Portal /m/chat 内发 /restart 会被拒绝。
 echo 'AGIM_MEMORY_ENABLED=1' >> ~/.agim/env
-sudo systemctl restart agim
+agim restart
 ```
 
 启用后立刻：

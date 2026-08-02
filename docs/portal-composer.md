@@ -145,6 +145,8 @@ Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry�
 
 契约与门禁见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。Tasks 审计见同文 §6.3.1（`/tasks/loops`）。
 
+**重启护栏**：在 Portal（及 Web 控制台 `/`）聊天里发 `/restart` **不会**重启服务——会直接拒绝，以免进程重启打断当前 Loop 底栏。运维重启请用 **设置 → 服务 → Restart**，或终端 `agim restart`；IM 管理员仍可用 `/restart`（见 [`runbook.md`](./runbook.md) §4）。
+
 ## 输入性能（长 Context）
 
 主输入 `inputMessage` 仍挂在 `AgentPortal`，但按键时：
@@ -176,3 +178,4 @@ Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry�
 - **审批模式切换**（`/api/policy/auto-approve`）：任意已认证可读可写（单用户本机产品面）
 - Workspace / agim-skills **写入**：仍需 admin
 - 媒体文件读取：路径限制在 web media 根下
+- **`/restart`**：Portal / Web 聊天拒绝（`platform=web`）；Settings → 服务 或 CLI / IM admin 仍可重启

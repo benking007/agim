@@ -12,9 +12,24 @@ import type { RouteContext } from '../router.js'
 import { isAdmin, denialMessage } from '../admin-allowlist.js'
 import { initiateRestart, type RestartInitiator } from '../restart-flow.js'
 
+/** Refuse chat-driven restart from web console / Portal `/m/chat`.
+ *  Both surfaces use `platform: 'web'`. Operators restart via Settings →
+ *  Service or `agim restart` instead — those paths skip this handler. */
+export const WEB_CHAT_RESTART_REFUSED =
+  '🚫 Web / 移动端聊天不能重启 Agim（避免重启后当前页 Loop 状态中断）。\n' +
+  '   请改用：设置 → 服务 → Restart，或终端运行 `agim restart`。\n' +
+  '🚫 Restart from web/mobile chat is not allowed (avoids dropping in-page Loop state).\n' +
+  '   Use Settings → Service → Restart, or run `agim restart` in a terminal.'
+
 /** /restart [-y] — graceful service restart with pre-flight + ack +
  *  completion message after the new daemon comes up. */
 export async function handleRestartCommand(args: string, ctx: RouteContext): Promise<string> {
+  // Hard refuse before admin check — even a promoted `web:…` admin must
+  // not bounce the daemon from the open chat tab.
+  if (ctx.platform === 'web') {
+    return WEB_CHAT_RESTART_REFUSED
+  }
+
   if (!isAdmin(ctx.platform, ctx.userId)) {
     return denialMessage(ctx.platform, ctx.userId)
   }

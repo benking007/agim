@@ -310,11 +310,12 @@ export AGIM_VIEWER_TUNNEL_MODE=off
 
 | 触发 | restart | stop | start |
 |---|---|---|---|
-| Web `/api/service/*` | reap + `systemctl restart` | `systemctl stop` + reap | `systemctl start` 或 alreadyRunning |
-| IM `/restart` `/stop` + NL | reap + `systemctl restart` | `systemctl stop` + 延迟 reap | (无 IM start) |
+| Web `/api/service/*`（Settings → 服务） | reap + `systemctl restart` | `systemctl stop` + reap | `systemctl start` 或 alreadyRunning |
+| IM `/restart` `/stop` + NL（admin） | reap + `systemctl restart` | `systemctl stop` + 延迟 reap | (无 IM start) |
+| Web 聊天 `/` · Portal `/m/chat` | **拒绝**（`handleRestartCommand`，`platform=web`） | `/stop` 仍走既有 admin 门禁 | — |
 | CLI `agim restart`/`stop` | `systemctl restart` | `stopService → systemctl stop` | `agim start` 前台 |
 
-**保证**：systemd 永远是单一权威，三种触发源在 systemd 模式下全部一致。
+**保证**：systemd 永远是单一权威；允许的触发源在 systemd 模式下一致。Web/`/m/chat` 聊天重启被硬拒绝，防止开着的 Loop 页被 bounce。
 
 ### 7.2 反 EADDRINUSE 三道防线
 

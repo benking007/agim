@@ -7,11 +7,11 @@ Agim 是一个 **IM 到 AI Agent 的桥接系统**。
 
 ## 项目重点
 
-- **桥接优先**：微信 / 飞书 / 钉钉 / 邮件接入多类 Agent。
+- **桥接优先**：微信 / 飞书 / 钉钉 / 邮件接入多类 Agent。Telegram / Discord 默认隐藏，需 `AGIM_ENABLE_GLOBAL_IM=1`。
 - **后端灵活**：Claude Code、Codex、GitHub Copilot CLI、OpenCode、Cursor、Kimi Code、Qoder、PI、MiMo Code、Antigravity、Agim Agent（进程内 LLM）。
-- **AI 能力成套**：记忆、技能、长目标、心跳、提醒、备忘、结构化提问。
+- **AI 能力成套**：记忆、技能、聚焦（Focus）、Loop 工程、子代理（`call_agent` / `call_agents`）、心跳、提醒、备忘、结构化提问。
 - **运行可靠**：SQLite outbox（at-least-once 投递）、重启恢复、任务看板、审计日志。生产环境硬依赖 Node 原生 `better-sqlite3`；无 SQLite 时 outbox 不可用。
-- **安全默认开启**：token 鉴权、敏感路径拦截；工具自动审批默认开（单人自用）。面向非受信 IM 时请按加固清单收紧。
+- **安全默认开启**：token 鉴权、敏感路径拦截。工具自动审批**默认关闭**（`AGIM_AUTO_APPROVE=0`）；单人自用可设 `AGIM_AUTO_APPROVE=1`（接入 IM 时还需严格发送者白名单）。
 
 ## 快速开始
 
@@ -26,16 +26,16 @@ agim go
 
 `agim go` 会做三件事：
 
-1. 检测本机可用的 Agent（Claude Code / Codex / GitHub Copilot CLI / Cursor / Kimi Code / Qoder / PI / MiMo Code / Agim Agent 等）。
+1. 检测本机可用的 Agent（Claude Code / Codex / GitHub Copilot CLI / Cursor / Kimi Code / Qoder / PI / MiMo Code / Antigravity / Agim Agent 等）。
 2. 如果没有可用 Agent，引导你配置 Agim Agent 的大模型 API。
 3. 后台启动 Agim，并打印 Web 控制台地址。首次启动会把一次性 token 写到 `~/.agim/web-bootstrap-token`（需要时用 `agim token bootstrap` 查看）。本机 `127.0.0.1` 访问通常可免登。
 
 默认 Web 控制台：`http://localhost:3000`
 
 - 对话：`/`
-- 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区引用等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
+- 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区、Focus / Loop 底栏等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
 - 原生壳：iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos)（均包装 `/m/chat`，见 [`docs/macos-shell.md`](docs/macos-shell.md)）
-- 任务：`/tasks`
+- 任务：`/tasks`（Loop 审计：`/tasks/loops`）
 - 设置：`/settings`
 
 忘记入口或 token 时：
@@ -70,7 +70,7 @@ agim doctor
 
 | 场景 | 推荐路径 |
 |---|---|
-| 编码与复杂任务 | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
+| 编码与复杂任务 | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` / `antigravity` |
 | 低成本 API 直连 | `agim`（别名 `native`）+ `llmBackends` |
 
 Agim Agent 配置详见：`docs/llm-backends.md`
@@ -83,36 +83,43 @@ Agim Agent 配置详见：`docs/llm-backends.md`
 |---|---|---|
 | 长期记忆 | facts + persona，可选向量召回 | `docs/memory-and-vector.md` |
 | Skills | `SKILL.md` 统一技能层 | `docs/skills.md` |
-| 长目标 | 会话级持续目标（`/goal`） | `docs/goals.md` |
+| 聚焦 Focus | 会话级注意力锚点（`/focus`） | `docs/architecture/focus.md` |
+| Loop 工程 | 对齐 → 派工 → 验收（`/loop`；Agim 粘性父代理；Portal 底栏） | `docs/architecture/loop-engineering.md` |
+| 子代理 / A2A | 嵌套 `call_agent` / `call_agents` + 专长画像 | `docs/architecture/subagent.md`、`docs/architecture/agent-profiles.md` |
 | 心跳调度 | 周期性主动执行（`/heartbeat`） | `docs/architecture/reminders.md` |
 | ask_user | Agent 发起结构化选择题 | `docs/ask-user.md` |
 | 提醒 | 一次性/周期性提醒 | `docs/architecture/reminders.md` |
 | 备忘 | 5W1H 持久记录，支持位置信息 | `docs/im-workspaces-guide.md` |
-| A2A | Agent 间调用与可追踪链路 | `CHANGELOG.md` |
 
 ## 安全与合规
 
 - Web 默认开启 token 鉴权。
 - 工具自动审批**默认关闭**（`AGIM_AUTO_APPROVE=0`）：变更类工具走 IM/Web 审批卡。单人自用可设 `AGIM_AUTO_APPROVE=1`；若已接入 IM，还需配置严格 `AGIM_ALLOWED_USERS=platform:userId,...`（或显式 `AGIM_AUTO_APPROVE_OPEN_IM=1`）。
 - 敏感路径默认拒绝访问。
-- 海外 IM 可按需启用，国内部署可保持关闭。
+- Self-protect 会拦截 Agent 杀/重启 agim 进程。
+- 聊天 `/restart` **仅 IM 管理员**可用。Web 控制台与 Portal `/m/chat` 会拒绝；请用设置 → 服务 → Restart，或终端 `agim restart`（见 [`docs/runbook.md`](docs/runbook.md) §4）。
+- Telegram / Discord 需 `AGIM_ENABLE_GLOBAL_IM=1`（国内部署默认关闭）。
 
 安全详情：`docs/security-hardening.md`
 
-## 常用 IM 命令
+## 常用聊天命令
 
 | 命令 | 用途 |
 |---|---|
-| `/cc ...` `/oc ...` `/cx ...` `/co ...` `/cs ...` `/kimi ...` `/qd ...` `/pi ...` `/mimo ...` `/na ...` | 切换/指定 agent |
+| `/cc` `/oc` `/cx` `/co` `/cs` `/kimi` `/qd` `/pi` `/mimo` `/agy` `/na` … | 切换/指定 agent |
 | `/new` | 新会话 |
+| `/focus` `/loop` `/plan` | 聚焦、Loop 工程、Plan 模式 |
+| `/skill` `/skills` | 技能 |
 | `/model` `/models` | 查看/切换模型 |
-| `/goal ...` | 管理长目标 |
-| `/heartbeat ...` | 管理心跳任务 |
-| `/remind ...` | 管理提醒 |
-| `/memo ...` | 管理备忘 |
-| `/job ...` `/cron ...` `/audit ...` `/stats` | 运维命令 |
-| `/outbox ...` | 投递队列操作 |
-| `/a2a ...` | A2A 可观测 |
+| `/abort` | 中止当前 Agent 轮次 |
+| `/btw ...` | 旁路提问（不插队阻塞主队列） |
+| `/approval` | 会话级审批规则 |
+| `/heartbeat` `/remind` `/memo` | 心跳 / 提醒 / 备忘 |
+| `/job` `/cron` `/audit` `/stats` `/outbox` `/a2a` | 运行时 / 投递 / A2A 可观测 |
+| `/agents` `/help` `/status` | 发现与服务状态 |
+| `/restart` `/stop` | IM 管理员服务控制（Web/`/m/chat` 拒绝 `/restart`） |
+
+完整列表在聊天里发 `/help`。
 
 ## 最小配置示例
 
@@ -148,6 +155,7 @@ IM 可选——`messengers` 留空即为纯 Web 控制台；之后再在设置�
 - 运维手册：`docs/runbook.md`
 - 架构立场：`docs/architecture-bridge-and-agim-agent.md`
 - 大模型与派发速查：`docs/llm-backends.md`
+- 本机 Unix RPC（可选 `llm_complete` / 静态 token，供同机服务）：见 `CHANGELOG.md` Unreleased
 - 版本记录：`CHANGELOG.md`
 
 ## 文档导航
@@ -161,6 +169,8 @@ IM 可选——`messengers` 留空即为纯 Web 控制台；之后再在设置�
 - 命令：`agim`
 - 环境变量：`AGIM_*`
 - 数据目录：`~/.agim` 与 `~/.agim-workspaces`
+
+`/goal` 已退役——请改用聚焦（`/focus`）与 Loop（`/loop`）（`docs/goals.md`、`docs/architecture/focus.md`）。
 
 ## 开发
 

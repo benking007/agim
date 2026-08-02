@@ -7,11 +7,11 @@ It is designed for production use: at-least-once persistent delivery, session co
 
 ## What matters
 
-- **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends.
+- **Bridge first**: WeChat / Feishu / DingTalk / Email to multiple agent backends. Telegram / Discord stay hidden unless `AGIM_ENABLE_GLOBAL_IM=1`.
 - **Agent flexibility**: Claude Code, Codex, GitHub Copilot CLI, OpenCode, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, and Agim Agent (in-process LLM).
-- **AI workflows built-in**: memory, skills, goals, heartbeat scheduler, reminders, memos, ask-user.
+- **AI workflows built-in**: memory, skills, Focus, Loop Engineering, Subagents (`call_agent` / `call_agents`), heartbeat, reminders, memos, ask-user.
 - **Reliable runtime**: SQLite outbox (at-least-once delivery), restart recovery, job board, structured audit. Production requires native `better-sqlite3`; without it the outbox is unavailable.
-- **Safety by default**: token auth, sensitive-path denylist, optional global-IM disable. Tool auto-approve is **off** by default; opt in with `AGIM_AUTO_APPROVE=1` (and a strict sender allowlist when IM is enabled).
+- **Safety by default**: token auth, sensitive-path denylist. Tool auto-approve is **off** by default; opt in with `AGIM_AUTO_APPROVE=1` (and a strict sender allowlist when IM is enabled).
 
 ## Quick start
 
@@ -27,16 +27,16 @@ agim go
 
 `agim go` will:
 
-1. Detect usable local agents such as Claude Code, Codex, GitHub Copilot CLI, Cursor, Kimi Code, Qoder, PI, MiMo Code, or Agim Agent.
+1. Detect usable local agents such as Claude Code, Codex, GitHub Copilot CLI, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, or Agim Agent.
 2. Help configure an Agim Agent model API if no agent is ready yet.
 3. Start Agim in the background and print the Web console URL. On first boot a one-time token is written to `~/.agim/web-bootstrap-token` (retrieve with `agim token bootstrap` if needed). Loopback (`127.0.0.1`) usually skips login.
 
 Default Web console: `http://localhost:3000`
 
 - Chat: `/`
-- Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs — see [`docs/portal-composer.md`](docs/portal-composer.md))
+- Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs, Focus / Loop docks — see [`docs/portal-composer.md`](docs/portal-composer.md))
 - Native shells: iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos) (both wrap `/m/chat`; see [`docs/macos-shell.md`](docs/macos-shell.md))
-- Tasks: `/tasks`
+- Tasks: `/tasks` (Loop audit at `/tasks/loops`)
 - Settings: `/settings`
 
 If you forget the URL or token path:
@@ -71,7 +71,7 @@ Common CLI entries:
 
 | Scenario | Recommended path |
 |---|---|
-| Strong coding agent loop | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` |
+| Strong coding agent loop | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` / `antigravity` |
 | API-only, low-cost in-process mode | `agim` (alias `native`) + `llmBackends` |
 
 Agim Agent setup details: `docs/llm-backends.md`
@@ -84,12 +84,13 @@ Supported agent details: `docs/agents.md`
 |---|---|---|
 | Long-term memory | facts + persona, optional vector retrieval | `docs/memory-and-vector.md` |
 | Skills | shared `SKILL.md` capability layer across agents | `docs/skills.md` |
-| Goals | sustained objective per thread (`/goal`) | `docs/goals.md` |
+| Focus | per-thread attention anchor (`/focus`) | `docs/architecture/focus.md` |
+| Loop Engineering | align → dispatch → verify (`/loop`; Agim sticky parent; Portal docks) | `docs/architecture/loop-engineering.md` |
+| Subagent / A2A | nested `call_agent` / `call_agents` + specialty profiles | `docs/architecture/subagent.md`, `docs/architecture/agent-profiles.md` |
 | Heartbeat | periodic proactive loop (`/heartbeat`) | `docs/architecture/reminders.md` |
-| Ask user | structured agent->user choices | `docs/ask-user.md` |
+| Ask user | structured agent→user choices | `docs/ask-user.md` |
 | Reminders | one-shot / recurring reminders | `docs/architecture/reminders.md` |
 | Memos | 5W1H persistent notes with optional location | `docs/im-workspaces-guide.md` |
-| A2A | agent-to-agent calls with traceability | `CHANGELOG.md` |
 
 ## Security defaults
 
@@ -97,24 +98,29 @@ Supported agent details: `docs/agents.md`
 - Auto-approve **disabled** by default (`AGIM_AUTO_APPROVE=0`): mutating tools go through IM/Web approval cards. Set `AGIM_AUTO_APPROVE=1` for single-operator convenience; with IM messengers configured, also set a strict `AGIM_ALLOWED_USERS=platform:userId,...` (or acknowledge open IM with `AGIM_AUTO_APPROVE_OPEN_IM=1`).
 - Sensitive files/paths are denied by policy (hard-deny, cannot be overridden).
 - Self-protect prevents agents from killing/restarting agim.
-- Global IM connectors can stay disabled in domestic deployments.
+- Chat `/restart` is **IM-admin only**. Web console and Portal `/m/chat` refuse it; use Settings → Service → Restart or `agim restart` ([`docs/runbook.md`](docs/runbook.md) §4).
+- Telegram / Discord require `AGIM_ENABLE_GLOBAL_IM=1` (domestic defaults keep them off).
 
 Security reference: `docs/security-hardening.md`
 
-## Essential IM commands
+## Essential chat commands
 
 | Command | Purpose |
 |---|---|
-| `/cc ...` `/oc ...` `/cx ...` `/co ...` `/cs ...` `/kimi ...` `/qd ...` `/pi ...` `/mimo ...` `/na ...` | Route to a target agent |
+| `/cc` `/oc` `/cx` `/co` `/cs` `/kimi` `/qd` `/pi` `/mimo` `/agy` `/na` … | Route to a target agent |
 | `/new` | Start a new conversation session |
+| `/focus` `/loop` `/plan` | Focus, Loop Engineering, Plan mode |
+| `/skill` `/skills` | Skills |
 | `/model` `/models` | Inspect/switch model (where supported) |
-| `/goal ...` | Manage per-thread long goal |
-| `/heartbeat ...` | Manage heartbeat schedule |
-| `/remind ...` | Manage reminders |
-| `/memo ...` | Manage memo records |
-| `/job ...` `/cron ...` `/audit ...` `/stats` | Runtime operations |
-| `/outbox ...` | Delivery queue operations |
-| `/a2a ...` | A2A runtime visibility |
+| `/abort` | Stop the running agent turn |
+| `/btw ...` | Side question (bypass queue) |
+| `/approval` | Session approval rules |
+| `/heartbeat` `/remind` `/memo` | Schedulers & notes |
+| `/job` `/cron` `/audit` `/stats` `/outbox` `/a2a` | Runtime / delivery / A2A visibility |
+| `/agents` `/help` `/status` | Discovery & service status |
+| `/restart` `/stop` | IM-admin service control (refused on Web/`/m/chat`) |
+
+Type `/help` in chat for the full list.
 
 ## Minimal config shape
 
@@ -150,6 +156,7 @@ Secrets are stored separately from this file. Task dispatch (coding / finance / 
 - Runbook: `docs/runbook.md`
 - Architecture stance: `docs/architecture-bridge-and-agim-agent.md`
 - LLM backends & dispatch cheat sheet: `docs/llm-backends.md`
+- Local Unix RPC (opt-in `llm_complete` / static token for same-host services): see `CHANGELOG.md` Unreleased
 - Full changelog: `CHANGELOG.md`
 
 ## Docs index
@@ -163,6 +170,8 @@ Current public surfaces use the Agim naming consistently:
 - executable: `agim`
 - environment variables: `AGIM_*`
 - data paths: `~/.agim` and `~/.agim-workspaces`
+
+`/goal` is retired — use Focus (`/focus`) and Loop (`/loop`) instead (`docs/goals.md`, `docs/architecture/focus.md`).
 
 ## Development
 

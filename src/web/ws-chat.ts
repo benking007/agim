@@ -166,27 +166,24 @@ export async function sendSessionHistory(
   const { getActiveRun } = await import('./active-runs.js')
   const active = getActiveRun(client.id)
   if (active) {
-    const alreadyOnHistory = history?.messages.some(
-      (m) => m.activity?.runId === active.runId,
-    )
-    // Always replay in-flight runs. Replay finished ones only when the
-    // durable patch hasn't landed on history yet (rare race).
-    if (active.status === 'running' || !alreadyOnHistory) {
-      sendToClient(ws, {
-        type: 'active-run',
-        runId: active.runId,
-        agent: active.agent,
-        startedAt: new Date(active.startedAt).toISOString(),
-        status: active.status,
-        steps: active.steps,
-        partialText: active.partialText,
-        finishedAt: active.finishedAt != null
-          ? new Date(active.finishedAt).toISOString()
-          : undefined,
-        durationMs: active.durationMs,
-        error: active.error,
-      })
-    }
+    // Always replay — including finished runs. Sleep/wake often misses
+    // `done` while the SPA mid-flight guard also refuses HISTORY; skipping
+    // finished active-run then leaves the bubble on stale partial text
+    // even though the summary is already on disk / in this snapshot.
+    sendToClient(ws, {
+      type: 'active-run',
+      runId: active.runId,
+      agent: active.agent,
+      startedAt: new Date(active.startedAt).toISOString(),
+      status: active.status,
+      steps: active.steps,
+      partialText: active.partialText,
+      finishedAt: active.finishedAt != null
+        ? new Date(active.finishedAt).toISOString()
+        : undefined,
+      durationMs: active.durationMs,
+      error: active.error,
+    })
   }
   // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
   // get-history (chat bootstrap does not carry the Loop DTO).

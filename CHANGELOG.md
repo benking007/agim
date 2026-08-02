@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Loop still "continuing" after laptop sleep/wake**: when Subagents
+  finished but the parent turn died without `loop_verdict`,
+  `maybeReapIdleLoopVerify` now ends idle VERIFY (`verify_skipped`) on
+  last-child terminal, `GET /api/loop` poll (visibility resume), and
+  parent-turn `finally`. Parent-in-flight turns are not reaped. Also
+  when the end summary was already persisted but the chat stream did
+  not refresh: HISTORY adopts finished / content-ahead transcripts, and
+  `get-history` always replays finished `active-run` (full text). Docs:
+  `loop-engineering.md` §6 / `portal-composer.md`.
+
 - **Loop dock stalls after Subagent finishes**: A2A job terminal
   (`completed` / `failed` / `cancelled`) now calls `notifyLoopJobTerminal`
   → `writeRun` / `loop-changed`, so Portal `liveSubagents` / `canVerify`

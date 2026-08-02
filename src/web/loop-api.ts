@@ -79,6 +79,14 @@ async function handleGetLoop(res: ServerResponse, url: URL): Promise<void> {
 
   // Active wall truncate on poll — exit must not wait for loop_verdict.
   maybeEnforceLoopExit(platform, channelId, threadId)
+  // Laptop sleep/wake: parent may have died while Subagents finished;
+  // reaping idle VERIFY heals「显示还在继续、活其实做完了」on visibility poll.
+  try {
+    const { maybeReapIdleLoopVerify } = await import('../core/loop-verify-gate.js')
+    maybeReapIdleLoopVerify(platform, channelId, threadId)
+  } catch {
+    /* optional */
+  }
   const run = getLoopRun(platform, channelId, threadId)
   if (!run) {
     sendJson(res, 200, { ok: true, loop: null })

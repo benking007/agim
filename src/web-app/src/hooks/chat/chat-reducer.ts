@@ -247,15 +247,44 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // placeholder / Running accordion. CLI agents (non-agim) take longer,
       // so mobile reconnect/bootstrap often races the in-flight turn —
       // remapping ids then lets DONE miss the bubble and leave status=running.
+      //
+      // Exception (sleep/wake): adopt history when the server is clearly
+      // ahead — finished activity for this runId, more messages, or a
+      // longer last assistant (summary landed; local stream is stale).
       if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
-        return {
-          ...s,
-          agent: a.agent || s.agent,
-          preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
-          planMode: a.planMode ?? s.planMode,
-          thinkVariant: a.thinkVariant ?? s.thinkVariant,
-          sessionModel: a.sessionModel ?? s.sessionModel,
-          compactRate: a.compactRate ?? s.compactRate,
+        const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
+          m.activity?.runId === s.activeRunId
+          && (m.activity.status === 'success' || m.activity.status === 'error')
+        ))
+        const histAhead = a.messages.length > s.messages.length
+        let contentAhead = false
+        if (!finishedInHistory && !histAhead) {
+          let localLen = 0
+          let histLen = 0
+          for (let i = s.messages.length - 1; i >= 0; i--) {
+            if (s.messages[i]?.role === 'assistant') {
+              localLen = s.messages[i]!.content.length
+              break
+            }
+          }
+          for (let i = a.messages.length - 1; i >= 0; i--) {
+            if (a.messages[i]?.role === 'assistant') {
+              histLen = a.messages[i]!.content.length
+              break
+            }
+          }
+          contentAhead = histLen > localLen + 40
+        }
+        if (!finishedInHistory && !histAhead && !contentAhead) {
+          return {
+            ...s,
+            agent: a.agent || s.agent,
+            preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
+            planMode: a.planMode ?? s.planMode,
+            thinkVariant: a.thinkVariant ?? s.thinkVariant,
+            sessionModel: a.sessionModel ?? s.sessionModel,
+            compactRate: a.compactRate ?? s.compactRate,
+          }
         }
       }
       return {

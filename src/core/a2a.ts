@@ -81,6 +81,14 @@ async function resyncLoopAfterJobTerminal(
   } catch {
     /* Loop store optional */
   }
+  // Sleep/wake soft-deadlock: last child finished after parent turn died →
+  // reap idle VERIFY so Portal does not stay on「还在继续」forever.
+  try {
+    const { maybeReapIdleLoopVerify } = await import('./loop-verify-gate.js')
+    maybeReapIdleLoopVerify(ctx.platform, ctx.channelId, ctx.threadId)
+  } catch {
+    /* optional */
+  }
 }
 
 // Default A2A call-chain depth ceiling. A caller at depth D may delegate to

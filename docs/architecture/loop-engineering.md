@@ -360,6 +360,21 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 实现：`src/core/a2a.ts`（终态回调）· `notifyLoopJobTerminal` / `countRoundLiveSubagents`（`loop-run.ts`）。Portal 另以 `GET /api/loop` 轮询兜底。
 
+**休眠 / 唤醒（父轮已死、活已做完）**：
+
+合盖待机后常见：子代理已终态，但父 Agim 轮因 abort/超时没跑到 `loop_verdict`，`forceLoopExitSkippedVerify` 曾因 live>0 推迟且**不再补跑** → Portal 一直「还在继续」。
+
+| 时机 | 行为 |
+|------|------|
+| 最后一子代理终态 | `maybeReapIdleLoopVerify`（父轮不在飞时 → `verify_skipped`） |
+| `GET /api/loop` 轮询 / 可见性恢复 | 同上收割（唤醒后进 Agim 即愈合） |
+| 父轮 finally（含 abort） | 清 `markLoopParentTurnActive` 后再 reap |
+| 父轮仍在飞 | **不** reap（避免抢 `loop_verdict`） |
+
+实现：`loop-parent-turn.ts` · `maybeReapIdleLoopVerify`（`loop-verify-gate.ts`）· `loop-api.ts`。
+
+**也可能只是信息流没刷**：总结已写入 session，但休眠期间丢了 `done`，SPA mid-flight 又拒收 HISTORY，且旧逻辑在 history 已有同 `runId` 时跳过 finished `active-run` → 气泡停在旧 partial。现：HISTORY 在「已结束 / 条数或正文明显超前」时采用；`get-history` **始终**重放 finished `active-run`（含完整 `partialText`）。
+
 #### 中间评审 `ask_user`（VERIFY HITL）
 
 | 触发 | 行为 |
@@ -578,3 +593,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **详细报告=Agent 撰写**：移除确定性拼接 / `generate-report` API；累计 `loopJobIds` 仅用于底栏「约 N 个子代理」提示 |
 | 2026-07-27 | **文档**：交叉 [`agent-profiles.md`](./agent-profiles.md)；CLI sticky 可派工、不可当 Loop 父 → [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |
 | 2026-08-02 | **Subagent 终态立刻同步 dock**：`notifyLoopJobTerminal`→`loop-changed`；多子代理时仍按本轮 live 守候（单个完成 ≠ 验收）；SPA 不误标带 `jobId` 的 agent 卡 |
+| 2026-08-02 | **休眠唤醒空闲验收收割**：`maybeReapIdleLoopVerify`（父轮 idle + live=0 → `verify_skipped`）；`GET /api/loop` / 子代理终态 / 父轮 finally；HISTORY 清除已结束的 stuck Running |

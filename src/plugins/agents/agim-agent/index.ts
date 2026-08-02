@@ -51,7 +51,12 @@ import {
   loopNeedsVerdict,
   loopVerifyFollowUpPrompt,
   loopVerifySteerText,
+  maybeReapIdleLoopVerify,
 } from '../../../core/loop-verify-gate.js'
+import {
+  clearLoopParentTurnActive,
+  markLoopParentTurnActive,
+} from '../../../core/loop-parent-turn.js'
 import {
   forceLoopExitSkippedVerify,
   formatLoopEndedSummary,
@@ -1751,6 +1756,9 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     let result: Awaited<ReturnType<AgentHarness['prompt']>>
     let loopForcedExitSummary: string | undefined
+    if (loopScope) {
+      markLoopParentTurnActive(loopScope.platform, loopScope.channelId, loopScope.threadId)
+    }
     try {
       const promptPromise = harness.prompt(prompt)
       // Covers abort between the final pre-check and listener registration.
@@ -1771,9 +1779,9 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
 
       // Still no verdict after the turn (and optional follow-up) → hard-end.
-      // Do not require loopVerifyFollowUpUsed: if the turn aborted before the
-      // follow-up hop, hanging in 待验收 is worse than a verify_skipped exit.
-      if (loopScope && !stopReason && loopStillNeedsVerdict()) {
+      // Also on stopReason/abort: hanging in 待验收 after sleep/timeout is worse
+      // than verify_skipped (forceLoopExitSkippedVerify defers while live/ask).
+      if (loopScope && loopStillNeedsVerdict()) {
         const forced = forceLoopExitSkippedVerify(
           loopScope.platform,
           loopScope.channelId,
@@ -1798,6 +1806,20 @@ export class NativeAgentAdapter implements AgentAdapter {
       runController.signal.removeEventListener('abort', onRunAbort)
       unsubscribeBeforeStart()
       unsubscribeBudget()
+      if (loopScope) {
+        clearLoopParentTurnActive(loopScope.platform, loopScope.channelId, loopScope.threadId)
+        // prompt() throw / abort before the force-exit block: reap once idle.
+        if (!loopVerdictOkThisTurn) {
+          const reaped = maybeReapIdleLoopVerify(
+            loopScope.platform,
+            loopScope.channelId,
+            loopScope.threadId,
+          )
+          if (reaped.ended && reaped.run && !loopForcedExitSummary) {
+            loopForcedExitSummary = formatLoopEndedSummary(reaped.run)
+          }
+        }
+      }
     }
 
     if (opts?.onUsage && sawUsage) {

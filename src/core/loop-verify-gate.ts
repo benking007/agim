@@ -9,7 +9,17 @@
  */
 
 import { threadHasPendingAsk } from './ask-user-rpc.js'
-import { getActiveLoop, getLoopUxBucket, threadHasLiveSubagents } from './loop-run.js'
+import { isLoopParentTurnActive } from './loop-parent-turn.js'
+import {
+  forceLoopExitSkippedVerify,
+  getActiveLoop,
+  getLoopUxBucket,
+  threadHasLiveSubagents,
+  type LoopExitEnforceResult,
+} from './loop-run.js'
+import { logger as rootLogger } from './logger.js'
+
+const log = rootLogger.child({ component: 'loop-verify-gate' })
 
 /** Default ON when a Loop round is waiting on structured verification. */
 export function isLoopVerifyGateOn(): boolean {
@@ -69,4 +79,40 @@ export function loopVerifyFollowUpPrompt(): string {
     + '否则立刻调用 loop_verdict，对照目标给出 met / summary（未达标则 gaps + nextDirection）。'
     + '不要再写长文报告；验收工具成功后再结束。'
   )
+}
+
+/**
+ * When Subagents are done but the parent turn already ended (sleep/wake,
+ * abort, timeout) without `loop_verdict`, end the Loop as `verify_skipped`
+ * so Portal does not show「还在继续」forever.
+ *
+ * No-op while a parent turn is in-flight (about to verdict) or while
+ * `loopNeedsVerdict` is false (live children / pending ask / …).
+ */
+export function maybeReapIdleLoopVerify(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): LoopExitEnforceResult {
+  const active = getActiveLoop(platform, channelId, threadId)
+  if (!active) return { ended: false, run: null }
+  if (!loopNeedsVerdict(platform, channelId, threadId)) {
+    return { ended: false, run: active }
+  }
+  if (isLoopParentTurnActive(platform, channelId, threadId)) {
+    log.debug({
+      event: 'loop.reap_deferred_parent_active',
+      threadId,
+    }, 'skip idle VERIFY reaper while parent turn in-flight')
+    return { ended: false, run: active }
+  }
+  const r = forceLoopExitSkippedVerify(platform, channelId, threadId)
+  if (r.ended) {
+    log.info({
+      event: 'loop.reap_idle_verify',
+      threadId,
+      reason: r.reason,
+    }, 'reaped idle Loop VERIFY (parent gone; Subagents settled)')
+  }
+  return r
 }

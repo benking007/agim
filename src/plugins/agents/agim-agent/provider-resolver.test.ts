@@ -28,7 +28,12 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.baseUrl).toBe('https://api.deepseek.com')
     expect(binding.model.id).toBe('deepseek-v4-pro')
     expect(binding.model.reasoning).toBe(true)
+    // Official V4 efforts: low stays low; medium (UI) → high; xhigh → max.
+    expect(binding.model.thinkingLevelMap?.low).toBe('low')
+    expect(binding.model.thinkingLevelMap?.medium).toBe('high')
+    expect(binding.model.thinkingLevelMap?.high).toBe('high')
     expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(true)
     expect(binding.costKnown).toBe(true)
     expect(await binding.getApiKeyAndHeaders()).toEqual({ apiKey: 'sk-xxx', headers: { 'x-foo': 'bar' } })
   })
@@ -42,6 +47,9 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     })!
     expect(binding.model.reasoning).toBe(true)
     expect(compatOf(binding.model)?.thinkingFormat).toBe('deepseek')
+    expect(compatOf(binding.model)?.supportsReasoningEffort).toBe(true)
+    expect(binding.model.thinkingLevelMap?.low).toBe('low')
+    expect(binding.model.thinkingLevelMap?.medium).toBe('high')
     expect(binding.model.thinkingLevelMap?.high).toBe('high')
     // Vendor fallback (no catalog row): 1M / 384K matches V4 API defaults.
     expect(binding.model.contextWindow).toBe(1_000_000)

@@ -52,8 +52,37 @@
 //     provider as the turn if `cheap` is unset.
 
 import { logger as rootLogger } from '../logger.js'
-import { getAnyProvider, getProvider } from './registry.js'
+import { getAnyProvider, getBackendBindingByName, getProvider } from './registry.js'
 import type { LlmProvider, LlmMessage, LlmUsage } from './provider-base.js'
+import {
+  isDeepSeekBaseUrl,
+  isKimiBaseUrl,
+  isKimiK2Model,
+  isKimiK3Model,
+  isMimoBaseUrl,
+  isZhipuBaseUrl,
+} from './presets.js'
+
+/** Cheap judgment calls: enable low-effort thinking on DeepSeek/Kimi/GLM/MiMo. */
+function criticProviderOptions(providerName: string, modelId: string): Record<string, unknown> {
+  const opts: Record<string, unknown> = {
+    response_format: { type: 'json_object' },
+  }
+  const binding = getBackendBindingByName(providerName)
+  const baseUrl = binding?.baseUrl
+  const model = modelId || binding?.model || ''
+  if (isDeepSeekBaseUrl(baseUrl)) {
+    opts.thinking = { type: 'enabled' }
+    opts.reasoning_effort = 'low'
+  } else if (isZhipuBaseUrl(baseUrl) || isMimoBaseUrl(baseUrl)) {
+    opts.thinking = { type: 'enabled' }
+  } else if (isKimiBaseUrl(baseUrl) && isKimiK2Model(model)) {
+    opts.thinking = { type: 'enabled' }
+  } else if (isKimiBaseUrl(baseUrl) && isKimiK3Model(model)) {
+    opts.reasoning_effort = 'low'
+  }
+  return opts
+}
 
 const log = rootLogger.child({ component: 'goal-critic' })
 
@@ -260,6 +289,7 @@ export async function runGoalCritic(
     const r = await picked.provider.chat(messages, {
       timeoutMs: opts.timeoutMs ?? 30_000,
       signal: opts.signal,
+      providerOptions: criticProviderOptions(picked.provider.name, picked.provider.model),
     })
     const text = (r.text ?? '').trim()
     if (!text) {
@@ -316,6 +346,7 @@ export async function runGoalCompletionCritic(
     ], {
       timeoutMs: opts.timeoutMs ?? 30_000,
       signal: opts.signal,
+      providerOptions: criticProviderOptions(picked.provider.name, picked.provider.model),
     })
     const parsed = tryParseJson(response.text ?? '') as
       | { completed?: unknown; reason?: unknown }

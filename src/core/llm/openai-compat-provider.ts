@@ -89,6 +89,8 @@ export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'pr
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 const DEFAULT_RETRY = 3
 const BASE_BACKOFF_MS = 250
+/** DeepSeek concurrency (Pro 500 / Flash 2500) + peak pricing → wait longer on 429. */
+const DEEPSEEK_BACKOFF_MS = 750
 const MAX_BACKOFF_MS = 30_000
 
 /** Parse an HTTP `Retry-After` header per RFC 9110: either delta-seconds
@@ -154,6 +156,7 @@ export class OpenAICompatProvider extends LlmProvider {
   private readonly retryOnTransient: number
   private readonly vision: boolean
   private readonly maxTokensField: 'max_tokens' | 'max_completion_tokens'
+  private readonly backoffBaseMs: number
 
   constructor(cfg: OpenAICompatProviderConfig) {
     super({
@@ -163,6 +166,7 @@ export class OpenAICompatProvider extends LlmProvider {
     this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
     this.extraHeaders = cfg.extraHeaders || {}
     this.retryOnTransient = Math.max(0, Math.min(10, cfg.retryOnTransient ?? resolveDefaultRetry()))
+    this.backoffBaseMs = isDeepSeekBaseUrl(this.baseUrl) ? DEEPSEEK_BACKOFF_MS : BASE_BACKOFF_MS
     this.maxTokensField = cfg.maxTokensField === 'max_completion_tokens'
       ? 'max_completion_tokens'
       : 'max_tokens'
@@ -231,6 +235,9 @@ export class OpenAICompatProvider extends LlmProvider {
           buffer = buffer.slice(sep + 2)
           for (const line of frame.split('\n')) {
             const trimmed = line.trim()
+            // DeepSeek (and others) emit SSE comment keep-alives (`: keep-alive`)
+            // and blank lines while queued — skip anything that isn't `data:`.
+            if (!trimmed || trimmed.startsWith(':')) continue
             if (!trimmed.startsWith('data:')) continue
             const payload = trimmed.slice(5).trim()
             if (payload === '[DONE]') {
@@ -347,6 +354,8 @@ export class OpenAICompatProvider extends LlmProvider {
     for (const [k, v] of Object.entries(opts.providerOptions)) {
       if (v !== undefined) body[k] = v
     }
+    // DeepSeek `user_id` (hashed) may be supplied via providerOptions — see
+    // deepseek-compat.hashDeepSeekUserId. Never put raw PII in the body.
     // Thinking mode ignores sampling knobs — drop them so configs don't
     // silently mislead operators (DeepSeek accepts but no-ops them).
     // Kimi K3 fixes temperature/top_p/penalties server-side — omit them.
@@ -425,7 +434,7 @@ export class OpenAICompatProvider extends LlmProvider {
             { httpStatus: resp.status, transient })
         }
         const retryAfterMs = parseRetryAfter(resp.headers.get('retry-after'))
-        await sleep(computeBackoffMs(attempts, retryAfterMs), signal)
+        await sleep(computeBackoffMs(attempts, retryAfterMs, { base: this.backoffBaseMs }), signal)
       } catch (err) {
         // AbortError propagates immediately — callers wired timeouts on
         // purpose and want to bail.
@@ -433,7 +442,7 @@ export class OpenAICompatProvider extends LlmProvider {
         lastErr = err
         if (attempts < maxAttempts) {
           // Transport errors have no Retry-After to consult.
-          await sleep(computeBackoffMs(attempts, null), signal)
+          await sleep(computeBackoffMs(attempts, null, { base: this.backoffBaseMs }), signal)
         }
       }
     }
@@ -471,6 +480,10 @@ interface ChatCompletionUsage {
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
+  /** DeepSeek context-cache hit / miss (prompt_tokens = hit + miss). */
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number }
   /** Some vendors include cost directly (e.g. OpenRouter), most don't. */
   cost?: number
   total_cost?: number
@@ -506,6 +519,15 @@ function extractUsage(json: { usage?: ChatCompletionUsage } | null): LlmUsage {
     promptTokens: typeof u.prompt_tokens === 'number' ? u.prompt_tokens : undefined,
     completionTokens: typeof u.completion_tokens === 'number' ? u.completion_tokens : undefined,
     totalTokens: typeof u.total_tokens === 'number' ? u.total_tokens : undefined,
+  }
+  const cacheHit = typeof u.prompt_cache_hit_tokens === 'number'
+    ? u.prompt_cache_hit_tokens
+    : typeof u.prompt_tokens_details?.cached_tokens === 'number'
+      ? u.prompt_tokens_details.cached_tokens
+      : undefined
+  if (typeof cacheHit === 'number') result.cacheReadTokens = cacheHit
+  if (typeof u.prompt_cache_miss_tokens === 'number') {
+    result.cacheMissTokens = u.prompt_cache_miss_tokens
   }
   const cost = typeof u.cost === 'number' ? u.cost
     : typeof u.total_cost === 'number' ? u.total_cost

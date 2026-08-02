@@ -213,6 +213,24 @@ agim diag llm
 
 Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 pi-ai（`reasoning_effort` 或 `thinking.type`）。
 
+## 8.1 DeepSeek V4 兼容要点
+
+官方文档：<https://api-docs.deepseek.com/>。内置预设已使用 `deepseek-v4-pro` / `deepseek-v4-flash`（Flash 当前为 Flash-0731，调用 id 不变）。旧 id `deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 退役，请勿再配置。
+
+| 项 | Agim 行为 |
+|---|---|
+| 思考开关 | Agim Agent：`thinking.type` + `reasoning_effort`；OpenAICompat 探测/摘要默认关；`evaluator` / goal-critic 默认 `low` |
+| Effort 映射 | Composer `low→low`、`medium→high`、`high→high`、`max/xhigh→max`（`minimal`/`off` 关闭思考） |
+| Tool + CoT | 带 `tools` 时必须回传 `reasoning_content`（pi / OpenAICompat 已做）；非 tool 多轮 API 会忽略历史 CoT |
+| `user_id` | Agim Agent 自动注入 `agim-` + sha256(`platform:userId`) 前 32 hex（不含 PII） |
+| Cache usage | 解析 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，成本按 hit/miss 分计 |
+| SSE keep-alive | 忽略 `: keep-alive` 注释与空帧 |
+| 并发 | 账号级：Pro **500** / Flash **2500**；超限 HTTP 429；DeepSeek 路径使用更长退避 |
+| 计费 | 即将实行峰谷价（北京时间 9–12、14–18 为峰时 2×）；以官方公告为准 |
+| Anthropic / beta strict / Responses | 见 CHANGELOG Unreleased；部分能力按产品开关逐步放开 |
+
+`finance` 角色**不会**在一键启用时自动绑定；需在「任务派发速查」或角色绑定中手动选择。
+
 ## 9. 排障
 
 ### 9.1 提示“no usable LLM backend configured”

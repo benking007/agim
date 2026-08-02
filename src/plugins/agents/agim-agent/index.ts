@@ -75,6 +75,11 @@ import {
   shouldHardStopOnOffTrack,
 } from '../../../core/llm/goal-critic.js'
 import {
+  hashDeepSeekUserId,
+  withDeepSeekUserId,
+} from '../../../core/llm/deepseek-compat.js'
+import {
+  isDeepSeekBaseUrl,
   resolveDefaultThinking,
   mapVariantToThinkingLevel,
 } from '../../../core/llm/presets.js'
@@ -1393,6 +1398,22 @@ export class NativeAgentAdapter implements AgentAdapter {
       providerRequests += 1
       return undefined
     })
+    // DeepSeek user_id isolation (content safety / KV-cache / scheduling).
+    // Hash platform:userId — never send raw IM / Portal identifiers.
+    const deepseekUserId = hashDeepSeekUserId(opts?.platform, opts?.userId)
+    if (deepseekUserId) {
+      harness.on('before_provider_payload', (ev) => {
+        const baseUrl = typeof ev.model?.baseUrl === 'string' ? ev.model.baseUrl : ''
+        const modelId = typeof ev.model?.id === 'string' ? ev.model.id : ''
+        if (!isDeepSeekBaseUrl(baseUrl) && !/^deepseek/i.test(modelId)) return undefined
+        if (!ev.payload || typeof ev.payload !== 'object' || Array.isArray(ev.payload)) {
+          return undefined
+        }
+        return {
+          payload: withDeepSeekUserId(ev.payload as Record<string, unknown>, deepseekUserId),
+        }
+      })
+    }
     const unsubscribeBudget = harness.subscribe(async (event) => {
       if (event.type === 'turn_end' && event.message.role === 'assistant') {
         const calls = (event.message.content ?? []).filter((item) => item.type === 'toolCall')

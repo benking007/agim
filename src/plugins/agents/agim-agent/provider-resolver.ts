@@ -19,6 +19,7 @@ import {
   type LlmBackendBinding,
   type LlmRole,
 } from '../../../core/llm/registry.js'
+import { DEEPSEEK_THINKING_LEVEL_MAP } from '../../../core/llm/deepseek-compat.js'
 import {
   isDeepSeekBaseUrl,
   isGlm52Model,
@@ -45,16 +46,6 @@ const DEFAULT_BASE_URL: Record<string, string> = {
   'openai-completions': 'https://api.openai.com/v1',
   'anthropic-messages': 'https://api.anthropic.com',
 }
-
-/** DeepSeek catalog maps effort levels; keep a local fallback when the
- *  model id is custom but the baseUrl is still DeepSeek. */
-const DEEPSEEK_THINKING_LEVEL_MAP = {
-  minimal: null,
-  low: null,
-  medium: null,
-  high: 'high',
-  xhigh: 'max',
-} as const
 
 /** Kimi K3: always-on thinking via top-level `reasoning_effort`. */
 const KIMI_K3_THINKING_LEVEL_MAP = {
@@ -197,6 +188,7 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
   const overrideCompat = thinkingOverride === 'deepseek'
     ? {
         thinkingFormat: 'deepseek' as const,
+        supportsReasoningEffort: true,
         supportsDeveloperRole: false,
         requiresReasoningContentOnAssistantMessages: true,
         ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),
@@ -215,6 +207,8 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     : deepseek
       ? {
           thinkingFormat: 'deepseek' as const,
+          // Official Chat Completions needs both thinking.type + reasoning_effort.
+          supportsReasoningEffort: true,
           requiresReasoningContentOnAssistantMessages: true,
         }
       : kimiK3

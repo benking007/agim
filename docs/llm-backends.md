@@ -221,13 +221,25 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 |---|---|
 | 思考开关 | Agim Agent：`thinking.type` + `reasoning_effort`；OpenAICompat 探测/摘要默认关；`evaluator` / goal-critic 默认 `low` |
 | Effort 映射 | Composer `low→low`、`medium→high`、`high→high`、`max/xhigh→max`（`minimal`/`off` 关闭思考） |
-| Tool + CoT | 带 `tools` 时必须回传 `reasoning_content`（pi / OpenAICompat 已做）；非 tool 多轮 API 会忽略历史 CoT |
+| Tool + CoT | 带 `tools` 时必须回传 `reasoning_content`（始终回传，不剥离）；空 `content` + `tool_calls` 合法 |
 | `user_id` | Agim Agent 自动注入 `agim-` + sha256(`platform:userId`) 前 32 hex（不含 PII） |
 | Cache usage | 解析 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，成本按 hit/miss 分计 |
 | SSE keep-alive | 忽略 `: keep-alive` 注释与空帧 |
 | 并发 | 账号级：Pro **500** / Flash **2500**；超限 HTTP 429；DeepSeek 路径使用更长退避 |
 | 计费 | 即将实行峰谷价（北京时间 9–12、14–18 为峰时 2×）；以官方公告为准 |
-| Anthropic / beta strict / Responses | 见 CHANGELOG Unreleased；部分能力按产品开关逐步放开 |
+
+### 8.2 DeepSeek 方言与 beta 能力
+
+| 能力 | 如何启用 | 说明 |
+|---|---|---|
+| **OpenAI Chat Completions** | 一键启用默认 / `dialect: openai` | `https://api.deepseek.com` |
+| **Anthropic Messages** | 一键启用选「Anthropic 兼容」/ `dialect: anthropic` | `https://api.deepseek.com/anthropic`；`x-api-key`；`metadata.user_id`；思考用 `thinking.type=enabled` + `output_config.effort` |
+| **strict tools（beta）** | 一键启用勾选 / backend `strictTools: true` / `AGIM_DEEPSEEK_STRICT_TOOLS=1` | 走 `/beta`，工具 schema 规范化（全 properties required + `additionalProperties:false`）并设 `strict:true` |
+| **Chat Prefix（beta）** | 最后一条 assistant 消息设 `prefix: true` | OpenAICompat 自动改打 beta；用于截断续写 |
+| **FIM（beta）** | `OpenAICompatProvider.completeFim()` / `completeDeepSeekFim()` | `POST /beta/completions`；输出上限 4K |
+| **Responses API** | backend `apiSurface: "responses"` 或 `createDeepSeekResponse()` | 目前官方以 flash 为主；Pro 即将支持。Agim Agent 可按 backend 切到 pi `openai-responses` |
+
+切换 OpenAI ↔ Anthropic 方言：先删除 DeepSeek 品牌组，再一键启用并选择方言（同品牌只允许一组）。
 
 `finance` 角色**不会**在一键启用时自动绑定；需在「任务派发速查」或角色绑定中手动选择。
 

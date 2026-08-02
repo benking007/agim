@@ -165,6 +165,8 @@ async function handleQuickEnable(req: IncomingMessage, res: ServerResponse): Pro
     name?: unknown
     model?: unknown
     baseUrl?: unknown
+    dialect?: unknown
+    strictTools?: unknown
     bindCheapRoles?: unknown
     setDefaultAgent?: unknown
   }>(req)
@@ -177,12 +179,17 @@ async function handleQuickEnable(req: IncomingMessage, res: ServerResponse): Pro
     return
   }
   try {
+    const dialect = body.dialect === 'anthropic' || body.dialect === 'openai'
+      ? body.dialect
+      : undefined
     const result = await quickEnableLlmPreset({
       preset: typeof body.preset === 'string' ? body.preset : undefined,
       apiKey: body.apiKey,
       name: typeof body.name === 'string' ? body.name : undefined,
       model: typeof body.model === 'string' ? body.model : undefined,
       baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
+      dialect,
+      strictTools: body.strictTools === true,
       bindCheapRoles: body.bindCheapRoles !== false,
       setDefaultAgent: body.setDefaultAgent !== false,
     })

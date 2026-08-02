@@ -11,6 +11,11 @@ import { clearAgentCache } from '../onboarding.js'
 import { loadFromConfig as loadLlmFromConfig } from './registry.js'
 import { saveSecret } from './secrets.js'
 import {
+  DEEPSEEK_ANTHROPIC_BASE,
+  DEEPSEEK_OPENAI_BASE,
+  type DeepSeekApiDialect,
+} from './deepseek-compat.js'
+import {
   DEFAULT_LLM_PRESET,
   builtinPresetKeyForBaseUrl,
   getLlmPreset,
@@ -30,6 +35,13 @@ export interface QuickEnableInput {
   model?: string
   /** Override base URL (else preset.baseUrl). Required for `custom`. */
   baseUrl?: string
+  /**
+   * DeepSeek API dialect. `openai` (default) → Chat Completions;
+   * `anthropic` → `https://api.deepseek.com/anthropic` + provider anthropic.
+   */
+  dialect?: DeepSeekApiDialect
+  /** DeepSeek: enable beta strict tool schemas (default false). */
+  strictTools?: boolean
   /** Also bind cheap/evaluator (default true; prefers secondary model). */
   bindCheapRoles?: boolean
   /** Set defaultAgent to agim (default true). */
@@ -53,6 +65,8 @@ export interface QuickEnableResult {
   roles: Record<string, string>
   defaultAgent: string
   preset: string
+  dialect?: DeepSeekApiDialect
+  strictTools?: boolean
 }
 
 export class QuickEnableError extends Error {
@@ -71,6 +85,7 @@ interface RawBackend {
   baseUrl: string
   model: string
   label?: string
+  strictTools?: boolean
 }
 
 interface RawConfig {
@@ -86,11 +101,21 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
   if (!apiKey) throw new QuickEnableError('validation', 'apiKey is required')
 
   const preset = getLlmPreset(input.preset) ?? DEFAULT_LLM_PRESET
-  const provider = preset.provider
-  const baseUrl = (input.baseUrl?.trim() || preset.baseUrl).trim()
+  const dialect: DeepSeekApiDialect =
+    input.dialect === 'anthropic' ? 'anthropic' : 'openai'
+  const useDeepSeekAnthropic = preset.key === 'deepseek' && dialect === 'anthropic'
+  const provider: 'openai-compat' | 'anthropic' = useDeepSeekAnthropic
+    ? 'anthropic'
+    : preset.provider
+  const baseUrl = (
+    input.baseUrl?.trim()
+    || (useDeepSeekAnthropic ? DEEPSEEK_ANTHROPIC_BASE : preset.baseUrl)
+    || (preset.key === 'deepseek' ? DEEPSEEK_OPENAI_BASE : '')
+  ).trim()
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
     throw new QuickEnableError('validation', 'baseUrl must be an http(s) URL')
   }
+  const strictTools = preset.key === 'deepseek' && input.strictTools === true
   try {
     const { assertSafeUrl } = await import('../url-guard.js')
     await assertSafeUrl(baseUrl, { forwardsCredentials: false })
@@ -156,6 +181,7 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
       baseUrl,
       model: modelId,
       label: isCustom ? undefined : preset.key,
+      ...(strictTools ? { strictTools: true } : {}),
     })
   }
 
@@ -208,6 +234,8 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
         roles,
         defaultAgent: String(next.defaultAgent ?? 'agim'),
         preset: preset.key,
+        ...(preset.key === 'deepseek' ? { dialect } : {}),
+        ...(strictTools ? { strictTools: true } : {}),
       }
       return { config: next, result: undefined }
     })

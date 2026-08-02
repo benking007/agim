@@ -38,6 +38,21 @@ import {
   type ToolDef,
 } from './provider-base.js'
 import {
+  applyStrictToolsToOpenAiPayload,
+  DEEPSEEK_OPENAI_BASE,
+  isDeepSeekStrictToolsEnabled,
+  normalizeJsonSchemaForStrict,
+  resolveDeepSeekOpenAiBaseUrl,
+} from './deepseek-compat.js'
+import {
+  completeDeepSeekFim,
+  createDeepSeekResponse,
+  type DeepSeekFimRequest,
+  type DeepSeekFimResult,
+  type DeepSeekResponsesRequest,
+  type DeepSeekResponsesResult,
+} from './deepseek-api.js'
+import {
   isDeepSeekBaseUrl,
   isKimiBaseUrl,
   isKimiK2Model,
@@ -84,6 +99,11 @@ export interface OpenAICompatProviderConfig extends Omit<ProviderConfigBase, 'pr
    *  Default heuristic: true if the model id contains 'vision', 'gpt-4o',
    *  'gpt-4.1', 'qwen-vl', or 'glm-4v'. Override explicitly when needed. */
   vision?: boolean
+  /**
+   * DeepSeek: use beta base + `strict: true` tool schemas. Also enabled
+   * when `AGIM_DEEPSEEK_STRICT_TOOLS=1`.
+   */
+  strictTools?: boolean
 }
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
@@ -157,13 +177,21 @@ export class OpenAICompatProvider extends LlmProvider {
   private readonly vision: boolean
   private readonly maxTokensField: 'max_tokens' | 'max_completion_tokens'
   private readonly backoffBaseMs: number
+  private readonly strictTools: boolean
 
   constructor(cfg: OpenAICompatProviderConfig) {
     super({
       ...cfg,
       providerType: cfg.providerLabel || 'openai-compat',
     })
-    this.baseUrl = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
+    let base = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '')
+    this.strictTools = isDeepSeekStrictToolsEnabled(cfg.strictTools)
+      && isDeepSeekBaseUrl(base)
+    // Strict tools / prefix / FIM require the DeepSeek beta host.
+    if (this.strictTools && isDeepSeekBaseUrl(base) && !/\/beta$/i.test(base)) {
+      base = resolveDeepSeekOpenAiBaseUrl({ strictTools: true })
+    }
+    this.baseUrl = base
     this.extraHeaders = cfg.extraHeaders || {}
     this.retryOnTransient = Math.max(0, Math.min(10, cfg.retryOnTransient ?? resolveDefaultRetry()))
     this.backoffBaseMs = isDeepSeekBaseUrl(this.baseUrl) ? DEEPSEEK_BACKOFF_MS : BASE_BACKOFF_MS
@@ -177,6 +205,43 @@ export class OpenAICompatProvider extends LlmProvider {
       const m = (cfg.model || '').toLowerCase()
       this.vision = /vision|gpt-4o|gpt-4\.1|qwen-vl|glm-4v|llava/.test(m)
     }
+  }
+
+  /** DeepSeek FIM completion (beta `/completions`). */
+  async completeFim(
+    req: Omit<DeepSeekFimRequest, 'model'> & { model?: string },
+    opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  ): Promise<DeepSeekFimResult> {
+    return completeDeepSeekFim(
+      {
+        apiKey: this.apiKey ?? '',
+        baseUrl: resolveDeepSeekOpenAiBaseUrl({ beta: true }),
+        extraHeaders: this.extraHeaders,
+        signal: opts.signal,
+        timeoutMs: opts.timeoutMs,
+      },
+      { ...req, model: req.model || this.model },
+    )
+  }
+
+  /** DeepSeek / OpenAI Responses API (`POST /responses`). */
+  async createResponse(
+    req: Omit<DeepSeekResponsesRequest, 'model'> & { model?: string },
+    opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  ): Promise<DeepSeekResponsesResult> {
+    const base = isDeepSeekBaseUrl(this.baseUrl)
+      ? DEEPSEEK_OPENAI_BASE
+      : this.baseUrl.replace(/\/beta$/i, '')
+    return createDeepSeekResponse(
+      {
+        apiKey: this.apiKey ?? '',
+        baseUrl: base,
+        extraHeaders: this.extraHeaders,
+        signal: opts.signal,
+        timeoutMs: opts.timeoutMs,
+      },
+      { ...req, model: req.model || this.model },
+    )
   }
 
   override supportsVision(): boolean {
@@ -211,7 +276,7 @@ export class OpenAICompatProvider extends LlmProvider {
     signal: AbortSignal,
   ): AsyncIterable<ChatStreamChunk> {
     const body = this._buildBody(messages, opts, true)
-    const url = `${this.baseUrl}/chat/completions`
+    const url = this.chatCompletionsUrl(body)
     const resp = await this._fetchWithRetry(url, body, signal)
     if (!resp.body) {
       throw new LlmProviderError(this.name, 'streaming response had no body', { httpStatus: resp.status })
@@ -315,9 +380,18 @@ export class OpenAICompatProvider extends LlmProvider {
     if (opts.temperature !== undefined) body.temperature = opts.temperature
     if (stream) body.stream = true
     if (opts.tools && opts.tools.length > 0) {
-      body.tools = opts.tools.map(serializeToolDef)
+      body.tools = opts.tools.map((t) => serializeToolDef(t, { strict: this.strictTools }))
       const tc = serializeToolChoice(opts.toolChoice)
       if (tc !== undefined) body.tool_choice = tc
+    }
+    // Chat Prefix Completion: last assistant message with prefix:true forces beta host.
+    const wantsPrefix = messages.some((m) => m.role === 'assistant' && m.prefix === true)
+    if (wantsPrefix && isDeepSeekBaseUrl(this.baseUrl) && !/\/beta$/i.test(this.baseUrl)) {
+      // Mutating base mid-call is awkward; rewrite URL in _fetchWithRetry via body flag.
+      body.__agim_deepseek_beta = true
+    }
+    if (this.strictTools && opts.tools && opts.tools.length > 0) {
+      Object.assign(body, applyStrictToolsToOpenAiPayload(body))
     }
     // DeepSeek / Kimi K2.x / Zhipu GLM / MiMo defaults for the OpenAICompat
     // path (ping / introspection / evaluator): thinking OFF unless the
@@ -373,8 +447,18 @@ export class OpenAICompatProvider extends LlmProvider {
     return body
   }
 
+  private chatCompletionsUrl(body: unknown): string {
+    const bag = body && typeof body === 'object' ? body as Record<string, unknown> : null
+    const forceBeta = bag?.__agim_deepseek_beta === true
+    if (bag && '__agim_deepseek_beta' in bag) delete bag.__agim_deepseek_beta
+    const base = forceBeta && isDeepSeekBaseUrl(this.baseUrl) && !/\/beta$/i.test(this.baseUrl)
+      ? resolveDeepSeekOpenAiBaseUrl({ beta: true })
+      : this.baseUrl
+    return `${base}/chat/completions`
+  }
+
   private async _postJson(body: unknown, signal: AbortSignal): Promise<ChatCompletionResponse> {
-    const url = `${this.baseUrl}/chat/completions`
+    const url = this.chatCompletionsUrl(body)
     const resp = await this._fetchWithRetry(url, body, signal)
     let json: ChatCompletionResponse
     try {
@@ -607,10 +691,20 @@ function serializeMessage(m: LlmMessage, opts: { vision: boolean }): Record<stri
       })),
     }
     if (m.reasoningContent) out.reasoning_content = m.reasoningContent
+    if (m.prefix) out.prefix = true
     return out
   }
   if (m.role === 'assistant' && m.reasoningContent) {
-    return { role: 'assistant', content: m.content || null, reasoning_content: m.reasoningContent }
+    const out: Record<string, unknown> = {
+      role: 'assistant',
+      content: m.content || null,
+      reasoning_content: m.reasoningContent,
+    }
+    if (m.prefix) out.prefix = true
+    return out
+  }
+  if (m.role === 'assistant' && m.prefix) {
+    return { role: 'assistant', content: m.content || null, prefix: true }
   }
   // User / system path. Encode media as image_url content blocks when
   // the provider declared vision support; otherwise drop the media
@@ -653,13 +747,20 @@ function sniffMime(path: string): string {
   return 'application/octet-stream'
 }
 
-function serializeToolDef(t: ToolDef): Record<string, unknown> {
+function serializeToolDef(
+  t: ToolDef,
+  opts: { strict?: boolean } = {},
+): Record<string, unknown> {
+  const parameters = opts.strict
+    ? normalizeJsonSchemaForStrict(t.parameters)
+    : t.parameters
   return {
     type: 'function',
     function: {
       name: t.name,
       description: t.description,
-      parameters: t.parameters,
+      parameters,
+      ...(opts.strict ? { strict: true } : {}),
     },
   }
 }

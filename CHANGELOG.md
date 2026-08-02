@@ -6,14 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **DeepSeek V4 compat hardening**: Agim Agent thinking map now keeps
-  Composer `low` as API `low` (was clamped off→high), maps `medium→high`,
-  and sets `supportsReasoningEffort` so `reasoning_effort` is actually
-  sent with `thinking.type`. Evaluator / goal-critic enable low-effort
-  thinking; ping/distill stay off. OpenAICompat parses
-  `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` for cost; Agim
-  Agent injects hashed DeepSeek `user_id`; SSE `: keep-alive` ignored;
-  DeepSeek 429 backoff base raised. Docs: `llm-backends.md` §8.1.
+- **DeepSeek V4 compat hardening (P0–P2)**: Agim Agent thinking map now
+  keeps Composer `low` as API `low` (was clamped off→high), maps
+  `medium→high`, and sets `supportsReasoningEffort` so `reasoning_effort`
+  is sent with `thinking.type`. Evaluator / goal-critic enable low-effort
+  thinking; CoT always echoed (no strip). OpenAICompat parses
+  `prompt_cache_hit_tokens` / miss for cost; Agim Agent injects hashed
+  `user_id`; SSE `: keep-alive` ignored; longer DeepSeek 429 backoff.
+  **P2:** Anthropic dialect (`dialect: anthropic` /
+  `https://api.deepseek.com/anthropic`); beta **strict tools**
+  (`strictTools` / `AGIM_DEEPSEEK_STRICT_TOOLS`); Chat Prefix (`prefix`);
+  FIM + Responses helpers; optional `apiSurface: responses`. Docs:
+  `llm-backends.md` §8.1–8.2.
 
 - **`AGIM_NATIVE_TURN_TIMEOUT_MS` default 30 → 60 minutes**: Agim Agent
   whole-turn watchdog was aborting long Loop / multi-Subagent runs mid-

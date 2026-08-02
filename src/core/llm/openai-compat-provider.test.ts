@@ -350,6 +350,41 @@ describe('OpenAICompatProvider', () => {
     expect(result.usage.cacheMissTokens).toBe(200)
   })
 
+  it('emits strict tools on DeepSeek beta when strictTools is enabled', async () => {
+    let seenUrl = ''
+    let seenBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seenUrl = String(url)
+      seenBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return makeJsonResponse({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+      })
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({
+      name: 'deepseek',
+      model: 'deepseek-v4-pro',
+      apiKey: 'k',
+      baseUrl: 'https://api.deepseek.com',
+      strictTools: true,
+    })
+    await p.chat([{ role: 'user', content: 'x' }], {
+      providerOptions: { thinking: { type: 'disabled' } },
+      tools: [{
+        name: 'loop_verdict',
+        description: 'verdict',
+        parameters: {
+          type: 'object',
+          properties: { decision: { type: 'string' }, met: { type: 'boolean' } },
+          required: ['decision'],
+        },
+      }],
+    })
+    expect(seenUrl).toBe('https://api.deepseek.com/beta/chat/completions')
+    const tools = seenBody.tools as Array<{ function: { strict?: boolean; parameters: { required: string[] } } }>
+    expect(tools[0]?.function.strict).toBe(true)
+    expect(tools[0]?.function.parameters.required).toEqual(['decision', 'met'])
+  })
+
   it('forwards DeepSeek user_id from providerOptions', async () => {
     let seenBody: Record<string, unknown> = {}
     globalThis.fetch = (async (_url: string, init: RequestInit) => {

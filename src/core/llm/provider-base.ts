@@ -63,6 +63,12 @@ export interface LlmMessage {
   /** DeepSeek / thinking-mode providers echo `reasoning_content` on
    *  assistant turns; MUST round-trip on subsequent API calls. */
   reasoningContent?: string
+  /**
+   * DeepSeek Chat Prefix Completion (beta): when set on the last
+   * assistant message, the model continues from `content` as a prefix.
+   * Requires the beta base URL (`https://api.deepseek.com/beta`).
+   */
+  prefix?: boolean
   /** Optional multimodal attachments (typically images). Providers with
    *  `supportsVision() === true` encode these as image_url / image
    *  content blocks; others ignore the field and only see `content`. The

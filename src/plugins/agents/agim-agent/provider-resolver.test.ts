@@ -56,6 +56,43 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
     expect(binding.model.maxTokens).toBe(384_000)
   })
 
+  it('maps DeepSeek Anthropic dialect without OpenAI thinkingFormat', () => {
+    const binding = bindingToPiModel({
+      name: 'deepseek-v4-pro',
+      providerType: 'anthropic',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+    })!
+    expect(binding.model.api).toBe('anthropic-messages')
+    expect(binding.model.baseUrl).toBe('https://api.deepseek.com/anthropic')
+    expect(binding.model.reasoning).toBe(true)
+    expect(binding.model.thinkingLevelMap?.low).toBe('low')
+    expect(binding.model.thinkingLevelMap?.xhigh).toBe('max')
+    expect(compatOf(binding.model)?.thinkingFormat).toBeUndefined()
+  })
+
+  it('routes DeepSeek openai-compat + apiSurface responses to openai-responses', () => {
+    const binding = bindingToPiModel({
+      name: 'deepseek-v4-flash',
+      providerType: 'openai-compat',
+      model: 'deepseek-v4-flash',
+      baseUrl: 'https://api.deepseek.com',
+      apiSurface: 'responses',
+    })!
+    expect(binding.model.api).toBe('openai-responses')
+  })
+
+  it('rewrites DeepSeek chat base to /beta when strictTools is on', () => {
+    const binding = bindingToPiModel({
+      name: 'deepseek-v4-pro',
+      providerType: 'openai-compat',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
+      strictTools: true,
+    })!
+    expect(binding.model.baseUrl).toBe('https://api.deepseek.com/beta')
+  })
+
   it('enables Kimi K3 thinking via reasoning_effort (openai format)', () => {
     const binding = bindingToPiModel({
       name: 'kimi-k3',

@@ -160,6 +160,19 @@ const llmBackendSchema = z.object({
    * (Kimi K3 / MiMo) want `max_completion_tokens` instead of `max_tokens`.
    */
   maxTokensField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
+  /**
+   * DeepSeek OpenAI-compat: when true, route Chat Completions through
+   * `https://api.deepseek.com/beta` and emit `tools[].function.strict=true`
+   * with normalized JSON Schemas. Also overridable via
+   * `AGIM_DEEPSEEK_STRICT_TOOLS=1`.
+   */
+  strictTools: z.boolean().optional(),
+  /**
+   * Optional wire surface for DeepSeek / OpenAI-compat backends.
+   * - `chat` (default): Chat Completions (or Anthropic Messages when provider=anthropic)
+   * - `responses`: OpenAI Responses API (`/responses`) — DeepSeek flash today; Pro soon
+   */
+  apiSurface: z.enum(['chat', 'responses']).optional(),
   /** Number of retries on transient (429 / 5xx). Provider default 1. */
   retryOnTransient: z.number().int().min(0).max(5).optional(),
   /** Soft kill-switch — set false to keep the row around but make

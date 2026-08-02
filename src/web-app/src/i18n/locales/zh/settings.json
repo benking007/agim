@@ -743,7 +743,7 @@
       "title": "快速启用 Agim Agent",
       "subtitle": "先选预装供应商（如 DeepSeek），只需粘贴 API Key；选「自定义」时可自行填写模型与 Base URL。",
       "presetHint": "将注册预装模型 {{model}}",
-      "dialectLabel": "DeepSeek API 方言",
+      "dialectLabel": "API 协议",
       "dialectOpenai": "OpenAI 兼容（Chat Completions）",
       "dialectAnthropic": "Anthropic 兼容（Messages）",
       "strictTools": "启用 strict tools（beta，强制工具参数 schema）",

@@ -743,7 +743,7 @@
       "title": "Quick-enable Agim Agent",
       "subtitle": "Pick a preinstalled provider (e.g. DeepSeek) and paste an API key. Choose Custom to enter model, name, and Base URL yourself.",
       "presetHint": "Registers preinstalled models {{model}}",
-      "dialectLabel": "DeepSeek API dialect",
+      "dialectLabel": "API protocol",
       "dialectOpenai": "OpenAI-compatible (Chat Completions)",
       "dialectAnthropic": "Anthropic-compatible (Messages)",
       "strictTools": "Enable strict tools (beta; enforce tool argument schemas)",

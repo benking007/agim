@@ -188,7 +188,7 @@ async function quickAction(argv: string[]): Promise<number> {
     let strictTools = strictToolsArg === true
     if (preset.key === 'deepseek') {
       if (!dialect) {
-        const d = (await ask(rl, 'API dialect [openai/anthropic, Enter=openai]: ')).trim().toLowerCase()
+        const d = (await ask(rl, 'API protocol [openai/anthropic, Enter=openai]: ')).trim().toLowerCase()
         dialect = d === 'anthropic' ? 'anthropic' : 'openai'
       }
       if (strictToolsArg === undefined && dialect === 'openai') {

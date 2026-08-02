@@ -228,7 +228,7 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 | 并发 | 账号级：Pro **500** / Flash **2500**；超限 HTTP 429；DeepSeek 路径使用更长退避 |
 | 计费 | 即将实行峰谷价（北京时间 9–12、14–18 为峰时 2×）；以官方公告为准 |
 
-### 8.2 DeepSeek 方言与 beta 能力
+### 8.2 DeepSeek API 协议与 beta 能力
 
 | 能力 | 如何启用 | 说明 |
 |---|---|---|
@@ -239,7 +239,7 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 | **FIM（beta）** | `OpenAICompatProvider.completeFim()` / RPC `mcp__agim__llm_fim` | `POST /beta/completions`；输出上限 4K；需 opt-in `AGIM_RPC_ALLOWED_TOOLS` |
 | **Responses API** | backend `apiSurface: "responses"` / `createDeepSeekResponse()` / RPC `mcp__agim__llm_responses` | 目前官方以 flash 为主；Pro 即将支持。Agim Agent 可按 backend 切到 pi `openai-responses`；RPC 同样需 opt-in |
 
-切换 OpenAI ↔ Anthropic 方言：先删除 DeepSeek 品牌组，再一键启用并选择方言（同品牌只允许一组）。
+切换 OpenAI ↔ Anthropic 协议：先删除 DeepSeek 品牌组，再一键启用并选择协议（同品牌只允许一组）。
 
 `finance` 角色**不会**在一键启用时自动绑定；需在「任务派发速查」或角色绑定中手动选择。
 

@@ -280,6 +280,8 @@ describe('/settings/llm quick setup', () => {
     expect(JSON.parse(String(quickRequest.body))).toEqual({
       preset: 'deepseek',
       apiKey: 'sk-test',
+      dialect: 'openai',
+      strictTools: false,
     })
     expect(
       fetchSpy.mock.calls.some(

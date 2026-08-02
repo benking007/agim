@@ -167,11 +167,25 @@ function finalizeRunningActivity(
     finishedAt,
     durationMs: Math.max(0, finishedAt - activity.startedAt),
     error: opts.error ?? activity.error,
-    steps: steps.map((st) => (
-      st.status === 'pending' || st.status === 'running'
-        ? { ...st, status: opts.status === 'error' ? 'error' : 'success', finishedAt }
-        : st
-    )),
+    steps: steps.map((st) => {
+      if (st.status !== 'pending' && st.status !== 'running') return st
+      // Parent RUN_FINISH must not paint A2A Subagent lanes as success —
+      // those steps have jobId and close via their own activity events.
+      // Otherwise Codex can look "done" while the Loop is still waiting.
+      if (
+        opts.status === 'success'
+        && st.kind === 'agent'
+        && typeof st.jobId === 'number'
+        && st.jobId > 0
+      ) {
+        return st
+      }
+      return {
+        ...st,
+        status: opts.status === 'error' ? 'error' : 'success',
+        finishedAt,
+      }
+    }),
   }
 }
 

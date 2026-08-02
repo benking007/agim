@@ -68,6 +68,21 @@ import { isSameAgent, parseCallAgentTarget } from './subagent.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
+/** Touch Loop snapshot after a round job becomes terminal (dock liveSubagents). */
+async function resyncLoopAfterJobTerminal(
+  ctx: RouteContext,
+  jobId: number,
+  opts: { outcome: string; agent?: string },
+): Promise<void> {
+  if (jobId <= 0) return
+  try {
+    const { notifyLoopJobTerminal } = await import('./loop-run.js')
+    notifyLoopJobTerminal(ctx.platform, ctx.channelId, ctx.threadId, jobId, opts)
+  } catch {
+    /* Loop store optional */
+  }
+}
+
 // Default A2A call-chain depth ceiling. A caller at depth D may delegate to
 // depth D+1; this caps how deep nested call_agent chains can go. Default 8
 // allows fairly deep multi-agent delegation out of the box (A→B→C→…, up to
@@ -415,6 +430,10 @@ export async function callAgentByName(
   if (opts.signal?.aborted) onOuterAbort()
   if (!markJobRunning(jobId)) {
     cleanupController()
+    await resyncLoopAfterJobTerminal(ctx, jobId, {
+      outcome: 'cancelled',
+      agent: target.name,
+    })
     emitEarlyAgentFailure(opts, ctx, target.name, 'a2a cancelled before start')
     return { ok: false, error: 'a2a cancelled before start', jobId, agent: target.name }
   }
@@ -453,6 +472,10 @@ export async function callAgentByName(
       `A2A artifacts setup failed: ${msg}`)
     markJobFailed(jobId, msg)
     cleanupController()
+    await resyncLoopAfterJobTerminal(ctx, jobId, {
+      outcome: 'failed',
+      agent: target.name,
+    })
     emitEarlyAgentFailure(opts, ctx, target.name, msg)
     return { ok: false, error: msg, jobId, agent: target.name }
   }
@@ -605,6 +628,13 @@ export async function callAgentByName(
   } else {
     markJobFailed(jobId, errMsg || outcome)
   }
+
+  // Resync Loop docks: job board terminal ≠ Loop writeRun. Without this,
+  // liveSubagents can stay stale on the SPA until the next poll / parent hop.
+  await resyncLoopAfterJobTerminal(ctx, jobId, {
+    outcome,
+    agent: target.name,
+  })
 
   // Audit. Same shape as the normal callAgentWithHistory invocations so
   // /audit and per-user budgets see A2A traffic the same way. The

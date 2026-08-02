@@ -55,10 +55,12 @@ function envInt(name: string, def: number): number {
 /** Whole active AgentHarness-loop watchdog. Compaction runs before this timer
  * because pi 0.79.x does not expose an external compaction signal. */
 function resolveRunTimeoutMs(opts: AgentSendOpts | undefined): number {
-  // Match the longest built-in interactive approval window so a legitimate
+  // Must be ≥ the longest built-in interactive approval window so a
   // Plan Mode / unconfined-exec confirmation is not killed before the user
-  // can answer. Keep in sync with approval-bus DEFAULT_APPROVAL_TIMEOUT_MS.
-  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 30 * 60 * 1000)
+  // can answer (approval-bus DEFAULT_APPROVAL_TIMEOUT_MS = 30 min).
+  // Default 60 min: long Loop / multi-Subagent turns were hitting 30 min
+  // and aborting mid-flight.
+  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 60 * 60 * 1000)
   if (base === 0) return 0
   return applyGoalTimeoutBoost(base, {
     platform: opts?.platform,

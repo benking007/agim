@@ -11,11 +11,17 @@ import {
 import { registry } from './registry.js'
 import type { ChoiceCardPrompt, MessengerAdapter } from './types.js'
 import {
+  _resetLoopParentTurnsForTests,
+  clearLoopParentTurnActive,
+  markLoopParentTurnActive,
+} from './loop-parent-turn.js'
+import {
   _setTestLiveSubagents,
   forceLoopExitSkippedVerify,
   getActiveLoop,
   maybeEnforceLoopExit,
 } from './loop-run.js'
+import { maybeReapIdleLoopVerify } from './loop-verify-gate.js'
 
 function registerFakeMessenger(name: string): void {
   const m: MessengerAdapter = {
@@ -80,11 +86,13 @@ describe('loop exit enforce (no verdict required)', () => {
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
     _setTestLiveSubagents(null)
     _resetAskBusForTests()
+    _resetLoopParentTurnsForTests()
   })
 
   afterEach(() => {
     _setTestLiveSubagents(null)
     _resetAskBusForTests()
+    _resetLoopParentTurnsForTests()
     if (prev === undefined) delete process.env.AGIM_LOOPS_DIR
     else process.env.AGIM_LOOPS_DIR = prev
     try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
@@ -153,6 +161,35 @@ describe('loop exit enforce (no verdict required)', () => {
   it('maybeEnforceLoopExit no-ops when wall not set', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     const r = maybeEnforceLoopExit(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(false)
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
+  })
+
+  it('maybeReapIdleLoopVerify ends stuck VERIFY when parent idle (sleep/wake)', () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    _setTestLiveSubagents(false)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(true)
+    expect(r.reason).toBe('verify_skipped')
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).toBeNull()
+  })
+
+  it('maybeReapIdleLoopVerify defers while parent turn is in-flight', () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    _setTestLiveSubagents(false)
+    markLoopParentTurnActive(a.platform, a.channelId, a.threadId)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(false)
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
+    clearLoopParentTurnActive(a.platform, a.channelId, a.threadId)
+    const after = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(after.ended).toBe(true)
+  })
+
+  it('maybeReapIdleLoopVerify defers while Subagents are live', () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    _setTestLiveSubagents(true)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
     expect(r.ended).toBe(false)
     expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
   })

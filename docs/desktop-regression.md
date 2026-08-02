@@ -96,6 +96,7 @@ node tools/phase-a-acceptance.mjs
 | `LOOP_E2E_TEST` | 派工后验收；`loop_verdict` stop+met；结束总结；**不**残留待验收条 |
 | `LOOP_SKIP_VERDICT_TEST` | 跳过 verdict 时 follow-up / `verify_skipped` 强制收尾，不挂死（无 pending ask / live 子代理时） |
 | 子代理进行中 | 本轮 `liveSubagents>0` 时**不**弹出待验收「立即行动」；单子代理结束只刷新计数（`loop-changed`），**不**触发评审；全部终态后才待验收 |
+| 合盖待机再开 | 子代理已做完但父轮已断：进 Portal 后 Loop 应收尾（`verify_skipped` / 结束摘要），**不**永久「还在继续」；聊天不应卡 Running |
 | Loop 审计 `/tasks/loops` | 默认「全部」有历史；改状态筛选须点「应用」；API 失败显示错误而非空列表 |
 | VERIFY 中途提问 | **仅父侧**且子代理已齐；结论不确定时可 `ask_user`；子代理不得提问；`live>0` 父侧也不得提问解阻塞 |
 | 子代理调研 | 同线程子代理不被 `loop-parent-wait` 禁 `web_fetch`/`exec`（门禁仅 depth=0） |

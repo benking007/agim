@@ -315,6 +315,41 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.status).toBe('running')
   })
 
+  it('HISTORY adopts finished run after sleep/wake (clears stuck Running)', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-wake', agent: 'agim', startedAt: 1_000 },
+    )
+    const after = reduce(
+      mid,
+      {
+        kind: 'HISTORY',
+        agent: 'agim',
+        messages: [
+          { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+          {
+            id: 'hist-1',
+            role: 'assistant',
+            content: 'done while asleep',
+            timestamp: 2,
+            activity: {
+              runId: 'run-wake',
+              status: 'success',
+              startedAt: 1_000,
+              finishedAt: 2_000,
+              steps: [],
+            },
+          },
+        ],
+      },
+    )
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
+    expect(after.messages[1]?.content).toBe('done while asleep')
+    expect(after.messages[1]?.activity?.status).toBe('success')
+  })
+
   it('RUN_FINISH clears currentReplyId so Running… cannot stick', () => {
     const after = reduce(
       initialChatState,

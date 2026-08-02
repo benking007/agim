@@ -247,15 +247,25 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // placeholder / Running accordion. CLI agents (non-agim) take longer,
       // so mobile reconnect/bootstrap often races the in-flight turn —
       // remapping ids then lets DONE miss the bubble and leave status=running.
+      //
+      // Exception (sleep/wake): if history already has this runId as
+      // success/error, the turn finished while WS was dead — adopt history
+      // and clear stuck Running chrome instead of keeping a zombie activeRunId.
       if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
-        return {
-          ...s,
-          agent: a.agent || s.agent,
-          preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
-          planMode: a.planMode ?? s.planMode,
-          thinkVariant: a.thinkVariant ?? s.thinkVariant,
-          sessionModel: a.sessionModel ?? s.sessionModel,
-          compactRate: a.compactRate ?? s.compactRate,
+        const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
+          m.activity?.runId === s.activeRunId
+          && (m.activity.status === 'success' || m.activity.status === 'error')
+        ))
+        if (!finishedInHistory) {
+          return {
+            ...s,
+            agent: a.agent || s.agent,
+            preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
+            planMode: a.planMode ?? s.planMode,
+            thinkVariant: a.thinkVariant ?? s.thinkVariant,
+            sessionModel: a.sessionModel ?? s.sessionModel,
+            compactRate: a.compactRate ?? s.compactRate,
+          }
         }
       }
       return {

@@ -130,7 +130,7 @@ describe('agim-rpc-server — static token + llm_complete', () => {
     expect(entry?.expiresAt).toBe(Number.MAX_SAFE_INTEGER)
   })
 
-  it('static token dispatch: llm_complete works; push_message is refused', async () => {
+  it('static token dispatch: llm_complete/fim/responses work; push_message is refused', async () => {
     const { saveSecret, LLM_SECRETS_PATH } = await import('./secrets.js')
     const { existsSync, unlinkSync } = await import('node:fs')
     if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)

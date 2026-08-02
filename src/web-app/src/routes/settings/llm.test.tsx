@@ -280,6 +280,8 @@ describe('/settings/llm quick setup', () => {
     expect(JSON.parse(String(quickRequest.body))).toEqual({
       preset: 'deepseek',
       apiKey: 'sk-test',
+      dialect: 'openai',
+      strictTools: false,
     })
     expect(
       fetchSpy.mock.calls.some(
@@ -309,7 +311,7 @@ describe('/settings/llm quick setup', () => {
           name: 'deepseek-agim',
           provider: 'openai-compat',
           baseUrl: 'https://api.deepseek.com/v1',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-pro',
           secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM' },
         },
       ],
@@ -344,7 +346,7 @@ describe('/settings/llm quick setup', () => {
           name: 'deepseek-agim',
           provider: 'openai-compat',
           baseUrl: 'https://api.deepseek.com/v1',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-pro',
           secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM' },
         },
       ],
@@ -370,7 +372,7 @@ describe('/settings/llm quick setup', () => {
           name: 'deepseek-agim',
           provider: 'openai-compat',
           baseUrl: 'https://api.deepseek.com/v1',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-pro',
           secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK_AGIM' },
         },
       ],

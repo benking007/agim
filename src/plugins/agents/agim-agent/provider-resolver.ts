@@ -20,6 +20,11 @@ import {
   type LlmRole,
 } from '../../../core/llm/registry.js'
 import {
+  DEEPSEEK_BETA_BASE,
+  DEEPSEEK_THINKING_LEVEL_MAP,
+  isDeepSeekStrictToolsEnabled,
+} from '../../../core/llm/deepseek-compat.js'
+import {
   isDeepSeekBaseUrl,
   isGlm52Model,
   isGlmModel,
@@ -45,16 +50,6 @@ const DEFAULT_BASE_URL: Record<string, string> = {
   'openai-completions': 'https://api.openai.com/v1',
   'anthropic-messages': 'https://api.anthropic.com',
 }
-
-/** DeepSeek catalog maps effort levels; keep a local fallback when the
- *  model id is custom but the baseUrl is still DeepSeek. */
-const DEEPSEEK_THINKING_LEVEL_MAP = {
-  minimal: null,
-  low: null,
-  medium: null,
-  high: 'high',
-  xhigh: 'max',
-} as const
 
 /** Kimi K3: always-on thinking via top-level `reasoning_effort`. */
 const KIMI_K3_THINKING_LEVEL_MAP = {
@@ -135,14 +130,32 @@ function resolveVendorMaxTokens(modelId: string): number | undefined {
 }
 
 export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | null {
-  const api = API_BY_PROVIDER_TYPE[b.providerType]
+  let api = API_BY_PROVIDER_TYPE[b.providerType]
   if (!api) return null
+  // DeepSeek / OpenAI-compat backends may opt into the Responses API surface.
+  if (b.apiSurface === 'responses' && b.providerType === 'openai-compat') {
+    api = 'openai-responses'
+  }
   const catalogModel = findCatalogModel(b.providerType, b.model)
   const unknownContextWindow = resolveUnknownContextWindow()
-  const baseUrl = b.baseUrl ?? DEFAULT_BASE_URL[api] ?? 'https://api.openai.com/v1'
-  const deepseek = isDeepSeekBaseUrl(baseUrl)
+  let baseUrl = b.baseUrl ?? DEFAULT_BASE_URL[api] ?? 'https://api.openai.com/v1'
+  const deepseekHostOrModel = isDeepSeekBaseUrl(baseUrl)
     || catalogModel?.provider === 'deepseek'
     || /^deepseek/i.test(b.model)
+  const deepseekOpenAi = deepseekHostOrModel && (
+    api === 'openai-completions' || api === 'openai-responses'
+  )
+  const deepseekAnthropic = deepseekHostOrModel && api === 'anthropic-messages'
+  const deepseek = deepseekOpenAi || deepseekAnthropic
+  // Strict tools need the DeepSeek beta Chat Completions host.
+  if (
+    deepseekOpenAi
+    && api === 'openai-completions'
+    && isDeepSeekStrictToolsEnabled(b.strictTools)
+    && !/\/beta$/i.test(baseUrl)
+  ) {
+    baseUrl = DEEPSEEK_BETA_BASE
+  }
   const kimi = isKimiBaseUrl(baseUrl)
     || catalogModel?.provider === 'moonshot'
     || isKimiModel(b.model)
@@ -197,6 +210,7 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
   const overrideCompat = thinkingOverride === 'deepseek'
     ? {
         thinkingFormat: 'deepseek' as const,
+        supportsReasoningEffort: true,
         supportsDeveloperRole: false,
         requiresReasoningContentOnAssistantMessages: true,
         ...(b.maxTokensField ? { maxTokensField: b.maxTokensField } : {}),
@@ -212,11 +226,19 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
       : undefined
   const heuristicCompat = thinkingOverride
     ? undefined
-    : deepseek
+    : deepseekOpenAi
       ? {
           thinkingFormat: 'deepseek' as const,
+          // Official Chat Completions needs both thinking.type + reasoning_effort.
+          supportsReasoningEffort: true,
           requiresReasoningContentOnAssistantMessages: true,
         }
+      : deepseekAnthropic
+        ? {
+            // DeepSeek Anthropic: thinking.type enabled + output_config.effort
+            // (budget_tokens ignored). Payload rewrite in Agim Agent injects effort.
+            supportsTemperature: true,
+          }
       : kimiK3
         ? {
             thinkingFormat: 'openai' as const,
@@ -249,9 +271,21 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
                 }
               : undefined
   const vendorCompat = overrideCompat ?? heuristicCompat
-  const catalogCompat = catalogModel?.compat
+  let catalogCompat = catalogModel?.compat
     ? { ...(catalogModel.compat as Record<string, unknown>) }
     : undefined
+  // DeepSeek Anthropic dialect must not inherit OpenAI-completions catalog
+  // compat (thinkingFormat / requiresReasoningContentOnAssistantMessages).
+  if (deepseekAnthropic && catalogCompat) {
+    const {
+      thinkingFormat: _tf,
+      supportsReasoningEffort: _sre,
+      requiresReasoningContentOnAssistantMessages: _rrc,
+      maxTokensField: _mtf,
+      ...rest
+    } = catalogCompat
+    catalogCompat = Object.keys(rest).length > 0 ? rest : undefined
+  }
   // 'off' clears catalog/vendor thinking compat entirely; token-field may still apply.
   let compat: Record<string, unknown> | undefined = thinkingOverride === 'off'
     ? undefined

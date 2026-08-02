@@ -197,6 +197,12 @@ export function mergeUsage(acc: import('./provider-base.js').LlmUsage, add: impo
   if (typeof add.totalTokens === 'number') {
     acc.totalTokens = (acc.totalTokens ?? 0) + add.totalTokens
   }
+  if (typeof add.cacheReadTokens === 'number') {
+    acc.cacheReadTokens = (acc.cacheReadTokens ?? 0) + add.cacheReadTokens
+  }
+  if (typeof add.cacheMissTokens === 'number') {
+    acc.cacheMissTokens = (acc.cacheMissTokens ?? 0) + add.cacheMissTokens
+  }
   if (typeof add.costUsd === 'number') {
     acc.costUsd = (acc.costUsd ?? 0) + add.costUsd
   }

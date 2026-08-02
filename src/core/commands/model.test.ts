@@ -30,7 +30,7 @@ describe('handleModelCommand — agent gating', () => {
         name: 'deepseek-agim',
         provider: 'openai-compat',
         baseUrl: 'https://api.deepseek.com/v1',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-pro',
       }],
       llmRoles: { 'native-chat': 'deepseek-agim' },
     })
@@ -50,7 +50,7 @@ describe('handleModelCommand — agent gating', () => {
           name: 'deepseek-agim',
           provider: 'openai-compat',
           baseUrl: 'https://api.deepseek.com/v1',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-pro',
         },
         {
           name: 'qwen-agim',

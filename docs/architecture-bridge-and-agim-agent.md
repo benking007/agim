@@ -108,7 +108,7 @@ The current registry:
 • /qoder       [cli] (/qd, /qodercli)
 • /pi          [cli] (/pi-agent)
 • /mimo        [cli] (/mo, /mimo-code)
-• /agim        [in-process] (/agim, /na, /llm, /native-llm) — role=auto -> openai-compat:deepseek-chat
+• /agim        [in-process] (/agim, /na, /llm, /native-llm) — role=auto -> openai-compat:deepseek-v4-pro
 ```
 
 ## 5. The Six Things You Get Automatically

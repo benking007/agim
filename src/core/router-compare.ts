@@ -7,7 +7,7 @@
 //
 //   1. A CLI / native AgentAdapter ("agent:claude-code", "agent:native")
 //   2. A native LLM role             ("llm:cheap", "llm:evaluator")
-//   3. A native LLM backend by name  ("backend:deepseek-chat")
+//   3. A native LLM backend by name  ("backend:deepseek-v4-pro")
 //
 // All three share the same Result envelope so the formatter stays
 // dumb. Failures DON'T throw — we return them in the Result envelope
@@ -294,7 +294,7 @@ function clip(text: string, max: number): string {
   return `${text.slice(0, max)}\n\n[truncated to ${max} chars by router-compare]`
 }
 
-/** Parse "agent:claude-code" / "llm:cheap" / "backend:deepseek-chat"
+/** Parse "agent:claude-code" / "llm:cheap" / "backend:deepseek-v4-pro"
  *  into a typed BackendRef. Returns null when the spec is malformed —
  *  caller should surface a user-facing error. */
 export function parseBackendRef(spec: string): BackendRef | null {

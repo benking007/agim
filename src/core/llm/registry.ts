@@ -53,6 +53,10 @@ export interface LlmBackendBinding {
   contextWindow?: number
   thinkingFormat?: LlmThinkingFormat
   maxTokensField?: LlmMaxTokensField
+  /** DeepSeek beta strict tool schemas (see config-schema). */
+  strictTools?: boolean
+  /** `chat` (default) or `responses` (DeepSeek / OpenAI Responses API). */
+  apiSurface?: 'chat' | 'responses'
 }
 
 interface RegistryState {
@@ -132,6 +136,8 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
       contextWindow: cfg.contextWindow,
       thinkingFormat: cfg.thinkingFormat,
       maxTokensField: cfg.maxTokensField,
+      strictTools: cfg.strictTools,
+      apiSurface: cfg.apiSurface,
     })
   }
 
@@ -246,6 +252,8 @@ interface BackendConfig {
   contextWindow?: number
   thinkingFormat?: LlmThinkingFormat
   maxTokensField?: LlmMaxTokensField
+  strictTools?: boolean
+  apiSurface?: 'chat' | 'responses'
   retryOnTransient?: number
   enabled?: boolean
 }
@@ -264,6 +272,7 @@ function buildProvider(cfg: BackendConfig, apiKey: string | undefined): LlmProvi
         defaultMaxTokens: cfg.maxTokens,
         maxTokensField: cfg.maxTokensField,
         retryOnTransient: cfg.retryOnTransient,
+        strictTools: cfg.strictTools,
       })
     case 'anthropic':
       return new AnthropicProvider({

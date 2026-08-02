@@ -64,6 +64,10 @@ export interface LlmQuickEnableBody {
   name?: string
   model?: string
   baseUrl?: string
+  /** DeepSeek: openai (default) or anthropic Messages dialect. */
+  dialect?: 'openai' | 'anthropic'
+  /** DeepSeek: beta strict tool schemas. */
+  strictTools?: boolean
   bindCheapRoles?: boolean
   setDefaultAgent?: boolean
 }
@@ -77,6 +81,8 @@ export interface LlmQuickEnableResult {
   roles: Record<string, string>
   defaultAgent: string
   preset: string
+  dialect?: 'openai' | 'anthropic'
+  strictTools?: boolean
 }
 
 export interface LlmPingResponse {

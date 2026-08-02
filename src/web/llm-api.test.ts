@@ -108,7 +108,7 @@ describe('handleLlmApi — add backend', () => {
 
   it('happy-path persists backend + secret to disk and re-reads via list', async () => {
     const add = { name: 'deepseek', provider: 'openai-compat',
-      baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-test-123' }
+      baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-pro', apiKey: 'sk-test-123' }
     const res1 = makeRes()
     await handleLlmApi(makeReq('POST', add), res1 as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     expect(res1.statusCode).toBe(201)
@@ -229,7 +229,7 @@ describe('handleLlmApi — add backend', () => {
 
   it('refreshes in-process LLM registry immediately after save', async () => {
     const add = { name: 'runtime-ok', provider: 'openai-compat',
-      baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-live' }
+      baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-pro', apiKey: 'sk-live' }
     const res = makeRes()
     await handleLlmApi(makeReq('POST', add), res as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     expect(res.statusCode).toBe(201)

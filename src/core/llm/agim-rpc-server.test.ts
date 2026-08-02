@@ -109,10 +109,14 @@ describe('agim-rpc-server — static token + llm_complete', () => {
     globalThis.fetch = originalFetch
   })
 
-  it('llm_complete is opt-in via AGIM_RPC_ALLOWED_TOOLS (not in default whitelist)', () => {
+  it('llm_* tools are opt-in via AGIM_RPC_ALLOWED_TOOLS (not in default whitelist)', () => {
     expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_complete')).toBe(false)
-    process.env.AGIM_RPC_ALLOWED_TOOLS = 'mcp__agim__llm_complete'
+    expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_fim')).toBe(false)
+    expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_responses')).toBe(false)
+    process.env.AGIM_RPC_ALLOWED_TOOLS = 'mcp__agim__llm_complete,mcp__agim__llm_fim,mcp__agim__llm_responses'
     expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_complete')).toBe(true)
+    expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_fim')).toBe(true)
+    expect(_resolveAllowedToolsForTests().has('mcp__agim__llm_responses')).toBe(true)
   })
 
   it('registers AGIM_RPC_STATIC_TOKEN with empty threadId and origin=static', () => {
@@ -126,7 +130,7 @@ describe('agim-rpc-server — static token + llm_complete', () => {
     expect(entry?.expiresAt).toBe(Number.MAX_SAFE_INTEGER)
   })
 
-  it('static token dispatch: llm_complete works; push_message is refused', async () => {
+  it('static token dispatch: llm_complete/fim/responses work; push_message is refused', async () => {
     const { saveSecret, LLM_SECRETS_PATH } = await import('./secrets.js')
     const { existsSync, unlinkSync } = await import('node:fs')
     if (existsSync(LLM_SECRETS_PATH)) unlinkSync(LLM_SECRETS_PATH)
@@ -135,14 +139,30 @@ describe('agim-rpc-server — static token + llm_complete', () => {
       llmBackends: [{
         name: 'deepseek-v4-pro',
         provider: 'openai-compat',
-        model: 'deepseek-chat',
-        baseUrl: 'https://example.invalid/v1',
+        model: 'deepseek-v4-pro',
+        baseUrl: 'https://api.deepseek.com',
       }],
     })
-    globalThis.fetch = (async () => new Response(JSON.stringify({
-      choices: [{ message: { role: 'assistant', content: 'rpc-ok' }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+    globalThis.fetch = (async (input: string) => {
+      const url = String(input)
+      if (url.includes('/beta/completions')) {
+        return new Response(JSON.stringify({
+          choices: [{ text: 'fim-ok', finish_reason: 'stop' }],
+          model: 'deepseek-v4-pro',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (url.includes('/responses')) {
+        return new Response(JSON.stringify({
+          status: 'completed',
+          model: 'deepseek-v4-pro',
+          output: [{ type: 'message', content: [{ type: 'output_text', text: 'resp-ok' }] }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: 'rpc-ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }) as unknown as typeof fetch
 
     const token = 'b'.repeat(64)
     process.env.AGIM_RPC_STATIC_TOKEN = token
@@ -160,6 +180,26 @@ describe('agim-rpc-server — static token + llm_complete', () => {
     expect(llm.ok).toBe(true)
     if (llm.ok) {
       expect((llm.result as { text?: string }).text).toBe('rpc-ok')
+    }
+
+    const fim = await _dispatchForTests(
+      'mcp__agim__llm_fim',
+      { backend: 'deepseek-v4-pro', prompt: 'def f():' },
+      entry.ctx,
+    )
+    expect(fim.ok).toBe(true)
+    if (fim.ok) {
+      expect((fim.result as { text?: string }).text).toBe('fim-ok')
+    }
+
+    const responses = await _dispatchForTests(
+      'mcp__agim__llm_responses',
+      { backend: 'deepseek-v4-pro', input: 'hi' },
+      entry.ctx,
+    )
+    expect(responses.ok).toBe(true)
+    if (responses.ok) {
+      expect((responses.result as { outputText?: string }).outputText).toBe('resp-ok')
     }
 
     const push = await _dispatchForTests(

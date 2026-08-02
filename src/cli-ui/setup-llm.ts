@@ -98,6 +98,8 @@ Subcommands:
   list                  show configured backends and role bindings
   quick [--preset <k>]  one-shot: paste API key → enable Agim Agent
                         (default preset: DeepSeek / deepseek-v4-pro)
+                        DeepSeek extras: --dialect openai|anthropic
+                        (API protocol) [--strict-tools|--no-strict-tools]
   add                   add a new backend (provider preset → name → model → API key → role binding)
   remove [<name>]       remove a backend (also clears the API key)
   role                  edit role → backend mapping (cheap / evaluator / native-chat / custom)
@@ -121,6 +123,8 @@ Notes:
 async function quickAction(argv: string[]): Promise<number> {
   let presetKey: string = DEFAULT_LLM_PRESET.key
   let apiKeyArg = ''
+  let dialectArg: 'openai' | 'anthropic' | undefined
+  let strictToolsArg: boolean | undefined
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
     if (a === '--preset' || a === '-p') {
@@ -129,6 +133,20 @@ async function quickAction(argv: string[]): Promise<number> {
     }
     if (a === '--api-key' || a === '-k') {
       apiKeyArg = (argv[++i] || '').trim()
+      continue
+    }
+    if (a === '--dialect') {
+      const d = (argv[++i] || '').trim().toLowerCase()
+      if (d === 'openai' || d === 'anthropic') dialectArg = d
+      else return cancel(`unknown dialect: ${d} (use openai|anthropic)`)
+      continue
+    }
+    if (a === '--strict-tools') {
+      strictToolsArg = true
+      continue
+    }
+    if (a === '--no-strict-tools') {
+      strictToolsArg = false
       continue
     }
     if (!a.startsWith('-') && !apiKeyArg) {
@@ -166,6 +184,19 @@ async function quickAction(argv: string[]): Promise<number> {
     }
     if (!apiKey) return cancel('API key is required')
 
+    let dialect: 'openai' | 'anthropic' | undefined = dialectArg
+    let strictTools = strictToolsArg === true
+    if (preset.key === 'deepseek') {
+      if (!dialect) {
+        const d = (await ask(rl, 'API protocol [openai/anthropic, Enter=openai]: ')).trim().toLowerCase()
+        dialect = d === 'anthropic' ? 'anthropic' : 'openai'
+      }
+      if (strictToolsArg === undefined && dialect === 'openai') {
+        const s = (await ask(rl, 'Enable beta strict tools? [y/N]: ')).trim().toLowerCase()
+        strictTools = s === 'y' || s === 'yes'
+      }
+    }
+
     let baseUrl = preset.baseUrl
     let model = preset.modelHint
     if (!baseUrl) {
@@ -182,12 +213,20 @@ async function quickAction(argv: string[]): Promise<number> {
       apiKey,
       baseUrl,
       model,
+      ...(preset.key === 'deepseek'
+        ? {
+            dialect: dialect ?? 'openai',
+            strictTools: dialect === 'openai' && strictTools,
+          }
+        : {}),
     })
     process.stdout.write(
       `\n✅ Agim Agent enabled\n`
       + `   backend: ${result.name}\n`
       + `   model:   ${result.model}\n`
       + `   baseUrl: ${result.baseUrl}\n`
+      + (result.dialect ? `   dialect: ${result.dialect}\n` : '')
+      + (result.strictTools ? `   strictTools: on (beta)\n` : '')
       + `   roles:   native-chat / cheap / evaluator → ${result.name}\n`
       + `   defaultAgent: ${result.defaultAgent}\n`,
     )

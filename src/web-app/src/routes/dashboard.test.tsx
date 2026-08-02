@@ -124,7 +124,7 @@ describe('/dashboard', () => {
             name: 'deepseek',
             provider: 'openai-compat',
             baseUrl: 'https://api.deepseek.com/v1',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-pro',
             secret: { source: 'file', envKey: 'AGIM_LLM_SECRET_DEEPSEEK' },
           },
         ],

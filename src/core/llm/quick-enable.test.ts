@@ -27,6 +27,7 @@ describe('quickEnableLlmPreset', () => {
     expect(result.backends?.map((b) => b.name)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
     expect(result.roles['native-chat']).toBe(result.name)
     expect(result.defaultAgent).toBe('agim')
+    expect(result.dialect).toBe('openai')
 
     const cfg = await readConfigObject() as {
       llmBackends?: Array<{ name: string; model: string; baseUrl: string; label?: string }>
@@ -44,6 +45,35 @@ describe('quickEnableLlmPreset', () => {
     expect(describeSecretSource(result.name).source).not.toBe('none')
     expect(describeSecretSource(result.backends?.[1]?.name ?? '').source).not.toBe('none')
     expect(existsSync(join(TMP, 'llm-secrets.json'))).toBe(true)
+  })
+
+  it('writes DeepSeek Anthropic dialect backends with anthropic provider + base', async () => {
+    const result = await quickEnableLlmPreset({
+      apiKey: 'sk-test-deepseek-ant',
+      dialect: 'anthropic',
+    })
+    expect(result.provider).toBe('anthropic')
+    expect(result.baseUrl).toBe('https://api.deepseek.com/anthropic')
+    expect(result.dialect).toBe('anthropic')
+
+    const cfg = await readConfigObject() as {
+      llmBackends?: Array<{ provider: string; baseUrl: string; label?: string }>
+    }
+    expect(cfg.llmBackends?.[0]?.provider).toBe('anthropic')
+    expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://api.deepseek.com/anthropic')
+    expect(cfg.llmBackends?.every((b) => b.label === 'deepseek')).toBe(true)
+  })
+
+  it('writes DeepSeek strictTools flag when requested', async () => {
+    const result = await quickEnableLlmPreset({
+      apiKey: 'sk-test-deepseek-strict',
+      strictTools: true,
+    })
+    expect(result.strictTools).toBe(true)
+    const cfg = await readConfigObject() as {
+      llmBackends?: Array<{ strictTools?: boolean }>
+    }
+    expect(cfg.llmBackends?.[0]?.strictTools).toBe(true)
   })
 
   it('writes Kimi backends (k3 + k2.6) + roles from an API key', async () => {

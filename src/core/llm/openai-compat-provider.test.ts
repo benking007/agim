@@ -324,6 +324,120 @@ describe('OpenAICompatProvider', () => {
     expect(result.toolCalls).toHaveLength(1)
   })
 
+  it('parses DeepSeek prompt_cache_hit/miss tokens into usage', async () => {
+    globalThis.fetch = (async () => makeJsonResponse({
+      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+      usage: {
+        prompt_tokens: 1000,
+        completion_tokens: 20,
+        total_tokens: 1020,
+        prompt_cache_hit_tokens: 800,
+        prompt_cache_miss_tokens: 200,
+      },
+    })) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({
+      name: 'deepseek',
+      model: 'deepseek-v4-flash',
+      apiKey: 'k',
+      baseUrl: 'https://api.deepseek.com',
+      providerLabel: 'deepseek',
+    })
+    const result = await p.chat([{ role: 'user', content: 'x' }], {
+      providerOptions: { thinking: { type: 'disabled' } },
+    })
+    expect(result.usage.promptTokens).toBe(1000)
+    expect(result.usage.cacheReadTokens).toBe(800)
+    expect(result.usage.cacheMissTokens).toBe(200)
+  })
+
+  it('emits strict tools on DeepSeek beta when strictTools is enabled', async () => {
+    let seenUrl = ''
+    let seenBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seenUrl = String(url)
+      seenBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return makeJsonResponse({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+      })
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({
+      name: 'deepseek',
+      model: 'deepseek-v4-pro',
+      apiKey: 'k',
+      baseUrl: 'https://api.deepseek.com',
+      strictTools: true,
+    })
+    await p.chat([{ role: 'user', content: 'x' }], {
+      providerOptions: { thinking: { type: 'disabled' } },
+      tools: [{
+        name: 'loop_verdict',
+        description: 'verdict',
+        parameters: {
+          type: 'object',
+          properties: { decision: { type: 'string' }, met: { type: 'boolean' } },
+          required: ['decision'],
+        },
+      }],
+    })
+    expect(seenUrl).toBe('https://api.deepseek.com/beta/chat/completions')
+    const tools = seenBody.tools as Array<{ function: { strict?: boolean; parameters: { required: string[] } } }>
+    expect(tools[0]?.function.strict).toBe(true)
+    expect(tools[0]?.function.parameters.required).toEqual(['decision', 'met'])
+  })
+
+  it('forwards DeepSeek user_id from providerOptions', async () => {
+    let seenBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return makeJsonResponse({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+      })
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({
+      name: 'deepseek',
+      model: 'deepseek-v4-pro',
+      apiKey: 'k',
+      baseUrl: 'https://api.deepseek.com',
+    })
+    await p.chat([{ role: 'user', content: 'hi' }], {
+      providerOptions: {
+        thinking: { type: 'disabled' },
+        user_id: 'agim-deadbeef',
+      },
+    })
+    expect(seenBody.user_id).toBe('agim-deadbeef')
+  })
+
+  it('ignores SSE keep-alive comments while streaming', async () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(': keep-alive\n\n'))
+        controller.enqueue(encoder.encode('\n\n'))
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+    globalThis.fetch = (async () => new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({
+      name: 'deepseek',
+      model: 'deepseek-v4-flash',
+      apiKey: 'k',
+      baseUrl: 'https://api.deepseek.com',
+    })
+    let text = ''
+    for await (const chunk of p.chatStream([{ role: 'user', content: 'x' }], {
+      providerOptions: { thinking: { type: 'disabled' } },
+    })) {
+      text += chunk.textDelta
+    }
+    expect(text).toBe('hi')
+  })
+
 })
 
 

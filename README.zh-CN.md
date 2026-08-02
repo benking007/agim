@@ -73,7 +73,7 @@ agim doctor
 | 编码与复杂任务 | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` / `antigravity` |
 | 低成本 API 直连 | `agim`（别名 `native`）+ `llmBackends` |
 
-Agim Agent 配置详见：`docs/llm-backends.md`
+Agim Agent 配置详见：`docs/llm-backends.md`（含 DeepSeek V4：§8.1 兼容要点、§8.2 API 协议 / beta、§8.3 RPC）。
 
 内置 Agent 清单与能力说明：`docs/agents.md`
 

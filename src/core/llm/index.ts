@@ -32,6 +32,22 @@ export {
 } from './anthropic-provider.js'
 
 export {
+  DEEPSEEK_ANTHROPIC_BASE,
+  DEEPSEEK_BETA_BASE,
+  DEEPSEEK_OPENAI_BASE,
+  DEEPSEEK_THINKING_LEVEL_MAP,
+  hashDeepSeekUserId,
+  normalizeJsonSchemaForStrict,
+  type DeepSeekApiDialect,
+} from './deepseek-compat.js'
+
+export {
+  completeDeepSeekFim,
+  createDeepSeekResponse,
+  withChatPrefixAssistant,
+} from './deepseek-api.js'
+
+export {
   loadFromConfig,
   getProvider,
   getAnyProvider,

@@ -63,6 +63,12 @@ export interface LlmMessage {
   /** DeepSeek / thinking-mode providers echo `reasoning_content` on
    *  assistant turns; MUST round-trip on subsequent API calls. */
   reasoningContent?: string
+  /**
+   * DeepSeek Chat Prefix Completion (beta): when set on the last
+   * assistant message, the model continues from `content` as a prefix.
+   * Requires the beta base URL (`https://api.deepseek.com/beta`).
+   */
+  prefix?: boolean
   /** Optional multimodal attachments (typically images). Providers with
    *  `supportsVision() === true` encode these as image_url / image
    *  content blocks; others ignore the field and only see `content`. The
@@ -146,6 +152,15 @@ export interface LlmUsage {
   promptTokens?: number
   completionTokens?: number
   totalTokens?: number
+  /**
+   * Context-cache hit tokens (DeepSeek `prompt_cache_hit_tokens`, OpenAI
+   * `prompt_tokens_details.cached_tokens`). When set, cost estimation bills
+   * these at the catalog cacheRead rate and the remainder of promptTokens
+   * at the miss/input rate.
+   */
+  cacheReadTokens?: number
+  /** DeepSeek `prompt_cache_miss_tokens` (uncached input). Optional. */
+  cacheMissTokens?: number
   /** Cost in USD if the provider reports it; otherwise undefined. We
    *  deliberately don't try to compute cost from a hardcoded price table
    *  — Stage 1 just passes through whatever the provider says. */
@@ -342,10 +357,18 @@ export abstract class LlmProvider {
    *  already-priced usage untouched; no-ops when the model isn't catalogued. */
   protected enrichUsage(usage: LlmUsage): LlmUsage {
     if (usage.costUsd !== undefined) return usage
-    const input = usage.promptTokens ?? 0
+    const cacheRead = usage.cacheReadTokens ?? 0
+    const prompt = usage.promptTokens ?? 0
+    // pi-ai / DeepSeek semantics: prompt = hit + miss. Bill uncached input at
+    // miss rate and hits at cacheRead rate (see estimateCostUsd / calculateCost).
+    const input = cacheRead > 0 ? Math.max(0, prompt - cacheRead) : prompt
     const output = usage.completionTokens ?? 0
-    if (input === 0 && output === 0) return usage
-    const cost = estimateCostUsd(this.providerType, this.model, { input, output })
+    if (input === 0 && output === 0 && cacheRead === 0) return usage
+    const cost = estimateCostUsd(this.providerType, this.model, {
+      input,
+      output,
+      cacheRead,
+    })
     return cost === null ? usage : { ...usage, costUsd: cost }
   }
 

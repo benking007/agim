@@ -75,9 +75,20 @@ import {
   shouldHardStopOnOffTrack,
 } from '../../../core/llm/goal-critic.js'
 import {
+  applyStrictToolsToOpenAiPayload,
+  DEEPSEEK_THINKING_LEVEL_MAP,
+  hashDeepSeekUserId,
+  isDeepSeekStrictToolsEnabled,
+  normalizeDeepSeekAnthropicThinkingPayload,
+  withDeepSeekAnthropicUserId,
+  withDeepSeekUserId,
+} from '../../../core/llm/deepseek-compat.js'
+import {
+  isDeepSeekBaseUrl,
   resolveDefaultThinking,
   mapVariantToThinkingLevel,
 } from '../../../core/llm/presets.js'
+import { getBackendBindingByName } from '../../../core/llm/registry.js'
 import {
   isSemanticStuckLoop,
   resolveSemanticStuckLoopOn,
@@ -1392,6 +1403,38 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
       providerRequests += 1
       return undefined
+    })
+    // DeepSeek payload rewrite: user_id isolation, Anthropic thinking/effort,
+    // and optional beta strict tools (schema normalize + strict:true).
+    const deepseekUserId = hashDeepSeekUserId(opts?.platform, opts?.userId)
+    const backendBinding = getBackendBindingByName(
+      typeof binding.model.provider === 'string' ? binding.model.provider : '',
+    )
+    const deepseekStrict = isDeepSeekStrictToolsEnabled(backendBinding?.strictTools)
+    harness.on('before_provider_payload', (ev) => {
+      const baseUrl = typeof ev.model?.baseUrl === 'string' ? ev.model.baseUrl : ''
+      const modelId = typeof ev.model?.id === 'string' ? ev.model.id : ''
+      const api = typeof ev.model?.api === 'string' ? ev.model.api : ''
+      if (!isDeepSeekBaseUrl(baseUrl) && !/^deepseek/i.test(modelId)) return undefined
+      if (!ev.payload || typeof ev.payload !== 'object' || Array.isArray(ev.payload)) {
+        return undefined
+      }
+      let payload = { ...(ev.payload as Record<string, unknown>) }
+      if (api === 'anthropic-messages') {
+        if (deepseekUserId) payload = withDeepSeekAnthropicUserId(payload, deepseekUserId)
+        const level = thinkingLevel === 'off' || thinkingLevel === 'minimal'
+          ? undefined
+          : (DEEPSEEK_THINKING_LEVEL_MAP[thinkingLevel as keyof typeof DEEPSEEK_THINKING_LEVEL_MAP]
+            ?? (thinkingLevel === 'high' ? 'high' : undefined))
+        const effort = typeof level === 'string' ? level : undefined
+        payload = normalizeDeepSeekAnthropicThinkingPayload(payload, effort)
+      } else {
+        if (deepseekUserId) payload = withDeepSeekUserId(payload, deepseekUserId)
+        if (deepseekStrict && Array.isArray(payload.tools)) {
+          payload = applyStrictToolsToOpenAiPayload(payload)
+        }
+      }
+      return { payload }
     })
     const unsubscribeBudget = harness.subscribe(async (event) => {
       if (event.type === 'turn_end' && event.message.role === 'assistant') {

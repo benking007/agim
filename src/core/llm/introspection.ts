@@ -86,17 +86,31 @@ export async function tryIntrospect(input: IntrospectionInput): Promise<Introspe
     providerOptions.response_format = { type: 'json_object' }
   }
   // DeepSeek / Kimi K2.x / Zhipu / MiMo OpenAICompat path defaults thinking
-  // off (see openai-compat-provider). K3 always thinks — prefer low effort.
+  // off (see openai-compat-provider). Evaluator / JSON judgment tasks enable
+  // low-effort thinking for better verdict quality; ping/distill stay off.
   const binding = getBackendBindingByName(provider.name)
   const modelId = input.model || binding?.model
-  if (
-    isDeepSeekBaseUrl(binding?.baseUrl)
-    || isZhipuBaseUrl(binding?.baseUrl)
+  // Evaluator role (verdicts / notifications) benefits from low-effort thinking;
+  // distill / consolidate / ping stay cheap with thinking off.
+  const enableJudgmentThinking = input.role === 'evaluator'
+  if (isDeepSeekBaseUrl(binding?.baseUrl)) {
+    if (enableJudgmentThinking) {
+      providerOptions.thinking = { type: 'enabled' }
+      providerOptions.reasoning_effort = 'low'
+    } else {
+      providerOptions.thinking = { type: 'disabled' }
+    }
+  } else if (
+    isZhipuBaseUrl(binding?.baseUrl)
     || isMimoBaseUrl(binding?.baseUrl)
   ) {
-    providerOptions.thinking = { type: 'disabled' }
+    providerOptions.thinking = enableJudgmentThinking
+      ? { type: 'enabled' }
+      : { type: 'disabled' }
   } else if (isKimiBaseUrl(binding?.baseUrl) && isKimiK2Model(modelId)) {
-    providerOptions.thinking = { type: 'disabled' }
+    providerOptions.thinking = enableJudgmentThinking
+      ? { type: 'enabled' }
+      : { type: 'disabled' }
   } else if (isKimiBaseUrl(binding?.baseUrl) && isKimiK3Model(modelId)) {
     providerOptions.reasoning_effort = 'low'
   }

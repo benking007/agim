@@ -248,15 +248,34 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // so mobile reconnect/bootstrap often races the in-flight turn —
       // remapping ids then lets DONE miss the bubble and leave status=running.
       //
-      // Exception (sleep/wake): if history already has this runId as
-      // success/error, the turn finished while WS was dead — adopt history
-      // and clear stuck Running chrome instead of keeping a zombie activeRunId.
+      // Exception (sleep/wake): adopt history when the server is clearly
+      // ahead — finished activity for this runId, more messages, or a
+      // longer last assistant (summary landed; local stream is stale).
       if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
         const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
           m.activity?.runId === s.activeRunId
           && (m.activity.status === 'success' || m.activity.status === 'error')
         ))
-        if (!finishedInHistory) {
+        const histAhead = a.messages.length > s.messages.length
+        let contentAhead = false
+        if (!finishedInHistory && !histAhead) {
+          let localLen = 0
+          let histLen = 0
+          for (let i = s.messages.length - 1; i >= 0; i--) {
+            if (s.messages[i]?.role === 'assistant') {
+              localLen = s.messages[i]!.content.length
+              break
+            }
+          }
+          for (let i = a.messages.length - 1; i >= 0; i--) {
+            if (a.messages[i]?.role === 'assistant') {
+              histLen = a.messages[i]!.content.length
+              break
+            }
+          }
+          contentAhead = histLen > localLen + 40
+        }
+        if (!finishedInHistory && !histAhead && !contentAhead) {
           return {
             ...s,
             agent: a.agent || s.agent,

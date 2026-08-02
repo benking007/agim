@@ -373,6 +373,8 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 实现：`loop-parent-turn.ts` · `maybeReapIdleLoopVerify`（`loop-verify-gate.ts`）· `loop-api.ts`。
 
+**也可能只是信息流没刷**：总结已写入 session，但休眠期间丢了 `done`，SPA mid-flight 又拒收 HISTORY，且旧逻辑在 history 已有同 `runId` 时跳过 finished `active-run` → 气泡停在旧 partial。现：HISTORY 在「已结束 / 条数或正文明显超前」时采用；`get-history` **始终**重放 finished `active-run`（含完整 `partialText`）。
+
 #### 中间评审 `ask_user`（VERIFY HITL）
 
 | 触发 | 行为 |

@@ -350,6 +350,29 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.status).toBe('success')
   })
 
+  it('HISTORY adopts when summary text is ahead (no activity runId match)', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-stale', agent: 'agim', startedAt: 1_000 },
+      { kind: 'CHUNK', replyId: 'p-1', text: 'partial…' },
+    )
+    const summary = '✅ Loop 已结束\n\n' + '核心结论：'.repeat(20)
+    const after = reduce(
+      mid,
+      {
+        kind: 'HISTORY',
+        agent: 'agim',
+        messages: [
+          { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+          { id: 'hist-1', role: 'assistant', content: summary, timestamp: 2 },
+        ],
+      },
+    )
+    expect(after.activeRunId).toBeNull()
+    expect(after.messages[1]?.content).toBe(summary)
+  })
+
   it('RUN_FINISH clears currentReplyId so Running… cannot stick', () => {
     const after = reduce(
       initialChatState,

@@ -348,7 +348,17 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 `continue|revise` 要求本轮已派工 + `met=false` + `nextDirection` + **无 live 子代理**。
 
 **重要**：墙钟 / 轮次截断 **不等待** `loop_verdict`（`maybeEnforceLoopExit`）；避免报告已写出却永远停在「待验收」。  
-但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）与 **验收启动** 都会 **推迟** 到子代理全部结束后；若仍有 **未完成的 `ask_user`**（`threadHasPendingAsk`），`verify_skipped` 与 VERIFY follow-up 同样推迟，等用户回复后再继续。主 Loop / Portal 通过 `GET /api/loop` 轮询 `liveSubagents`。`/loop stop` 与 Focus off/clear 都会立刻结束 Loop **并取消** 未完成子代理。
+但若本线程仍有 **进行中的 Subagent job**，自动收尾（`wall_limit` / `verify_skipped`）与 **验收启动** 都会 **推迟** 到子代理全部结束后；若仍有 **未完成的 `ask_user`**（`threadHasPendingAsk`），`verify_skipped` 与 VERIFY follow-up 同样推迟，等用户回复后再继续。`/loop stop` 与 Focus off/clear 都会立刻结束 Loop **并取消** 未完成子代理。
+
+**`liveSubagents` 同步（多子代理）**：
+
+| 事件 | 行为 |
+|------|------|
+| A2A job → `completed` / `failed` / `cancelled` | `notifyLoopJobTerminal` → `writeRun` → WS `loop-changed`（不必等 4s 轮询） |
+| 本轮仍有 pending/running | bucket 保持 **待派工**；`canVerify=false`；**不**开验收、**不**结束 Loop |
+| 本轮 `roundJobIds` 全部终态 | 才进入 **待验收**（`canVerify`）；单个 Codex 完成 ≠ Loop / 本轮完成 |
+
+实现：`src/core/a2a.ts`（终态回调）· `notifyLoopJobTerminal` / `countRoundLiveSubagents`（`loop-run.ts`）。Portal 另以 `GET /api/loop` 轮询兜底。
 
 #### 中间评审 `ask_user`（VERIFY HITL）
 
@@ -404,7 +414,8 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 
 API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `bucketLabel` / `liveSubagents` / `canVerify` / `minRounds` / `usage` / `lastVerification`…）。  
 轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。  
-**同步**：线程挂载期间持续轮询（不只 `active`）；WS `open` / `visibility` / `online` 与服务端 `loop-changed`（`writeRun` + `get-history` 引导）触发立刻重拉；轮询失败保留上次快照。结案后的「详细报告」询问若遇**新** Loop id 会让位给对焦/立即行动 dock。
+**同步**：线程挂载期间持续轮询（不只 `active`）；WS `open` / `visibility` / `online` 与服务端 `loop-changed`（每次 `writeRun`，含 Subagent 终态的 `notifyLoopJobTerminal`，以及 `get-history` 引导）触发立刻重拉；轮询失败保留上次快照。结案后的「详细报告」询问若遇**新** Loop id 会让位给对焦/立即行动 dock。  
+聊天侧：父轮 `RUN_FINISH` **不会**把仍带 `jobId` 的 Subagent 步骤刷成 success——各车道以各自 A2A activity 终态为准，避免「卡片已绿、本轮还在等其他人」。
 
 ### 6.3.1 落盘与 Tasks 审计
 
@@ -566,3 +577,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问；同意则向 Agent 发总结指令（`PROJECTS/loops/` 落盘约定），取消则关闭 |
 | 2026-07-25 | **详细报告=Agent 撰写**：移除确定性拼接 / `generate-report` API；累计 `loopJobIds` 仅用于底栏「约 N 个子代理」提示 |
 | 2026-07-27 | **文档**：交叉 [`agent-profiles.md`](./agent-profiles.md)；CLI sticky 可派工、不可当 Loop 父 → [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |
+| 2026-08-02 | **Subagent 终态立刻同步 dock**：`notifyLoopJobTerminal`→`loop-changed`；多子代理时仍按本轮 live 守候（单个完成 ≠ 验收）；SPA 不误标带 `jobId` 的 agent 卡 |

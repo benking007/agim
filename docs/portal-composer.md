@@ -140,10 +140,11 @@ Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry�
 |------|------|
 | 待对焦 | 表单：目标 + 退出条件 + **正文（可选）** →「确定并开始」。路径 A：Focus→正文（标注）；`/loop start <text>`→目标预填。正文 **>240 字默认折叠** |
 | 待派工 / 待验收（Agent 空闲，且无审批/提问挡板；`liveSubagents=0`） | 「立即行动」代用户发推进句 |
+| 本轮仍有 Subagent 进行中（`liveSubagents>0`） | **不**出「立即行动」；单个子代理完成只刷新计数，等本轮全部终态才进待验收 |
 | 结论已就绪 | 结案浮窗：确认结束 / 继续下一轮 |
 | 确认结束后（可选） | 是否生成详细报告 |
 
-契约与门禁见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。Tasks 审计见同文 §6.3.1（`/tasks/loops`）。
+同步：`GET /api/loop` 轮询 + WS `loop-changed`（含 A2A 终态 `notifyLoopJobTerminal`）。契约与门禁见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。Tasks 审计见同文 §6.3.1（`/tasks/loops`）。
 
 **重启护栏**：在 Portal（及 Web 控制台 `/`）聊天里发 `/restart` **不会**重启服务——会直接拒绝，以免进程重启打断当前 Loop 底栏。运维重启请用 **设置 → 服务 → Restart**，或终端 `agim restart`；IM 管理员仍可用 `/restart`（见 [`runbook.md`](./runbook.md) §4）。
 

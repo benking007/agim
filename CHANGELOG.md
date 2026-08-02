@@ -10,8 +10,10 @@ All notable changes to this project will be documented in this file.
   (`completed` / `failed` / `cancelled`) now calls `notifyLoopJobTerminal`
   → `writeRun` / `loop-changed`, so Portal `liveSubagents` / `canVerify`
   update immediately instead of waiting on the 4s poll (Codex done but
-  dock stuck on「待派工」). SPA `RUN_FINISH` no longer auto-successes
-  Subagent steps that still have a `jobId`.
+  dock stuck on「待派工」). Multi-Subagent rounds still wait for **all**
+  `roundJobIds` (one finish ≠ verify). SPA `RUN_FINISH` no longer
+  auto-successes Subagent steps that still have a `jobId`. Documented in
+  `docs/architecture/loop-engineering.md` §6 / `docs/portal-composer.md`.
 
 - **Web / `/m/chat` cannot `/restart` Agim**: chat-driven restart from
   `platform=web` (console + Portal) is refused so an open Loop page is

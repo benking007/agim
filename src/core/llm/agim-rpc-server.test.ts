@@ -143,7 +143,7 @@ describe('agim-rpc-server — static token + llm_complete', () => {
         baseUrl: 'https://api.deepseek.com',
       }],
     })
-    globalThis.fetch = (async (input) => {
+    globalThis.fetch = (async (input: string) => {
       const url = String(input)
       if (url.includes('/beta/completions')) {
         return new Response(JSON.stringify({

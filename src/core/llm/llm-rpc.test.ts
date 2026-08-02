@@ -89,9 +89,9 @@ describe('handleLlmOp', () => {
 
   it('forwards assistant prefix:true for Chat Prefix Completion', async () => {
     loadDeepSeekBackend()
-    let seenBody: Record<string, unknown> | null = null
+    let seenBody: Record<string, unknown> = {}
     let seenUrl = ''
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (input: string, init?: RequestInit) => {
       seenUrl = String(input)
       seenBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       return new Response(JSON.stringify({
@@ -108,7 +108,7 @@ describe('handleLlmOp', () => {
     })
     expect(r.ok).toBe(true)
     expect(seenUrl).toContain('/beta/')
-    const msgs = seenBody?.messages as Array<{ prefix?: boolean }>
+    const msgs = seenBody.messages as Array<{ prefix?: boolean }>
     expect(msgs?.at(-1)?.prefix).toBe(true)
   })
 })
@@ -132,7 +132,7 @@ describe('handleLlmFimOp', () => {
   it('returns FIM text from DeepSeek beta completions', async () => {
     loadDeepSeekBackend()
     let seenUrl = ''
-    globalThis.fetch = (async (input) => {
+    globalThis.fetch = (async (input: string) => {
       seenUrl = String(input)
       return new Response(JSON.stringify({
         choices: [{ text: '    return a+b', finish_reason: 'stop' }],
@@ -177,7 +177,7 @@ describe('handleLlmResponsesOp', () => {
   it('returns output_text from Responses API', async () => {
     loadDeepSeekBackend({ model: 'deepseek-v4-flash' })
     let seenUrl = ''
-    globalThis.fetch = (async (input) => {
+    globalThis.fetch = (async (input: string) => {
       seenUrl = String(input)
       return new Response(JSON.stringify({
         id: 'resp_1',

@@ -99,7 +99,7 @@ Subcommands:
   quick [--preset <k>]  one-shot: paste API key → enable Agim Agent
                         (default preset: DeepSeek / deepseek-v4-pro)
                         DeepSeek extras: --dialect openai|anthropic
-                        [--strict-tools|--no-strict-tools]
+                        (API protocol) [--strict-tools|--no-strict-tools]
   add                   add a new backend (provider preset → name → model → API key → role binding)
   remove [<name>]       remove a backend (also clears the API key)
   role                  edit role → backend mapping (cheap / evaluator / native-chat / custom)

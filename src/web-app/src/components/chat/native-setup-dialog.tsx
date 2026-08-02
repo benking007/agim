@@ -64,6 +64,8 @@ export function NativeSetupDialog({
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LLM_PRESET.baseUrl)
   const [model, setModel] = useState(DEFAULT_LLM_PRESET.model)
   const [apiKey, setApiKey] = useState('')
+  const [deepseekDialect, setDeepseekDialect] = useState<'openai' | 'anthropic'>('openai')
+  const [deepseekStrictTools, setDeepseekStrictTools] = useState(false)
   const isCustom = presetKey === 'custom'
 
   function applyPreset(next: LlmPresetKey): void {
@@ -72,6 +74,10 @@ export function NativeSetupDialog({
     setBaseUrl(p.baseUrl)
     setModel(p.model)
     setName(suggestLlmBackendName(p.baseName, existingNames))
+    if (next !== 'deepseek') {
+      setDeepseekDialect('openai')
+      setDeepseekStrictTools(false)
+    }
   }
 
   async function onSubmit(e: FormEvent): Promise<void> {
@@ -104,6 +110,12 @@ export function NativeSetupDialog({
               name: name.trim(),
               model: model.trim(),
               baseUrl: baseUrl.trim(),
+            }
+          : {}),
+        ...(presetKey === 'deepseek'
+          ? {
+              dialect: deepseekDialect,
+              strictTools: deepseekStrictTools,
             }
           : {}),
       })
@@ -177,6 +189,35 @@ export function NativeSetupDialog({
                 </p>
               )}
             </div>
+
+            {presetKey === 'deepseek' && (
+              <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-3">
+                <div>
+                  <Label className="text-xs font-medium">{t('llm.quick.dialectLabel', { ns: 'settings' })}</Label>
+                  <Select
+                    value={deepseekDialect}
+                    onValueChange={(v) => setDeepseekDialect(v as 'openai' | 'anthropic')}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai">{t('llm.quick.dialectOpenai', { ns: 'settings' })}</SelectItem>
+                      <SelectItem value="anthropic">{t('llm.quick.dialectAnthropic', { ns: 'settings' })}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {deepseekDialect === 'openai' && (
+                  <label className="flex items-start gap-2 text-xs text-text-dim">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={deepseekStrictTools}
+                      onChange={(e) => setDeepseekStrictTools(e.target.checked)}
+                    />
+                    <span>{t('llm.quick.strictTools', { ns: 'settings' })}</span>
+                  </label>
+                )}
+              </div>
+            )}
 
             {isCustom && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

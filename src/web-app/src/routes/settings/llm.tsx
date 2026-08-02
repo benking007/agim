@@ -1258,6 +1258,8 @@ function AddBackendCard(): JSX.Element {
   const [thinkingFormat, setThinkingFormat] = useState<ThinkingFormatChoice>('auto')
   const [maxTokensField, setMaxTokensField] = useState<MaxTokensFieldChoice>('auto')
   const [extraHeaders, setExtraHeaders] = useState('')
+  const [deepseekDialect, setDeepseekDialect] = useState<'openai' | 'anthropic'>('openai')
+  const [deepseekStrictTools, setDeepseekStrictTools] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const isCustom = presetKey === 'custom'
   const selected = catalog.find((p) => p.key === presetKey) ?? defaultPreset
@@ -1279,6 +1281,11 @@ function AddBackendCard(): JSX.Element {
     setExtraHeaders('')
     setProvider('openai-compat')
     setAdvancedOpen(false)
+  }
+
+  function resetDeepseekOptions(): void {
+    setDeepseekDialect('openai')
+    setDeepseekStrictTools(false)
   }
 
   function applyCompatTemplate(next: CompatTemplate): void {
@@ -1312,6 +1319,7 @@ function AddBackendCard(): JSX.Element {
     if (next !== 'custom' && installedPresets.has(next)) return
     setPresetKey(next)
     const p = catalog.find((item) => item.key === next) ?? defaultPreset
+    if (next !== 'deepseek') resetDeepseekOptions()
     if (next === 'custom') {
       setBaseUrl('')
       setModel('')
@@ -1342,6 +1350,10 @@ function AddBackendCard(): JSX.Element {
     setExtraHeaders('')
     setProvider('openai-compat')
     setAdvancedOpen(false)
+    if (next !== 'deepseek') {
+      setDeepseekDialect('openai')
+      setDeepseekStrictTools(false)
+    }
     if (next === 'custom') {
       setBaseUrl('')
       setModel('')
@@ -1401,6 +1413,12 @@ function AddBackendCard(): JSX.Element {
           apiKey: apiKey.trim(),
           bindCheapRoles: true,
           setDefaultAgent: false,
+          ...(presetKey === 'deepseek'
+            ? {
+                dialect: deepseekDialect,
+                strictTools: deepseekStrictTools,
+              }
+            : {}),
         })
         const models = (enabled.backends ?? [{ name: enabled.name, model: enabled.model }])
           .map((b) => b.model)
@@ -1465,6 +1483,35 @@ function AddBackendCard(): JSX.Element {
             )}
           </div>
         </div>
+
+        {presetKey === 'deepseek' && (
+          <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-3">
+            <div>
+              <Label className="text-xs font-medium">{t('llm.quick.dialectLabel')}</Label>
+              <Select
+                value={deepseekDialect}
+                onValueChange={(v) => setDeepseekDialect(v as 'openai' | 'anthropic')}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">{t('llm.quick.dialectOpenai')}</SelectItem>
+                  <SelectItem value="anthropic">{t('llm.quick.dialectAnthropic')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {deepseekDialect === 'openai' && (
+              <label className="flex items-start gap-2 text-xs text-text-dim">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={deepseekStrictTools}
+                  onChange={(e) => setDeepseekStrictTools(e.target.checked)}
+                />
+                <span>{t('llm.quick.strictTools')}</span>
+              </label>
+            )}
+          </div>
+        )}
 
         {isCustom && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

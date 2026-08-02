@@ -1315,7 +1315,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
         return bindingFromFaux(reg)
       },
       listModels: () => [
-        { name: 'deepseek-agim', providerType: 'openai-compat', model: 'deepseek-chat' },
+        { name: 'deepseek-agim', providerType: 'openai-compat', model: 'deepseek-v4-pro' },
         { name: 'qwen-agim', providerType: 'openai-compat', model: 'qwen-max' },
       ],
     })
@@ -1342,7 +1342,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
         return bindingFromFaux(reg)
       },
       listModels: () => [
-        { name: 'deepseek-agim', providerType: 'openai-compat', model: 'deepseek-chat' },
+        { name: 'deepseek-agim', providerType: 'openai-compat', model: 'deepseek-v4-pro' },
         { name: 'qwen-agim', providerType: 'openai-compat', model: 'qwen-max' },
       ],
     })

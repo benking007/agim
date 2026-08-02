@@ -619,7 +619,7 @@ export interface AgentAdapter {
   readonly handlesEphemeralContext?: boolean
   sendPrompt(sessionId: string, prompt: string, history?: ChatMessage[], opts?: AgentSendOpts): AsyncGenerator<string>
   isAvailable(): Promise<boolean>
-  /** Optional short hint for `/agents` UI ('model: deepseek-chat',
+  /** Optional short hint for `/agents` UI ('model: deepseek-v4-pro',
    *  'host: cursor.com', etc.). Returns undefined when nothing useful
    *  to surface. Cheap synchronous call — never IO. */
   describe?(): string | undefined

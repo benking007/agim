@@ -4,7 +4,7 @@
 //
 //   /router compare <a> <b> <prompt…>
 //   /router compare agent:claude-code llm:cheap "explain this regex …"
-//   /router compare llm:native-chat backend:deepseek-chat "draft a tweet about …"
+//   /router compare llm:native-chat backend:deepseek-v4-pro "draft a tweet about …"
 //
 // The two backend specs follow `kind:name`:
 //
@@ -38,7 +38,7 @@ const HELP = [
   '',
   '\u4f8b\u5b50\uff1a',
   '  `/router compare agent:claude-code llm:cheap "\u89e3\u91ca\u8fd9\u4e2a\u6b63\u5219"`',
-  '  `/router compare llm:native-chat backend:deepseek-chat "\u8d77\u8349\u4e00\u4e2a\u53d1\u5e03\u8bf4\u660e"`',
+  '  `/router compare llm:native-chat backend:deepseek-v4-pro "\u8d77\u8349\u4e00\u4e2a\u53d1\u5e03\u8bf4\u660e"`',
 ].join('\n')
 
 export async function handleRouterCompareCommand(args: string, ctx: RouteContext): Promise<string> {

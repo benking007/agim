@@ -235,9 +235,9 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 | **OpenAI Chat Completions** | 一键启用默认 / `dialect: openai` | `https://api.deepseek.com` |
 | **Anthropic Messages** | 一键启用选「Anthropic 兼容」/ `dialect: anthropic` | `https://api.deepseek.com/anthropic`；`x-api-key`；`metadata.user_id`；思考用 `thinking.type=enabled` + `output_config.effort` |
 | **strict tools（beta）** | 一键启用勾选 / backend `strictTools: true` / `AGIM_DEEPSEEK_STRICT_TOOLS=1` | 走 `/beta`，工具 schema 规范化（全 properties required + `additionalProperties:false`）并设 `strict:true` |
-| **Chat Prefix（beta）** | 最后一条 assistant 消息设 `prefix: true` | OpenAICompat 自动改打 beta；用于截断续写 |
-| **FIM（beta）** | `OpenAICompatProvider.completeFim()` / `completeDeepSeekFim()` | `POST /beta/completions`；输出上限 4K |
-| **Responses API** | backend `apiSurface: "responses"` 或 `createDeepSeekResponse()` | 目前官方以 flash 为主；Pro 即将支持。Agim Agent 可按 backend 切到 pi `openai-responses` |
+| **Chat Prefix（beta）** | 最后一条 assistant 消息设 `prefix: true`（含 `mcp__agim__llm_complete`） | OpenAICompat 自动改打 beta；用于截断续写 |
+| **FIM（beta）** | `OpenAICompatProvider.completeFim()` / RPC `mcp__agim__llm_fim` | `POST /beta/completions`；输出上限 4K；需 opt-in `AGIM_RPC_ALLOWED_TOOLS` |
+| **Responses API** | backend `apiSurface: "responses"` / `createDeepSeekResponse()` / RPC `mcp__agim__llm_responses` | 目前官方以 flash 为主；Pro 即将支持。Agim Agent 可按 backend 切到 pi `openai-responses`；RPC 同样需 opt-in |
 
 切换 OpenAI ↔ Anthropic 方言：先删除 DeepSeek 品牌组，再一键启用并选择方言（同品牌只允许一组）。
 

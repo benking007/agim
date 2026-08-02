@@ -29,9 +29,10 @@
 //   - Optional **static** token (`AGIM_RPC_STATIC_TOKEN`) for same-host
 //     independent services that are NOT agim-spawned children (iFund
 //     systemd unit, cron jobs, …). Static tokens have an empty
-//     threadId — `llm_complete` is allowed; `push_message` is refused.
+//     threadId — `llm_complete` / `llm_fim` / `llm_responses` are
+//     allowed; `push_message` is refused.
 //     Security boundary remains: socket 0600 + controlled tool surface
-//     (default whitelist is read/write-safe; `llm_complete` is opt-in
+//     (default whitelist is read/write-safe; LLM tools are opt-in
 //     via `AGIM_RPC_ALLOWED_TOOLS`).
 //   - Tool whitelist hard-coded to read-only / write-safe agim MCP
 //     tools. Operators can extend via AGIM_RPC_ALLOWED_TOOLS env.
@@ -40,7 +41,7 @@
 //
 // Limits intentionally NOT in MVP:
 //   - Per-token rate limit (TODO when first noisy bgjob shows up)
-//   - Per-token cost budget for save_memo / push_message / llm_complete
+//   - Per-token cost budget for save_memo / push_message / llm_*
 //   - Windows named-pipe alternative (no Windows production targets)
 
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
@@ -54,7 +55,14 @@ import { AGIM_HOME } from '../agim-paths.js'
 import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleSkillsOp } from '../skills-rpc.js'
-import { handleLlmOp, type LlmCompleteArgs } from './llm-rpc.js'
+import {
+  handleLlmFimOp,
+  handleLlmOp,
+  handleLlmResponsesOp,
+  type LlmCompleteArgs,
+  type LlmFimArgs,
+  type LlmResponsesArgs,
+} from './llm-rpc.js'
 
 const log = rootLogger.child({ component: 'agim-rpc' })
 
@@ -83,7 +91,7 @@ const DEFAULT_TTL_MS = (() => {
   return Number.isFinite(n) && n > 0 ? n : 24 * 60 * 60 * 1000
 })()
 
-/** Default allowlist — intentionally excludes `llm_complete` (opt-in). */
+/** Default allowlist — intentionally excludes LLM tools (opt-in). */
 const DEFAULT_ALLOWED_TOOLS = [
   'mcp__agim__search_memos',
   'mcp__agim__save_memo',
@@ -91,6 +99,12 @@ const DEFAULT_ALLOWED_TOOLS = [
   'mcp__agim__list_skills',
   'mcp__agim__push_message',
 ]
+
+const LLM_RPC_TOOLS = new Set([
+  'mcp__agim__llm_complete',
+  'mcp__agim__llm_fim',
+  'mcp__agim__llm_responses',
+])
 
 function resolveAllowedTools(): Set<string> {
   const raw = process.env.AGIM_RPC_ALLOWED_TOOLS
@@ -268,9 +282,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       writeJson(res, 401, { ok: false, error: 'invalid or expired token', status: 401 })
       return
     }
-    // llm_complete payloads (system + fund bundle) can exceed the default
-    // 256 KiB memo/skill body cap — allow 1 MiB for that tool only.
-    const bodyCap = toolName === 'mcp__agim__llm_complete' ? 1024 * 1024 : 256 * 1024
+    // LLM payloads (system + fund bundle) can exceed the default
+    // 256 KiB memo/skill body cap — allow 1 MiB for LLM tools.
+    const bodyCap = LLM_RPC_TOOLS.has(toolName) ? 1024 * 1024 : 256 * 1024
     const raw = await readBody(req, bodyCap)
     let parsed: { args?: Record<string, unknown> }
     try {
@@ -338,6 +352,24 @@ async function dispatch(
     }
     case 'mcp__agim__llm_complete': {
       const r = await handleLlmOp(args as unknown as LlmCompleteArgs)
+      return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
+    }
+    case 'mcp__agim__llm_fim': {
+      const a = args as unknown as LlmFimArgs
+      const r = await handleLlmFimOp({
+        ...a,
+        platform: typeof a.platform === 'string' ? a.platform : ctx.platform,
+        userId: typeof a.userId === 'string' ? a.userId : ctx.userId,
+      })
+      return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
+    }
+    case 'mcp__agim__llm_responses': {
+      const a = args as unknown as LlmResponsesArgs
+      const r = await handleLlmResponsesOp({
+        ...a,
+        platform: typeof a.platform === 'string' ? a.platform : ctx.platform,
+        userId: typeof a.userId === 'string' ? a.userId : ctx.userId,
+      })
       return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }
     }
     default:

@@ -13,12 +13,12 @@ All notable changes to this project will be documented in this file.
   thinking; CoT always echoed (no strip). OpenAICompat parses
   `prompt_cache_hit_tokens` / miss for cost; Agim Agent injects hashed
   `user_id`; SSE `: keep-alive` ignored; longer DeepSeek 429 backoff.
-  **P2:** Anthropic dialect (`dialect: anthropic` /
+  **P2:** Anthropic API protocol (`dialect: anthropic` /
   `https://api.deepseek.com/anthropic`); beta **strict tools**
   (`strictTools` / `AGIM_DEEPSEEK_STRICT_TOOLS`); Chat Prefix (`prefix`);
   FIM + Responses helpers; optional `apiSurface: responses`.
   **P3:** CLI `setup llm quick --dialect` / `--strict-tools`; Web Add /
-  native-setup dialect UI; RPC `mcp__agim__llm_fim` +
+  native-setup API-protocol UI (zh「API 协议」); RPC `mcp__agim__llm_fim` +
   `mcp__agim__llm_responses` (opt-in via `AGIM_RPC_ALLOWED_TOOLS`). Docs:
   `llm-backends.md` §8.1–8.2.
 

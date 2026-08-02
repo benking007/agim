@@ -106,6 +106,8 @@ export AGIM_LLM_SECRET_DEEPSEEK_V4_PRO=sk-xxxx
 | `contextWindow` | 否 | Agim Agent 上下文窗口；未设时走厂商启发式或保守 32k |
 | `thinkingFormat` | 否 | `off` / `deepseek` / `openai`；自定义网关显式声明思考协议（见 §4.1） |
 | `maxTokensField` | 否 | `max_tokens` / `max_completion_tokens` |
+| `strictTools` | 否 | DeepSeek OpenAI 协议：`true` 时走 beta + 强制工具参数 schema（见 §8.2） |
+| `apiSurface` | 否 | `chat`（默认）或 `responses`（Responses API；见 §8.2） |
 | `extraHeaders` | 否 | 额外 HTTP Header（勿覆盖 Authorization） |
 | `enabled` | 否 | 软开关，默认启用 |
 
@@ -230,18 +232,63 @@ Composer「思考开」与 effort 会按当前 backend 的思考协议映射到 
 
 ### 8.2 DeepSeek API 协议与 beta 能力
 
+DeepSeek 同时提供 **OpenAI Chat Completions** 与 **Anthropic Messages** 两套 HTTP 协议（Web/CLI 文案为「API 协议」，配置/API 字段名为 `dialect`）。一键启用时二选一；落盘后体现为不同的 `provider` + `baseUrl`（不会单独存 `dialect` 字段）。
+
+#### 启用方式
+
+```bash
+# 默认：OpenAI 协议（Chat Completions）
+agim setup llm quick --preset deepseek
+
+# OpenAI 协议 + beta strict tools
+agim setup llm quick --preset deepseek --dialect openai --strict-tools
+
+# Anthropic 协议（Messages）
+agim setup llm quick --preset deepseek --dialect anthropic
+```
+
+Web：`/settings/llm` 的「快速启用」与「添加 API」、Portal native-setup 对话框在选 DeepSeek 时均可选 **API 协议**；OpenAI 协议下可再勾选 **strict tools**。
+
 | 能力 | 如何启用 | 说明 |
 |---|---|---|
-| **OpenAI Chat Completions** | 一键启用默认 / `dialect: openai` | `https://api.deepseek.com` |
-| **Anthropic Messages** | 一键启用选「Anthropic 兼容」/ `dialect: anthropic` | `https://api.deepseek.com/anthropic`；`x-api-key`；`metadata.user_id`；思考用 `thinking.type=enabled` + `output_config.effort` |
-| **strict tools（beta）** | 一键启用勾选 / backend `strictTools: true` / `AGIM_DEEPSEEK_STRICT_TOOLS=1` | 走 `/beta`，工具 schema 规范化（全 properties required + `additionalProperties:false`）并设 `strict:true` |
+| **OpenAI Chat Completions** | 一键启用默认 / `--dialect openai` | `provider: openai-compat`，`https://api.deepseek.com` |
+| **Anthropic Messages** | 一键启用选「Anthropic 兼容」/ `--dialect anthropic` | `provider: anthropic`，`https://api.deepseek.com/anthropic`；`x-api-key`；`metadata.user_id`；思考用 `thinking.type=enabled` + `output_config.effort` |
+| **strict tools（beta）** | 勾选 / `--strict-tools` / backend `strictTools: true` / `AGIM_DEEPSEEK_STRICT_TOOLS=1` | 仅 OpenAI 协议；走 `/beta`，工具 schema 规范化（全 properties required + `additionalProperties:false`）并设 `strict:true` |
 | **Chat Prefix（beta）** | 最后一条 assistant 消息设 `prefix: true`（含 `mcp__agim__llm_complete`） | OpenAICompat 自动改打 beta；用于截断续写 |
 | **FIM（beta）** | `OpenAICompatProvider.completeFim()` / RPC `mcp__agim__llm_fim` | `POST /beta/completions`；输出上限 4K；需 opt-in `AGIM_RPC_ALLOWED_TOOLS` |
 | **Responses API** | backend `apiSurface: "responses"` / `createDeepSeekResponse()` / RPC `mcp__agim__llm_responses` | 目前官方以 flash 为主；Pro 即将支持。Agim Agent 可按 backend 切到 pi `openai-responses`；RPC 同样需 opt-in |
 
-切换 OpenAI ↔ Anthropic 协议：先删除 DeepSeek 品牌组，再一键启用并选择协议（同品牌只允许一组）。
+Anthropic 协议示例（一键启用等价落盘）：
+
+```json
+{
+  "name": "deepseek-v4-pro",
+  "provider": "anthropic",
+  "baseUrl": "https://api.deepseek.com/anthropic",
+  "model": "deepseek-v4-pro",
+  "label": "deepseek"
+}
+```
+
+切换 OpenAI ↔ Anthropic 协议：先删除 DeepSeek 品牌组，再一键启用并重新选择协议（同品牌只允许一组）。
 
 `finance` 角色**不会**在一键启用时自动绑定；需在「任务派发速查」或角色绑定中手动选择。
+
+### 8.3 本机 RPC（llm_complete / FIM / Responses）
+
+同机服务（如 iFund）可通过 Unix socket + `AGIM_RPC_STATIC_TOKEN` 调用 Agim LLM 工具。默认白名单**不含** LLM 工具，需显式 opt-in：
+
+```bash
+export AGIM_RPC_ALLOWED_TOOLS=mcp__agim__llm_complete,mcp__agim__llm_fim,mcp__agim__llm_responses
+```
+
+| 工具 | 用途 | 备注 |
+|---|---|---|
+| `mcp__agim__llm_complete` | Chat Completions 单次补全 | 支持 assistant `prefix: true`（DeepSeek Chat Prefix） |
+| `mcp__agim__llm_fim` | FIM（beta） | 仅 DeepSeek `openai-compat` backend |
+| `mcp__agim__llm_responses` | Responses API | 仅 `openai-compat`；Anthropic 协议不可用 |
+
+静态 token 允许上述 LLM 工具，但**拒绝** `push_message`（无 IM 线程）。
 
 ## 9. 排障
 

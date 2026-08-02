@@ -20,7 +20,7 @@ All notable changes to this project will be documented in this file.
   **P3:** CLI `setup llm quick --dialect` / `--strict-tools`; Web Add /
   native-setup API-protocol UI (zh「API 协议」); RPC `mcp__agim__llm_fim` +
   `mcp__agim__llm_responses` (opt-in via `AGIM_RPC_ALLOWED_TOOLS`). Docs:
-  `llm-backends.md` §8.1–8.2.
+  `llm-backends.md` §8.1–8.3 (+ field table / README pointers).
 
 - **`AGIM_NATIVE_TURN_TIMEOUT_MS` default 30 → 60 minutes**: Agim Agent
   whole-turn watchdog was aborting long Loop / multi-Subagent runs mid-

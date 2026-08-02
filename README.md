@@ -74,7 +74,7 @@ Common CLI entries:
 | Strong coding agent loop | `claude-code` / `codex` / `copilot` / `opencode` / `cursor` / `kimi-code` / `qoder` / `pi` / `mimo` / `antigravity` |
 | API-only, low-cost in-process mode | `agim` (alias `native`) + `llmBackends` |
 
-Agim Agent setup details: `docs/llm-backends.md`
+Agim Agent setup details: `docs/llm-backends.md` (DeepSeek V4: §8.1 compat, §8.2 API protocol / beta, §8.3 RPC).
 
 Supported agent details: `docs/agents.md`
 

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Plan / Subagents landing on historical bubbles**: after sending a new
+  turn, a late `get-history` could false-trigger HISTORY `contentAhead`
+  (empty optimistic placeholder vs previous long assistant), wipe the new
+  user+reply, and bind the next `RUN_START` / Todo / Subagent steps onto
+  an older message. Mid-flight HISTORY now keeps local when the transcript
+  is ahead; `RUN_START` / `ACTIVE_RUN` no longer attach a new run onto a
+  finished different assistant.
+
 ### Added
 
 - **Workspace file editor Download**: Agent Files (`/workspace`) text

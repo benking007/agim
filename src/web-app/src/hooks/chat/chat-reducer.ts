@@ -251,14 +251,21 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // Exception (sleep/wake): adopt history when the server is clearly
       // ahead — finished activity for this runId, more messages, or a
       // longer last assistant (summary landed; local stream is stale).
+      //
+      // Never treat history as ahead when the local transcript already has
+      // more bubbles (optimistic SEND_USER + empty placeholder). Comparing
+      // that empty placeholder to the previous turn's long assistant used
+      // to false-trigger `contentAhead`, wipe the new turn, and bind the
+      // next RUN_START / Plan / Subagents onto historical messages.
       if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
-        const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
+        const localAhead = s.messages.length > a.messages.length
+        const finishedInHistory = !localAhead && !!s.activeRunId && a.messages.some((m) => (
           m.activity?.runId === s.activeRunId
           && (m.activity.status === 'success' || m.activity.status === 'error')
         ))
         const histAhead = a.messages.length > s.messages.length
         let contentAhead = false
-        if (!finishedInHistory && !histAhead) {
+        if (!localAhead && !finishedInHistory && !histAhead) {
           let localLen = 0
           let histLen = 0
           for (let i = s.messages.length - 1; i >= 0; i--) {
@@ -275,7 +282,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           }
           contentAhead = histLen > localLen + 40
         }
-        if (!finishedInHistory && !histAhead && !contentAhead) {
+        if (localAhead || (!finishedInHistory && !histAhead && !contentAhead)) {
           return {
             ...s,
             agent: a.agent || s.agent,
@@ -325,9 +332,17 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       let replyId = s.currentReplyId
       let idx = findActivityMessageIndex(messages, { runId: a.runId, replyId })
       if (idx < 0) {
-        // Prefer last assistant; else append a placeholder for in-flight.
+        // Prefer last assistant that is not a finished different run.
         for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i]?.role === 'assistant') { idx = i; break }
+          const m = messages[i]
+          if (m?.role !== 'assistant') continue
+          const act = m.activity
+          const finishedOther = !!act
+            && (act.status === 'success' || act.status === 'error')
+            && act.runId !== a.runId
+          if (finishedOther) break
+          idx = i
+          break
         }
       }
       if (idx < 0 && (a.status === 'running' || a.partialText)) {
@@ -638,13 +653,42 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         ...s.runActivities.filter((r) => r.runId !== a.runId),
       ]
       let messages = s.messages
-      let idx = findActivityMessageIndex(messages, { replyId: s.currentReplyId })
+      let currentReplyId = s.currentReplyId
+      let idx = findActivityMessageIndex(messages, { replyId: currentReplyId })
       if (idx < 0) {
+        // Prefer the latest assistant that is not already a finished
+        // *different* run — otherwise late HISTORY can leave currentReplyId
+        // null and we would glue Plan/Subagents onto a historical bubble.
         for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i]?.role === 'assistant') { idx = i; break }
+          const m = messages[i]
+          if (m?.role !== 'assistant') continue
+          const act = m.activity
+          const finishedOther = !!act
+            && (act.status === 'success' || act.status === 'error')
+            && act.runId !== a.runId
+          if (finishedOther) break
+          idx = i
+          break
         }
       }
-      if (idx >= 0) {
+      if (idx < 0) {
+        const placeholder: ChatMessage = {
+          id: `reply-${a.runId}`,
+          role: 'assistant',
+          content: '',
+          agent: a.agent,
+          timestamp: a.startedAt,
+          activity: {
+            runId: a.runId,
+            status: 'running',
+            startedAt: a.startedAt,
+            steps: [],
+          },
+        }
+        messages = [...messages, placeholder]
+        currentReplyId = placeholder.id
+        idx = messages.length - 1
+      } else {
         const msg = messages[idx]
         if (msg) {
           messages = withActivityAt(messages, idx, {
@@ -653,11 +697,13 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
             startedAt: a.startedAt,
             steps: msg.activity?.steps ?? [],
           })
+          if (currentReplyId == null) currentReplyId = msg.id
         }
       }
       return {
         ...s,
         messages,
+        currentReplyId,
         runActivities: nextRuns.slice(0, MAX_RUN_ACTIVITIES),
         activeRunId: a.runId,
       }

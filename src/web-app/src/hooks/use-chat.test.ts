@@ -373,6 +373,146 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.content).toBe(summary)
   })
 
+  it('HISTORY does not wipe a new turn when empty placeholder loses to prior long reply', () => {
+    // Turn 1 finished with a long assistant. User sends turn 2 → empty
+    // placeholder. Late get-history still only has turn 1. Old contentAhead
+    // compared empty p-2 vs long hist-1 and adopted, wiping u-2 and gluing
+    // the next Plan/Subagents onto the historical bubble.
+    const long = '研究报告正文：'.repeat(30)
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1', 'first'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      { kind: 'CHUNK', replyId: 'p-1', text: long },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 2_000,
+        durationMs: 1_000,
+      },
+      { kind: 'SEND_USER', message: userMsg('u-2', 'dispatch again'), placeholder: asstMsg('p-2') },
+    )
+    expect(mid.messages).toHaveLength(4)
+    expect(mid.currentReplyId).toBe('p-2')
+
+    const afterHist = reduce(
+      mid,
+      {
+        kind: 'HISTORY',
+        agent: 'agim',
+        messages: [
+          { id: 'hist-0', role: 'user', content: 'first', timestamp: 1 },
+          {
+            id: 'hist-1',
+            role: 'assistant',
+            content: long,
+            timestamp: 2,
+            activity: {
+              runId: 'run-1',
+              status: 'success',
+              startedAt: 1_000,
+              finishedAt: 2_000,
+              steps: [{
+                id: 'todo-old',
+                kind: 'todo',
+                label: 'Plan',
+                status: 'done',
+                startedAt: 1_100,
+              }],
+            },
+          },
+        ],
+      },
+    )
+    expect(afterHist.messages).toHaveLength(4)
+    expect(afterHist.currentReplyId).toBe('p-2')
+    expect(afterHist.messages[2]?.id).toBe('u-2')
+    expect(afterHist.messages[3]?.id).toBe('p-2')
+
+    const afterRun = reduce(
+      afterHist,
+      { kind: 'RUN_START', runId: 'run-2', agent: 'agim', startedAt: 3_000 },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-2',
+        step: {
+          id: 'todo-new',
+          kind: 'todo',
+          label: 'Plan',
+          status: 'running',
+          startedAt: 3_100,
+          todoItems: [{ id: '1', content: '调研', status: 'in_progress' }],
+        },
+      },
+      {
+        kind: 'ACTIVITY_STEP',
+        runId: 'run-2',
+        step: {
+          id: 'sub-new',
+          kind: 'subagent',
+          label: 'agim:deepseek-v4-pro',
+          status: 'running',
+          startedAt: 3_200,
+        },
+      },
+    )
+    expect(afterRun.messages[1]?.activity?.runId).toBe('run-1')
+    expect(afterRun.messages[3]?.activity?.runId).toBe('run-2')
+    expect(afterRun.messages[3]?.activity?.steps?.some((st) => st.id === 'todo-new')).toBe(true)
+    expect(afterRun.messages[3]?.activity?.steps?.some((st) => st.id === 'sub-new')).toBe(true)
+  })
+
+  it('RUN_START binds the empty placeholder even if currentReplyId was cleared', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1', 'first'), placeholder: asstMsg('p-1', 'done') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 2_000,
+        durationMs: 1_000,
+      },
+      { kind: 'SEND_USER', message: userMsg('u-2', 'again'), placeholder: asstMsg('p-2') },
+    )
+    const orphan = { ...mid, currentReplyId: null as string | null }
+    const after = reduce(
+      orphan,
+      { kind: 'RUN_START', runId: 'run-2', agent: 'agim', startedAt: 3_000 },
+    )
+    expect(after.messages).toHaveLength(4)
+    expect(after.messages[3]?.id).toBe('p-2')
+    expect(after.messages[3]?.activity?.runId).toBe('run-2')
+    expect(after.messages[1]?.activity?.runId).toBe('run-1')
+    expect(after.currentReplyId).toBe('p-2')
+  })
+
+  it('RUN_START appends when only a finished historical assistant remains', () => {
+    const prior = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1', 'first'), placeholder: asstMsg('p-1', 'done') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 2_000,
+        durationMs: 1_000,
+      },
+    )
+    const after = reduce(
+      { ...prior, currentReplyId: null },
+      { kind: 'RUN_START', runId: 'run-2', agent: 'agim', startedAt: 3_000 },
+    )
+    expect(after.messages).toHaveLength(3)
+    expect(after.messages[1]?.activity?.runId).toBe('run-1')
+    expect(after.messages[2]?.activity?.runId).toBe('run-2')
+    expect(after.messages[2]?.content).toBe('')
+    expect(after.currentReplyId).toBe(`reply-run-2`)
+  })
+
   it('RUN_FINISH clears currentReplyId so Running… cannot stick', () => {
     const after = reduce(
       initialChatState,

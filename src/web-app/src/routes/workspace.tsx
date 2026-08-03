@@ -21,6 +21,7 @@ import {
   BookOpen,
   ChevronUp,
   File,
+  FileDown,
   FileText,
   Folder,
   FolderTree,
@@ -48,6 +49,7 @@ import {
 import { useConfig } from '@/hooks/use-settings'
 import { describeError } from '@/lib/api/errors'
 import { agentDisplayName } from '@/lib/agent-label'
+import { saveTextAsFile } from '@/lib/save-text-file'
 import type {
   WorkspaceFileContent,
   WorkspaceFileEntry,
@@ -422,6 +424,7 @@ function FileEditor({ file, agent, onBack }: FileEditorProps): JSX.Element {
   const [draft, setDraft] = useState(file.content)
   useEffect(() => { setDraft(file.content) }, [file.content])
   const dirty = draft !== file.content
+  const [downloading, setDownloading] = useState(false)
 
   const write = useWriteWorkspaceFile()
 
@@ -432,6 +435,26 @@ function FileEditor({ file, agent, onBack }: FileEditorProps): JSX.Element {
     } catch (err) {
       const { message } = describeError(err, t)
       toast.error(message)
+    }
+  }
+
+  async function onDownload(): Promise<void> {
+    const filename = workspaceBasename(file.path)
+    setDownloading(true)
+    try {
+      const result = await saveTextAsFile({
+        filename,
+        content: draft,
+        mime: mimeForWorkspaceFilename(filename),
+      })
+      if (result !== 'cancelled') {
+        toast.success(t('toast.downloaded', { path: filename }))
+      }
+    } catch (err) {
+      const { message } = describeError(err, t)
+      toast.error(message)
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -460,16 +483,29 @@ function FileEditor({ file, agent, onBack }: FileEditorProps): JSX.Element {
         <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs font-mono">{file.path}</code>
         {file.truncated && <Badge variant="warning">{t('editor.truncatedBadge')}</Badge>}
         {dirty && <Badge variant="info">{t('editor.dirtyHint')}</Badge>}
-        <Button
-          type="button"
-          size="sm"
-          className="ml-auto"
-          onClick={() => void onSave()}
-          disabled={!dirty || write.isPending || file.truncated}
-        >
-          {write.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {write.isPending ? t('editor.saving') : t('editor.save')}
-        </Button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void onDownload()}
+            disabled={downloading}
+          >
+            {downloading
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <FileDown className="h-4 w-4" />}
+            {t('editor.download')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void onSave()}
+            disabled={!dirty || write.isPending || file.truncated}
+          >
+            {write.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {write.isPending ? t('editor.saving') : t('editor.save')}
+          </Button>
+        </div>
       </div>
       {file.truncated && (
         <p className="text-xs text-warning">{t('editor.truncated')}</p>
@@ -493,6 +529,26 @@ function FileEditor({ file, agent, onBack }: FileEditorProps): JSX.Element {
       )}
     </div>
   )
+}
+
+/** Last path segment for download filenames (`reports/a.md` → `a.md`). */
+export function workspaceBasename(path: string): string {
+  const norm = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  const base = norm.split('/').pop()?.trim()
+  return base || 'download.txt'
+}
+
+/** Best-effort MIME for Save As / anchor download from the file name. */
+export function mimeForWorkspaceFilename(filename: string): string {
+  const lower = filename.toLowerCase()
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'text/markdown;charset=utf-8'
+  if (lower.endsWith('.json')) return 'application/json;charset=utf-8'
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html;charset=utf-8'
+  if (lower.endsWith('.csv')) return 'text/csv;charset=utf-8'
+  if (lower.endsWith('.tsv')) return 'text/tab-separated-values;charset=utf-8'
+  if (lower.endsWith('.xml')) return 'application/xml;charset=utf-8'
+  if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'text/yaml;charset=utf-8'
+  return 'text/plain;charset=utf-8'
 }
 
 function formatTime(iso: string | null): string {

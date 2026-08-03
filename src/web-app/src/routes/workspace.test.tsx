@@ -6,6 +6,7 @@
  *   * Click a file entry → URL updates to ?path= and the file editor
  *     renders with content
  *   * Dirty edit + Save → PUT /api/workspace-files
+ *   * Download exports current draft via saveTextAsFile
  *   * Binary file → read-only placeholder
  */
 
@@ -15,8 +16,12 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { requireValue } from '@/test/assert'
-import WorkspaceRoute from './workspace'
+import WorkspaceRoute, { mimeForWorkspaceFilename, workspaceBasename } from './workspace'
 import '@/i18n'
+
+vi.mock('@/lib/save-text-file', () => ({
+  saveTextAsFile: vi.fn(async () => 'download' as const),
+}))
 
 beforeEach(() => {
   localStorage.setItem('agim_token', 'tok')
@@ -145,6 +150,45 @@ describe('/workspace', () => {
     })
   })
 
+  it('Download exports the current draft (including unsaved edits)', async () => {
+    const { saveTextAsFile } = await import('@/lib/save-text-file')
+    const saveMock = vi.mocked(saveTextAsFile)
+    saveMock.mockClear()
+
+    const FILE_PAYLOAD = {
+      type: 'file',
+      agent: 'claude',
+      path: 'reports/weekly.md',
+      size: 40,
+      mtime: '2026-05-18T08:00:00Z',
+      encoding: 'utf-8',
+      content: '# Weekly\n\nDraft body.',
+      truncated: false,
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const u = String(input)
+      if (u === '/api/agents/status') return jsonResponse(AGENTS)
+      if (u === '/api/config') return jsonResponse({})
+      if (u.startsWith('/api/workspace-files')) return jsonResponse(FILE_PAYLOAD)
+      return jsonResponse({})
+    })
+    renderAt('?agent=claude&path=reports%2Fweekly.md')
+    const ta = await waitFor(() => {
+      const el = document.querySelector('textarea') as HTMLTextAreaElement | null
+      expect(el).not.toBeNull()
+      return requireValue(el, 'workspace editor')
+    })
+    fireEvent.change(ta, { target: { value: `${ta.value}\n\n## Findings` } })
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => {
+      expect(saveMock).toHaveBeenCalledWith({
+        filename: 'weekly.md',
+        content: expect.stringContaining('## Findings'),
+        mime: 'text/markdown;charset=utf-8',
+      })
+    })
+  })
+
   it('binary file → read-only placeholder, no textarea', async () => {
     const BIN = {
       type: 'file', agent: 'claude', path: 'logo.png',
@@ -259,6 +303,15 @@ describe('/workspace', () => {
         (c) => String(c[0]).startsWith('/api/workspace-files') && (c[1] as RequestInit | undefined)?.method === 'PUT',
       ),
     ).toBe(true)
+  })
+
+  it('workspaceBasename / mimeForWorkspaceFilename helpers', () => {
+    expect(workspaceBasename('reports/weekly.md')).toBe('weekly.md')
+    expect(workspaceBasename('notes.txt')).toBe('notes.txt')
+    expect(workspaceBasename('a/b/')).toBe('b')
+    expect(mimeForWorkspaceFilename('report.md')).toBe('text/markdown;charset=utf-8')
+    expect(mimeForWorkspaceFilename('data.json')).toBe('application/json;charset=utf-8')
+    expect(mimeForWorkspaceFilename('plain.txt')).toBe('text/plain;charset=utf-8')
   })
 
   // Sanity: keep `within` reachable for ts-strict; the helper is

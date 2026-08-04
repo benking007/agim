@@ -145,7 +145,7 @@ Lazy 加载 `portal-loop-dock.tsx`（轮询 `GET /api/loop`，不进 SPA entry�
 | 确认结束后（可选） | 是否生成详细报告 |
 
 同步：`GET /api/loop` 轮询 + WS `loop-changed`（含 A2A 终态 `notifyLoopJobTerminal`）。  
-休眠唤醒：轮询会 `maybeReapIdleLoopVerify`——父轮已断且本轮子代理已齐时结束卡死的「还在继续」（`verify_skipped`）。若总结其实已写好，只是聊天没刷：HISTORY 在终态 / 正文超前时采用，且 `get-history` 始终重放 finished `active-run`。契约见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。Tasks 审计见同文 §6.3.1（`/tasks/loops`）。
+休眠唤醒：轮询会 `maybeReapIdleLoopVerify`——父轮已断且本轮子代理已齐时结束卡死的「还在继续」（`verify_skipped`）。若总结其实已写好，只是聊天没刷：HISTORY 在终态 / 正文超前时采用，且 `get-history` 始终重放 finished `active-run`；**本地消息条数已多于 history 时不采用**（避免新一轮空 placeholder 被旧长回复误判为「正文超前」，把 Plan/Subagents 粘到历史气泡）。契约见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §6。Tasks 审计见同文 §6.3.1（`/tasks/loops`）。
 
 **重启护栏**：在 Portal（及 Web 控制台 `/`）聊天里发 `/restart` **不会**重启服务——会直接拒绝，以免进程重启打断当前 Loop 底栏。运维重启请用 **设置 → 服务 → Restart**，或终端 `agim restart`；IM 管理员仍可用 `/restart`（见 [`runbook.md`](./runbook.md) §4）。
 

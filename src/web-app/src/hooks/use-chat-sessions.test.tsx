@@ -92,6 +92,19 @@ describe('useChat multi-session', () => {
     unmount()
   })
 
+  it('switchSession paints the cached transcript immediately', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const firstId = result.current.activeSessionId
+    act(() => { result.current.send('hello from first') })
+    act(() => { result.current.newConversation() })
+    expect(result.current.state.messages).toEqual([])
+
+    act(() => { result.current.switchSession(firstId) })
+    expect(result.current.activeSessionId).toBe(firstId)
+    expect(result.current.state.messages.some((m) => m.content === 'hello from first')).toBe(true)
+    unmount()
+  })
+
   it('reconnect bootstrap uses the active thread, not the first-mount id', () => {
     const { result, unmount } = renderHook(() => useChat())
     act(() => { result.current.send('stay') })

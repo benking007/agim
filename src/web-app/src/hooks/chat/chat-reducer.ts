@@ -149,6 +149,23 @@ function lastAssistantIndex(messages: ChatMessage[]): number {
   return -1
 }
 
+function lastMessageId(messages: ChatMessage[]): string | undefined {
+  return messages.at(-1)?.id
+}
+
+function hasMessageId(messages: ChatMessage[], id: string | undefined): boolean {
+  return !!id && messages.some((m) => m.id === id)
+}
+
+/** Prepend server messages that sit before the local first id (cache was a tail). */
+function mergeOlderPrefix(local: ChatMessage[], hist: ChatMessage[]): ChatMessage[] {
+  const firstId = local[0]?.id
+  if (!firstId) return hist
+  const cut = hist.findIndex((m) => m.id === firstId)
+  if (cut <= 0) return local
+  return [...hist.slice(0, cut), ...local]
+}
+
 function assistantContentAhead(local: ChatMessage[], hist: ChatMessage[]): boolean {
   const hi = lastAssistantIndex(hist)
   if (hi < 0) return false
@@ -368,6 +385,24 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
             }
           }
         }
+        const localHasServerLast = hasMessageId(s.messages, lastMessageId(a.messages))
+        // Cached / reconnect transcript is stale vs the server tail.
+        if (!inFlight && !localHasServerLast) {
+          return {
+            ...s,
+            ...meta,
+            messages: a.messages,
+            currentReplyId: null,
+            activeRunId: null,
+          }
+        }
+        if (!inFlight && localHasServerLast && assistantContentAhead(s.messages, a.messages)) {
+          return {
+            ...s,
+            ...meta,
+            messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
+          }
+        }
         return { ...s, ...meta }
       }
       if (s.currentReplyId != null || s.activeRunId != null) {
@@ -384,6 +419,15 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         if (localAhead || (!finishedInHistory && !histAhead && !contentAhead)) {
           return { ...s, ...meta }
         }
+      }
+      // Same tail already on screen (localStorage cache / reconnect): keep
+      // those bubbles so markdown does not remount, and only prepend older.
+      if (s.messages.length > 0 && hasMessageId(s.messages, lastMessageId(a.messages))) {
+        let messages = mergeOlderPrefix(s.messages, a.messages)
+        if (assistantContentAhead(s.messages, a.messages)) {
+          messages = patchAssistantFromHistory(messages, a.messages, s.activeRunId)
+        }
+        return { ...s, ...meta, messages }
       }
       return {
         ...s,

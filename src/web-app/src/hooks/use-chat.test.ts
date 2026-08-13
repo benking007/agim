@@ -598,6 +598,61 @@ describe('chatReducer', () => {
     expect(after.messages.map((m) => m.id)).toEqual(['u-1', 'a-1', 'u-2', 'a-2'])
   })
 
+  it('HISTORY keeps cached bubbles when the server tail ends on the same id', () => {
+    const cached = [
+      userMsg('u-1', 'old'),
+      asstMsg('a-1', 'old reply'),
+      userMsg('u-2', 'latest'),
+      asstMsg('a-2', 'latest reply'),
+    ]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached,
+    })
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      messages: [userMsg('u-2', 'latest'), asstMsg('a-2', 'latest reply')],
+    })
+    expect(after.messages).toHaveLength(4)
+    expect(after.messages[0]?.id).toBe('u-1')
+    expect(after.messages[3]).toBe(seeded.messages[3])
+  })
+
+  it('complete HISTORY prepends older turns onto a cached tail without remounting it', () => {
+    const cached = [userMsg('u-2', 'later'), asstMsg('a-2', 'later reply')]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached,
+    })
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      messages: [
+        userMsg('u-1', 'first'),
+        asstMsg('a-1', 'first reply'),
+        userMsg('u-2', 'later'),
+        asstMsg('a-2', 'later reply'),
+      ],
+    })
+    expect(after.messages.map((m) => m.id)).toEqual(['u-1', 'a-1', 'u-2', 'a-2'])
+    expect(after.messages[3]).toBe(seeded.messages[1])
+  })
+
+  it('incomplete HISTORY replaces a stale cache when the server last id is missing locally', () => {
+    const cached = [userMsg('u-1', 'old'), asstMsg('a-1', 'old reply')]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached,
+    })
+    const tail = [userMsg('u-9', 'new'), asstMsg('a-9', 'new reply')]
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 4,
+      messages: tail,
+    })
+    expect(after.messages).toEqual(tail)
+  })
+
   it('RUN_START binds the empty placeholder even if currentReplyId was cleared', () => {
     const mid = reduce(
       initialChatState,

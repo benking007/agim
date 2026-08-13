@@ -18,6 +18,7 @@
  *   chat/chat-types.ts       — shared types + constants
  *   chat/chat-reducer.ts     — pure reducer + initial state + action union
  *   chat/chat-ws-handlers.ts — WS frame normalization + onIncoming factory
+ *   lib/web-history-cache.ts — localStorage snapshot for instant paint
  */
 
 import { useEffect, useReducer, useRef, useState } from 'react'
@@ -35,8 +36,15 @@ import {
   upsertSession,
   type WebSessionEntry,
 } from '@/lib/web-sessions'
+import {
+  cachedHistoryToAction,
+  hydrateInitialChatState,
+  readCachedHistory,
+  writeCachedHistory,
+} from '@/lib/web-history-cache'
 import { chatReducer, initialChatState } from './chat/chat-reducer'
 import { makeOnIncoming } from './chat/chat-ws-handlers'
+import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
 
@@ -84,7 +92,7 @@ function transcriptHasUserTurn(messages: ChatMessage[]): boolean {
 // ---------------------------------------------------------------------------
 
 export function useChat(): UseChat {
-  const [state, dispatch] = useReducer(chatReducer, initialChatState)
+  const [state, dispatch] = useReducer(chatReducer, initialChatState, hydrateInitialChatState)
   const wsRef = useRef(openChatWs())
   // Per-stream buffer + rAF token; chunks accumulate then flush once
   // per frame so we avoid 60 setState/sec.
@@ -111,6 +119,8 @@ export function useChat(): UseChat {
   useEffect(() => {
     messagesRef.current = state.messages
   }, [state.messages])
+
+  usePersistChatHistory(threadIdRef, state, messagesRef)
 
   useEffect(() => subscribeSessions(() => {
     setSessionSnap(snapshotSessions())
@@ -296,11 +306,17 @@ export function useChat(): UseChat {
   }
 
   function activateThread(threadId: string): void {
+    writeCachedHistory(
+      threadIdRef.current,
+      historyPersistSnap(state, messagesRef.current),
+    )
     setActiveId(threadId)
     threadIdRef.current = threadId
     currentReplyIdRef.current = null
     dispatch({ kind: 'RESET_CONVERSATION' })
     dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
+    const cached = readCachedHistory(threadId)
+    if (cached) dispatch(cachedHistoryToAction(cached))
     wsRef.current.send({ type: 'get-history', threadId })
   }
 

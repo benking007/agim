@@ -20,6 +20,15 @@ export function historyPersistSnap(state: ChatState, messages: ChatMessage[]): H
   }
 }
 
+export function persistIdleHistory(
+  expectedThreadId: string,
+  liveThreadId: string,
+  snap: HistoryPersistSnap,
+): void {
+  if (!expectedThreadId || expectedThreadId !== liveThreadId) return
+  writeCachedHistory(expectedThreadId, snap)
+}
+
 export function usePersistChatHistory(
   threadIdRef: { current: string },
   state: ChatState,
@@ -34,7 +43,7 @@ export function usePersistChatHistory(
     if (state.currentReplyId != null || state.activeRunId != null) return
     const id = threadIdRef.current
     const timer = window.setTimeout(() => {
-      writeCachedHistory(id, historyPersistSnap(stateRef.current, messagesRef.current))
+      persistIdleHistory(id, threadIdRef.current, historyPersistSnap(stateRef.current, messagesRef.current))
     }, 400)
     return () => window.clearTimeout(timer)
   }, [tailSig, state.currentReplyId, state.activeRunId, threadIdRef, messagesRef])
@@ -43,7 +52,7 @@ export function usePersistChatHistory(
     const save = (): void => {
       const s = stateRef.current
       if (s.currentReplyId != null || s.activeRunId != null) return
-      writeCachedHistory(threadIdRef.current, historyPersistSnap(s, messagesRef.current))
+      persistIdleHistory(threadIdRef.current, threadIdRef.current, historyPersistSnap(s, messagesRef.current))
     }
     const onVis = (): void => {
       if (document.visibilityState === 'hidden') save()

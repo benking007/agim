@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import i18n from '@/i18n'
 import { adoptThreadId, sessionTitleFromText, upsertSession } from '@/lib/web-sessions'
 import type { ActivityStepEvent, ChatIncoming, HistoryMessage, ApprovalCardOutcome } from '@/types/ws'
-import { isHistoryComplete, type ChatAction } from './chat-reducer'
+import { isHistoryComplete, historyBelongsToClient, type ChatAction } from './chat-reducer'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat-types'
 import type { ChatActivityStep, ChatMessage } from './chat-types'
 
@@ -141,6 +141,8 @@ export function makeOnIncoming(
         })
         return
       case 'history': {
+        const current = opts?.threadIdRef?.current
+        if (!historyBelongsToClient(msg.threadId, current)) return
         const messages = msg.messages.map(normalizeHistoryMessage)
         const complete = isHistoryComplete(msg)
         dispatch({
@@ -154,9 +156,10 @@ export function makeOnIncoming(
           historyComplete: complete,
           olderCount: msg.olderCount ?? 0,
           updatedAt: typeof msg.updatedAt === 'number' ? msg.updatedAt : undefined,
+          ...(msg.threadId ? { threadId: msg.threadId } : {}),
           messages,
         })
-        const threadId = opts?.threadIdRef?.current
+        const threadId = msg.threadId || current
         if (threadId) {
           const titleSource = (msg.sessionTitle || '').trim()
             || (complete
@@ -172,9 +175,15 @@ export function makeOnIncoming(
         return
       }
       case 'history-prepend': {
+        const current = opts?.threadIdRef?.current
+        if (!historyBelongsToClient(msg.threadId, current)) return
         const messages = msg.messages.map(normalizeHistoryMessage)
-        dispatch({ kind: 'HISTORY_PREPEND', messages })
-        const threadId = opts?.threadIdRef?.current
+        dispatch({
+          kind: 'HISTORY_PREPEND',
+          messages,
+          ...(msg.threadId ? { threadId: msg.threadId } : {}),
+        })
+        const threadId = msg.threadId || current
         if (threadId && (msg.remaining ?? 0) === 0) {
           const firstUser = messages.find((m) => m.role === 'user' && m.content.trim())
           if (firstUser) {
@@ -200,6 +209,7 @@ export function makeOnIncoming(
         dispatch({ kind: 'COMPACT_RATE', rate: msg.rate || 'auto' })
         return
       case 'active-run':
+        if (!historyBelongsToClient(msg.threadId, opts?.threadIdRef?.current)) return
         dispatch({
           kind: 'ACTIVE_RUN',
           runId: msg.runId,
@@ -215,6 +225,7 @@ export function makeOnIncoming(
             : undefined,
           durationMs: msg.durationMs,
           error: msg.error,
+          ...(msg.threadId ? { threadId: msg.threadId } : {}),
         })
         // Eagerly bind the streaming target so chunks that arrive before
         // the React effect syncing currentReplyIdRef are not dropped.

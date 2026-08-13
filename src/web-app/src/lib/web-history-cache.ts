@@ -19,7 +19,7 @@
  *   agim-web-hist:<threadId>     — JSON snapshot
  */
 
-import { isWebThreadId, loadIndex } from '@/lib/web-sessions'
+import { isWebThreadId, loadTabThreadId } from '@/lib/web-sessions'
 import type { ChatActivity, ChatMessage, ChatState } from '@/hooks/chat/chat-types'
 import { initialChatState } from '@/hooks/chat/chat-reducer'
 
@@ -304,6 +304,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
   compactRate: string
   historyComplete: true
   updatedAt?: number
+  threadId?: string
 } {
   return {
     kind: 'HISTORY',
@@ -315,6 +316,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
     sessionModel: cached.sessionModel || '',
     compactRate: cached.compactRate || 'auto',
     historyComplete: true,
+    threadId: cached.threadId,
     ...(cached.revisionAt && cached.revisionAt > 0 ? { updatedAt: cached.revisionAt } : {}),
   }
 }
@@ -322,7 +324,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
 /** First-paint helper used by useChat's reducer lazy init. */
 export function hydrateInitialChatState(): ChatState {
   try {
-    return applyCachedHistory(initialChatState, loadIndex().activeId)
+    return applyCachedHistory(initialChatState, loadTabThreadId())
   } catch {
     return initialChatState
   }

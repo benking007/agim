@@ -11,6 +11,7 @@ import {
   isWebThreadId,
   listSessions,
   loadIndex,
+  loadTabThreadId,
   mintThreadId,
   sessionTitleFromText,
   setActiveId,
@@ -20,6 +21,7 @@ import {
 describe('web-sessions', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
   })
 
   it('mints web-* ids', () => {
@@ -92,5 +94,21 @@ describe('web-sessions', () => {
     expect(sessionTitleFromText('  hello\nworld  ')).toBe('hello world')
     expect(sessionTitleFromText('a'.repeat(50)).endsWith('…')).toBe(true)
     expect(sessionTitleFromText('   ')).toBe('')
+  })
+
+  it('keeps this tab on its thread when another tab changes the shared activeId', () => {
+    const mine = loadIndex().activeId
+    expect(loadTabThreadId()).toBe(mine)
+    const other = mintThreadId()
+    localStorage.setItem(THREAD_ID_KEY, other)
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify({
+      activeId: other,
+      sessions: [
+        { id: other, updatedAt: 2 },
+        { id: mine, updatedAt: 1 },
+      ],
+    }))
+    expect(loadIndex().activeId).toBe(other)
+    expect(loadTabThreadId()).toBe(mine)
   })
 })

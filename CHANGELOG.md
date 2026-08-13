@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Web chat session mix-up (history cache)**: switching threads (or
+  overlapping `get-history` after a reconnect) could paint another
+  session's transcript, and scrolling up showed foreign `history-prepend`
+  turns. `history` / `history-prepend` / `active-run` frames now carry
+  `threadId`; the SPA drops mismatches. Each tab also keeps its current
+  thread in `sessionStorage` so another window changing
+  `agim-web-thread-id` cannot hydrate this tab into the wrong cache.
+  Debounced cache writes skip if the tab already switched.
+
 - **Plan / Subagents landing on historical bubbles**: after sending a new
   turn, a late `get-history` could false-trigger HISTORY `contentAhead`
   (empty optimistic placeholder vs previous long assistant), wipe the new

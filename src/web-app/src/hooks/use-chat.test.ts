@@ -15,6 +15,7 @@ import {
   chatReducer,
   initialChatState,
   isCloudHistoryNewer,
+  historyBelongsToClient,
   type ChatAction,
   type ChatMessage,
   type ChatState,
@@ -1260,6 +1261,28 @@ describe('chatReducer', () => {
       status: 'success',
     })
   })
+
+  it('HISTORY / HISTORY_PREPEND ignore frames for a different thread', () => {
+    const local = [userMsg('u-keep', 'keep'), asstMsg('a-keep', 'keep reply')]
+    const seeded = reduce(
+      initialChatState,
+      { kind: 'SET_CLIENT_ID', clientId: 'web-threadbbbb' },
+      { kind: 'HISTORY', agent: 'agim', messages: local, threadId: 'web-threadbbbb' },
+    )
+    const afterHist = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      threadId: 'web-threadaaaa',
+      messages: [userMsg('u-other', 'other'), asstMsg('a-other', 'other reply')],
+    })
+    expect(afterHist.messages.map((m) => m.id)).toEqual(['u-keep', 'a-keep'])
+    const afterPrepend = reduce(seeded, {
+      kind: 'HISTORY_PREPEND',
+      threadId: 'web-threadaaaa',
+      messages: [userMsg('u-old', 'old')],
+    })
+    expect(afterPrepend.messages.map((m) => m.id)).toEqual(['u-keep', 'a-keep'])
+  })
 })
 
 describe('isCloudHistoryNewer', () => {
@@ -1278,5 +1301,17 @@ describe('isCloudHistoryNewer', () => {
     expect(isCloudHistoryNewer(1_000, 1_001)).toBe(true)
     expect(isCloudHistoryNewer(1_000, 1_000)).toBe(false)
     expect(isCloudHistoryNewer(1_000, 999)).toBe(false)
+  })
+})
+
+describe('historyBelongsToClient', () => {
+  it('accepts legacy frames that omit threadId', () => {
+    expect(historyBelongsToClient(undefined, 'web-threadbbbb')).toBe(true)
+    expect(historyBelongsToClient('web-threadbbbb', null)).toBe(true)
+  })
+
+  it('rejects a different thread', () => {
+    expect(historyBelongsToClient('web-threadaaaa', 'web-threadbbbb')).toBe(false)
+    expect(historyBelongsToClient('web-threadbbbb', 'web-threadbbbb')).toBe(true)
   })
 })

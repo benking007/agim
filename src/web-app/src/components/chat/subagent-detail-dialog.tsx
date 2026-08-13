@@ -19,6 +19,7 @@ import {
 
 import { MarkdownView } from '@/components/chat/markdown-view'
 import { api } from '@/lib/api/endpoints'
+import { loadTabThreadId } from '@/lib/web-sessions'
 import type { Job } from '@/types/api'
 import type { ChatActivityStep } from '@/hooks/use-chat'
 import { resolveSubagentJobId, isSubagentLive } from '@/lib/activity-subagent'
@@ -73,7 +74,7 @@ export function SubagentDetailDialog({
       try {
         let threadId: string | undefined
         try {
-          threadId = localStorage.getItem('agim-web-thread-id') || undefined
+          threadId = loadTabThreadId() || undefined
         } catch { /* ignore */ }
         const res = await api.getJob(jobId, threadId ? { threadId } : undefined)
         if (cancelled) return

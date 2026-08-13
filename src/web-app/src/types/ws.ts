@@ -63,6 +63,11 @@ export type ChatIncoming =
        * snapshot's `revisionAt` to decide whose copy is newer.
        */
       updatedAt?: number
+      /**
+       * Owning `web-*` thread. SPA drops the frame when it does not
+       * match the tab's current session (stale get-history after switch).
+       */
+      threadId?: string
     }
   /**
    * Older transcript chunk, prepended in front of the current messages.
@@ -73,6 +78,7 @@ export type ChatIncoming =
       messages: HistoryMessage[]
       /** Messages still older than this chunk (0 = oldest has arrived). */
       remaining?: number
+      threadId?: string
     }
   | { type: 'plan-mode'; enabled: boolean }
   /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
@@ -175,6 +181,7 @@ export interface ActiveRunEvent {
   finishedAt?: string
   durationMs?: number
   error?: string
+  threadId?: string
 }
 
 /** Mirror of src/core/types.ts:ApprovalCardPrompt — the structured

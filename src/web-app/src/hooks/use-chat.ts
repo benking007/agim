@@ -28,7 +28,7 @@ import {
   findSession,
   isWebThreadId,
   listSessions,
-  loadIndex,
+  loadTabThreadId,
   mintThreadId,
   sessionTitleFromText,
   setActiveId,
@@ -66,7 +66,7 @@ export type {
 } from './chat/chat-types'
 export type { WebSessionEntry } from '@/lib/web-sessions'
 export { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
-export { chatReducer, initialChatState, isCloudHistoryNewer } from './chat/chat-reducer'
+export { chatReducer, initialChatState, isCloudHistoryNewer, historyBelongsToClient } from './chat/chat-reducer'
 export type { ChatAction } from './chat/chat-reducer'
 
 // ---------------------------------------------------------------------------
@@ -79,8 +79,7 @@ function mkId(prefix: string): string {
 }
 
 function snapshotSessions(): { sessions: WebSessionEntry[]; activeId: string } {
-  const index = loadIndex()
-  return { sessions: listSessions(), activeId: index.activeId }
+  return { sessions: listSessions(), activeId: loadTabThreadId() }
 }
 
 function transcriptHasUserTurn(messages: ChatMessage[]): boolean {
@@ -108,7 +107,7 @@ export function useChat(): UseChat {
   // Always-current thread id for reconnect bootstrap + get-history.
   // Capturing a const in useEffect([]) used to rekey the *first* session
   // after New conversation / switch.
-  const threadIdRef = useRef(loadIndex().activeId)
+  const threadIdRef = useRef(loadTabThreadId())
   const messagesRef = useRef(state.messages)
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
 
@@ -162,10 +161,11 @@ export function useChat(): UseChat {
     )
     const off2 = ws.subscribe({ type: 'message', fn: onIncoming })
 
-    // Persist a per-browser threadId so refresh / re-open resumes the
-    // same server-side session. Multi-session: the id is the *active*
-    // entry in `agim-web-sessions`; `agim-web-thread-id` stays in sync.
-    const threadId = loadIndex().activeId
+    // Persist this tab's threadId so refresh resumes the same server
+    // session. Shared localStorage last-focused id is only a seed for
+    // new tabs; this tab keeps `sessionStorage` so another window
+    // switching sessions cannot steal the transcript.
+    const threadId = loadTabThreadId()
     threadIdRef.current = threadId
     dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
 

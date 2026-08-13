@@ -14,10 +14,16 @@
 
 import { toast } from 'sonner'
 import i18n from '@/i18n'
+import { adoptThreadId, sessionTitleFromText, upsertSession } from '@/lib/web-sessions'
 import type { ActivityStepEvent, ChatIncoming, HistoryMessage, ApprovalCardOutcome } from '@/types/ws'
 import type { ChatAction } from './chat-reducer'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat-types'
 import type { ChatActivityStep, ChatMessage } from './chat-types'
+
+export interface OnIncomingOptions {
+  /** Live thread id — updated on switch / new / thread-reassigned. */
+  threadIdRef?: { current: string }
+}
 
 // ---------------------------------------------------------------------------
 // Pure normalizers
@@ -122,6 +128,7 @@ export function makeOnIncoming(
   currentReplyIdRef: { current: string | null },
   bufferChunk: (text: string) => void,
   flushChunks: () => void,
+  opts?: OnIncomingOptions,
 ): (msg: ChatIncoming) => void {
   return function onIncoming(msg: ChatIncoming): void {
     switch (msg.type) {
@@ -133,7 +140,8 @@ export function makeOnIncoming(
           clientId: msg.clientId,
         })
         return
-      case 'history':
+      case 'history': {
+        const messages = msg.messages.map(normalizeHistoryMessage)
         dispatch({
           kind: 'HISTORY',
           agent: msg.agent,
@@ -142,9 +150,20 @@ export function makeOnIncoming(
           thinkVariant: msg.thinkVariant,
           sessionModel: msg.sessionModel,
           compactRate: msg.compactRate,
-          messages: msg.messages.map(normalizeHistoryMessage),
+          messages,
         })
+        const threadId = opts?.threadIdRef?.current
+        if (threadId) {
+          const firstUser = messages.find((m) => m.role === 'user' && m.content.trim())
+          upsertSession({
+            id: threadId,
+            updatedAt: Date.now(),
+            agent: msg.agent,
+            ...(firstUser ? { title: sessionTitleFromText(firstUser.content) } : {}),
+          })
+        }
         return
+      }
       case 'plan-mode':
         dispatch({ kind: 'PLAN_MODE', enabled: !!msg.enabled })
         return
@@ -277,7 +296,8 @@ export function makeOnIncoming(
         // (already owned by this token) instead of hard-erroring.
         const next = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
         if (next && /^web-[A-Za-z0-9_-]{4,64}$/.test(next)) {
-          try { localStorage.setItem('agim-web-thread-id', next) } catch { /* private mode */ }
+          adoptThreadId(next, opts?.threadIdRef?.current)
+          if (opts?.threadIdRef) opts.threadIdRef.current = next
           dispatch({ kind: 'SET_CLIENT_ID', clientId: next })
         }
         if (msg.reason === 'ownership_mismatch') {

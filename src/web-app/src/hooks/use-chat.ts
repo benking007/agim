@@ -20,13 +20,25 @@
  *   chat/chat-ws-handlers.ts — WS frame normalization + onIncoming factory
  */
 
-import { useEffect, useReducer, useRef } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
 import { openChatWs } from '@/lib/api/ws'
+import {
+  findSession,
+  isWebThreadId,
+  listSessions,
+  loadIndex,
+  mintThreadId,
+  sessionTitleFromText,
+  setActiveId,
+  subscribeSessions,
+  upsertSession,
+  type WebSessionEntry,
+} from '@/lib/web-sessions'
 import { chatReducer, initialChatState } from './chat/chat-reducer'
 import { makeOnIncoming } from './chat/chat-ws-handlers'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
-import type { ApprovalChoice, UseChat } from './chat/chat-types'
+import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
 
 // ---------------------------------------------------------------------------
 // Re-export everything the existing consumers import from this module.
@@ -44,6 +56,7 @@ export type {
   ChatState,
   UseChat,
 } from './chat/chat-types'
+export type { WebSessionEntry } from '@/lib/web-sessions'
 export { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 export { chatReducer, initialChatState } from './chat/chat-reducer'
 export type { ChatAction } from './chat/chat-reducer'
@@ -55,6 +68,15 @@ let messageCounter = 0
 function mkId(prefix: string): string {
   messageCounter += 1
   return `${prefix}-${Date.now()}-${messageCounter}`
+}
+
+function snapshotSessions(): { sessions: WebSessionEntry[]; activeId: string } {
+  const index = loadIndex()
+  return { sessions: listSessions(), activeId: index.activeId }
+}
+
+function transcriptHasUserTurn(messages: ChatMessage[]): boolean {
+  return messages.some((m) => m.role === 'user' && m.content.trim())
 }
 
 // ---------------------------------------------------------------------------
@@ -75,9 +97,24 @@ export function useChat(): UseChat {
   // the assistant bubble stays stuck on "…" until React re-renders for
   // an unrelated reason (e.g. tab switch).
   const currentReplyIdRef = useRef<string | null>(null)
+  // Always-current thread id for reconnect bootstrap + get-history.
+  // Capturing a const in useEffect([]) used to rekey the *first* session
+  // after New conversation / switch.
+  const threadIdRef = useRef(loadIndex().activeId)
+  const messagesRef = useRef(state.messages)
+  const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
+
   useEffect(() => {
     currentReplyIdRef.current = state.currentReplyId
   }, [state.currentReplyId])
+
+  useEffect(() => {
+    messagesRef.current = state.messages
+  }, [state.messages])
+
+  useEffect(() => subscribeSessions(() => {
+    setSessionSnap(snapshotSessions())
+  }), [])
 
   useEffect(() => {
     const ws = wsRef.current
@@ -106,23 +143,20 @@ export function useChat(): UseChat {
       chunkBuf.current.clear()
     }
 
-    const onIncoming = makeOnIncoming(dispatch, currentReplyIdRef, bufferChunk, flushChunks)
+    const onIncoming = makeOnIncoming(
+      dispatch,
+      currentReplyIdRef,
+      bufferChunk,
+      flushChunks,
+      { threadIdRef },
+    )
     const off2 = ws.subscribe({ type: 'message', fn: onIncoming })
 
-    // 2026-05-19: persist a per-browser threadId so refresh / re-open
-    // resumes the same server-side session. Generated once on first
-    // chat and stored in localStorage; sent with every `get-history`.
-    // Server falls back to its own clientId if we don't send one.
-    function loadOrCreateThreadId(): string {
-      try {
-        const existing = localStorage.getItem('agim-web-thread-id')
-        if (existing && /^web-[A-Za-z0-9_-]{4,64}$/.test(existing)) return existing
-      } catch { /* private mode */ }
-      const fresh = `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-      try { localStorage.setItem('agim-web-thread-id', fresh) } catch { /* ignore */ }
-      return fresh
-    }
-    const threadId = loadOrCreateThreadId()
+    // Persist a per-browser threadId so refresh / re-open resumes the
+    // same server-side session. Multi-session: the id is the *active*
+    // entry in `agim-web-sessions`; `agim-web-thread-id` stays in sync.
+    const threadId = loadIndex().activeId
+    threadIdRef.current = threadId
     dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
 
     // On every WS open, ask the backend to:
@@ -138,8 +172,9 @@ export function useChat(): UseChat {
     // reconnect and network blips mint a new server clientId. Without a
     // fresh get-history rekey, subsequent turns land under a different
     // session key and refresh cannot load the previous conversation.
+    // Read threadIdRef so New conversation / switch survive reconnect.
     function bootstrap(): void {
-      ws.send({ type: 'get-history', threadId })
+      ws.send({ type: 'get-history', threadId: threadIdRef.current })
       ws.send({ type: 'get-agents' })
     }
     // subscribe() replays the current status, so an already-open socket
@@ -181,6 +216,13 @@ export function useChat(): UseChat {
         message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
       })
     }
+    const existing = findSession(threadIdRef.current)
+    upsertSession({
+      id: threadIdRef.current,
+      updatedAt: Date.now(),
+      agent: state.agent,
+      ...(existing?.title ? {} : { title: sessionTitleFromText(trimmed) }),
+    })
   }
 
   function switchAgent(name: string): void {
@@ -253,11 +295,27 @@ export function useChat(): UseChat {
     return ok
   }
 
-  function newConversation(): void {
-    // Optimistic clear so the UI repaints empty immediately; the server's
-    // follow-up `history` message with messages=[] reconfirms the state.
+  function activateThread(threadId: string): void {
+    setActiveId(threadId)
+    threadIdRef.current = threadId
+    currentReplyIdRef.current = null
     dispatch({ kind: 'RESET_CONVERSATION' })
-    wsRef.current.send({ type: 'new-conversation' })
+    dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
+    wsRef.current.send({ type: 'get-history', threadId })
+  }
+
+  function newConversation(): void {
+    // Already on a blank session — don't mint another empty thread.
+    if (!transcriptHasUserTurn(messagesRef.current)) return
+    const id = mintThreadId()
+    upsertSession({ id, updatedAt: Date.now(), agent: state.agent })
+    activateThread(id)
+  }
+
+  function switchSession(threadId: string): void {
+    const id = threadId.trim()
+    if (!isWebThreadId(id) || id === threadIdRef.current) return
+    activateThread(id)
   }
 
   function stop(): void {
@@ -291,6 +349,9 @@ export function useChat(): UseChat {
     approvalClick,
     choiceSubmit,
     newConversation,
+    switchSession,
+    sessions: sessionSnap.sessions,
+    activeSessionId: sessionSnap.activeId,
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),
   }
 }

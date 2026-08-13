@@ -172,6 +172,37 @@ describe('fs-dispatcher', () => {
       )
       expect(r.isError).toBe(true)
     })
+
+    it('explicit AGIM_NATIVE_FS_RESTRICT=0 allows writes outside the workspace', async () => {
+      process.env.AGIM_NATIVE_FS_RESTRICT = '0'
+      const outside = join(tmpdir(), `agim-fs-write-open-${Date.now()}.txt`)
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d(
+        { id: 't', name: 'agim_write_file', arguments: { path: outside, content: 'host' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(false)
+      await rm(outside, { force: true })
+    })
+
+    it('unset restrict: writes follow the exec sandbox (bwrap default-on)', async () => {
+      const { existsSync } = await import('node:fs')
+      delete process.env.AGIM_NATIVE_FS_RESTRICT
+      delete process.env.AGIM_EXEC_SANDBOX
+      const outside = join(tmpdir(), `agim-fs-write-follow-${Date.now()}.txt`)
+      const d = buildFsDispatcher({ cwd: workspace })
+      const r = await d(
+        { id: 't', name: 'agim_write_file', arguments: { path: outside, content: 'x' } },
+        NEVER_ABORT,
+      )
+      if (existsSync('/usr/bin/bwrap')) {
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/outside workspace|exec sandbox/i)
+      } else {
+        expect(r.isError).toBe(false)
+        await rm(outside, { force: true })
+      }
+    })
   })
 
   describe('list_dir', () => {

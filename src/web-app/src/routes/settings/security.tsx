@@ -545,6 +545,31 @@ function SecurityPosture({
       })
     }
 
+    const sandboxOff = (env.AGIM_EXEC_SANDBOX ?? '').toLowerCase() === 'off'
+    if (
+      env.AGIM_NATIVE_FS_RESTRICT === '0'
+      && diagnostics?.bwrapAvailable
+      && !sandboxOff
+    ) {
+      rows.push({
+        id: 'fs-write-unconfined',
+        level: 'danger',
+        title: t('security.posture.issue.fsWriteUnconfined.title'),
+        detail: t('security.posture.issue.fsWriteUnconfined.detail'),
+        action: (
+          <Button
+            type="button"
+            size="sm"
+            variant="link"
+            className="h-auto p-0 text-xs"
+            onClick={() => onSetValue('AGIM_NATIVE_FS_RESTRICT', null)}
+          >
+            {t('security.posture.issue.fsWriteUnconfined.action')}
+          </Button>
+        ),
+      })
+    }
+
     return rows
   }, [diagnostics, env, onSetValue, sender.explicitOpen, sender.mode, t])
 

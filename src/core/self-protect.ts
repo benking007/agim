@@ -17,16 +17,19 @@
 //
 // DESIGN — split by tool intent, not field name:
 //
-//   - Bash actually EXECUTES shell — its `command` is an action. Match
-//     against BASH_DANGER_PATTERNS (systemctl, pkill, agim restart, ...).
+//   - Exec tools actually EXECUTE shell — `command` / `cmd` is an action.
+//     Match against BASH_DANGER_PATTERNS (systemctl, pkill, agim restart, ...).
+//     Canonical names: Bash (CLI), agim_exec (native; legacy native_exec).
 //
-//   - Edit/Write/NotebookEdit author CONTENT — their `new_string` /
-//     `content` is text being written to a file, not a command being run.
+//   - Write/Edit tools author CONTENT — their `new_string` / `content` is
+//     text being written to a file, not a command being run.
 //     Shell-literal patterns (`systemctl restart agim` as a string in a
 //     doc, i18n string, comment, this very file) MUST NOT trip the guard;
 //     blocking them would mean operators can't debrand / refactor /
 //     document their own service. Match only CODE_DANGER_PATTERNS — JS
 //     code that DYNAMICALLY signals our pid (process.kill).
+//     Canonical names: Edit/Write/NotebookEdit (CLI), agim_write_file /
+//     agim_edit_file (native).
 //
 //   - Other tools (Read, Grep, Glob, MCP tools) read or query — no shell
 //     execution, no content authoring. Skip the scan entirely.
@@ -51,9 +54,10 @@
 //    active (default); Layer 2 covers it the same as Claude. Direct CLI
 //    invocations of opencode skip the bus.
 // Layer 1 (core/service-intent.ts) catches the common cases for ALL
-// three agents; this layer is the belt to its suspenders, and only
-// closes the loop fully for Claude (default-permission mode) and
-// OpenCode (bus-mode).
+// three agents; this layer is the belt to its suspenders. Native
+// `agim_exec` also runs the same check in exec-dispatcher so Subagent
+// HITL-skip cannot bypass Layer 2.
+import { canonicalizeToolName } from './llm/tool-names.js'
 
 const PROCESS_NAMES = '(agim|agim|agim|dist/cli\\.js)'
 
@@ -107,48 +111,73 @@ const REDIRECT_TEMPLATE = (reason: string): string =>
   '   · 浏览器打开 web 控制台 → Safety 卡片 → Restart\n' +
   '   · 终端运行 `agim restart`'
 
+function isExecToolName(toolName: string): boolean {
+  const canon = canonicalizeToolName(toolName)
+  return toolName === 'Bash' || canon === 'agim_exec'
+}
+
+function isWriteToolName(toolName: string): boolean {
+  const canon = canonicalizeToolName(toolName)
+  return toolName === 'Edit'
+    || toolName === 'Write'
+    || toolName === 'NotebookEdit'
+    || canon === 'agim_write_file'
+    || canon === 'agim_edit_file'
+}
+
+function execCommandFromInput(input: Record<string, unknown>): string | null {
+  if (typeof input.command === 'string' && input.command.length > 0) return input.command
+  if (typeof input.cmd === 'string' && input.cmd.length > 0) return input.cmd
+  return null
+}
+
+function scanExecCommand(cmd: string): { deny: true; message: string } | null {
+  for (const { regex, reason } of BASH_DANGER_PATTERNS) {
+    if (regex.test(cmd)) return { deny: true, message: REDIRECT_TEMPLATE(reason) }
+  }
+  const ourPid = String(process.pid)
+  if (/\bkill\b/.test(cmd) && cmd.includes(ourPid)) {
+    return { deny: true, message: REDIRECT_TEMPLATE(`kill ${ourPid} (our pid)`) }
+  }
+  return null
+}
+
+function scanWriteContent(input: Record<string, unknown>): { deny: true; message: string } | null {
+  const candidates: string[] = []
+  if (typeof input.new_string === 'string') candidates.push(input.new_string)
+  if (typeof input.content === 'string') candidates.push(input.content)
+  if (typeof input.new_source === 'string') candidates.push(input.new_source)
+  if (candidates.length === 0) return null
+
+  const ourPid = String(process.pid)
+  for (const hay of candidates) {
+    for (const { regex, reason } of CODE_DANGER_PATTERNS) {
+      if (regex.test(hay)) return { deny: true, message: REDIRECT_TEMPLATE(reason) }
+    }
+    if (/process\.kill/.test(hay) && hay.includes(ourPid)) {
+      return { deny: true, message: REDIRECT_TEMPLATE(`process.kill(${ourPid}) (our pid)`) }
+    }
+  }
+  return null
+}
+
 /** Examine a tool-use request from an agent (Claude/Codex/OpenCode MCP
- *  sidecar relays them all through approval-bus). Returns a deny reason
- *  if it matches a self-protect pattern, otherwise null. Dispatch is
- *  strictly tool-name based — see the DESIGN block above. */
+ *  sidecar relays them all through approval-bus; native exec also calls
+ *  this from the dispatcher). Returns a deny reason if it matches a
+ *  self-protect pattern, otherwise null. Dispatch is by tool *intent*
+ *  (exec vs write), including native `agim_*` names. */
 export function checkToolUse(
   toolName: string,
   input: Record<string, unknown>,
 ): { deny: true; message: string } | null {
-  if (toolName === 'Bash') {
-    const cmd = input.command
-    if (typeof cmd !== 'string' || cmd.length === 0) return null
-    for (const { regex, reason } of BASH_DANGER_PATTERNS) {
-      if (regex.test(cmd)) return { deny: true, message: REDIRECT_TEMPLATE(reason) }
-    }
-    // PID dynamic check — `kill 3001362`, `kill -9 3001362`, etc.
-    const ourPid = String(process.pid)
-    if (/\bkill\b/.test(cmd) && cmd.includes(ourPid)) {
-      return { deny: true, message: REDIRECT_TEMPLATE(`kill ${ourPid} (our pid)`) }
-    }
-    return null
+  if (isExecToolName(toolName)) {
+    const cmd = execCommandFromInput(input)
+    if (!cmd) return null
+    return scanExecCommand(cmd)
   }
 
-  if (toolName === 'Edit' || toolName === 'Write' || toolName === 'NotebookEdit') {
-    const candidates: string[] = []
-    if (typeof input.new_string === 'string') candidates.push(input.new_string)
-    if (typeof input.content === 'string') candidates.push(input.content)
-    if (typeof input.new_source === 'string') candidates.push(input.new_source)
-    if (candidates.length === 0) return null
-
-    const ourPid = String(process.pid)
-    for (const hay of candidates) {
-      for (const { regex, reason } of CODE_DANGER_PATTERNS) {
-        if (regex.test(hay)) return { deny: true, message: REDIRECT_TEMPLATE(reason) }
-      }
-      // Author-time PID kill — `process.kill(<ourPid>, 'SIGTERM')`. Narrower
-      // than the Bash `\bkill\b` check because we don't want to match the
-      // word "kill" appearing in arbitrary prose / code comments.
-      if (/process\.kill/.test(hay) && hay.includes(ourPid)) {
-        return { deny: true, message: REDIRECT_TEMPLATE(`process.kill(${ourPid}) (our pid)`) }
-      }
-    }
-    return null
+  if (isWriteToolName(toolName)) {
+    return scanWriteContent(input)
   }
 
   // Read, Grep, Glob, LS, NotebookRead, WebFetch, WebSearch, all MCP tools:

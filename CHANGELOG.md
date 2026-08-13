@@ -6,6 +6,26 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Native self-protect gap**: Layer 2 only matched Claude `Bash` / `Write`
+  names, so `agim_exec('systemctl restart agim')` (including Subagent
+  HITL-skip) could take the process down. `checkToolUse` now treats
+  `agim_exec` / `native_exec` as exec and `agim_write_file` as write; the
+  exec dispatcher runs the same check before spawn.
+
+- **Exec sandbox vs FS writes**: `agim_exec` defaulted to bubblewrap while
+  `agim_write_file` could still mutate host paths. Writes now follow the
+  exec sandbox unless `AGIM_NATIVE_FS_RESTRICT=0`. Reads stay opt-in
+  (`=1`). Settings posture flags the explicit unconfine mismatch.
+
+- **Parent Stop left Subagents running**: Web Stop / native turn abort /
+  IM `/abort` now cancel in-flight child jobs on the same thread (same
+  helper Loop stop already used).
+
+- **Late Subagent cards stuck on Waiting**: terminal `kind=agent` activity
+  can still update a finished web run snapshot and is forwarded to the
+  SPA. `new-conversation` history and `loop-changed` carry / filter
+  `threadId`.
+
 - **Web chat live stream mix-up**: with two sessions both running, switching
   A→B let A's `chunk` / `done` / `run-*` land on B's placeholder (one WS,
   rekey does not abort the previous run). Live frames now stamp the run's

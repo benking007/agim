@@ -46,6 +46,47 @@ describe('active-runs', () => {
     expect(snap?.finishedAt).toBe(2000)
   })
 
+  it('late terminal Subagent steps update a finished run card', () => {
+    startActiveRun({
+      threadId: 'web-t1', runId: 'run-1', agent: 'agim', startedAt: 1000,
+    })
+    upsertActiveRunStep('web-t1', {
+      id: 'agent-1', kind: 'agent', label: 'claude-code', status: 'running', startedAt: 1100,
+    })
+    finishActiveRun('web-t1', {
+      status: 'success', finishedAt: 2000, durationMs: 1000, finalText: 'done',
+    })
+    const applied = upsertActiveRunStep('web-t1', {
+      id: 'agent-1',
+      kind: 'agent',
+      label: 'claude-code',
+      status: 'error',
+      startedAt: 1100,
+      finishedAt: 2100,
+      preview: 'Stopped by user',
+      jobId: 9,
+    })
+    expect(applied).toBe(true)
+    const snap = getActiveRun('web-t1')
+    expect(snap?.steps[0]?.status).toBe('error')
+    expect(snap?.steps[0]?.preview).toBe('Stopped by user')
+    expect(snap?.steps[0]?.jobId).toBe(9)
+  })
+
+  it('does not insert new steps after the run finished', () => {
+    startActiveRun({
+      threadId: 'web-t1', runId: 'run-1', agent: 'agim', startedAt: 1000,
+    })
+    finishActiveRun('web-t1', {
+      status: 'success', finishedAt: 2000, durationMs: 1000, finalText: 'done',
+    })
+    const applied = upsertActiveRunStep('web-t1', {
+      id: 'late', kind: 'agent', label: 'x', status: 'error', startedAt: 2100, finishedAt: 2100,
+    })
+    expect(applied).toBe(false)
+    expect(getActiveRun('web-t1')?.steps).toHaveLength(0)
+  })
+
   it('clearActiveRun drops the snapshot (new conversation)', () => {
     startActiveRun({
       threadId: 'web-t1', runId: 'run-1', agent: 'agim', startedAt: 1000,

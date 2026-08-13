@@ -241,4 +241,18 @@ describe('thread-reassigned', () => {
     onIncoming({ type: 'error', message: 'Invalid message format' })
     expect(actions).toEqual([{ kind: 'ERROR', message: 'Invalid message format' }])
   })
+
+  it('drops loop-changed from another thread', () => {
+    const threadIdRef = { current: 'web-currentthrd' }
+    const actions: ChatAction[] = []
+    const onIncoming = makeOnIncoming(
+      (a) => { actions.push(a) },
+      { current: null },
+      () => {},
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({ type: 'loop-changed', threadId: 'web-stalehistxxx' })
+    expect(actions).toEqual([])
+  })
 })

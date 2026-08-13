@@ -339,6 +339,17 @@ export async function handleClientMessage(
       webRunAborts.get(sessionThreadId)?.abort()
       const runAbort = new AbortController()
       webRunAborts.set(sessionThreadId, runAbort)
+      const onParentAbort = (): void => {
+        void import('../core/job-board.js').then(({ abortChildJobsForParentTurn }) => {
+          abortChildJobsForParentTurn(
+            'web',
+            'web',
+            sessionThreadId,
+            'cancelled: parent turn aborted',
+          )
+        }).catch(() => { /* job board optional */ })
+      }
+      runAbort.signal.addEventListener('abort', onParentAbort, { once: true })
 
       try {
         const routeCtx: RouteContext = {
@@ -352,7 +363,7 @@ export async function handleClientMessage(
           webRunId: runId,
           signal: runAbort.signal,
           onToolActivity: (step) => {
-            upsertActiveRunStep(sessionThreadId, {
+            const applied = upsertActiveRunStep(sessionThreadId, {
               id: step.id,
               kind: step.kind,
               label: step.label,
@@ -363,11 +374,16 @@ export async function handleClientMessage(
               ...(step.todoItems ? { todoItems: step.todoItems } : {}),
               ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
             })
-            // Drop steps after finishActiveRun — late MCP/approval cleanup
-            // must not reopen a Running accordion on the SPA (CLI agents).
+            if (!applied) return
             const snap = getActiveRun(sessionThreadId)
-            if (!snap || snap.status !== 'running') return
-            emit({ type: 'activity-step', runId, step })
+            if (!snap) return
+            // Running turns always stream. After finishActiveRun, still
+            // emit terminal Subagent updates so cards don't stay Waiting.
+            if (snap.status !== 'running' && step.kind !== 'agent') return
+            emit({ type: 'activity-step', runId: snap.runId, step })
+            if (snap.status !== 'running') {
+              void persistFinishedActivity()
+            }
           },
         }
 
@@ -739,6 +755,7 @@ export async function handleClientMessage(
         preferredWorkerAgent: '',
         olderCount: 0,
         historyComplete: true,
+        threadId: clientId,
       })
       break
     }

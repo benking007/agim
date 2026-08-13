@@ -595,8 +595,13 @@
         },
         "fsOpen": {
           "title": "Native 文件系统未限制到 workspace",
-          "detail": "默认可读写非敏感路径；对外使用前建议限制到 Agent 工作区。",
+          "detail": "读取默认可用绝对路径。exec 沙箱开启时写入会留在工作区，除非 AGIM_NATIVE_FS_RESTRICT=0。",
           "action": "限制到 workspace"
+        },
+        "fsWriteUnconfined": {
+          "title": "Native 写入可绕过 exec 沙箱",
+          "detail": "AGIM_NATIVE_FS_RESTRICT=0 时 agim_write_file 可改工作区外的主机路径，而 agim_exec 仍在沙箱内。",
+          "action": "跟随沙箱"
         }
       }
     },

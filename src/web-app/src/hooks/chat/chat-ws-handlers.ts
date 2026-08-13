@@ -49,6 +49,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'choice-card',
   'choice-card-edit',
   'subagent-stopped',
+  'loop-changed',
 ])
 
 function incomingThreadId(msg: ChatIncoming): string | undefined {

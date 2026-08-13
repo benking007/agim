@@ -7,12 +7,10 @@
 // CLI sub-agent over A2A — slow, costly, and a 30-min hard timeout
 // landmine (see the v1.2.56 crash-loop fix).
 //
-// By default all five tools have real filesystem access (so the native
-// agent isn't crippled). Operators who want to confine access to the native
-// agent's per-thread cwd subtree (typically ~/.agim-workspaces/native/
-// <thread>/) set AGIM_NATIVE_FS_RESTRICT=1. Either way, the sensitive-
-// paths.ts denylist always applies so ~/.agim/, /etc/shadow, etc. remain
-// blocked.
+// By default reads have real filesystem access (so the native agent isn't
+// crippled). Writes follow the exec sandbox when bubblewrap is on, unless
+// AGIM_NATIVE_FS_RESTRICT=0. Operators who want to confine *reads* too set
+// AGIM_NATIVE_FS_RESTRICT=1. Sensitive-paths.ts always applies.
 //
 // Tools shipped here:
 //   * agim_read_file(path, max_bytes?)
@@ -33,6 +31,11 @@ import { isSensitivePath } from '../sensitive-paths.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { canonicalizeToolName } from './tool-names.js'
+import {
+  isNativeFsReadRestricted,
+  isNativeFsWriteRestricted,
+  warnWriteUnconfinedIfSandbox,
+} from './execution-world.js'
 
 const log = rootLogger.child({ component: 'fs-dispatcher' })
 
@@ -61,8 +64,8 @@ export function getFsTools(): ToolDef[] {
       name: 'agim_read_file',
       description:
         'Read a UTF-8 text file by path. Default max 256KB. Paths resolve against the agent cwd; ' +
-        'absolute paths are allowed by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine to the ' +
-        'workspace subtree). Sensitive paths (~/.agim, /etc/shadow, etc.) are always denied.',
+        'absolute paths are allowed for reads by default (set AGIM_NATIVE_FS_RESTRICT=1 to confine ' +
+        'reads to the workspace subtree). Sensitive paths (~/.agim, /etc/shadow, etc.) are always denied.',
       parameters: {
         type: 'object',
         properties: {
@@ -76,8 +79,10 @@ export function getFsTools(): ToolDef[] {
     {
       name: 'agim_write_file',
       description:
-        'Write or overwrite a UTF-8 text file. Default max 1MB. Same path-safety rules as ' +
-        'agim_read_file. Creates parent directories as needed.',
+        'Write or overwrite a UTF-8 text file. Default max 1MB. When the exec sandbox is on, ' +
+        'writes stay inside the workspace unless AGIM_NATIVE_FS_RESTRICT=0. Set ' +
+        'AGIM_NATIVE_FS_RESTRICT=1 to also confine reads. Sensitive paths are always denied. ' +
+        'Creates parent directories as needed.',
       parameters: {
         type: 'object',
         properties: {
@@ -187,11 +192,9 @@ async function runOne(
 
 // ─── path safety ─────────────────────────────────────────────────────
 
-/** Workspace restriction is OPT-IN (default off, so native agents have real
- *  filesystem access). Operators set AGIM_NATIVE_FS_RESTRICT=1 to confine
- *  access to the cwd subtree; sensitive-paths.ts always applies regardless. */
-function workspaceRestricted(): boolean {
-  return process.env.AGIM_NATIVE_FS_RESTRICT === '1'
+/** Reads stay opt-in (`=1`). Writes follow the exec sandbox unless `=0`. */
+function pathRestricted(kind: 'read' | 'write'): boolean {
+  return kind === 'write' ? isNativeFsWriteRestricted() : isNativeFsReadRestricted()
 }
 
 interface ResolvedPath {
@@ -200,7 +203,11 @@ interface ResolvedPath {
   reason?: string
 }
 
-async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<ResolvedPath> {
+async function resolveAndCheck(
+  input: unknown,
+  ctx: FsContext,
+  kind: 'read' | 'write' = 'read',
+): Promise<ResolvedPath> {
   if (typeof input !== 'string' || input.length === 0) {
     return { abs: '', ok: false, reason: 'path must be a non-empty string' }
   }
@@ -210,7 +217,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
   const abs = isAbsolute(raw) ? raw : resolvePath(ctx.cwd, raw)
   const sens = isSensitivePath(abs, { cwd: ctx.cwd })
   if (sens.sensitive) return { abs, ok: false, reason: `sensitive path: ${sens.reason}` }
-  if (workspaceRestricted()) {
+  if (pathRestricted(kind)) {
     const rel = relative(ctx.cwd, abs)
     if (rel.startsWith('..') || (rel.length > 0 && isAbsolute(rel))) {
       return {
@@ -218,7 +225,9 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
         ok: false,
         reason:
           `path "${abs}" is outside workspace "${ctx.cwd}". ` +
-          'Unset AGIM_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
+          (kind === 'write'
+            ? 'Writes follow the exec sandbox; set AGIM_NATIVE_FS_RESTRICT=0 to allow host writes.'
+              : 'AGIM_NATIVE_FS_RESTRICT=1 confines reads to the workspace; unset (or set =0) to allow broader reads.'),
       }
     }
   }
@@ -236,7 +245,7 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
     if (sensReal.sensitive) {
       return { abs: real, ok: false, reason: `sensitive path (via symlink): ${sensReal.reason}` }
     }
-    if (workspaceRestricted()) {
+    if (pathRestricted(kind)) {
       const relReal = relative(ctx.cwd, real)
       if (relReal.startsWith('..') || (relReal.length > 0 && isAbsolute(relReal))) {
         return {
@@ -244,7 +253,9 @@ async function resolveAndCheck(input: unknown, ctx: FsContext): Promise<Resolved
           ok: false,
           reason:
             `symlink target "${real}" is outside workspace "${ctx.cwd}". ` +
-            'Unset AGIM_NATIVE_FS_RESTRICT (or set =0) to allow broader access.',
+            (kind === 'write'
+              ? 'Writes follow the exec sandbox; set AGIM_NATIVE_FS_RESTRICT=0 to allow host writes.'
+              : 'AGIM_NATIVE_FS_RESTRICT=1 confines reads to the workspace; unset (or set =0) to allow broader reads.'),
         }
       }
     }
@@ -305,7 +316,8 @@ async function runReadFile(args: Record<string, unknown>, ctx: FsContext): Promi
 }
 
 async function runWriteFile(args: Record<string, unknown>, ctx: FsContext): Promise<DispatcherResult> {
-  const p = await resolveAndCheck(args.path, ctx)
+  warnWriteUnconfinedIfSandbox()
+  const p = await resolveAndCheck(args.path, ctx, 'write')
   if (!p.ok) return { text: p.reason ?? 'invalid path', isError: true, source: 'fs' }
   const content = typeof args.content === 'string' ? args.content : ''
   if (Buffer.byteLength(content, 'utf-8') > DEFAULT_WRITE_MAX_BYTES) {

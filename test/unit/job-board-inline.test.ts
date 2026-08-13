@@ -124,6 +124,23 @@ skipIfNoDb('inline-job state machine', () => {
     expect(jb.findActiveJobByThread(threadKey)?.id).toBe(running)
   })
 
+  it('abortChildJobsForParentTurn cancels depth>0 jobs and leaves the parent', () => {
+    const threadId = `abort-children-${Date.now()}`
+    const threadKey = `web:web:${threadId}`
+    const parent = jb.createInlineJob({
+      agent: 'agim', prompt: 'parent', threadKey, callDepth: 0,
+    })
+    const child = jb.createInlineJob({
+      agent: 'claude-code', prompt: 'child', threadKey, parentId: parent, callDepth: 1,
+    })
+    expect(jb.markJobRunning(parent)).toBe(true)
+    expect(jb.markJobRunning(child)).toBe(true)
+    const n = jb.abortChildJobsForParentTurn('web', 'web', threadId, 'cancelled: parent stop')
+    expect(n).toBe(1)
+    expect(jb.getJob(child)?.status).toBe('cancelled')
+    expect(jb.getJob(parent)?.status).toBe('running')
+  })
+
   it('runJob does not start a pending job cancelled while waiting for a slot', async () => {
     const saved = process.env.AGIM_MAX_CONCURRENT_JOBS
     process.env.AGIM_MAX_CONCURRENT_JOBS = '1'

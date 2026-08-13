@@ -595,8 +595,13 @@
         },
         "fsOpen": {
           "title": "Native filesystem is not confined to the workspace",
-          "detail": "By default it can access non-sensitive paths. Restrict it before external use.",
+          "detail": "Reads may use absolute paths. Writes follow the exec sandbox when bubblewrap is on, unless AGIM_NATIVE_FS_RESTRICT=0.",
           "action": "Restrict"
+        },
+        "fsWriteUnconfined": {
+          "title": "Native writes can escape the exec sandbox",
+          "detail": "AGIM_NATIVE_FS_RESTRICT=0 lets agim_write_file mutate host paths while agim_exec is sandboxed.",
+          "action": "Follow sandbox"
         }
       }
     },

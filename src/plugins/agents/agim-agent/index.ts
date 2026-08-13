@@ -1775,6 +1775,18 @@ export class NativeAgentAdapter implements AgentAdapter {
       void harness.abort().catch((err) => {
         console.error('[agim-agent] harness abort failed:', err instanceof Error ? err.message : err)
       })
+      const platform = opts?.platform
+      const threadId = opts?.threadId
+      if (platform && threadId) {
+        void import('../../../core/job-board.js').then(({ abortChildJobsForParentTurn }) => {
+          abortChildJobsForParentTurn(
+            platform,
+            opts?.channelId ?? '',
+            threadId,
+            'cancelled: parent turn aborted',
+          )
+        }).catch(() => { /* job board optional */ })
+      }
     }
     turnSignal.addEventListener('abort', onRunAbort, { once: true })
 

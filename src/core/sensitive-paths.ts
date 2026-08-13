@@ -284,6 +284,7 @@ export function checkSensitiveToolUse(
   // because we scan the whole string.
   if (toolName === 'Bash' || toolName === 'native_exec' || toolName === 'agim_exec') {
     const cmd = (input as Record<string, unknown>).command
+      ?? (input as Record<string, unknown>).cmd
     if (typeof cmd === 'string') {
       for (const { re, reason } of SENSITIVE_BASH_PATTERNS) {
         if (re.test(cmd)) {

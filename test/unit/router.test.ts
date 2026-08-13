@@ -179,7 +179,7 @@ describe('parseMessage', () => {
           const result = parseMessage(input)
           expect(result.type).toBe('error')
           if (result.type === 'error') {
-            expect(result.error).toContain('Unknown command')
+            expect(result.error).toContain('未知命令')
           }
         }
       })
@@ -322,7 +322,7 @@ describe('parseMessage', () => {
       const result = parseMessage('/unknown command')
       expect(result.type).toBe('error')
       if (result.type === 'error') {
-        expect(result.error).toBe('Unknown command: unknown')
+        expect(result.error).toBe('未知命令：unknown')
         expect(result.prompt).toBe('/unknown command')
       }
     })
@@ -331,7 +331,7 @@ describe('parseMessage', () => {
       const result = parseMessage('/nonexistent-agent prompt')
       expect(result.type).toBe('error')
       if (result.type === 'error') {
-        expect(result.error).toContain('Unknown command')
+        expect(result.error).toContain('未知命令')
       }
     })
 
@@ -348,7 +348,7 @@ describe('parseMessage', () => {
         const result = parseMessage('/da hello')
         expect(result.type).toBe('error')
         if (result.type === 'error') {
-          expect(result.error).toContain('Agent "disabled-agent" is disabled')
+          expect(result.error).toContain('Agent "disabled-agent" 已被停用')
           expect(result.error).toContain('config.agents')
         }
       } finally {
@@ -616,7 +616,7 @@ describe('routeMessage', () => {
         { type: 'agent', agent: 'test-agent', prompt: '' },
         ctx
       )
-      expect(result).toContain('Switched to test-agent')
+      expect(result).toContain('已切换到 test-agent')
     })
 
     it('should call agent when prompt provided', async () => {
@@ -639,7 +639,7 @@ describe('routeMessage', () => {
         { type: 'agent', agent: 'nonexistent', prompt: 'hello' },
         ctx
       )
-      expect(result).toContain('not found')
+      expect(result).toContain('找不到')
     })
   })
 
@@ -721,10 +721,10 @@ describe('routeMessage', () => {
   describe('error routing', () => {
     it('should return friendly error message', async () => {
       const result = await routeMessage(
-        { type: 'error', prompt: '/bad', error: 'Unknown command: bad' },
+        { type: 'error', prompt: '/bad', error: '未知命令：bad' },
         ctx
       )
-      expect(result).toContain('Unknown command')
+      expect(result).toContain('未知命令')
       expect(result).toContain('/help')
     })
   })
@@ -744,7 +744,7 @@ describe('routeMessage', () => {
         makeCtx({ userId: 'alice-explicit', threadId: 'ws-thread-explicit' })
       )
       expect(typeof result).toBe('string')
-      expect(result).toContain('not available in your workspace')
+      expect(result).toContain('不在你的工作区可用列表里')
     })
 
     it('blocks default routing when the resolved workspace excludes the picked agent', async () => {
@@ -762,7 +762,7 @@ describe('routeMessage', () => {
       expect(typeof result).toBe('string')
       // Either rate-limit or whitelist message — both indicate the request
       // didn't reach the agent.
-      expect(result).toMatch(/not available|过于频繁|not configured/)
+      expect(result).toMatch(/不在你的工作区|过于频繁|未配置/)
     })
   })
 
@@ -787,7 +787,7 @@ describe('routeMessage', () => {
         { type: 'agentCommand', command: 'test', prompt: '' },
         makeCtx({ threadId: 'thread-no-agent', defaultAgent: 'nonexistent' })
       )
-      expect(result).toContain('not found')
+      expect(result).toContain('找不到')
     })
 
     it('should forward agent command without prompt', async () => {

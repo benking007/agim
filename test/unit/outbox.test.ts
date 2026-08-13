@@ -8,7 +8,7 @@
 // enqueue() and skip the DB-backed suite if it returns -1.
 
 import { describe, it, expect, afterAll, beforeEach } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -185,6 +185,61 @@ skipIfNoDb('outbox CRUD', () => {
     })
     expect(second).toBe(first)
     expect(outbox.pickPending(50).filter((r) => r.dedup_key === key).length).toBe(1)
+  })
+
+  it('dedupKey hit on giving_up resurrects the row so a retry is not silently dropped', () => {
+    const key = 'reminder:giveup:1'
+    const id = outbox.enqueue({
+      threadKey: 'dk-gu', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'once', kind: 'text', dedupKey: key,
+    })
+    expect(id).toBeGreaterThan(0)
+    for (let i = 0; i < outbox.MAX_ATTEMPTS; i += 1) outbox.markFailed(id, 'e')
+    expect(outbox.getOutbox(id)!.status).toBe('giving_up')
+    const second = outbox.enqueue({
+      threadKey: 'dk-gu', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'retry', kind: 'text', dedupKey: key,
+    })
+    expect(second).toBe(id)
+    expect(outbox.getOutbox(id)!.status).toBe('pending')
+    expect(outbox.pickPending(10).map((r) => r.id)).toContain(id)
+  })
+
+  it('migrates a pre-dedup_key outbox.db without disabling the queue', async () => {
+    outbox.closeOutboxDb()
+    const dbPath = join(TEST_HOME, 'outbox.db')
+    for (const suffix of ['', '-wal', '-shm']) {
+      try { unlinkSync(dbPath + suffix) } catch { /* ignore */ }
+    }
+    const { default: Database } = await import('better-sqlite3')
+    const d = new Database(dbPath)
+    d.exec(`
+      CREATE TABLE outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER,
+        thread_key TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'normal',
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        last_error TEXT,
+        delivered_at TEXT,
+        next_attempt_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `)
+    d.close()
+    const id = outbox.enqueue({
+      threadKey: 'legacy', platform: 'p', channelId: 'c', threadId: 't',
+      payload: 'migrated', kind: 'text',
+    })
+    expect(id).toBeGreaterThan(0)
+    expect(outbox.getOutbox(id)!.payload).toBe('migrated')
   })
 
   it('null dedupKey never collides', () => {

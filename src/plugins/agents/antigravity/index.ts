@@ -50,6 +50,7 @@ import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { ensureAgimMcp } from './ensure-mcp-config.js'
+import { pushPromptArg } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.antigravity' })
 
@@ -195,7 +196,7 @@ export class AntigravityAdapter extends AgentBase {
     if (opts.agentSessionId) {
       args.push('--conversation', opts.agentSessionId)
     }
-    args.push(prompt)
+    pushPromptArg(args, prompt)
     return args
   }
 
@@ -274,7 +275,7 @@ export class AntigravityAdapter extends AgentBase {
         'agy run routed via approval-bus')
     }
 
-    baseArgs.push(prompt)
+    pushPromptArg(baseArgs, prompt)
 
     // Snapshot conversation mtimes BEFORE the spawn so we can detect the
     // newly-created UUID after the run completes.

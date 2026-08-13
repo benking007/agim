@@ -26,6 +26,7 @@ import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
+import { pushPromptArg, takeTrailingPrompt } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.qoder' })
 const DEFAULT_BIN = 'qodercli'
@@ -164,7 +165,7 @@ export class QoderAdapter extends AgentBase {
 
     args.push('--disallowed-tools', QODER_MUTATION_DENYLIST.join(','))
 
-    args.push(prompt)
+    pushPromptArg(args, prompt)
     return args
   }
 
@@ -182,8 +183,9 @@ export class QoderAdapter extends AgentBase {
 
     const baseArgs = this.buildArgs(prompt, opts)
     if (cwd) {
-      const promptArg = baseArgs.pop() as string
-      baseArgs.push('--cwd', cwd, promptArg)
+      const promptArg = takeTrailingPrompt(baseArgs)
+      baseArgs.push('--cwd', cwd)
+      pushPromptArg(baseArgs, promptArg)
     }
 
     const sockPath = approvalBus.getSocketPath()
@@ -218,14 +220,14 @@ export class QoderAdapter extends AgentBase {
           AGIM_RUN_ID: runId,
         },
       })
-      const promptArg = args.pop() as string
+      const promptArg = takeTrailingPrompt(args)
       args.push(
         '--mcp-config',
         mcpConfig,
         '--allowed-mcp-server-names',
         'agim',
-        promptArg,
       )
+      pushPromptArg(args, promptArg)
     }
 
     return {

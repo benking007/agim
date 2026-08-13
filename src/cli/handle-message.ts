@@ -361,7 +361,7 @@ export async function handleMessage(ctx: MessageContext, defaultAgent: string): 
     markJobFailed(inlineJobId, errMsg)
     await sink.deliver({
       platform, channelId: ctx.channelId, threadId: message.threadId,
-      payload: '❌ An error occurred processing your message.', kind: 'text',
+      payload: '❌ 处理你的消息时出错了，请稍后重试。（详情已记入日志）', kind: 'text',
     }).catch(() => { /* swallow — sink already logs */ })
   } finally {
     unbindInlineController?.()

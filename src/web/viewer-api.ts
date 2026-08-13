@@ -91,7 +91,10 @@ async function handleViewerGet(_req: IncomingMessage, res: ServerResponse, id: s
   const { getPaste } = await import('../core/viewer-local.js')
   const row = getPaste(id)
   if (!row) { sendJson(res, 404, { error: 'not_found' }); return }
-  sendJson(res, 200, row)
+  // Strip `source` (thread_key / IM user id) even for admin JSON — the
+  // public HTML page never needed it, and a leaked UUID must not also
+  // leak the originating conversation identity.
+  sendJson(res, 200, { ...row, source: undefined })
 }
 
 async function handleViewerDelete(_req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {

@@ -110,6 +110,11 @@ describe('v1.2.153: isPublicPath — SPA bundle bootstrap', () => {
     expect(__webAuthForTesting.isPublicPath('/vendor/chart.umd.min.js', 'GET')).toBe(true)
     expect(__webAuthForTesting.isPublicPath('/l/abc123', 'GET')).toBe(true)
   })
+
+  it('does not treat GET /api/viewer/:id as public (JSON is admin-only; HTML is /v/:id)', () => {
+    expect(__webAuthForTesting.isPublicPath('/api/viewer/01234567-89ab-cdef-0123-456789abcdef', 'GET')).toBe(false)
+    expect(__webAuthForTesting.isPublicPath('/v/01234567-89ab-cdef-0123-456789abcdef', 'GET')).toBe(true)
+  })
 })
 
 // v1.5.43 — CJK webfont must load without a session cookie. CSS under

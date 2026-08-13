@@ -39,14 +39,10 @@ export const PUBLIC_EXACT_PATHS = new Set<string>([
 // Chinese paints as tofu / [?]. Fonts are OFL-licensed static files
 // with no secrets — same trust model as /assets/.
 export const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/', '/assets/', '/fonts/']
-export const PUBLIC_API_VIEWER_RE = /^\/api\/viewer\/[0-9a-f-]{8,}$/i
 
-export function isPublicPath(pathname: string, method: string): boolean {
+export function isPublicPath(pathname: string, _method: string): boolean {
   if (PUBLIC_EXACT_PATHS.has(pathname)) return true
   for (const p of PUBLIC_PREFIX_PATHS) if (pathname.startsWith(p)) return true
-  // Single-paste JSON read mirrors /v/:id (same anyone-with-the-url policy);
-  // DELETE on the same path still needs a token.
-  if (method === 'GET' && PUBLIC_API_VIEWER_RE.test(pathname)) return true
   return false
 }
 

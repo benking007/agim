@@ -8,8 +8,10 @@
 //   POST /api/service/stop        → { ok, mode, exiting? }
 //   POST /api/service/restart     → { ok, mode, restarting? }
 //
-// Auth: status is open to any authenticated peer; log-tail + start/stop/restart
-// require admin (same gates as the original server.ts route table).
+// Auth: status / log-tail / start / stop / restart all require admin
+// (pid + boot timings are control-plane; SPA dashboard/service pages
+// are operator surfaces). Loopback / AGIM_WEB_AUTH=off still count as
+// admin via isRequestAdmin.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { stat, open } from 'node:fs/promises'
@@ -32,6 +34,7 @@ export async function handleServiceApi(
   const m = req.method ?? 'GET'
 
   if (p === '/api/service/status' && m === 'GET') {
+    if (!requireAdmin(req, res)) return true
     await handleServiceStatus(res); return true
   }
   if (p === '/api/service/log-tail' && m === 'GET') {

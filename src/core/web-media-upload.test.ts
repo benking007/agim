@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   formatMediaMarker,
+  guessMediaContentType,
+  isUnsafeInlineMedia,
+  mediaContentDisposition,
   resolveSafeWebMediaPath,
   saveWebChatMedia,
 } from './web-media-upload.js'
@@ -62,5 +65,16 @@ describe('web-media-upload', () => {
       delete process.env.AGIM_MEDIA_ROOT
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  it('does not guess executable types for html/svg/xml (stored XSS)', () => {
+    expect(guessMediaContentType('note.html')).toBe('application/octet-stream')
+    expect(guessMediaContentType('img.svg')).toBe('application/octet-stream')
+    expect(guessMediaContentType('data.xml')).toBe('application/octet-stream')
+    expect(guessMediaContentType('shot.png')).toBe('image/png')
+    expect(isUnsafeInlineMedia('x.html')).toBe(true)
+    expect(isUnsafeInlineMedia('x.svg')).toBe(true)
+    expect(mediaContentDisposition('x.html')).toMatch(/^attachment;/)
+    expect(mediaContentDisposition('shot.png')).toMatch(/^inline;/)
   })
 })

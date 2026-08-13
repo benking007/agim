@@ -64,6 +64,7 @@ import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { ensureAgimMcp } from './ensure-mcp-config.js'
+import { pushPromptArg, takeTrailingPrompt } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.cursor' })
 
@@ -160,7 +161,7 @@ export class CursorAdapter extends AgentBase {
     } else if (opts.agentSessionId) {
       args.push('--resume', opts.agentSessionId)
     }
-    args.push(prompt)
+    pushPromptArg(args, prompt)
     return args
   }
 
@@ -182,8 +183,9 @@ export class CursorAdapter extends AgentBase {
     if (cwd) {
       // Insert before the prompt (last arg). Order matters for cursor's
       // commander parser — flags before positional.
-      const promptArg = baseArgs.pop() as string
-      baseArgs.push('--workspace', cwd, promptArg)
+      const promptArg = takeTrailingPrompt(baseArgs)
+      baseArgs.push('--workspace', cwd)
+      pushPromptArg(baseArgs, promptArg)
     }
 
     // MCP wiring (one-shot per agim process lifetime).

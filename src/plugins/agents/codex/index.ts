@@ -58,6 +58,7 @@ import { approvalBus } from '../../../core/approval-bus.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { buildCodexMcpCliArgs } from './build-mcp-cli-args.js'
+import { pushPromptArg } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.codex' })
 
@@ -290,12 +291,16 @@ export class CodexAdapter extends AgentBase {
       // positional immediately after `resume`. No -s here (resume inherits
       // sandbox from original session).
       const flags = wantBypass ? ['--dangerously-bypass-approvals-and-sandbox'] : []
-      return ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, ...flags, prompt]
+      const resumeArgs = ['exec', 'resume', opts.agentSessionId, ...BASE_FLAGS, ...flags]
+      pushPromptArg(resumeArgs, prompt)
+      return resumeArgs
     }
     const sandboxFlags = wantBypass
       ? ['--dangerously-bypass-approvals-and-sandbox']
       : ['-s', sandboxMode]
-    return ['exec', ...BASE_FLAGS, ...sandboxFlags, prompt]
+    const freshArgs = ['exec', ...BASE_FLAGS, ...sandboxFlags]
+    pushPromptArg(freshArgs, prompt)
+    return freshArgs
   }
 
   /**

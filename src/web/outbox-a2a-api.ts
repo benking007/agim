@@ -251,14 +251,18 @@ async function handleArtifactsFile(
       lower.endsWith('.json') ? 'application/json' :
       lower.endsWith('.md')   ? 'text/markdown' :
       lower.endsWith('.csv')  ? 'text/csv' :
-      lower.endsWith('.html') ? 'text/html' :
       lower.endsWith('.png')  ? 'image/png' :
       lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' :
-      'text/plain; charset=utf-8'
+      'application/octet-stream'
+    const disposition = lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.svg') || lower.endsWith('.xml')
+      ? 'attachment'
+      : 'inline'
     res.writeHead(200, {
       'Content-Type': contentType,
       'Content-Length': buf.length,
-      'Content-Disposition': `inline; filename="${name.replace(/"/g, '_')}"`,
+      'Content-Disposition': `${disposition}; filename="${name.replace(/"/g, '_')}"`,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': 'sandbox',
     })
     res.end(buf)
   } catch (err) {

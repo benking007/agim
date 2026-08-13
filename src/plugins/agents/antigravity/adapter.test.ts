@@ -109,12 +109,12 @@ describe('AntigravityAdapter — command resolution', () => {
 
 describe('AntigravityAdapter — buildArgs', () => {
   it('uses print mode for fresh runs', () => {
-    expect(adapter.exposeBuildArgs('hello', {})).toEqual(['--print', 'hello'])
+    expect(adapter.exposeBuildArgs('hello', {})).toEqual(['--print', '--', 'hello'])
   })
 
   it('passes conversation id when resuming', () => {
     expect(adapter.exposeBuildArgs('next', { agentSessionId: 'agy-conv' }))
-      .toEqual(['--print', '--conversation', 'agy-conv', 'next'])
+      .toEqual(['--print', '--conversation', 'agy-conv', '--', 'next'])
   })
 })
 

@@ -38,7 +38,7 @@ export function splitMessage(
   const {
     maxLength = 2000,
     addContinuationMarker = true,
-    continuationMarker = '\n\n[continued...]',
+    continuationMarker = '\n\n[续]',
   } = options
 
   if (text.length <= maxLength) {

@@ -24,6 +24,7 @@ function msg(id: string, role: 'user' | 'assistant', content: string): ChatMessa
 describe('web-history-cache', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
   })
 
   it('round-trips a snapshot and hydrates reducer init', () => {

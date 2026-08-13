@@ -276,8 +276,8 @@ web:web:<threadId>
 
 | 机制 | 说明 |
 |---|---|
-| 浏览器 thread id | SPA 把 **当前** id 存在 `localStorage['agim-web-thread-id']`（`web-…` 形）；多会话列表在 `localStorage['agim-web-sessions']` |
-| 本地 transcript 缓存 | 空闲会话快照写入 `localStorage['agim-web-hist:<threadId>']`（LRU 索引 `agim-web-hist-index`，默认最多 8 个线程）。刷新 / 点选会话**先画出缓存**，再 `get-history` 对齐。快照里 **`revisionAt`** 是上次应用的服务端修订（`history.updatedAt` = max(session `lastActivity`, 最后一条消息时间)），**`savedAt`** 只是本机写入时刻，两套时钟不可互比。对齐时：云端 `updatedAt` **大于** `revisionAt` 才视为云端更新（尾部 id 不同则整包替换；相同则保留已挂载气泡）；云端相同或更旧则保留缓存。旧服务端若不下发 `updatedAt`，仍回退到尾部 message id 启发式。配额不够时丢掉最旧线程、再截更早正文；最新一条助手尽量保留完整。服务端 `.log` 仍是权威来源 |
+| 浏览器 thread id | 本标签当前 id 在 `sessionStorage['agim-web-tab-thread']`；`localStorage['agim-web-thread-id']` 只表示**最近一次点选**（新标签页种子）。多会话列表在 `localStorage['agim-web-sessions']`。另一窗口改 activeId **不会**让本标签刷新后画成别人的会话 |
+| 本地 transcript 缓存 | 空闲会话快照写入 `localStorage['agim-web-hist:<threadId>']`（LRU 索引 `agim-web-hist-index`，默认最多 8 个线程）。刷新 / 点选会话**先画出该 thread 的缓存**，再 `get-history` 对齐。快照里 **`revisionAt`** 是上次应用的服务端修订（`history.updatedAt` = max(session `lastActivity`, 最后一条消息时间)），**`savedAt`** 只是本机写入时刻，两套时钟不可互比。对齐时：云端 `updatedAt` **大于** `revisionAt` 才视为云端更新（尾部 id 不同则整包替换；相同则保留已挂载气泡）；云端相同或更旧则保留缓存。旧服务端若不下发 `updatedAt`，仍回退到尾部 message id 启发式。`history` / `history-prepend` / `active-run` 带 `threadId`，与本标签当前会话不符则丢弃（防止快速切换时乱序覆盖、把 A 的旧回合 prepend 进 B）。配额不够时丢掉最旧线程、再截更早正文；最新一条助手尽量保留完整。服务端 `.log` 仍是权威来源 |
 | 恢复协议 | 每次 WS `open` 发 `get-history { threadId }`（**当前** active id）；服务端 rekey 到该 id 并回放 `.log` |
 | 大会话载荷 | 首帧 `history` 只带**最近**一段（条数 + 体积预算），`activity.steps[].preview` 截断；更早的回合随后 `history-prepend`。Agent 提示词仍读完整磁盘 `.log` |
 | 归属冲突 | localStorage 的 thread 已被**其他 token** 占用 → 不下发 `error`；发 `thread-reassigned`（本连接新 id）+ 空/新会话 `history`，SPA 改写 `agim-web-thread-id` 并把该 id 写进会话索引（替换被拒的旧 id） |
@@ -288,6 +288,6 @@ web:web:<threadId>
 
 排障：
 
-1. DevTools → Application → `agim-web-thread-id`（当前）与 `agim-web-sessions`（列表）；气泡缓存 `agim-web-hist-index` / `agim-web-hist:<id>`
+1. DevTools → Application：本标签 `sessionStorage['agim-web-tab-thread']`；共享 `agim-web-thread-id`（最近点选）与 `agim-web-sessions`（列表）；气泡缓存 `agim-web-hist-index` / `agim-web-hist:<id>`
 2. `ls ~/.agim/sessions/` 下对应 safe-key 的 `.json` / `.log`
 3. Web 气泡被清：检查是否超过 `AGIM_WEB_SESSION_MESSAGES_TTL_MS`（默认 = META 7 d）；IM 渠道仍看 `AGIM_SESSION_MESSAGES_TTL_MS`（默认 30 min）

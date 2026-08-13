@@ -127,16 +127,18 @@ describe('history-payload', () => {
       role: i % 2 === 0 ? 'user' : 'assistant',
       content: `turn ${i}`,
     }))
-    const frames = buildHistoryWireFrames(messages, { agent: 'agim' }, (m, abs) => ({
+    const frames = buildHistoryWireFrames(messages, { agent: 'agim', threadId: 'web-abc' }, (m, abs) => ({
       id: m.id,
       serverIndex: abs,
     }))
     expect(frames[0]?.type).toBe('history')
+    expect(frames[0]?.threadId).toBe('web-abc')
     expect(frames[0]?.historyComplete).toBe(false)
     expect(frames[0]?.sessionTitle).toBe('turn 0')
     expect((frames[0]?.olderCount as number) > 0).toBe(true)
     const prepend = frames.filter((f) => f.type === 'history-prepend')
     expect(prepend.length).toBeGreaterThan(0)
+    expect(prepend.every((f) => f.threadId === 'web-abc')).toBe(true)
     expect(prepend.at(-1)?.remaining).toBe(0)
   })
 

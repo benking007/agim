@@ -6,13 +6,17 @@
  * *this browser* has opened so the Portal rail can switch via
  * `get-history { threadId }` instead of wiping the current log.
  *
- * `localStorage['agim-web-thread-id']` remains the active id (upload
- * paths and older builds still read it). `agim-web-sessions` holds the
- * list + titles. First load migrates a lone thread id into the index.
+ * `localStorage['agim-web-thread-id']` is the last-focused id (new tabs
+ * and older upload paths still read it). Each tab also keeps its own
+ * current thread in `sessionStorage['agim-web-tab-thread']` so another
+ * window switching sessions cannot hydrate this tab into the wrong
+ * transcript. `agim-web-sessions` holds the shared list + titles.
+ * First load migrates a lone thread id into the index.
  */
 
 export const WEB_THREAD_RE = /^web-[A-Za-z0-9_-]{4,64}$/
 export const THREAD_ID_KEY = 'agim-web-thread-id'
+export const TAB_THREAD_KEY = 'agim-web-tab-thread'
 export const SESSIONS_KEY = 'agim-web-sessions'
 export const MAX_SESSIONS = 50
 
@@ -57,6 +61,31 @@ function notify(): void {
 
 function persistActiveId(id: string): void {
   try { localStorage.setItem(THREAD_ID_KEY, id) } catch { /* private mode */ }
+}
+
+export function persistTabThreadId(id: string): void {
+  if (!isWebThreadId(id)) return
+  try { sessionStorage.setItem(TAB_THREAD_KEY, id) } catch { /* private mode */ }
+}
+
+export function readTabThreadId(): string | null {
+  try {
+    const id = sessionStorage.getItem(TAB_THREAD_KEY)
+    if (id && isWebThreadId(id)) return id
+  } catch { /* private mode */ }
+  return null
+}
+
+/**
+ * This tab's current thread. Seeded once from the shared last-focused
+ * id; later switches in *other* tabs do not steal it.
+ */
+export function loadTabThreadId(): string {
+  const tab = readTabThreadId()
+  if (tab) return tab
+  const shared = loadIndex().activeId
+  persistTabThreadId(shared)
+  return shared
 }
 
 function writeIndex(index: WebSessionIndex): WebSessionIndex {
@@ -182,6 +211,7 @@ export function upsertSession(patch: { id: string; title?: string; updatedAt?: n
 export function setActiveId(id: string): WebSessionIndex {
   const next = id.trim()
   if (!isWebThreadId(next)) return loadIndex()
+  persistTabThreadId(next)
   const index = loadIndex()
   let sessions = index.sessions
   if (!sessions.some((s) => s.id === next)) {
@@ -200,6 +230,7 @@ export function setActiveId(id: string): WebSessionIndex {
 export function adoptThreadId(next: string, previousId?: string): WebSessionIndex {
   const id = next.trim()
   if (!isWebThreadId(id)) return loadIndex()
+  persistTabThreadId(id)
   const index = loadIndex()
   const prev = previousId?.trim()
   let sessions = index.sessions
@@ -214,5 +245,13 @@ export function adoptThreadId(next: string, previousId?: string): WebSessionInde
   return writeIndex({
     activeId: id,
     sessions: capSessions(sessions, id),
+  })
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.storageArea && e.storageArea !== localStorage) return
+    if (e.key !== SESSIONS_KEY && e.key !== THREAD_ID_KEY && e.key !== null) return
+    notify()
   })
 }

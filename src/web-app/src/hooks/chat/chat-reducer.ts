@@ -46,6 +46,19 @@ export function isCloudHistoryNewer(
   return serverUpdatedAt > local
 }
 
+/**
+ * Drop a history / prepend / active-run frame that belongs to another
+ * thread. Legacy servers omit `threadId` — those still apply.
+ */
+export function historyBelongsToClient(
+  frameThreadId: string | undefined,
+  clientId: string | null | undefined,
+): boolean {
+  if (typeof frameThreadId !== 'string' || !frameThreadId) return true
+  if (!clientId) return true
+  return frameThreadId === clientId
+}
+
 export type ChatAction =
   | { kind: 'WS_STATUS'; status: ChatState['status'] }
   | { kind: 'INIT'; agents: string[]; defaultAgent: string; clientId?: string }
@@ -63,8 +76,10 @@ export type ChatAction =
       olderCount?: number
       /** Server session revision (epoch ms). */
       updatedAt?: number
+      /** Owning `web-*` thread. Mismatched frames are ignored. */
+      threadId?: string
     }
-  | { kind: 'HISTORY_PREPEND'; messages: ChatMessage[] }
+  | { kind: 'HISTORY_PREPEND'; messages: ChatMessage[]; threadId?: string }
   | { kind: 'PLAN_MODE'; enabled: boolean }
   | { kind: 'THINK_MODE'; variant: string }
   | { kind: 'SESSION_MODEL'; model: string }
@@ -80,6 +95,7 @@ export type ChatAction =
       finishedAt?: number
       durationMs?: number
       error?: string
+      threadId?: string
     }
   | { kind: 'AGENTS'; agents: string[] }
   | { kind: 'AGENT_SWITCHED'; agent: string; preferredWorkerAgent?: string }
@@ -356,6 +372,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
     case 'SET_CLIENT_ID':
       return { ...s, clientId: a.clientId }
     case 'HISTORY': {
+      if (!historyBelongsToClient(a.threadId, s.clientId)) return s
       // Non-empty history is authoritative (refresh / reconnect).
       // Empty history must NOT wipe in-memory bubbles: after MESSAGES_TTL
       // the server drops .log but the tab may still show the transcript,
@@ -480,6 +497,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       })
     }
     case 'HISTORY_PREPEND': {
+      if (!historyBelongsToClient(a.threadId, s.clientId)) return s
       if (a.messages.length === 0) return s
       const seen = new Set(s.messages.map((m) => m.id))
       const incoming = a.messages.filter((m) => m.id && !seen.has(m.id))
@@ -495,6 +513,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
     case 'COMPACT_RATE':
       return { ...s, compactRate: a.rate || 'auto' }
     case 'ACTIVE_RUN': {
+      if (!historyBelongsToClient(a.threadId, s.clientId)) return s
       // Replayed after HISTORY on reconnect/refresh. Bind the snapshot
       // onto the last assistant bubble (or create a streaming placeholder).
       const startedAt = a.startedAt

@@ -35,11 +35,13 @@ vi.mock('@/lib/api/ws', () => ({
 }))
 
 import { useChat } from './use-chat'
-import { THREAD_ID_KEY, listSessions } from '@/lib/web-sessions'
+import { THREAD_ID_KEY, SESSIONS_KEY, listSessions } from '@/lib/web-sessions'
+import { writeCachedHistory } from '@/lib/web-history-cache'
 
 describe('useChat multi-session', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     mocks.sent.length = 0
     mocks.statusListeners.clear()
   })
@@ -117,5 +119,28 @@ describe('useChat multi-session', () => {
     const historyCalls = mocks.sent.filter((m) => m.type === 'get-history')
     expect(historyCalls.at(-1)).toEqual({ type: 'get-history', threadId: nextId })
     unmount()
+  })
+
+  it('refresh hydrates this tab thread even if localStorage activeId moved', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const tabId = result.current.activeSessionId
+    act(() => { result.current.send('only in this tab') })
+    writeCachedHistory(tabId, { messages: result.current.state.messages })
+    unmount()
+
+    const other = `web-othertab${'x'.repeat(4)}`
+    localStorage.setItem(THREAD_ID_KEY, other)
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify({
+      activeId: other,
+      sessions: [
+        { id: other, updatedAt: 2, title: 'other' },
+        { id: tabId, updatedAt: 1, title: 'this' },
+      ],
+    }))
+
+    const { result: again, unmount: unmount2 } = renderHook(() => useChat())
+    expect(again.current.activeSessionId).toBe(tabId)
+    expect(again.current.state.messages.some((m) => m.content === 'only in this tab')).toBe(true)
+    unmount2()
   })
 })

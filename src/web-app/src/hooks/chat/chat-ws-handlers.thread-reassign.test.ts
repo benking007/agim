@@ -18,6 +18,7 @@ vi.mock('sonner', () => ({
 describe('thread-reassigned', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     vi.clearAllMocks()
   })
 
@@ -139,5 +140,36 @@ describe('thread-reassigned', () => {
       kind: 'HISTORY_PREPEND',
       messages: [expect.objectContaining({ id: 'u0', serverIndex: 0, content: 'oldest' })],
     }])
+  })
+
+  it('drops history frames that belong to another thread', () => {
+    const threadIdRef = { current: 'web-currentthrd' }
+    localStorage.setItem('agim-web-thread-id', threadIdRef.current)
+    const actions: ChatAction[] = []
+    const onIncoming = makeOnIncoming(
+      (a) => { actions.push(a) },
+      { current: null },
+      () => {},
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({
+      type: 'history',
+      agent: 'agim',
+      threadId: 'web-stalehistxxx',
+      messages: [
+        { id: 'u9', role: 'user', content: 'from other session', timestamp: new Date().toISOString() },
+      ],
+    })
+    onIncoming({
+      type: 'history-prepend',
+      threadId: 'web-stalehistxxx',
+      remaining: 0,
+      messages: [
+        { id: 'u0', role: 'user', content: 'old other', timestamp: new Date().toISOString() },
+      ],
+    })
+    expect(actions).toEqual([])
+    expect(localStorage.getItem('agim-web-sessions')).toBeNull()
   })
 })

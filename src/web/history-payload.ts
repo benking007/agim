@@ -169,6 +169,9 @@ export function buildHistoryWireFrames(
   decorate: (m: ChatMessage, absIndex: number) => Record<string, unknown>,
 ): Array<Record<string, unknown>> {
   const delivery = splitHistoryDelivery(messages)
+  const threadId = typeof meta.threadId === 'string' && meta.threadId
+    ? { threadId: meta.threadId }
+    : {}
   const frames: Array<Record<string, unknown>> = [{
     type: 'history',
     messages: delivery.tail.map((m, i) => decorate(m, delivery.tailStart + i)),
@@ -182,6 +185,7 @@ export function buildHistoryWireFrames(
       type: 'history-prepend',
       messages: chunk.messages.map((m, i) => decorate(m, chunk.startIndex + i)),
       remaining: chunk.remaining,
+      ...threadId,
     })
   }
   return frames

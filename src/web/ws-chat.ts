@@ -137,7 +137,9 @@ export async function sendSessionHistory(
   client: ClientConnection,
   _defaultAgent: string,
 ): Promise<void> {
-  const history = await sessionManager.getSessionWithHistory('web', 'web', client.id)
+  // Capture before any await — a later get-history rekey mutates client.id.
+  const threadId = client.id
+  const history = await sessionManager.getSessionWithHistory('web', 'web', threadId)
   if (history) {
     if (history.session.agent) {
       client.agent = history.session.agent
@@ -153,6 +155,7 @@ export async function sendSessionHistory(
         lastActivity: history.session.lastActivity,
         messages: history.messages,
       }),
+      threadId,
     }
     let decorate = (m: ChatMessage, absIndex: number): Record<string, unknown> => ({
       ...m,
@@ -160,7 +163,7 @@ export async function sendSessionHistory(
     })
     try {
       const { listMessageFeedback, resolveFeedbackVote } = await import('../core/message-feedback.js')
-      const feedbackEntries = await listMessageFeedback('web', 'web', client.id)
+      const feedbackEntries = await listMessageFeedback('web', 'web', threadId)
       decorate = (m, absIndex) => ({
         ...m,
         serverIndex: absIndex,
@@ -175,7 +178,7 @@ export async function sendSessionHistory(
     }
   }
   const { getActiveRun } = await import('./active-runs.js')
-  const active = getActiveRun(client.id)
+  const active = getActiveRun(threadId)
   if (active) {
     // Always replay — including finished runs. Sleep/wake often misses
     // `done` while the SPA mid-flight guard also refuses HISTORY; skipping
@@ -194,11 +197,12 @@ export async function sendSessionHistory(
         : undefined,
       durationMs: active.durationMs,
       error: active.error,
+      threadId,
     })
   }
   // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
   // get-history (chat bootstrap does not carry the Loop DTO).
-  sendToClient(ws, { type: 'loop-changed', threadId: client.id })
+  sendToClient(ws, { type: 'loop-changed', threadId })
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────

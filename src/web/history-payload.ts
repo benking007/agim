@@ -133,6 +133,36 @@ export function historySessionTitle(messages: ChatMessage[]): string | undefined
   return text.length > 80 ? `${text.slice(0, 80)}…` : text
 }
 
+function toEpochMs(value: Date | number | string | undefined): number {
+  if (value instanceof Date) {
+    const n = value.getTime()
+    return Number.isFinite(n) ? n : 0
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const n = Date.parse(value)
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
+/**
+ * Cloud transcript revision: max(session lastActivity, last message time).
+ * SPA stores this on the localStorage snapshot and compares on the next
+ * `history` frame to decide whether the cache is stale.
+ */
+export function historyUpdatedAt(input: {
+  lastActivity?: Date | number | string
+  messages: Array<{ timestamp?: Date | number | string }>
+}): number {
+  let t = toEpochMs(input.lastActivity)
+  for (let i = input.messages.length - 1; i >= 0; i--) {
+    const ms = toEpochMs(input.messages[i]?.timestamp)
+    if (ms > t) t = ms
+  }
+  return t
+}
+
 export function buildHistoryWireFrames(
   messages: ChatMessage[],
   meta: Record<string, unknown>,

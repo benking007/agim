@@ -57,6 +57,12 @@ export type ChatIncoming =
       historyComplete?: boolean
       /** First user line of the full log (not the tail) — session rail title. */
       sessionTitle?: string
+      /**
+       * Server transcript revision (epoch ms): max(session.lastActivity,
+       * last message timestamp). SPA compares this to the localStorage
+       * snapshot's `revisionAt` to decide whose copy is newer.
+       */
+      updatedAt?: number
     }
   /**
    * Older transcript chunk, prepended in front of the current messages.

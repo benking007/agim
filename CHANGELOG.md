@@ -25,6 +25,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Web chat localStorage history cache**: idle transcripts snapshot to
+  `agim-web-hist:<threadId>` (LRU, capped). Refresh and session switch
+  paint the cache immediately; `get-history` reconciles without remounting
+  the same tail bubble (so the visible reply does not re-parse markdown).
+  Each snapshot stores `revisionAt` (last applied server `history.updatedAt`,
+  max of session `lastActivity` and last message time) separately from
+  `savedAt` (browser write clock). Align uses cloud vs `revisionAt` — not
+  `savedAt` — so a newer cloud transcript replaces the cache, and a same
+  or older cloud frame keeps the painted bubbles. Quota eviction drops
+  older threads first. Server `.log` stays authoritative.
+
 - **Portal multi-session**: 「新对话」铸造新的 `web-*` thread 并保留在左侧会话列表；点选通过已有 `get-history` rekey 重载历史。不再对当前 thread 发 `new-conversation`（原地 wipe）。索引存在 `localStorage['agim-web-sessions']`，`agim-web-thread-id` 仍表示当前 active id。
 
 - **Workspace file editor Download**: Agent Files (`/workspace`) text

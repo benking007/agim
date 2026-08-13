@@ -41,9 +41,17 @@ import { handleSkillsOp } from '../skills-rpc.js'
 import { handleMemoOp } from '../memo-rpc.js'
 import { handlePushOp } from '../push-rpc.js'
 import { handleAskOp } from '../ask-user-rpc.js'
-import { callAgentByName } from '../a2a.js'
+import { callAgentByName, getA2AMaxDepth } from '../a2a.js'
 import { shouldClearCallAgentHistoryForLoopRound } from '../loop-call-agent-cap.js'
-import { resolveSubagentSpawn } from '../subagent.js'
+import { isAgimAgentId } from '../naming-migrate.js'
+import {
+  applyCallAgentOutputFormat,
+  intersectAllowedTools,
+  parseCallAgentTask,
+  parseCallAgentsArgs,
+  resolveSubagentSpawn,
+  resolveSubtreeMaxDepth,
+} from '../subagent.js'
 import {
   formatAgentDispatchUnavailable,
   isAgentAvailableCached,
@@ -103,6 +111,10 @@ export interface AgimDispatcherCtx {
   logger?: typeof rootLogger
   /** Optional A2A depth — defaults to 0 for native-originated calls. */
   callerDepth?: number
+  /** Inherited subtree depth ceiling from the parent spawn. */
+  a2aMaxDepth?: number
+  /** Inherited same-family tool allowlist from the parent spawn. */
+  allowedTools?: readonly string[]
   /** v1.2.139 — caller's PlanMode flag at dispatch time. When true the
    *  parent thread has `/plan on`, so any sub-agent we spawn MUST also
    *  run read-only. Resolved by native/index.ts via
@@ -412,8 +424,27 @@ export function getAgimTools(): ToolDef[] {
             description:
               'Allow same-agent nested Subagent with a fresh context (default model if backend/role omitted).',
           },
+          outputFormat: {
+            type: 'string',
+            description:
+              'Optional output contract appended to the child brief (e.g. "markdown table of findings").',
+          },
+          maxDepth: {
+            type: 'integer',
+            minimum: 1,
+            description:
+              'Subtree depth ceiling for this spawn. Cannot exceed AGIM_A2A_MAX_DEPTH. Nested call_agent inherits the cap.',
+          },
+          allowedTools: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string' },
+            description:
+              'Same-family Agim only: advertise and allow only these tool names. Unknown keys on this object are refused.',
+          },
         },
         required: ['agent', 'prompt'],
+        additionalProperties: false,
       },
       // Subagent wall clock is owned by A2A (AGIM_A2A_TIMEOUT_DEFAULT_MS, 30 min
       // default). The Native tool-bridge default (60s) must not abort call_agent
@@ -465,12 +496,29 @@ export function getAgimTools(): ToolDef[] {
                   description:
                     'Same-family nested Subagent with fresh context (default model if backend/role omitted).',
                 },
+                outputFormat: {
+                  type: 'string',
+                  description: 'Optional output contract appended to this lane\'s brief.',
+                },
+                maxDepth: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'Per-lane subtree depth ceiling (cannot exceed AGIM_A2A_MAX_DEPTH).',
+                },
+                allowedTools: {
+                  type: 'array',
+                  minItems: 1,
+                  items: { type: 'string' },
+                  description: 'Same-family Agim only: restrict this lane to these tool names.',
+                },
               },
               required: ['agent', 'prompt'],
+              additionalProperties: false,
             },
           },
         },
         required: ['tasks'],
+        additionalProperties: false,
       },
       // Batch fan-out can run for A2A's full wall clock; never inherit 60s tool default.
       timeoutMs: 0,
@@ -699,6 +747,39 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
 
   type SpawnOk = Extract<ReturnType<typeof resolveSubagentSpawn>, { ok: true }>
 
+  function resolveSpawnContract(
+    task: { prompt: string; outputFormat?: string; maxDepth?: number; allowedTools?: string[] },
+    spawn: SpawnOk,
+  ):
+    | { ok: true; prompt: string; maxDepth: number; allowedTools?: string[] }
+    | { ok: false; error: string } {
+    const depth = resolveSubtreeMaxDepth({
+      requested: task.maxDepth,
+      inherited: ctx.a2aMaxDepth,
+      globalMax: getA2AMaxDepth(),
+    })
+    if (!depth.ok) return depth
+    const tools = intersectAllowedTools(
+      ctx.allowedTools ? [...ctx.allowedTools] : undefined,
+      task.allowedTools,
+    )
+    if (!tools.ok) return tools
+    if (tools.tools?.length && !isAgimAgentId(spawn.agent)) {
+      return {
+        ok: false,
+        error:
+          `allowedTools is only supported for same-family Agim Subagents `
+          + `(cannot confine ${spawn.agent} CLI tools).`,
+      }
+    }
+    return {
+      ok: true,
+      prompt: applyCallAgentOutputFormat(task.prompt, task.outputFormat),
+      maxDepth: depth.maxDepth,
+      ...(tools.tools ? { allowedTools: tools.tools } : {}),
+    }
+  }
+
   async function invokeOneSubagent(opts: {
     spawn: SpawnOk
     prompt: string
@@ -706,6 +787,8 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
     signal: AbortSignal
     toolCtx?: { traceId?: string }
     callId: string
+    maxDepth?: number
+    allowedTools?: readonly string[]
   }): Promise<{ ok: true; text: string; cancelled?: boolean } | { ok: false; error: string }> {
     const { spawn, prompt, activityStepId, signal: sig, toolCtx, callId } = opts
     if (isInProcessSpawnEnabled() && spawn.sameAgent) {
@@ -737,6 +820,10 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
       ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
       ...(spawn.isolate ? { isolate: true } : {}),
       ...(spawn.model ? { model: spawn.model } : {}),
+      ...(typeof opts.maxDepth === 'number' ? { maxDepth: opts.maxDepth } : {}),
+      ...(opts.allowedTools && opts.allowedTools.length > 0
+        ? { allowedTools: opts.allowedTools }
+        : {}),
       activityLabel: spawn.label,
       activityStepId,
       signal: sig,
@@ -852,21 +939,23 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             }
           }
           await maybeClearCallAgentCapForLoopRound()
-          const agentName = typeof args.agent === 'string' ? args.agent : ''
-          const prompt = typeof args.prompt === 'string' ? args.prompt : ''
-          if (!agentName || !prompt) {
+          const parsed = parseCallAgentTask(args)
+          if (!parsed.ok) {
             failCallAgentPendingLane(ctx.onToolActivity, {
               toolCallId: call.id,
-              label: agentName || 'agent',
-              preview: 'call_agent requires both `agent` (string) and `prompt` (string).',
+              label: typeof args.agent === 'string' ? args.agent : 'agent',
+              preview: parsed.error,
             })
-            return err('call_agent requires both `agent` (string) and `prompt` (string).')
+            return err(parsed.error)
           }
-          const roleArg = typeof args.role === 'string' ? args.role : undefined
-          const backendArg = typeof args.backend === 'string' ? args.backend : undefined
-          const isolateArg = args.isolate === true
+          const task = parsed.task
           const spawn = resolveSubagentSpawn(
-            { agent: agentName, role: roleArg, backend: backendArg, isolate: isolateArg },
+            {
+              agent: task.agent,
+              role: task.role,
+              backend: task.backend,
+              isolate: task.isolate,
+            },
             ctx.callerAgent,
           )
           if (!spawn.ok) {
@@ -874,10 +963,19 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             // call_agent tool_result activity is suppressed in the adapter.
             failCallAgentPendingLane(ctx.onToolActivity, {
               toolCallId: call.id,
-              label: agentName,
+              label: task.agent,
               preview: spawn.error,
             })
             return err(`call_agent refused: ${spawn.error}`)
+          }
+          const contract = resolveSpawnContract(task, spawn)
+          if (!contract.ok) {
+            failCallAgentPendingLane(ctx.onToolActivity, {
+              toolCallId: call.id,
+              label: spawn.label || task.agent,
+              preview: contract.error,
+            })
+            return err(`call_agent refused: ${contract.error}`)
           }
 
           if (callAgentMaxPerTurn > 0 && callAgentHistory.length >= callAgentMaxPerTurn) {
@@ -893,12 +991,12 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             const refuse = capExceededError(1, await loopCapExceededHint())
             failCallAgentPendingLane(ctx.onToolActivity, {
               toolCallId: call.id,
-              label: spawn.label || agentName,
+              label: spawn.label || task.agent,
               preview: refuse,
             })
             return err(refuse)
           }
-          const promptHead = prompt.slice(0, 60).replace(/\s+/g, ' ')
+          const promptHead = task.prompt.slice(0, 60).replace(/\s+/g, ' ')
           log.info({
             event: 'native.call_agent.delegated',
             callerAgent: ctx.callerAgent,
@@ -929,11 +1027,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
 
           const one = await invokeOneSubagent({
             spawn,
-            prompt,
+            prompt: contract.prompt,
             activityStepId: call.id,
             signal,
             toolCtx,
             callId: call.id,
+            maxDepth: contract.maxDepth,
+            ...(contract.allowedTools ? { allowedTools: contract.allowedTools } : {}),
           })
           {
             // After join: wall may apply now that the child job is terminal.
@@ -961,62 +1061,26 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             }
           }
           await maybeClearCallAgentCapForLoopRound()
-          const rawTasks = Array.isArray(args.tasks) ? args.tasks : null
-          if (!rawTasks || rawTasks.length === 0) {
-            return err('call_agents requires a non-empty `tasks` array.')
-          }
-          if (rawTasks.length > CALL_AGENTS_TASKS_HARD_MAX) {
-            const msg =
-              `call_agents refused: tasks.length=${rawTasks.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`
+          const parsedBatch = parseCallAgentsArgs(args)
+          if (!parsedBatch.ok) {
             failCallAgentsPendingLanes(ctx.onToolActivity, {
               toolCallId: call.id,
               input: args,
-              taskCount: rawTasks.length,
+              preview: parsedBatch.error,
+            })
+            return err(parsedBatch.error)
+          }
+          const tasks = parsedBatch.tasks
+          if (tasks.length > CALL_AGENTS_TASKS_HARD_MAX) {
+            const msg =
+              `call_agents refused: tasks.length=${tasks.length} exceeds hard max ${CALL_AGENTS_TASKS_HARD_MAX}.`
+            failCallAgentsPendingLanes(ctx.onToolActivity, {
+              toolCallId: call.id,
+              input: args,
+              taskCount: tasks.length,
               preview: msg,
             })
             return err(msg)
-          }
-
-          type TaskIn = {
-            agent: string
-            prompt: string
-            role?: string
-            backend?: string
-            isolate?: boolean
-          }
-          const tasks: TaskIn[] = []
-          for (let i = 0; i < rawTasks.length; i++) {
-            const t = rawTasks[i]
-            if (!t || typeof t !== 'object') {
-              const msg = `call_agents tasks[${i}] must be an object.`
-              failCallAgentsPendingLanes(ctx.onToolActivity, {
-                toolCallId: call.id,
-                input: args,
-                taskCount: rawTasks.length,
-                preview: msg,
-              })
-              return err(msg)
-            }
-            const rec = t as Record<string, unknown>
-            const agent = typeof rec.agent === 'string' ? rec.agent : ''
-            const prompt = typeof rec.prompt === 'string' ? rec.prompt : ''
-            if (!agent || !prompt) {
-              const msg = `call_agents tasks[${i}] requires both agent and prompt strings.`
-              failCallAgentsPendingLanes(ctx.onToolActivity, {
-                toolCallId: call.id,
-                input: args,
-                taskCount: rawTasks.length,
-                preview: msg,
-              })
-              return err(msg)
-            }
-            tasks.push({
-              agent,
-              prompt,
-              role: typeof rec.role === 'string' ? rec.role : undefined,
-              backend: typeof rec.backend === 'string' ? rec.backend : undefined,
-              isolate: rec.isolate === true,
-            })
           }
 
           if (
@@ -1046,10 +1110,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
 
           const prepared: Array<{
             index: number
-            task: TaskIn
+            task: (typeof tasks)[number]
             spawn: SpawnOk
             stepId: string
             promptHead: string
+            prompt: string
+            maxDepth: number
+            allowedTools?: string[]
           }> = []
           for (let i = 0; i < tasks.length; i++) {
             const task = tasks[i]!
@@ -1074,6 +1141,16 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               })
               return err(`call_agents tasks[${i}] refused: ${spawn.error}`)
             }
+            const contract = resolveSpawnContract(task, spawn)
+            if (!contract.ok) {
+              failCallAgentsPendingLanes(ctx.onToolActivity, {
+                toolCallId: call.id,
+                input: args,
+                taskCount: tasks.length,
+                preview: contract.error,
+              })
+              return err(`call_agents tasks[${i}] refused: ${contract.error}`)
+            }
             // Probe before noteLoopDispatch so an unusable CLI (missing /
             // login quarantine) cannot count as the Loop round's required
             // dispatch. Fail the whole batch so the parent replans.
@@ -1093,6 +1170,9 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               spawn,
               stepId,
               promptHead: task.prompt.slice(0, 60).replace(/\s+/g, ' '),
+              prompt: contract.prompt,
+              maxDepth: contract.maxDepth,
+              ...(contract.allowedTools ? { allowedTools: contract.allowedTools } : {}),
             })
           }
 
@@ -1152,11 +1232,13 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             }, `delegating batch[${item.index}] → ${item.spawn.label}`)
             const one = await invokeOneSubagent({
               spawn: item.spawn,
-              prompt: item.task.prompt,
+              prompt: item.prompt,
               activityStepId: item.stepId,
               signal,
               toolCtx,
               callId: `${call.id}-${item.index}`,
+              maxDepth: item.maxDepth,
+              ...(item.allowedTools ? { allowedTools: item.allowedTools } : {}),
             })
             if (!one.ok) {
               return {

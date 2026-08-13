@@ -38,6 +38,7 @@ export const CALL_AGENT_TOOL_DESCRIPTION = [
   'coding that writes the same file → do not parallel-write (serialize or split directories).',
   'After Subagents return: synthesize yourself — never ask the user to merge raw child output.',
   'Vacuous self-call without isolate/role/backend is refused. Guardrails: depth, ACL, per-turn cap.',
+  'Unknown keys refused. Optional: outputFormat, maxDepth (≤ AGIM_A2A_MAX_DEPTH), allowedTools (same-family Agim only).',
 ].join(' ')
 
 /** Compact tool description for mcp__agim__call_agents (Phase B). */
@@ -49,6 +50,7 @@ export const CALL_AGENTS_TOOL_DESCRIPTION = [
   'Do not parallel-write the same file — split directories or serialize writers.',
   'Failure mode: allSettled — one child fail/timeout/cancel does not kill siblings; synthesize all results.',
   'Same-family: prefer backend=; isolate:true reuses default model. Guardrails: depth, ACL, per-turn cap, parallel max.',
+  'Unknown keys refused. Optional per task: outputFormat, maxDepth, allowedTools (Agim only).',
 ].join(' ')
 
 /**

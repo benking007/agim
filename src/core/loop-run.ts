@@ -970,19 +970,18 @@ export function _setTestLiveSubagents(value: boolean | null): void {
 
 /**
  * Live Subagent count for the active Loop's current round.
- * Prefers `roundJobIds` (round-scoped). When empty:
- * - 0 dispatches this round → 0 (do not mix unrelated thread jobs)
- * - ≥1 dispatch but missing ids (legacy / race) → thread-wide fallback
+ *
+ * Only `roundJobIds` count. An empty id list is 0 even when
+ * `dispatchesThisRound ≥ 1` — do not fall back to every child job on the
+ * thread (unrelated / leftover jobs must not block VERIFY). A2A registers
+ * each id in `noteLoopRoundJob` immediately after `createInlineJob`.
  */
 export function countRoundLiveSubagents(run: LoopRun): number {
   if (_testLiveSubagents != null) return _testLiveSubagents ? 1 : 0
   if (run.roundJobIds?.length) {
     return countActiveJobsByIds(run.roundJobIds)
   }
-  if ((run.dispatchesThisRound || 0) < 1) return 0
-  return countActiveChildJobsByThread(
-    jobThreadKey(run.platform, run.channelId, run.threadId),
-  )
+  return 0
 }
 
 /** Count of A2A Subagent jobs still pending/running for this Loop round. */

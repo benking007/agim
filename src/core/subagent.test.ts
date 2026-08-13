@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { existsSync, unlinkSync } from 'node:fs'
 import {
+  applyCallAgentOutputFormat,
   formatSubagentLabel,
+  intersectAllowedTools,
   isSameAgent,
   parseCallAgentTarget,
+  parseCallAgentTask,
+  parseCallAgentsArgs,
   resolveBackendName,
   resolveSubagentSpawn,
+  resolveSubtreeMaxDepth,
 } from './subagent.js'
 import { loadFromConfig, _resetRegistry } from './llm/registry.js'
 import { saveSecret, envKeyForBackend, LLM_SECRETS_PATH } from './llm/secrets.js'
@@ -253,5 +258,72 @@ describe('resolveSubagentSpawn', () => {
       expect(r.isolate).toBe(false)
       expect(r.label).toBe('claude-code')
     }
+  })
+})
+
+describe('call_agent task contract (fail-loud)', () => {
+  it('rejects unknown keys', () => {
+    const r = parseCallAgentTask({
+      agent: 'agim',
+      prompt: 'hi',
+      isolate: true,
+      foo: 1,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/unknown key/i)
+  })
+
+  it('parses outputFormat, maxDepth, allowedTools', () => {
+    const r = parseCallAgentTask({
+      agent: 'agim',
+      prompt: 'research X',
+      isolate: true,
+      outputFormat: 'markdown table',
+      maxDepth: 2,
+      allowedTools: ['agim_read_file', 'agim_grep'],
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.task.outputFormat).toBe('markdown table')
+    expect(r.task.maxDepth).toBe(2)
+    expect(r.task.allowedTools).toEqual(['agim_read_file', 'agim_grep'])
+    expect(applyCallAgentOutputFormat(r.task.prompt, r.task.outputFormat)).toContain('[Output format]')
+  })
+
+  it('rejects maxDepth < 1 and empty allowedTools', () => {
+    expect(parseCallAgentTask({ agent: 'agim', prompt: 'x', isolate: true, maxDepth: 0 }).ok).toBe(false)
+    expect(parseCallAgentTask({ agent: 'agim', prompt: 'x', isolate: true, allowedTools: [] }).ok).toBe(false)
+  })
+
+  it('call_agents refuses extra root keys and per-task unknown keys', () => {
+    const extraRoot = parseCallAgentsArgs({
+      tasks: [{ agent: 'agim', prompt: 'a', isolate: true }],
+      parallel: true,
+    })
+    expect(extraRoot.ok).toBe(false)
+    const extraTask = parseCallAgentsArgs({
+      tasks: [{ agent: 'agim', prompt: 'a', isolate: true, mystery: 1 }],
+    })
+    expect(extraTask.ok).toBe(false)
+    if (!extraTask.ok) expect(extraTask.error).toMatch(/tasks\[0\]/)
+  })
+
+  it('intersects allowedTools with the parent list', () => {
+    const inherit = intersectAllowedTools(['agim_read_file', 'agim_grep'], undefined)
+    expect(inherit.ok).toBe(true)
+    if (inherit.ok) expect(inherit.tools).toEqual(['agim_read_file', 'agim_grep'])
+    const ok = intersectAllowedTools(['agim_read_file', 'agim_grep'], ['agim_grep', 'agim_exec'])
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.tools).toEqual(['agim_grep'])
+    const empty = intersectAllowedTools(['agim_read_file'], ['agim_exec'])
+    expect(empty.ok).toBe(false)
+  })
+
+  it('refuses maxDepth above global or inherited cap', () => {
+    expect(resolveSubtreeMaxDepth({ requested: 9, globalMax: 8 }).ok).toBe(false)
+    expect(resolveSubtreeMaxDepth({ requested: 4, inherited: 2, globalMax: 8 }).ok).toBe(false)
+    const ok = resolveSubtreeMaxDepth({ requested: 2, inherited: 4, globalMax: 8 })
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.maxDepth).toBe(2)
   })
 })

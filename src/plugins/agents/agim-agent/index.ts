@@ -1175,6 +1175,23 @@ export class NativeAgentAdapter implements AgentAdapter {
           })
           return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
         }
+        if (opts?.allowedTools && opts.allowedTools.length > 0) {
+          const allow = expandToolNameList(opts.allowedTools)
+          if (!allow.has(ev.toolName)) {
+            emitToolActivity({
+              id: ev.toolCallId,
+              label: ev.toolName,
+              status: 'denied',
+              startedAt: Date.now(),
+              finishedAt: Date.now(),
+              preview: `allowedTools: ${ev.toolName} is not in the spawn allowlist`,
+            })
+            return {
+              block: true,
+              reason: `allowedTools: ${ev.toolName} is not in the spawn allowlist`,
+            }
+          }
+        }
         // Todo-first gate: block mutations until a non-empty checklist exists
         // (before approval cards — "write a plan" is cheaper than pinging IM).
         const todoGate = evaluateTodoMutationGate(todoThreadKey, ev.toolName)

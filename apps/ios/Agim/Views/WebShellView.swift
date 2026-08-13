@@ -5,17 +5,19 @@ import WebKit
 /// Native shell: WKWebView loads Agim `/m/chat` (Agent Portal WebUI).
 struct WebShellView: View {
     let credentials: HostCredentials
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // Full-bleed portal only — no native ellipsis overlay (it covered
         // the web theme toggle in the portal header).
-        WebViewRepresentable(credentials: credentials)
+        WebViewRepresentable(credentials: credentials, scenePhase: scenePhase)
             .ignoresSafeArea(edges: .bottom)
     }
 }
 
 struct WebViewRepresentable: UIViewRepresentable {
     let credentials: HostCredentials
+    var scenePhase: ScenePhase
 
     func makeCoordinator() -> Coordinator {
         Coordinator(credentials: credentials)
@@ -80,6 +82,7 @@ struct WebViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.credentials = credentials
+        context.coordinator.noteScenePhase(scenePhase)
     }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
@@ -93,9 +96,23 @@ struct WebViewRepresentable: UIViewRepresentable {
         var credentials: HostCredentials
         weak var webView: WKWebView?
         var scriptBridge: WeakScriptMessageHandler?
+        private var lastScenePhase: ScenePhase?
 
         init(credentials: HostCredentials) {
             self.credentials = credentials
+        }
+
+        /// WKWebView often keeps WebSocket.readyState=OPEN after a long
+        /// background, while the TCP session is already dead. Tell the SPA
+        /// to handshake again so get-history reloads the thread.
+        func noteScenePhase(_ phase: ScenePhase) {
+            let becameActive = phase == .active && lastScenePhase != .active
+            lastScenePhase = phase
+            guard becameActive else { return }
+            webView?.evaluateJavaScript(
+                "window.dispatchEvent(new Event('agim-resume'));",
+                completionHandler: nil
+            )
         }
 
         func loadPortal() {

@@ -7,16 +7,22 @@ import WebKit
 struct WebShellView: View {
     let credentials: HostCredentials
     let reloadNonce: Int
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        WebViewRepresentable(credentials: credentials, reloadNonce: reloadNonce)
-            .background(Color.black)
+        WebViewRepresentable(
+            credentials: credentials,
+            reloadNonce: reloadNonce,
+            scenePhase: scenePhase
+        )
+        .background(Color.black)
     }
 }
 
 struct WebViewRepresentable: NSViewRepresentable {
     let credentials: HostCredentials
     let reloadNonce: Int
+    var scenePhase: ScenePhase
 
     func makeCoordinator() -> Coordinator {
         Coordinator(credentials: credentials)
@@ -65,12 +71,14 @@ struct WebViewRepresentable: NSViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.underPageBackgroundColor = .black
         context.coordinator.webView = webView
+        context.coordinator.startWakeObserver()
         context.coordinator.loadPortal()
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.credentials = credentials
+        context.coordinator.noteScenePhase(scenePhase)
         if context.coordinator.lastReloadNonce != reloadNonce {
             context.coordinator.lastReloadNonce = reloadNonce
             context.coordinator.loadPortal()
@@ -81,6 +89,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         let ucc = nsView.configuration.userContentController
         ucc.removeScriptMessageHandler(forName: "agimSaveFile")
         ucc.removeScriptMessageHandler(forName: "agimShare")
+        coordinator.stopWakeObserver()
         coordinator.scriptBridge = nil
     }
 
@@ -89,9 +98,46 @@ struct WebViewRepresentable: NSViewRepresentable {
         var lastReloadNonce: Int = 0
         weak var webView: WKWebView?
         var scriptBridge: WeakScriptMessageHandler?
+        private var lastScenePhase: ScenePhase?
+        private var wakeObserver: NSObjectProtocol?
 
         init(credentials: HostCredentials) {
             self.credentials = credentials
+        }
+
+        func startWakeObserver() {
+            guard wakeObserver == nil else { return }
+            wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.dispatchAgimResume()
+            }
+        }
+
+        func stopWakeObserver() {
+            if let wakeObserver {
+                NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+                self.wakeObserver = nil
+            }
+        }
+
+        /// WKWebView often keeps WebSocket.readyState=OPEN after sleep /
+        /// occlusion, while the TCP session is already dead. Tell the SPA
+        /// to handshake again so get-history reloads the thread.
+        func noteScenePhase(_ phase: ScenePhase) {
+            let becameActive = phase == .active && lastScenePhase != .active
+            lastScenePhase = phase
+            guard becameActive else { return }
+            dispatchAgimResume()
+        }
+
+        func dispatchAgimResume() {
+            webView?.evaluateJavaScript(
+                "window.dispatchEvent(new Event('agim-resume'));",
+                completionHandler: nil
+            )
         }
 
         func loadPortal() {

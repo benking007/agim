@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
   is ahead; `RUN_START` / `ACTIVE_RUN` no longer attach a new run onto a
   finished different assistant.
 
+- **Mac / iPhone shell chat dead after background**: WKWebView often
+  leaves `WebSocket.readyState=OPEN` after suspend while TCP is already
+  dead, so the SPA skipped reconnect (only acted on `CLOSED`), sends
+  vanished, and `get-history` never re-ran. Resume now force-handshakes
+  on `visibilitychange` / `pageshow` / native `agim-resume` (debounced),
+  which re-runs `get-history` on `open`. iOS/macOS shells dispatch
+  `agim-resume` on `scenePhase == .active`; macOS also on
+  `NSWorkspace.didWakeNotification`.
+
 ### Added
 
 - **Portal multi-session**: 「新对话」铸造新的 `web-*` thread 并保留在左侧会话列表；点选通过已有 `get-history` rekey 重载历史。不再对当前 thread 发 `new-conversation`（原地 wipe）。索引存在 `localStorage['agim-web-sessions']`，`agim-web-thread-id` 仍表示当前 active id。

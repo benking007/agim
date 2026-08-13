@@ -24,6 +24,11 @@ open Agim.xcodeproj
 2. Shell opens `{host}/m/login?t=…&next=/m/chat`  
 3. WebUI Agent Portal handles chat / explore / voice UI  
 
+Returning from background: the shell dispatches `agim-resume` on
+`scenePhase == .active` so the SPA force-reconnects the chat WebSocket
+and reloads history (`get-history`). WKWebView often leaves a zombie
+OPEN socket after suspend.
+
 Menu (⋯): refresh WebView / logout.
 
 Save-as Markdown from Portal message actions uses `webkit.messageHandlers.agimSaveFile`

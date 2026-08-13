@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Web chat live stream mix-up**: with two sessions both running, switching
+  A→B let A's `chunk` / `done` / `run-*` land on B's placeholder (one WS,
+  rekey does not abort the previous run). Live frames now stamp the run's
+  original `threadId`; the SPA drops mismatches. A's result still persists
+  to A's `.log` and appears when switching back.
+
 - **Web chat session mix-up (history cache)**: switching threads (or
   overlapping `get-history` after a reconnect) could paint another
   session's transcript, and scrolling up showed foreign `history-prepend`

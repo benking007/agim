@@ -902,33 +902,33 @@ export async function startWebServer(options: {
     async sendMessage(threadId, text) {
       const c = clients.get(threadId)
       if (!c || c.ws.readyState !== c.ws.OPEN) return
-      sendToClient(c.ws, { type: 'approval-text', text })
+      sendToClient(c.ws, { type: 'approval-text', text, threadId })
     },
     async sendApprovalCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
       if (c && c.ws.readyState === c.ws.OPEN) {
-        sendToClient(c.ws, { type: 'approval-card', messageId, prompt })
+        sendToClient(c.ws, { type: 'approval-card', messageId, prompt, threadId })
       }
       return { messageId }
     },
     async editApprovalCard(threadId, messageId, outcome) {
       const c = clients.get(threadId)
       if (!c || c.ws.readyState !== c.ws.OPEN) return
-      sendToClient(c.ws, { type: 'approval-card-edit', messageId, outcome })
+      sendToClient(c.ws, { type: 'approval-card-edit', messageId, outcome, threadId })
     },
     async sendChoiceCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
       if (c && c.ws.readyState === c.ws.OPEN) {
-        sendToClient(c.ws, { type: 'choice-card', messageId, prompt })
+        sendToClient(c.ws, { type: 'choice-card', messageId, prompt, threadId })
       }
       return { messageId }
     },
     async editChoiceCard(threadId, messageId, finalText) {
       const c = clients.get(threadId)
       if (!c || c.ws.readyState !== c.ws.OPEN) return
-      sendToClient(c.ws, { type: 'choice-card-edit', messageId, finalText })
+      sendToClient(c.ws, { type: 'choice-card-edit', messageId, finalText, threadId })
     },
     onButtonCallback(handler) {
       webButtonHandler = handler

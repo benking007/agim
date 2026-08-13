@@ -240,10 +240,14 @@ export async function handleClientMessage(
   let clientId = client.id
 
   /** Prefer the currently-connected socket for this thread (post-rekey /
-   *  reconnect), falling back to the handler's original `ws`. */
+   *  reconnect), falling back to the handler's original `ws`.
+   *  Always stamp `threadId` from this handler's captured id so a later
+   *  get-history rekey cannot paint this run onto another session. */
   const emit = (data: Record<string, unknown>): void => {
     const live = clients?.get(clientId)
-    sendToClient(live?.ws ?? ws, data)
+    sendToClient(live?.ws ?? ws, typeof data.threadId === 'string' && data.threadId
+      ? data
+      : { ...data, threadId: clientId })
   }
 
   switch (msg.type) {

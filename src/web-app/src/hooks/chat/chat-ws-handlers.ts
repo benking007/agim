@@ -25,6 +25,36 @@ export interface OnIncomingOptions {
   threadIdRef?: { current: string }
 }
 
+/** Frames that belong to one `web-*` session. Foreign threadId is dropped
+ *  so an in-flight run on A cannot paint into B after a switch. */
+const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
+  'history',
+  'history-prepend',
+  'active-run',
+  'chunk',
+  'done',
+  'run-start',
+  'run-finish',
+  'usage',
+  'activity-step',
+  'agent-switched',
+  'plan-mode',
+  'think-mode',
+  'session-model',
+  'compact-rate',
+  'error',
+  'approval-text',
+  'approval-card',
+  'approval-card-edit',
+  'choice-card',
+  'choice-card-edit',
+  'subagent-stopped',
+])
+
+function incomingThreadId(msg: ChatIncoming): string | undefined {
+  return 'threadId' in msg && typeof msg.threadId === 'string' ? msg.threadId : undefined
+}
+
 // ---------------------------------------------------------------------------
 // Pure normalizers
 // ---------------------------------------------------------------------------
@@ -131,6 +161,10 @@ export function makeOnIncoming(
   opts?: OnIncomingOptions,
 ): (msg: ChatIncoming) => void {
   return function onIncoming(msg: ChatIncoming): void {
+    if (
+      SESSION_SCOPED_FRAMES.has(msg.type)
+      && !historyBelongsToClient(incomingThreadId(msg), opts?.threadIdRef?.current)
+    ) return
     switch (msg.type) {
       case 'init':
         dispatch({
@@ -142,7 +176,6 @@ export function makeOnIncoming(
         return
       case 'history': {
         const current = opts?.threadIdRef?.current
-        if (!historyBelongsToClient(msg.threadId, current)) return
         const messages = msg.messages.map(normalizeHistoryMessage)
         const complete = isHistoryComplete(msg)
         dispatch({
@@ -176,7 +209,6 @@ export function makeOnIncoming(
       }
       case 'history-prepend': {
         const current = opts?.threadIdRef?.current
-        if (!historyBelongsToClient(msg.threadId, current)) return
         const messages = msg.messages.map(normalizeHistoryMessage)
         dispatch({
           kind: 'HISTORY_PREPEND',
@@ -209,7 +241,6 @@ export function makeOnIncoming(
         dispatch({ kind: 'COMPACT_RATE', rate: msg.rate || 'auto' })
         return
       case 'active-run':
-        if (!historyBelongsToClient(msg.threadId, opts?.threadIdRef?.current)) return
         dispatch({
           kind: 'ACTIVE_RUN',
           runId: msg.runId,

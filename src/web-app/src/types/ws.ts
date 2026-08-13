@@ -80,23 +80,23 @@ export type ChatIncoming =
       remaining?: number
       threadId?: string
     }
-  | { type: 'plan-mode'; enabled: boolean }
+  | { type: 'plan-mode'; enabled: boolean; threadId?: string }
   /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
-  | { type: 'think-mode'; variant: string }
+  | { type: 'think-mode'; variant: string; threadId?: string }
   /** Session `/model` backend override (empty = role default). */
-  | { type: 'session-model'; model: string }
+  | { type: 'session-model'; model: string; threadId?: string }
   /** Session `/ctx` compression rate. */
-  | { type: 'compact-rate'; rate: string }
+  | { type: 'compact-rate'; rate: string; threadId?: string }
   | { type: 'agents'; agents: string[] }
-  | { type: 'agent-switched'; agent: string; preferredWorkerAgent?: string }
-  | { type: 'chunk'; text: string; runId?: string }
-  | { type: 'done'; text: string; runId?: string; messageId?: string }
+  | { type: 'agent-switched'; agent: string; preferredWorkerAgent?: string; threadId?: string }
+  | { type: 'chunk'; text: string; runId?: string; threadId?: string }
+  | { type: 'done'; text: string; runId?: string; messageId?: string; threadId?: string }
   | RunStartEvent
   | RunUsageEvent
   | RunFinishEvent
   | ActivityStepEvent
   | ActiveRunEvent
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; threadId?: string }
   /**
    * Server refused rekey to a foreign threadId (owned by another token).
    * SPA must persist `threadId` and continue — history for the new
@@ -104,12 +104,12 @@ export type ChatIncoming =
    */
   | { type: 'thread-reassigned'; threadId: string; reason: 'ownership_mismatch' }
   /** Ack that a per-Subagent cancel was accepted (activity-step follows). */
-  | { type: 'subagent-stopped'; jobId: number }
-  | { type: 'approval-text'; text: string }
-  | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt }
-  | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome }
-  | { type: 'choice-card'; messageId: string; prompt: ChoiceCardPrompt }
-  | { type: 'choice-card-edit'; messageId: string; finalText: string }
+  | { type: 'subagent-stopped'; jobId: number; threadId?: string }
+  | { type: 'approval-text'; text: string; threadId?: string }
+  | { type: 'approval-card'; messageId: string; prompt: ApprovalCardPrompt; threadId?: string }
+  | { type: 'approval-card-edit'; messageId: string; outcome: ApprovalCardOutcome; threadId?: string }
+  | { type: 'choice-card'; messageId: string; prompt: ChoiceCardPrompt; threadId?: string }
+  | { type: 'choice-card-edit'; messageId: string; finalText: string; threadId?: string }
   | { type: 'metrics'; agents: AgentMetric[]; timestamp: string }
   /**
    * Nudge: Loop thread snapshot changed (or reconnect bootstrap).
@@ -125,6 +125,7 @@ export interface RunStartEvent {
   runId: string
   agent: string
   startedAt: string
+  threadId?: string
 }
 
 /** Lightweight usage snapshot for a run. For now this is duration +
@@ -134,6 +135,7 @@ export interface RunUsageEvent {
   runId: string
   durationMs: number
   outputChars: number
+  threadId?: string
 }
 
 export interface RunFinishEvent {
@@ -143,12 +145,14 @@ export interface RunFinishEvent {
   finishedAt: string
   durationMs: number
   error?: string
+  threadId?: string
 }
 
 /** Live tool / skill step for the in-thread activity accordion (P1). */
 export interface ActivityStepEvent {
   type: 'activity-step'
   runId: string
+  threadId?: string
   step: {
     id: string
     kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'

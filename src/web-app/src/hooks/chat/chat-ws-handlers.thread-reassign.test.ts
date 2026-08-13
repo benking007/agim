@@ -172,4 +172,73 @@ describe('thread-reassigned', () => {
     expect(actions).toEqual([])
     expect(localStorage.getItem('agim-web-sessions')).toBeNull()
   })
+
+  it('drops live chunk/done/run-start from another thread', () => {
+    const threadIdRef = { current: 'web-currentthrd' }
+    const actions: ChatAction[] = []
+    const chunks: string[] = []
+    const onIncoming = makeOnIncoming(
+      (a) => { actions.push(a) },
+      { current: 'reply-b' },
+      (text) => { chunks.push(text) },
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({ type: 'chunk', text: 'from A', runId: 'run-a', threadId: 'web-stalehistxxx' })
+    onIncoming({
+      type: 'done',
+      text: 'A finished',
+      runId: 'run-a',
+      threadId: 'web-stalehistxxx',
+    })
+    onIncoming({
+      type: 'run-start',
+      runId: 'run-a',
+      agent: 'agim',
+      startedAt: new Date().toISOString(),
+      threadId: 'web-stalehistxxx',
+    })
+    expect(chunks).toEqual([])
+    expect(actions).toEqual([])
+  })
+
+  it('applies live chunk/done when threadId matches this tab', () => {
+    const threadIdRef = { current: 'web-currentthrd' }
+    const actions: ChatAction[] = []
+    const chunks: string[] = []
+    const onIncoming = makeOnIncoming(
+      (a) => { actions.push(a) },
+      { current: 'reply-b' },
+      (text) => { chunks.push(text) },
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({ type: 'chunk', text: 'from B', runId: 'run-b', threadId: 'web-currentthrd' })
+    onIncoming({
+      type: 'done',
+      text: 'B finished',
+      runId: 'run-b',
+      threadId: 'web-currentthrd',
+    })
+    expect(chunks).toEqual(['from B'])
+    expect(actions).toEqual([expect.objectContaining({
+      kind: 'DONE',
+      replyId: 'reply-b',
+      finalText: 'B finished',
+    })])
+  })
+
+  it('still shows a connection error that has no threadId', () => {
+    const threadIdRef = { current: 'web-currentthrd' }
+    const actions: ChatAction[] = []
+    const onIncoming = makeOnIncoming(
+      (a) => { actions.push(a) },
+      { current: null },
+      () => {},
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({ type: 'error', message: 'Invalid message format' })
+    expect(actions).toEqual([{ kind: 'ERROR', message: 'Invalid message format' }])
+  })
 })

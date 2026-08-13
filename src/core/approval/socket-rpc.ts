@@ -143,6 +143,34 @@ async function handleA2A(
     sendA2AResult(socket, reqId, { ok: false, error: 'payload.agent and payload.prompt are required' })
     return
   }
+  const {
+    CALL_AGENT_CLI_EXTRA_KEYS,
+    applyCallAgentOutputFormat,
+    parseCallAgentTask,
+    resolveSubagentSpawn,
+  } = await import('../subagent.js')
+  const parsed = parseCallAgentTask(payload, {
+    extraKeys: CALL_AGENT_CLI_EXTRA_KEYS,
+    path: 'payload',
+  })
+  if (!parsed.ok) {
+    sendA2AResult(socket, reqId, { ok: false, error: parsed.error })
+    return
+  }
+  const task = parsed.task
+  const spawn = resolveSubagentSpawn(
+    {
+      agent: task.agent,
+      role: task.role,
+      backend: task.backend,
+      isolate: task.isolate,
+    },
+    ctx.callerAgent || '',
+  )
+  if (!spawn.ok) {
+    sendA2AResult(socket, reqId, { ok: false, error: spawn.error })
+    return
+  }
   const timeoutMs = typeof payload.timeoutMs === 'number' && payload.timeoutMs > 0
     ? payload.timeoutMs : undefined
 
@@ -162,18 +190,23 @@ async function handleA2A(
     threadId: ctx.threadId,
     channelId: ctx.channelId,
     platform: ctx.platform,
-    defaultAgent: agentName,
+    defaultAgent: spawn.agent,
     traceId: reqId,
     logger: log,
     userId: ctx.userId,
   } as Parameters<typeof callAgentByName>[2]
 
-  const result = await callAgentByName(agentName, prompt, routeCtx, {
+  const result = await callAgentByName(spawn.agent, applyCallAgentOutputFormat(task.prompt, task.outputFormat), routeCtx, {
     callerAgent: ctx.callerAgent,
     callerDepth: ctx.callDepth ?? 0,
     parentJobId: ctx.parentJobId ?? null,
     ...(ctx.callerPlanMode ? { planMode: true } : {}),
     ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
+    ...(spawn.isolate ? { isolate: true } : {}),
+    ...(spawn.model ? { model: spawn.model } : {}),
+    ...(typeof task.maxDepth === 'number' ? { maxDepth: task.maxDepth } : {}),
+    ...(task.allowedTools ? { allowedTools: task.allowedTools } : {}),
+    activityLabel: spawn.label,
     timeoutMs,
     ...(inputs && inputs.length > 0 ? { inputs } : {}),
     ...(expectOutputs && expectOutputs.length > 0 ? { expectOutputs } : {}),

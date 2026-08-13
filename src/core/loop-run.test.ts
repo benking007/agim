@@ -434,6 +434,39 @@ describe('loop-run R1 ALIGNING', () => {
     void stray
   })
 
+  it('countRoundLiveSubagents stays 0 when dispatched but round ids empty (no stray fallback)', () => {
+    reset()
+    const threadId = 'loop-live-dispatch-no-ids'
+    const focus = setFocus({ ...base, threadId, title: '上下文' })
+    if (!hasSqliteRow(focus)) return
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出：验收通过或最多3轮',
+    })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    noteLoopDispatch(base.platform, base.channelId, threadId, {
+      count: 1,
+      tasks: [{ id: '1', brief: 'stray-not-round', agentHint: 'agim' }],
+    })
+    const liveRun = getActiveLoop(base.platform, base.channelId, threadId)
+    expect(liveRun).toBeTruthy()
+    if (!liveRun) return
+    expect(liveRun.dispatchesThisRound).toBeGreaterThanOrEqual(1)
+    expect(liveRun.roundJobIds ?? []).toEqual([])
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const stray = createInlineJob({
+      agent: 'agim',
+      prompt: 'unrelated leftover',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    expect(countRoundLiveSubagents(liveRun)).toBe(0)
+    expect(toLoopStatusDto(liveRun).canVerify).toBe(true)
+    void stray
+  })
+
   it('notifyLoopJobTerminal writeRuns so docks leave 待派工 after Codex finishes', () => {
     reset()
     const threadId = 'loop-job-terminal-resync'

@@ -638,6 +638,12 @@ class ApprovalClient {
     agent: string
     prompt: string
     timeoutMs?: number
+    isolate?: boolean
+    backend?: string
+    role?: string
+    outputFormat?: string
+    maxDepth?: number
+    allowedTools?: string[]
     inputs?: Array<
       | { name: string; fromCallerOutput: string }
       | { name: string; fromAbsolutePath: string }
@@ -676,6 +682,12 @@ class ApprovalClient {
       agent: string
       prompt: string
       timeoutMs?: number
+      isolate?: boolean
+      backend?: string
+      role?: string
+      outputFormat?: string
+      maxDepth?: number
+      allowedTools?: string[]
       inputs?: Parameters<ApprovalClient['requestCallAgent']>[0]['inputs']
       expectOutputs?: string[]
     }>,
@@ -726,6 +738,12 @@ class ApprovalClient {
         agent: task.agent.trim(),
         prompt: task.prompt,
         ...(typeof task.timeoutMs === 'number' ? { timeoutMs: task.timeoutMs } : {}),
+        ...(task.isolate === true ? { isolate: true } : {}),
+        ...(typeof task.backend === 'string' ? { backend: task.backend } : {}),
+        ...(typeof task.role === 'string' ? { role: task.role } : {}),
+        ...(typeof task.outputFormat === 'string' ? { outputFormat: task.outputFormat } : {}),
+        ...(typeof task.maxDepth === 'number' ? { maxDepth: task.maxDepth } : {}),
+        ...(Array.isArray(task.allowedTools) ? { allowedTools: task.allowedTools } : {}),
         ...(task.inputs ? { inputs: task.inputs } : {}),
         ...(task.expectOutputs ? { expectOutputs: task.expectOutputs } : {}),
       })
@@ -1456,6 +1474,24 @@ export function buildServer(client: ApprovalClient): McpServer {
       'Optional override for the wait timeout. Defaults to AGIM_A2A_TIMEOUT_DEFAULT_MS. '
       + 'The callee keeps running on timeout, but you stop waiting and get an error.',
     ),
+    isolate: z.boolean().optional().describe(
+      'Same-family nested Subagent with a fresh context (default model if backend/role omitted).',
+    ),
+    backend: z.string().optional().describe(
+      'Preferred llmBackends.name for same-family Agim (implies isolate).',
+    ),
+    role: z.string().optional().describe(
+      'Optional llmRoles alias when configured; prefer backend=.',
+    ),
+    outputFormat: z.string().optional().describe(
+      'Optional output contract appended to the child brief.',
+    ),
+    maxDepth: z.number().int().min(1).optional().describe(
+      'Subtree depth ceiling; cannot exceed AGIM_A2A_MAX_DEPTH.',
+    ),
+    allowedTools: z.array(z.string().min(1)).min(1).optional().describe(
+      'Same-family Agim only: advertise and allow only these tool names.',
+    ),
     inputs: z.array(
       z.object({
         name: z.string().describe('Filename inside the callee _agim-input/ dir (no slashes, no "..").'),
@@ -1512,6 +1548,12 @@ export function buildServer(client: ApprovalClient): McpServer {
         agent: typeof args.agent === 'string' ? args.agent : '',
         prompt: typeof args.prompt === 'string' ? args.prompt : '',
         ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+        ...(args.isolate === true ? { isolate: true } : {}),
+        ...(typeof args.backend === 'string' ? { backend: args.backend } : {}),
+        ...(typeof args.role === 'string' ? { role: args.role } : {}),
+        ...(typeof args.outputFormat === 'string' ? { outputFormat: args.outputFormat } : {}),
+        ...(typeof args.maxDepth === 'number' ? { maxDepth: args.maxDepth } : {}),
+        ...(Array.isArray(args.allowedTools) ? { allowedTools: args.allowedTools as string[] } : {}),
         ...(Array.isArray(args.inputs) ? { inputs: args.inputs as Parameters<typeof client.requestCallAgent>[0]['inputs'] } : {}),
         ...(Array.isArray(args.expectOutputs) ? { expectOutputs: args.expectOutputs as string[] } : {}),
       })
@@ -1554,6 +1596,12 @@ export function buildServer(client: ApprovalClient): McpServer {
         agent: typeof t?.agent === 'string' ? t.agent : '',
         prompt: typeof t?.prompt === 'string' ? t.prompt : '',
         ...(typeof t?.timeoutMs === 'number' ? { timeoutMs: t.timeoutMs } : {}),
+        ...(t?.isolate === true ? { isolate: true } : {}),
+        ...(typeof t?.backend === 'string' ? { backend: t.backend } : {}),
+        ...(typeof t?.role === 'string' ? { role: t.role } : {}),
+        ...(typeof t?.outputFormat === 'string' ? { outputFormat: t.outputFormat } : {}),
+        ...(typeof t?.maxDepth === 'number' ? { maxDepth: t.maxDepth } : {}),
+        ...(Array.isArray(t?.allowedTools) ? { allowedTools: t.allowedTools as string[] } : {}),
         ...(Array.isArray(t?.inputs)
           ? { inputs: t.inputs as Parameters<typeof client.requestCallAgent>[0]['inputs'] }
           : {}),

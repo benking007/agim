@@ -130,6 +130,22 @@ describe('A2A callAgentByName rejection branches', () => {
     if (!r.ok) expect(r.error).toContain('call depth exceeded')
   })
 
+  it('rejects spawn maxDepth above AGIM_A2A_MAX_DEPTH', async () => {
+    process.env.AGIM_A2A_MAX_DEPTH = '8'
+    const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), { maxDepth: 99 })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/maxDepth 99 exceeds AGIM_A2A_MAX_DEPTH 8/)
+  })
+
+  it('rejects allowedTools on a non-Agim target', async () => {
+    const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
+      callerAgent: 'agim',
+      allowedTools: ['agim_read_file'],
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/allowedTools is only supported/i)
+  })
+
   it('rejects self-call when callerAgent === target without isolate/model', async () => {
     const r = await a2a.callAgentByName('claude-code', 'hi', fakeCtx(), {
       callerAgent: 'claude-code',

@@ -26,6 +26,17 @@ All notable changes to this project will be documented in this file.
   SPA. `new-conversation` history and `loop-changed` carry / filter
   `threadId`.
 
+- **Loop VERIFY stray-child false busy**: `countRoundLiveSubagents` no longer
+  falls back to every child job on the thread when `roundJobIds` is empty.
+  Unrelated leftovers cannot block 待验收; live wait is round-scoped only.
+
+- **call_agent contract was fail-soft**: unknown keys were ignored, and there
+  was no per-spawn `outputFormat` / `maxDepth` / `allowedTools`. Extra keys
+  now refuse; `outputFormat` is appended to the child brief; `maxDepth`
+  cannot exceed `AGIM_A2A_MAX_DEPTH` and is inherited by nested Agim
+  spawns; `allowedTools` confines same-family Agim (advertised + tool_call
+  block) and is refused for CLI adapters.
+
 - **Web chat live stream mix-up**: with two sessions both running, switching
   A→B let A's `chunk` / `done` / `run-*` land on B's placeholder (one WS,
   rekey does not abort the previous run). Live frames now stamp the run's

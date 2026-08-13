@@ -543,6 +543,17 @@ export interface AgentSendOpts {
    *  call_agent hop). Adapters forward it into RunContext.callDepth so
    *  the bus can enforce AGIM_A2A_MAX_DEPTH on the next hop. */
   callDepth?: number
+  /**
+   * Subtree A2A depth ceiling inherited from call_agent `maxDepth`
+   * (already clamped to AGIM_A2A_MAX_DEPTH). Nested call_agent uses this
+   * instead of the global cap alone.
+   */
+  a2aMaxDepth?: number
+  /**
+   * Same-family Subagent tool allowlist. Advertised tools are filtered and
+   * tool_call blocks names outside the list.
+   */
+  allowedTools?: readonly string[]
   /** Optional AbortSignal. CLI adapters terminate their child process;
    *  in-process adapters abort provider/tool work and settle their session
    *  before releasing it. A2A and inline jobs wire this from timeout/user

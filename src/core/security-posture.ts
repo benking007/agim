@@ -7,6 +7,10 @@
 import { existsSync } from 'node:fs'
 import { logger as rootLogger } from './logger.js'
 import { isAutoApproveEffective, isAutoApproveEnabled } from './approval/policy.js'
+import {
+  isNativeFsReadRestricted,
+  isNativeFsWriteRestricted,
+} from './llm/execution-world.js'
 
 const log = rootLogger.child({ component: 'security-posture' })
 
@@ -15,9 +19,11 @@ export type ExecSandboxPosture = 'bwrap' | 'off' | 'unavailable'
 export interface SecurityPosture {
   bwrapAvailable: boolean
   execSandbox: ExecSandboxPosture
-  /** True when AGIM_NATIVE_FS_RESTRICT=1 (workspace-confined native FS). */
+  /** True when AGIM_NATIVE_FS_RESTRICT=1 (reads + writes workspace-confined). */
   fsRestrict: boolean
-  /** Explicit AGIM_NATIVE_FS_RESTRICT=0 (unconfine even if a later default follows exec sandbox). */
+  /** Writes confined (explicit =1, or unset while exec sandbox is on). */
+  fsWriteRestrict: boolean
+  /** Explicit AGIM_NATIVE_FS_RESTRICT=0 (unconfine even though writes would follow exec). */
   fsUnconfineExplicit: boolean
   autoApprove: boolean
   autoApproveEffective: boolean
@@ -35,7 +41,8 @@ export function getSecurityPosture(): SecurityPosture {
   return {
     bwrapAvailable,
     execSandbox,
-    fsRestrict: fsRaw === '1',
+    fsRestrict: isNativeFsReadRestricted(),
+    fsWriteRestrict: isNativeFsWriteRestricted(),
     fsUnconfineExplicit: fsRaw === '0',
     autoApprove: isAutoApproveEnabled(),
     autoApproveEffective: isAutoApproveEffective(),
@@ -52,7 +59,9 @@ export function formatSecurityPostureLines(p: SecurityPosture = getSecurityPostu
     ? 'native FS: restricted to workspace (AGIM_NATIVE_FS_RESTRICT=1)'
     : p.fsUnconfineExplicit
       ? 'native FS: EXPLICITLY unconfined (AGIM_NATIVE_FS_RESTRICT=0)'
-      : 'native FS: unrestricted (unset — reads/writes may leave the workspace)'
+      : p.fsWriteRestrict
+        ? 'native FS: writes follow exec sandbox (unset); reads unrestricted'
+        : 'native FS: unrestricted (no exec sandbox — reads/writes may leave the workspace)'
   const approveLine = !p.autoApprove
     ? 'auto-approve: off'
     : p.autoApproveEffective
@@ -65,7 +74,7 @@ export function formatSecurityPostureLines(p: SecurityPosture = getSecurityPostu
 export function announceSecurityPosture(): void {
   const p = getSecurityPosture()
   const lines = formatSecurityPostureLines(p)
-  const warn = p.execSandbox !== 'bwrap' || !p.fsRestrict || (p.autoApprove && p.autoApproveEffective)
+  const warn = p.execSandbox !== 'bwrap' || !p.fsWriteRestrict || (p.autoApprove && p.autoApproveEffective)
   const banner = [
     '',
     '── Agim security posture ─────────────────────────────────────',

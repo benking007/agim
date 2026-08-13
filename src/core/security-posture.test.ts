@@ -43,13 +43,20 @@ describe('security-posture', () => {
     } finally { restore() }
   })
 
-  it('labels unset native FS as unrestricted', () => {
+  it('labels unset native FS as writes-follow-exec when sandbox is on', () => {
     delete process.env.AGIM_NATIVE_FS_RESTRICT
+    delete process.env.AGIM_EXEC_SANDBOX
     try {
       const p = getSecurityPosture()
       expect(p.fsRestrict).toBe(false)
       expect(p.fsUnconfineExplicit).toBe(false)
-      expect(formatSecurityPostureLines(p).some((l) => /unrestricted \(unset/.test(l))).toBe(true)
+      if (existsSync('/usr/bin/bwrap')) {
+        expect(p.fsWriteRestrict).toBe(true)
+        expect(formatSecurityPostureLines(p).some((l) => /writes follow exec sandbox/.test(l))).toBe(true)
+      } else {
+        expect(p.fsWriteRestrict).toBe(false)
+        expect(formatSecurityPostureLines(p).some((l) => /unrestricted \(no exec sandbox/.test(l))).toBe(true)
+      }
     } finally { restore() }
   })
 })

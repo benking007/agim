@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 import {
   chatReducer,
   initialChatState,
+  isCloudHistoryNewer,
   type ChatAction,
   type ChatMessage,
   type ChatState,
@@ -653,6 +654,73 @@ describe('chatReducer', () => {
     expect(after.messages).toEqual(tail)
   })
 
+  it('HISTORY keeps a newer local cache when the cloud revision is older', () => {
+    const cached = [userMsg('u-local', 'local'), asstMsg('a-local', 'local reply')]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached, updatedAt: 2_000,
+    })
+    expect(seeded.historyRevisionAt).toBe(2_000)
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      updatedAt: 1_000,
+      historyComplete: false,
+      olderCount: 4,
+      messages: [userMsg('u-stale', 'stale'), asstMsg('a-stale', 'stale reply')],
+    })
+    expect(after.messages.map((m) => m.id)).toEqual(['u-local', 'a-local'])
+    expect(after.messages[1]).toBe(seeded.messages[1])
+    expect(after.historyRevisionAt).toBe(2_000)
+  })
+
+  it('HISTORY keeps local when the cloud revision equals the cache', () => {
+    const cached = [userMsg('u-local', 'local'), asstMsg('a-local', 'local reply')]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached, updatedAt: 2_000,
+    })
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      updatedAt: 2_000,
+      messages: [userMsg('u-other', 'other'), asstMsg('a-other', 'other reply')],
+    })
+    expect(after.messages.map((m) => m.id)).toEqual(['u-local', 'a-local'])
+    expect(after.historyRevisionAt).toBe(2_000)
+  })
+
+  it('HISTORY replaces a cache when the cloud revision is newer and the last id differs', () => {
+    const cached = [userMsg('u-1', 'old'), asstMsg('a-1', 'old reply')]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached, updatedAt: 1_000,
+    })
+    const tail = [userMsg('u-9', 'new'), asstMsg('a-9', 'new reply')]
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      updatedAt: 2_000,
+      historyComplete: false,
+      olderCount: 4,
+      messages: tail,
+    })
+    expect(after.messages).toEqual(tail)
+    expect(after.historyRevisionAt).toBe(2_000)
+  })
+
+  it('HISTORY keeps the last bubble when cloud is newer but the last id matches', () => {
+    const cached = [userMsg('u-1', 'old'), asstMsg('a-1', 'same')]
+    const seeded = reduce(initialChatState, {
+      kind: 'HISTORY', agent: 'agim', messages: cached, updatedAt: 1_000,
+    })
+    const after = reduce(seeded, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      updatedAt: 2_000,
+      messages: [userMsg('u-1', 'old'), asstMsg('a-1', 'same')],
+    })
+    expect(after.messages[1]).toBe(seeded.messages[1])
+    expect(after.historyRevisionAt).toBe(2_000)
+  })
+
   it('RUN_START binds the empty placeholder even if currentReplyId was cleared', () => {
     const mid = reduce(
       initialChatState,
@@ -1191,5 +1259,24 @@ describe('chatReducer', () => {
       label: 'claude-code',
       status: 'success',
     })
+  })
+})
+
+describe('isCloudHistoryNewer', () => {
+  it('returns null when the server omitted updatedAt (legacy)', () => {
+    expect(isCloudHistoryNewer(1_000, undefined)).toBeNull()
+    expect(isCloudHistoryNewer(1_000, null)).toBeNull()
+    expect(isCloudHistoryNewer(1_000, 0)).toBeNull()
+  })
+
+  it('treats a missing local revision as 0', () => {
+    expect(isCloudHistoryNewer(null, 1)).toBe(true)
+    expect(isCloudHistoryNewer(undefined, 1)).toBe(true)
+  })
+
+  it('is true only when the cloud revision is strictly newer', () => {
+    expect(isCloudHistoryNewer(1_000, 1_001)).toBe(true)
+    expect(isCloudHistoryNewer(1_000, 1_000)).toBe(false)
+    expect(isCloudHistoryNewer(1_000, 999)).toBe(false)
   })
 })

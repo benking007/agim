@@ -9,6 +9,7 @@ import {
   MAX_CACHED_MESSAGES,
   MAX_CACHED_THREADS,
   applyCachedHistory,
+  cachedHistoryToAction,
   readCachedHistory,
   slimCachedMessages,
   writeCachedHistory,
@@ -40,6 +41,23 @@ describe('web-history-cache', () => {
     expect(hydrated.agent).toBe('agim')
     expect(hydrated.thinkVariant).toBe('high')
     expect(hydrated.clientId).toBe(threadId)
+  })
+
+  it('persists revisionAt (server clock) separately from savedAt', () => {
+    const threadId = loadIndex().activeId
+    const before = Date.now()
+    writeCachedHistory(threadId, {
+      messages: [msg('u1', 'user', 'hello'), msg('a1', 'assistant', 'hi')],
+      revisionAt: 1_700_000_000_000,
+    })
+    const read = readCachedHistory(threadId)
+    expect(read?.revisionAt).toBe(1_700_000_000_000)
+    expect(read?.savedAt).toBeGreaterThanOrEqual(before)
+    expect(read?.savedAt).not.toBe(1_700_000_000_000)
+    const hydrated = applyCachedHistory(initialChatState, threadId)
+    expect(hydrated.historyRevisionAt).toBe(1_700_000_000_000)
+    const action = cachedHistoryToAction(read!)
+    expect(action.updatedAt).toBe(1_700_000_000_000)
   })
 
   it('keeps the last N messages and slims older bodies / previews', () => {

@@ -3,9 +3,10 @@
  *
  * Refresh / session switch still round-trip `get-history` over WS. The
  * previous paint waited on that frame (and then remounted markdown). This
- * module lets the SPA paint the last snapshot immediately; the server
- * remains authoritative and reconciles without replacing the same tail
- * (so the visible reply does not re-parse).
+ * module lets the SPA paint the last snapshot immediately. Reconcile uses
+ * `revisionAt` (last applied `history.updatedAt`) vs the cloud frame —
+ * not `savedAt` (browser write clock). A newer cloud transcript replaces
+ * the cache; the same tail is not remounted (so markdown does not re-parse).
  *
  * Why not dump the full .log into one key: localStorage is typically ~5 MiB
  * per origin. A long report plus tool previews will not fit 50 sessions.
@@ -34,7 +35,13 @@ export const CACHE_OLD_CONTENT_MAX_CHARS = 8_000
 export interface CachedHistory {
   v: 1
   threadId: string
+  /** When this browser wrote the snapshot (local clock). */
   savedAt: number
+  /**
+   * Last applied **server** revision (`history.updatedAt`). Compared with
+   * the next cloud frame — not with `savedAt`, which is a different clock.
+   */
+  revisionAt?: number
   agent?: string
   preferredWorkerAgent?: string
   planMode?: boolean
@@ -52,6 +59,7 @@ export interface HistoryPersistSnap {
   thinkVariant?: string
   sessionModel?: string
   compactRate?: string
+  revisionAt?: number | null
 }
 
 function histKey(threadId: string): string {
@@ -203,6 +211,9 @@ export function readCachedHistory(threadId: string): CachedHistory | null {
       v: 1,
       threadId: id,
       savedAt: typeof rec.savedAt === 'number' ? rec.savedAt : 0,
+      revisionAt: typeof rec.revisionAt === 'number' && Number.isFinite(rec.revisionAt)
+        ? rec.revisionAt
+        : undefined,
       agent: typeof rec.agent === 'string' ? rec.agent : undefined,
       preferredWorkerAgent: typeof rec.preferredWorkerAgent === 'string' ? rec.preferredWorkerAgent : undefined,
       planMode: rec.planMode === true,
@@ -225,6 +236,9 @@ export function writeCachedHistory(threadId: string, snap: HistoryPersistSnap): 
     v: 1,
     threadId: id,
     savedAt: Date.now(),
+    revisionAt: typeof snap.revisionAt === 'number' && Number.isFinite(snap.revisionAt)
+      ? snap.revisionAt
+      : 0,
     agent: snap.agent || '',
     preferredWorkerAgent: snap.preferredWorkerAgent || '',
     planMode: !!snap.planMode,
@@ -275,6 +289,7 @@ export function applyCachedHistory(init: ChatState, threadId: string): ChatState
     thinkVariant: cached.thinkVariant || init.thinkVariant,
     sessionModel: cached.sessionModel || init.sessionModel,
     compactRate: cached.compactRate || init.compactRate,
+    historyRevisionAt: cached.revisionAt && cached.revisionAt > 0 ? cached.revisionAt : null,
   }
 }
 
@@ -288,6 +303,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
   sessionModel: string
   compactRate: string
   historyComplete: true
+  updatedAt?: number
 } {
   return {
     kind: 'HISTORY',
@@ -299,6 +315,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
     sessionModel: cached.sessionModel || '',
     compactRate: cached.compactRate || 'auto',
     historyComplete: true,
+    ...(cached.revisionAt && cached.revisionAt > 0 ? { updatedAt: cached.revisionAt } : {}),
   }
 }
 

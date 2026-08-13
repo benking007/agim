@@ -10,6 +10,7 @@ import {
   estimateHistoryMessageBytes,
   historySessionTitle,
   historyTailStart,
+  historyUpdatedAt,
   slimHistoryMessage,
   splitHistoryDelivery,
 } from '../../src/web/history-payload.js'
@@ -137,5 +138,20 @@ describe('history-payload', () => {
     const prepend = frames.filter((f) => f.type === 'history-prepend')
     expect(prepend.length).toBeGreaterThan(0)
     expect(prepend.at(-1)?.remaining).toBe(0)
+  })
+
+  it('historyUpdatedAt is max(lastActivity, last message time)', () => {
+    expect(historyUpdatedAt({
+      lastActivity: new Date(1_000),
+      messages: [
+        msg({ role: 'user', content: 'a', timestamp: new Date(500) }),
+        msg({ role: 'assistant', content: 'b', timestamp: new Date(2_500) }),
+      ],
+    })).toBe(2_500)
+    expect(historyUpdatedAt({
+      lastActivity: 9_000,
+      messages: [msg({ role: 'user', content: 'a', timestamp: new Date(100) })],
+    })).toBe(9_000)
+    expect(historyUpdatedAt({ lastActivity: '1970-01-01T00:00:03.000Z', messages: [] })).toBe(3_000)
   })
 })

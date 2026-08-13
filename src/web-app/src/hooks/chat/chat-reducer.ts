@@ -29,6 +29,23 @@ export function isHistoryComplete(flags: {
   return (flags.olderCount ?? 0) === 0
 }
 
+/**
+ * Cloud vs local revision. `null` means the server did not send `updatedAt`
+ * (legacy) — caller falls back to message-id overlap.
+ */
+export function isCloudHistoryNewer(
+  localRevisionAt: number | null | undefined,
+  serverUpdatedAt: number | null | undefined,
+): boolean | null {
+  if (typeof serverUpdatedAt !== 'number' || !Number.isFinite(serverUpdatedAt) || serverUpdatedAt <= 0) {
+    return null
+  }
+  const local = typeof localRevisionAt === 'number' && Number.isFinite(localRevisionAt)
+    ? localRevisionAt
+    : 0
+  return serverUpdatedAt > local
+}
+
 export type ChatAction =
   | { kind: 'WS_STATUS'; status: ChatState['status'] }
   | { kind: 'INIT'; agents: string[]; defaultAgent: string; clientId?: string }
@@ -44,6 +61,8 @@ export type ChatAction =
       compactRate?: string
       historyComplete?: boolean
       olderCount?: number
+      /** Server session revision (epoch ms). */
+      updatedAt?: number
     }
   | { kind: 'HISTORY_PREPEND'; messages: ChatMessage[] }
   | { kind: 'PLAN_MODE'; enabled: boolean }
@@ -112,6 +131,7 @@ export const initialChatState: ChatState = {
   sessionModel: '',
   compactRate: 'auto',
   clientId: null,
+  historyRevisionAt: null,
 }
 
 // ---------------------------------------------------------------------------
@@ -364,11 +384,31 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // the last assistant when the tail is finished / content-ahead.
       const meta = historyMeta(s, a)
       const complete = isHistoryComplete(a)
+      const stamp = (next: ChatState): ChatState => {
+        if (typeof a.updatedAt !== 'number' || !Number.isFinite(a.updatedAt) || a.updatedAt <= 0) {
+          return next
+        }
+        const prev = next.historyRevisionAt
+        // Never rewind: a delayed/stale get-history must not make the next
+        // compare treat a newer local cache as older than the cloud.
+        if (typeof prev === 'number' && Number.isFinite(prev) && prev >= a.updatedAt) {
+          return next
+        }
+        return { ...next, historyRevisionAt: a.updatedAt }
+      }
       if (a.messages.length === 0) {
         return { ...s, ...meta }
       }
+      const inFlight = s.currentReplyId != null || s.activeRunId != null
+      const cloudNewer = isCloudHistoryNewer(s.historyRevisionAt, a.updatedAt)
+      // Same or older cloud revision than the last sync — keep the local
+      // (cached) bubbles so markdown does not remount. Still prepend older
+      // turns when the server sent a fuller complete snapshot.
+      if (!inFlight && cloudNewer === false && s.messages.length > 0) {
+        const messages = complete ? mergeOlderPrefix(s.messages, a.messages) : s.messages
+        return stamp({ ...s, ...meta, messages })
+      }
       if (!complete && s.messages.length > 0) {
-        const inFlight = s.currentReplyId != null || s.activeRunId != null
         if (inFlight) {
           const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
             m.activity?.runId === s.activeRunId
@@ -376,36 +416,36 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           ))
           const contentAhead = assistantContentAhead(s.messages, a.messages)
           if (finishedInHistory || contentAhead) {
-            return {
+            return stamp({
               ...s,
               ...meta,
               messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
               currentReplyId: finishedInHistory ? null : s.currentReplyId,
               activeRunId: finishedInHistory ? null : s.activeRunId,
-            }
+            })
           }
         }
         const localHasServerLast = hasMessageId(s.messages, lastMessageId(a.messages))
         // Cached / reconnect transcript is stale vs the server tail.
         if (!inFlight && !localHasServerLast) {
-          return {
+          return stamp({
             ...s,
             ...meta,
             messages: a.messages,
             currentReplyId: null,
             activeRunId: null,
-          }
+          })
         }
         if (!inFlight && localHasServerLast && assistantContentAhead(s.messages, a.messages)) {
-          return {
+          return stamp({
             ...s,
             ...meta,
             messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
-          }
+          })
         }
-        return { ...s, ...meta }
+        return stamp({ ...s, ...meta })
       }
-      if (s.currentReplyId != null || s.activeRunId != null) {
+      if (inFlight) {
         const localAhead = s.messages.length > a.messages.length
         const finishedInHistory = !localAhead && !!s.activeRunId && a.messages.some((m) => (
           m.activity?.runId === s.activeRunId
@@ -417,25 +457,25 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           contentAhead = assistantContentAhead(s.messages, a.messages)
         }
         if (localAhead || (!finishedInHistory && !histAhead && !contentAhead)) {
-          return { ...s, ...meta }
+          return stamp({ ...s, ...meta })
         }
       }
       // Same tail already on screen (localStorage cache / reconnect): keep
       // those bubbles so markdown does not remount, and only prepend older.
       if (s.messages.length > 0 && hasMessageId(s.messages, lastMessageId(a.messages))) {
         let messages = mergeOlderPrefix(s.messages, a.messages)
-        if (assistantContentAhead(s.messages, a.messages)) {
+        if (assistantContentAhead(s.messages, a.messages) || cloudNewer === true) {
           messages = patchAssistantFromHistory(messages, a.messages, s.activeRunId)
         }
-        return { ...s, ...meta, messages }
+        return stamp({ ...s, ...meta, messages })
       }
-      return {
+      return stamp({
         ...s,
         ...meta,
         messages: a.messages,
         currentReplyId: null,
         activeRunId: null,
-      }
+      })
     }
     case 'HISTORY_PREPEND': {
       if (a.messages.length === 0) return s
@@ -979,6 +1019,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         sessionModel: '',
         compactRate: 'auto',
         preferredWorkerAgent: '',
+        historyRevisionAt: null,
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }

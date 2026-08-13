@@ -22,6 +22,7 @@ import {
 import type { ChatMessage } from '../core/types.js'
 import {
   buildHistoryWireFrames,
+  historyUpdatedAt,
   slimActivitySteps,
 } from './history-payload.js'
 
@@ -148,6 +149,10 @@ export async function sendSessionHistory(
       thinkVariant: history.session.variant || 'auto',
       sessionModel: history.session.model || '',
       compactRate: history.session.compactRate || 'auto',
+      updatedAt: historyUpdatedAt({
+        lastActivity: history.session.lastActivity,
+        messages: history.messages,
+      }),
     }
     let decorate = (m: ChatMessage, absIndex: number): Record<string, unknown> => ({
       ...m,

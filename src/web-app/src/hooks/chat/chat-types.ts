@@ -155,6 +155,13 @@ export interface ChatState {
   compactRate: string
   /** WebSocket thread id (web-…). Used for media upload subdir. */
   clientId: string | null
+  /**
+   * Last applied **server** history revision (session `lastActivity` /
+   * last message time, epoch ms). Compared with the next `history.updatedAt`
+   * so a localStorage snapshot is not treated as fresh when the cloud
+   * transcript moved forward on another device / tab.
+   */
+  historyRevisionAt: number | null
 }
 
 export interface UseChat {

@@ -16,6 +16,7 @@ export function historyPersistSnap(state: ChatState, messages: ChatMessage[]): H
     thinkVariant: state.thinkVariant,
     sessionModel: state.sessionModel,
     compactRate: state.compactRate,
+    revisionAt: state.historyRevisionAt,
   }
 }
 

@@ -153,6 +153,7 @@ export function makeOnIncoming(
           compactRate: msg.compactRate,
           historyComplete: complete,
           olderCount: msg.olderCount ?? 0,
+          updatedAt: typeof msg.updatedAt === 'number' ? msg.updatedAt : undefined,
           messages,
         })
         const threadId = opts?.threadIdRef?.current

@@ -66,7 +66,7 @@ export type {
 } from './chat/chat-types'
 export type { WebSessionEntry } from '@/lib/web-sessions'
 export { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
-export { chatReducer, initialChatState } from './chat/chat-reducer'
+export { chatReducer, initialChatState, isCloudHistoryNewer } from './chat/chat-reducer'
 export type { ChatAction } from './chat/chat-reducer'
 
 // ---------------------------------------------------------------------------

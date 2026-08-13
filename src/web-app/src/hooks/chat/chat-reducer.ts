@@ -462,9 +462,11 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       }
       // Same tail already on screen (localStorage cache / reconnect): keep
       // those bubbles so markdown does not remount, and only prepend older.
+      // A newer cloud revision with the same last id still keeps identity
+      // unless the last assistant body is actually ahead.
       if (s.messages.length > 0 && hasMessageId(s.messages, lastMessageId(a.messages))) {
         let messages = mergeOlderPrefix(s.messages, a.messages)
-        if (assistantContentAhead(s.messages, a.messages) || cloudNewer === true) {
+        if (assistantContentAhead(s.messages, a.messages)) {
           messages = patchAssistantFromHistory(messages, a.messages, s.activeRunId)
         }
         return stamp({ ...s, ...meta, messages })

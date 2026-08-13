@@ -183,11 +183,9 @@ describe('runAgentLoop — per-tool wall timeout (v1.2.118)', () => {
         else sig.addEventListener('abort', () => resolve(), { once: true })
       })
       dispatchAbortReason = (sig.reason as Error | undefined)?.message
-      // Real wedged tools would never resolve — but for the test we
-      // still need to return something. The agent loop's Promise.race
-      // already won via the timeout branch, so this return is dead
-      // code in practice; we keep it for type safety.
-      return { text: 'should-never-reach-model', isError: false, source: 'stub' }
+      // Serial/mutation path waits for this settle after abort; return
+      // an error so the spine surfaces timeoutStopped (not a late success).
+      return { text: 'aborted', isError: true, source: 'stub' }
     }
     const r = await runAgentLoop({
       provider,

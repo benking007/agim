@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **P1-6 Tool-call spine**: Agim Agent's Pi path (`tool_call` → tool-bridge)
+  now shares one pre → execute → post pipeline with the retired loop:
+  JSON-Schema pre-check (`AGIM_TOOL_SCHEMA_VALIDATE=off` still disables),
+  per-tool wall timeout (read-only detaches; mutations wait to settle so
+  a late `loop_verdict` cannot land after the caller moved on), result
+  truncation, and `tool.<name>` audit rows. Do not resurrect `runAgentLoop`
+  as a production path.
+
+- **P1-7 Security posture banner**: `agim start` prints exec sandbox
+  (bwrap on / off / unavailable), native FS restrict
+  (`AGIM_NATIVE_FS_RESTRICT`), and auto-approve — even when the approval
+  bus is disabled — so an unconfined host is visible at boot.
+
+- **P1-10 Native session bind**: opening an Agim Agent JSONL session
+  appends `~/.agim/agim-session-index.jsonl` mapping `threadId` ↔
+  `session.id` (including A2A `a2a-<jobId>` children). UI
+  `~/.agim/sessions/*.log` and pi JSONL stay separate; this is a join
+  table, not a merged transcript.
+
 - **Web chat live stream mix-up**: with two sessions both running, switching
   A→B let A's `chunk` / `done` / `run-*` land on B's placeholder (one WS,
   rekey does not abort the previous run). Live frames now stamp the run's

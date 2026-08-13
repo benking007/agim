@@ -303,6 +303,12 @@ export async function runStartForeground(): Promise<void> {
       console.warn(`⚠️ Approval bus failed to start (${msg}); claude-code will fall back to dontAsk mode`)
     }
   }
+  // Fail-loud sandbox / FS / auto-approve banner — independent of the
+  // approval bus so AGIM_APPROVAL_DISABLED=1 still surfaces unconfined exec.
+  try {
+    const { announceSecurityPosture } = await import('../core/security-posture.js')
+    announceSecurityPosture()
+  } catch { /* best-effort */ }
   // Wire the bus's lifetime counters into /api/metrics (M14). Done even
   // when the bus failed to start — getMetrics() returns zeros, which is
   // the correct Prometheus snapshot for "no approvals processed".

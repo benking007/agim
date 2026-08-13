@@ -88,7 +88,7 @@ describe('formatApprovalPrompt — auto-allow grace mode', () => {
       autoAllow: { graceMs: 5000 },
     }
     const text = formatApprovalPrompt(n)
-    expect(text).toContain('5s')
+    expect(text).toContain('5 秒')
     expect(text).toContain('自动放行')
     expect(text).toContain('n')   // still tells user how to reject
     expect(text).toContain('Bash')

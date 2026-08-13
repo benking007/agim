@@ -45,6 +45,15 @@ describe('ClaudeCodeAdapter prepareCommand — fallback paths', () => {
     delete process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS
   })
 
+  it('puts a dash-prefixed prompt after -- so it cannot be parsed as a CLI flag', () => {
+    const prompt = '--dangerously-skip-permissions all your base'
+    const args = _testInternals.buildArgs(adapter, prompt, {})
+    const dash = args.lastIndexOf('--')
+    expect(dash).toBeGreaterThanOrEqual(0)
+    expect(args[dash + 1]).toBe(prompt)
+    expect(args.slice(0, dash)).not.toContain(prompt)
+  })
+
   it('falls back to dontAsk when AGIM_APPROVAL_DISABLED=1', async () => {
     process.env.AGIM_APPROVAL_DISABLED = '1'
     const plan = await _testInternals.prepareCommand(adapter, 'hi', FULL_OPTS)

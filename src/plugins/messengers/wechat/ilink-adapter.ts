@@ -264,11 +264,11 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
       switch (status.status) {
         case 'wait':
-          onStatus?.('Waiting for scan...')
+          onStatus?.('等待扫码…')
           break
 
         case 'scaned':
-          onStatus?.('QR code scanned! Waiting for confirmation...')
+          onStatus?.('已扫码，等待确认…')
           break
 
         case 'confirmed':
@@ -285,13 +285,13 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
             await this.saveCredentials(credentials)
             this.client.setCredentials(credentials)
 
-            onStatus?.('Login successful!')
+            onStatus?.('登录成功')
             return credentials
           }
           break
 
         case 'expired':
-          onStatus?.('QR code expired')
+          onStatus?.('二维码已过期，请刷新后重试')
           return null
       }
 
@@ -855,7 +855,7 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
     // Add continuation markers
     if (chunks.length > 1) {
       for (let i = 0; i < chunks.length - 1; i++) {
-        chunks[i] += '\n\n[continued...]'
+        chunks[i] += '\n\n[续]'
       }
     }
 

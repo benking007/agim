@@ -23,6 +23,7 @@ import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
+import { pushPromptArg, takeTrailingPrompt } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.pi' })
 const DEFAULT_BIN = 'pi'
@@ -131,7 +132,7 @@ export class PiAdapter extends AgentBase {
     ]
     args.push('--tools', tools.join(','))
 
-    args.push(prompt)
+    pushPromptArg(args, prompt)
     return args
   }
 
@@ -149,7 +150,7 @@ export class PiAdapter extends AgentBase {
 
     const args = this.buildArgs(prompt, opts)
     if (cwd) {
-      const promptArg = args.pop() as string
+      const promptArg = takeTrailingPrompt(args)
       const sessionDir = join(cwd, '.pi-sessions')
       try {
         if (!existsSync(sessionDir)) await mkdir(sessionDir, { recursive: true })
@@ -158,7 +159,7 @@ export class PiAdapter extends AgentBase {
         log.warn({ event: 'pi.session_dir.mkdir_failed', sessionDir, err: String(err) },
           'falling back to PI default session dir')
       }
-      args.push(promptArg)
+      pushPromptArg(args, promptArg)
     }
 
     const sockPath = approvalBus.getSocketPath()
@@ -184,8 +185,9 @@ export class PiAdapter extends AgentBase {
     }
 
     if (sockPath) {
-      const promptArg = args.pop() as string
-      args.push('--no-extensions', '--extension', agimExtensionPath(), promptArg)
+      const promptArg = takeTrailingPrompt(args)
+      args.push('--no-extensions', '--extension', agimExtensionPath())
+      pushPromptArg(args, promptArg)
     }
 
     return {

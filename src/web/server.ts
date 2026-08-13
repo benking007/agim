@@ -497,6 +497,10 @@ export async function startWebServer(options: {
   // host so a third-party page can't open a cross-site WS.
   const wss = new WebSocketServer({
     server: httpServer,
+    // Default ws maxPayload is 100 MiB/frame — a single authenticated
+    // client could OOM the process. Chat frames are small JSON; 1 MiB
+    // matches MAX_API_BODY_BYTES.
+    maxPayload: 1024 * 1024,
     verifyClient: (info, cb) => {
       // R13 A4 — per-IP rate limit runs BEFORE auth so an attacker
       // hammering verifyClient with bad tokens can't burn CPU on

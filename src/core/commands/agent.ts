@@ -47,7 +47,7 @@ export async function handleAgentCommand(
 
   const agent = registry.findAgent(agentName)
   if (!agent) {
-    return `❌ Agent "${agentName}" not found. Use /agents to see available agents.`
+    return `❌ 找不到 Agent "${agentName}"。用 /agents 查看可用 Agent。`
   }
 
   if (!(await isAgentAvailableCached(agent.name))) {

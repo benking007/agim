@@ -305,7 +305,7 @@ export function parseMessage(text: string): ParsedMessage {
     return {
       type: 'error',
       prompt: trimmed,
-      error: `Agent "${displayAgentName(disabledAgent.name)}" is disabled. Enable it in Web → Agent 设置, or add "${disabledAgent.name}" to config.agents.`,
+      error: `Agent "${displayAgentName(disabledAgent.name)}" 已被停用。到 Web → Agent 设置里启用，或在 config.agents 中加入 "${disabledAgent.name}"。`,
     }
   }
 
@@ -315,7 +315,7 @@ export function parseMessage(text: string): ParsedMessage {
   }
 
   // Unknown command
-  return { type: 'error', prompt: trimmed, error: `Unknown command: ${cmd}` }
+  return { type: 'error', prompt: trimmed, error: `未知命令：${cmd}` }
 }
 
 /**
@@ -452,7 +452,7 @@ export async function routeMessage(
     case 'agent': {
       const agent = registry.findAgent(parsed.agent)
       if (!agent) {
-        return `❌ Agent "${parsed.agent}" not found. Use /agents to see available agents.`
+        return `❌ 找不到 Agent "${parsed.agent}"。用 /agents 查看可用 Agent。`
       }
 
       // Workspace whitelist must apply to explicit /<agent> too — otherwise
@@ -460,7 +460,7 @@ export async function routeMessage(
       // bypassing it via /cc directly.
       const wsAgent = workspaceRegistry.resolve(ctx.userId || 'unknown')
       if (!wsAgent.hasAgent(agent.name)) {
-        return `🚫 Agent "${displayAgentName(agent.name)}" is not available in your workspace.\n\nTry /agents to see available agents.`
+        return `🚫 Agent "${displayAgentName(agent.name)}" 不在你的工作区可用列表里。\n\n用 /agents 查看可用 Agent。`
       }
 
       // Per-workspace rate limit (falls back to userLimiter for default
@@ -477,7 +477,7 @@ export async function routeMessage(
       // the actual invocation below (after every early-return path), so the
       // half-open slot is never wasted on a switch/empty-prompt short-circuit.
       if (circuitBreaker.peek(agent.name)) {
-        return `⛔ ${displayAgentName(agent.name)} is temporarily unavailable (too many consecutive failures). Try again in a few minutes, or use another agent.`
+        return `⛔ ${displayAgentName(agent.name)} 暂时不可用（连续失败次数过多）。几分钟后再试，或换用其他 Agent。`
       }
 
       if (!(await isAgentAvailableCached(agent.name))) {
@@ -487,7 +487,7 @@ export async function routeMessage(
       await sessionManager.switchAgent(ctx.platform, ctx.channelId, ctx.threadId, agent.name)
 
       if (!parsed.prompt) {
-        return `✅ Switched to ${displayAgentName(agent.name)}`
+        return `✅ 已切换到 ${displayAgentName(agent.name)}`
       }
 
       if (ctx.onAgentResolved) {
@@ -502,7 +502,7 @@ export async function routeMessage(
     }
 
     case 'error': {
-      return `❓ ${parsed.error}\n\nUse /help to see available commands.`
+      return `❓ ${parsed.error}\n\n用 /help 查看可用命令。`
     }
 
     case 'default': {
@@ -593,18 +593,18 @@ export async function routeMessage(
 
       const agent = registry.findAgent(agentName)
       if (!agent) {
-        return `❌ Agent "${displayAgentName(agentName)}" not configured.`
+        return `❌ Agent "${displayAgentName(agentName)}" 未配置。到 Web → Agent 设置或 agim config 添加。`
       }
 
       if (circuitBreaker.peek(agent.name)) {
         const openAgents = circuitBreaker.listOpen().map(displayAgentName).join(', ')
-        return `⛔ ${displayAgentName(agent.name)} is temporarily unavailable (circuit breaker open).\nCurrently blocked: ${openAgents || 'none'}\n\nTry /agents to see available agents, or wait a few minutes.`
+        return `⛔ ${displayAgentName(agent.name)} 暂时不可用（熔断已打开）。\n当前被熔断：${openAgents || '无'}\n\n用 /agents 查看可用 Agent，或等几分钟再试。`
       }
 
       // Workspace already resolved above — check the whitelist before
       // exposing the agent to the message.
       if (!ws.hasAgent(agent.name)) {
-        return `🚫 Agent "${displayAgentName(agent.name)}" is not available in your workspace.\n\nTry /agents to see available agents.`
+        return `🚫 Agent "${displayAgentName(agent.name)}" 不在你的工作区可用列表里。\n\n用 /agents 查看可用 Agent。`
       }
 
       if (!(await isAgentAvailableCached(agent.name))) {
@@ -612,7 +612,7 @@ export async function routeMessage(
       }
 
       if (!parsed.prompt) {
-        return '💬 Send a message to chat with the agent.'
+        return '💬 发消息即可与 Agent 对话。'
       }
 
       // Switch session agent if intent picked a different one

@@ -31,6 +31,7 @@ import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { approvalBus } from '../../../core/approval-bus.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { ensureOpencodeMcpRegistered } from './ensure-mcp-config.js'
+import { pushPromptArg } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.opencode' })
 
@@ -70,7 +71,7 @@ export class OpenCodeAdapter extends AgentBase {
     // session.planMode on plan_exit (see docs/architecture/plan-mode.md);
     // the user keeps control of the toggle via /plan off.
     if (opts.planMode) args.push('--agent', 'plan')
-    args.push(prompt)
+    pushPromptArg(args, prompt)
     return args
   }
 

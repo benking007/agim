@@ -117,7 +117,7 @@ describe('formatAgentNotAvailableError', () => {
     const error = formatAgentNotAvailableError('opencode')
 
     expect(error).toContain('opencode')
-    expect(error).toContain('not installed')
+    expect(error).toContain('未安装')
     expect(error).toContain('npm i -g opencode')
   })
 

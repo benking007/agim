@@ -130,7 +130,7 @@ class TestableWeChatAdapter {
 
     if (chunks.length > 1) {
       for (let i = 0; i < chunks.length - 1; i++) {
-        chunks[i] += '\n\n[continued...]'
+        chunks[i] += '\n\n[续]'
       }
     }
 
@@ -354,7 +354,7 @@ describe('WeChat Adapter', () => {
 
       const calls = (mockContact.say as ReturnType<typeof mock>).mock.calls
       // First chunk should have continuation marker
-      expect(calls[0][0]).toContain('[continued...]')
+      expect(calls[0][0]).toContain('[续]')
     })
   })
 

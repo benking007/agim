@@ -171,24 +171,43 @@ export async function resolveSafeWebMediaPathAsync(
   return real
 }
 
-/** Guess a Content-Type from filename when the on-disk mime is unknown. */
+/** Guess a Content-Type from filename when the on-disk mime is unknown.
+ *  HTML / SVG / XML are never served as their native types — browsers
+ *  would execute them as a stored XSS when Content-Disposition is inline. */
 export function guessMediaContentType(filename: string): string {
   const lower = basename(filename).toLowerCase()
   if (lower.endsWith('.png')) return 'image/png'
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
   if (lower.endsWith('.webp')) return 'image/webp'
   if (lower.endsWith('.gif')) return 'image/gif'
-  if (lower.endsWith('.svg')) return 'image/svg+xml'
   if (lower.endsWith('.pdf')) return 'application/pdf'
   if (lower.endsWith('.json')) return 'application/json'
   if (lower.endsWith('.md')) return 'text/markdown; charset=utf-8'
   if (lower.endsWith('.csv')) return 'text/csv; charset=utf-8'
-  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html; charset=utf-8'
   if (lower.endsWith('.txt') || lower.endsWith('.log')) return 'text/plain; charset=utf-8'
   if (lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.js')
-    || lower.endsWith('.jsx') || lower.endsWith('.css') || lower.endsWith('.xml')
+    || lower.endsWith('.jsx') || lower.endsWith('.css')
     || lower.endsWith('.yaml') || lower.endsWith('.yml')) {
     return 'text/plain; charset=utf-8'
   }
   return 'application/octet-stream'
+}
+
+const UNSAFE_INLINE_EXT = /\.(html?|svg|xml)$/i
+
+/** True when the file must not be rendered inline by the browser. */
+export function isUnsafeInlineMedia(filename: string): boolean {
+  return UNSAFE_INLINE_EXT.test(basename(filename))
+}
+
+export function mediaContentDisposition(filename: string): string {
+  const name = basename(filename).replace(/"/g, '_')
+  const disp = isUnsafeInlineMedia(filename) ? 'attachment' : 'inline'
+  return `${disp}; filename="${name}"`
+}
+
+/** Replay headers that block MIME sniffing and script execution. */
+export const MEDIA_SAFE_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': 'sandbox',
 }

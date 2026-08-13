@@ -82,7 +82,7 @@ footer a{color:#0969da;text-decoration:none}
   <header>
     <div class="title">${escapeHtml(title)}</div>
     <span class="meta">${created}</span>
-    <button id="copy-btn" title="copy raw">📋 Copy</button>
+    <button id="copy-btn" title="复制原文">📋 复制</button>
   </header>
   ${body}
   <footer>
@@ -117,7 +117,7 @@ document.getElementById('copy-btn').addEventListener('click', function(){
   navigator.clipboard.writeText(src).then(function(){
     var b = document.getElementById('copy-btn');
     var orig = b.textContent;
-    b.textContent = '✓ Copied';
+    b.textContent = '✓ 已复制';
     setTimeout(function(){ b.textContent = orig; }, 1500);
   });
 });
@@ -127,5 +127,5 @@ document.getElementById('copy-btn').addEventListener('click', function(){
 }
 
 export function renderNotFoundHtml(): string {
-  return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Not Found · agim</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:60px auto;padding:0 20px;color:#333;line-height:1.6}h1{font-size:24px}.muted{color:#888}</style></head><body><h1>内容不存在</h1><p class="muted">This paste does not exist (or was deleted).</p></body></html>`
+  return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>未找到 · agim</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:60px auto;padding:0 20px;color:#333;line-height:1.6}h1{font-size:24px}.muted{color:#888}</style></head><body><h1>内容不存在</h1><p class="muted">该内容不存在（或已被删除）。</p></body></html>`
 }

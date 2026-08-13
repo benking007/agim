@@ -745,11 +745,11 @@ export async function runStartForeground(): Promise<void> {
     console.warn('Viewer tunnel start failed:', err instanceof Error ? err.message : String(err))
   }
 
-  console.log('\n✅ IM hub is running!')
+  console.log('\n✅ 服务已启动！')
   if (ctx.webServer) {
-    console.log(`   Chat UI: http://localhost:${ctx.webServer.port}`)
+    console.log(`   Web 控制台：http://localhost:${ctx.webServer.port}`)
   }
-  console.log('Press Ctrl+C to stop')
+  console.log('按 Ctrl+C 停止')
 
   // v1.5 — flip boot phase to 'ready' so the web restart-polling UI
   // can wait for full readiness instead of merely "HTTP server up".

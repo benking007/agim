@@ -484,7 +484,7 @@ export function formatAgentNotAvailableError(agentName: string): string {
     else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
   }
 
-  return `❌ ${agentName} is not installed or not available.\n\n${installHint}\n\nOr try another agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
+  return `❌ ${agentName} 未安装或当前不可用。\n\n${installHint}\n\n或换用其他 Agent：\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
 }
 
 // ============================================

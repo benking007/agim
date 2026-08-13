@@ -24,6 +24,7 @@ import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { crossSpawn } from '../../../utils/cross-platform.js'
+import { pushPromptArg } from '../cli-prompt-arg.js'
 
 const log = rootLogger.child({ component: 'agent.mimo' })
 const DEFAULT_BIN = 'mimo'
@@ -205,7 +206,7 @@ export class MimoAdapter extends AgentBase {
     const args = ['run', '--format', 'json']
     if (opts.agentSessionId) args.push('--session', opts.agentSessionId)
     if (opts.model) args.push('--model', opts.model)
-    args.push(prompt)
+    pushPromptArg(args, prompt)
     return args
   }
 

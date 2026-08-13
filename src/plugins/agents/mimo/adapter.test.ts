@@ -105,7 +105,7 @@ describe('MimoAdapter — command resolution', () => {
 
 describe('MimoAdapter — buildArgs', () => {
   it('uses run json mode', () => {
-    expect(adapter.exposeBuildArgs('hello', {})).toEqual(['run', '--format', 'json', 'hello'])
+    expect(adapter.exposeBuildArgs('hello', {})).toEqual(['run', '--format', 'json', '--', 'hello'])
   })
 
   it('passes session id via --session', () => {

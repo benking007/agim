@@ -125,12 +125,11 @@ const helper = createSqliteHelper({
       ON outbox(status, delivered_at);
     CREATE INDEX IF NOT EXISTS idx_outbox_thread
       ON outbox(thread_key, status);
-    -- Idempotency: at most one live row per dedup_key. Partial so the common
-    -- case (no key) is unconstrained. Lets callers (e.g. reminder firing)
-    -- enqueue with a stable per-occurrence key so a crash-induced re-fire
-    -- can't double-send the same message.
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_dedup
-      ON outbox(dedup_key) WHERE dedup_key IS NOT NULL;
+    -- idx_outbox_dedup is created in init() AFTER ALTER TABLE adds
+    -- dedup_key on pre-existing DBs. Putting CREATE UNIQUE INDEX in
+    -- schema would throw "no such column: dedup_key" on old files
+    -- (CREATE TABLE IF NOT EXISTS is a no-op), and sqlite-helper then
+    -- marks the DB permanently broken — init() never runs.
   `,
   init: (d) => {
     // Migration: add dedup_key to pre-existing DBs (CREATE TABLE IF NOT EXISTS
@@ -250,10 +249,16 @@ export function enqueue(opts: EnqueueOpts): number {
     if (row.changes === 0 && dedupKey !== null) {
       // Duplicate dedup_key — a row already exists for this logical message.
       // Return its id so the caller treats the enqueue as a (idempotent) success.
-      const existing = d.prepare('SELECT id FROM outbox WHERE dedup_key = ?').get(dedupKey) as { id: number } | undefined
+      // If that row already gave up, resurrect it: a new enqueue is an
+      // explicit retry of the same logical send, not a no-op success.
+      const existing = d.prepare('SELECT id, status FROM outbox WHERE dedup_key = ?')
+        .get(dedupKey) as { id: number; status: OutboxStatus } | undefined
       if (existing) {
+        if (existing.status === 'giving_up') {
+          retryGivingUp(existing.id)
+        }
         rootLogger.debug(
-          { component: 'outbox', event: 'outbox.dedup_hit', dedupKey, id: existing.id },
+          { component: 'outbox', event: 'outbox.dedup_hit', dedupKey, id: existing.id, status: existing.status },
           'enqueue deduplicated — existing row reused',
         )
         return existing.id

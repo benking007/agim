@@ -43,6 +43,7 @@ import type { AgentSendOpts } from '../../../core/types.js'
 import { approvalBus } from '../../../core/approval-bus.js'
 import { resolveAgentCwd } from '../../../core/agent-cwd.js'
 import { logger as rootLogger } from '../../../core/logger.js'
+import { pushPromptArg } from '../cli-prompt-arg.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SIDECAR_PATH = join(__dirname, 'mcp-approval-server.js')
@@ -126,12 +127,13 @@ export class ClaudeCodeAdapter extends AgentBase {
    */
   protected buildArgs(prompt: string, opts: AgentSendOpts): string[] {
     const mode = opts.planMode ? 'plan' : 'dontAsk'
-    return [
+    const args = [
       ...sessionFlag(opts),
       ...baseArgs(),
       '--permission-mode', mode,
-      prompt,
     ]
+    pushPromptArg(args, prompt)
+    return args
   }
 
   protected async prepareCommand(prompt: string, opts: AgentSendOpts): Promise<SpawnPlan> {
@@ -161,13 +163,14 @@ export class ClaudeCodeAdapter extends AgentBase {
     if (process.env.AGIM_DANGEROUSLY_SKIP_PERMISSIONS === '1') {
       log.info({ event: 'claude.approval.skip_permissions' },
         'Claude run launched with --dangerously-skip-permissions (operator opt-in)')
+      const skipArgs = [
+        ...sessionFlag(opts),
+        ...baseArgs(),
+        '--dangerously-skip-permissions',
+      ]
+      pushPromptArg(skipArgs, prompt)
       return {
-        args: [
-          ...sessionFlag(opts),
-          ...baseArgs(),
-          '--dangerously-skip-permissions',
-          prompt,
-        ],
+        args: skipArgs,
         cwd,
       }
     }
@@ -241,18 +244,19 @@ export class ClaudeCodeAdapter extends AgentBase {
 
     // Closure captures runId + configDir locally — concurrent runs each have
     // their own copy, so cleanup never deletes another spawn's tmpdir.
+    const routedArgs = [
+      ...sessionFlag(opts),
+      // ORDER MATTERS: --mcp-config takes <configs...> (variadic). Place it
+      // before another `-X` flag so it sees exactly one file path, not the
+      // prompt as a second config file.
+      '--mcp-config', configPath,
+      ...baseArgs(),
+      '--permission-mode', 'default',
+      '--permission-prompt-tool', 'mcp__agim__request',
+    ]
+    pushPromptArg(routedArgs, prompt)
     return {
-      args: [
-        ...sessionFlag(opts),
-        // ORDER MATTERS: --mcp-config takes <configs...> (variadic). Place it
-        // before another `-X` flag so it sees exactly one file path, not the
-        // prompt as a second config file.
-        '--mcp-config', configPath,
-        ...baseArgs(),
-        '--permission-mode', 'default',
-        '--permission-prompt-tool', 'mcp__agim__request',
-        prompt,
-      ],
+      args: routedArgs,
       cwd,
       cleanup: async () => {
         approvalBus.unregisterRun(runId)

@@ -448,6 +448,8 @@ async function handleChatMediaFile(
 ): Promise<void> {
   const {
     guessMediaContentType,
+    mediaContentDisposition,
+    MEDIA_SAFE_HEADERS,
     resolveSafeWebMediaPath,
   } = await import('../core/web-media-upload.js')
   const raw = url.searchParams.get('path') || ''
@@ -492,8 +494,9 @@ async function handleChatMediaFile(
     res.writeHead(200, {
       'Content-Type': contentType,
       'Content-Length': buf.length,
-      'Content-Disposition': `inline; filename="${name.replace(/"/g, '_')}"`,
+      'Content-Disposition': mediaContentDisposition(name),
       'Cache-Control': 'private, max-age=3600',
+      ...MEDIA_SAFE_HEADERS,
     })
     res.end(buf)
   } catch (err) {

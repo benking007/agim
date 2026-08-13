@@ -6,6 +6,31 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Outbox migration on old DBs**: schema no longer creates `idx_outbox_dedup`
+  before `dedup_key` exists. Pre-1.5 databases were throwing
+  `no such column: dedup_key`, after which sqlite-helper marked the queue
+  permanently broken. Dedup hits on `giving_up` rows now resurrect them
+  instead of treating a failed send as success.
+
+- **Stored XSS via chat media replay**: `.html` / `.svg` / `.xml` uploads
+  are served as `application/octet-stream` with `Content-Disposition:
+  attachment`, plus `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: sandbox`.
+
+- **Agent CLI option injection**: positional prompts are now passed after
+  `--` (claude-code, codex, cursor, qoder, pi, antigravity, mimo,
+  opencode) so a message like `--dangerously-skip-permissions …` cannot
+  be parsed as a CLI flag.
+
+- **Viewer JSON no longer public / no `source` leak**: `GET /api/viewer/:id`
+  requires admin (HTML `/v/:id` stays unguessable-UUID public) and omits
+  `source` (thread key / IM user id). WebSocket `maxPayload` is 1 MiB.
+  `GET /api/service/status` requires admin.
+
+- **User-visible Chinese copy**: IM router errors, CLI boot banner / message
+  fallback, approval-card units (`秒` / `分钟`), viewer Copy button, WeChat
+  QR status, and split continuation marker (`[续]`).
+
 - **Native self-protect gap**: Layer 2 only matched Claude `Bash` / `Write`
   names, so `agim_exec('systemctl restart agim')` (including Subagent
   HITL-skip) could take the process down. `checkToolUse` now treats

@@ -258,7 +258,7 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
       header,
       ...(origin ? [origin] : []),
       ...body,
-      `${sec}s 后执行 · 回 n 拒绝并撤销规则 · req ${reqShort}`,
+      `${sec} 秒后执行 · 回 n 拒绝并撤销规则 · req ${reqShort}`,
     ].join('\n')
   }
 
@@ -273,7 +273,7 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
       ...(origin ? [origin] : []),
       ...body,
       actions,
-      `${mins}min 未回 → 拒绝 · req ${reqShort}`,
+      `${mins} 分钟未回 → 拒绝 · 请求 ${reqShort}`,
     ].join('\n')
   }
   const fallback = isTimeoutDefaultAllow() ? '放行' : '拒绝'
@@ -283,7 +283,7 @@ export function formatApprovalPrompt(n: ApprovalNotification): string {
     ...(origin ? [origin] : []),
     ...body,
     `y 批准 · n 拒绝 · all 同类放行`,
-    `${mins}min 未回 → ${fallback} · req ${reqShort}`,
+    `${mins} 分钟未回 → ${fallback} · 请求 ${reqShort}`,
   ].join('\n')
 }
 
@@ -777,8 +777,8 @@ function sendReceiptIfAny(info: ResolvedInfo, decision: Decision): void {
   if (decision.behavior === 'allow' && decision.autoAllowFurther) {
     msg = [
       '✅ 已批准并启用自动放行',
-      `规则：${info.toolName} · ${humanizeFingerprint(info.fingerprint)} — 5s 内自动放行`,
-      '撤销：本会话回 n 单条 / /approval clear 清空',
+      `规则：${info.toolName} · ${humanizeFingerprint(info.fingerprint)} — ${Math.round(approvalBus.autoAllowGraceMs / 1000)} 秒内自动放行`,
+      '撤销：本会话回复 n 即可 / 或 /approval clear 清空',
     ].join('\n')
   } else if (decision.behavior === 'deny' && info.wasAutoAllow) {
     msg = `❌ 已拒绝并撤销自动放行规则：${info.toolName} · ${humanizeFingerprint(info.fingerprint)}`

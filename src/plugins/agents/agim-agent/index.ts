@@ -96,6 +96,7 @@ import {
 import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
 import { AGIM_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
 import { expandToolNameList } from '../../../core/llm/tool-names.js'
+import { bindNativeSession } from '../../../core/agim-session-bind.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
 import {
@@ -673,6 +674,8 @@ export class NativeAgentAdapter implements AgentAdapter {
   // session per process lifetime.
   private readonly sessionMeta = new Map<string, Awaited<ReturnType<JsonlSessionRepo['list']>>[number]>()
   private readonly sessionModelOverrides = new Map<string, string>()
+  /** Once-per-process join rows for threadId ↔ pi JSONL session.id. */
+  private readonly boundNativeSessions = new Set<string>()
 
   // Per-sessionId serial lock. IM threads reuse one session id across
   // messages (session.ts getOrCreateSession), and that id maps to a single
@@ -698,6 +701,7 @@ export class NativeAgentAdapter implements AgentAdapter {
   invalidateSessionMeta(sessionId: string): void {
     this.sessionMeta.delete(sessionId)
     this.sessionModelOverrides.delete(sessionId)
+    this.boundNativeSessions.delete(sessionId)
   }
 
   async isAvailable(): Promise<boolean> {
@@ -844,6 +848,17 @@ export class NativeAgentAdapter implements AgentAdapter {
       ])
     }
     env.protectSessionPath(currentMeta.path)
+    // Join table only — UI ~/.agim/sessions/*.log and pi JSONL stay separate.
+    if (!this.boundNativeSessions.has(sessionId)) {
+      this.boundNativeSessions.add(sessionId)
+      bindNativeSession({
+        nativeSessionId: sessionId,
+        threadId: opts?.threadId,
+        platform: opts?.platform,
+        channelId: opts?.channelId,
+        parentJobId: opts?.parentJobId,
+      })
+    }
     if (opts?.signal?.aborted) {
       opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
@@ -858,6 +873,12 @@ export class NativeAgentAdapter implements AgentAdapter {
       ? agimToolsToPi(toolSurface.tools, toolSurface.dispatch, {
           traceId: opts?.traceId,
           parallelSafe: toolSurface.parallelSafe ?? this.deps.parallelSafe,
+          audit: {
+            traceId: opts?.traceId,
+            userId: opts?.userId,
+            platform: opts?.platform,
+            agent: 'agim',
+          },
           ...(goalScope ? {
             // Needed so missing-bwrap + active goal can escalate to an
             // explicit approval card instead of hard-failing.

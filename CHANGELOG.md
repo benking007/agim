@@ -34,6 +34,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Large web-chat history load**: `get-history` no longer ships the entire
+  `.log` in one WS frame. Activity step `preview`s are capped (~500 chars;
+  disk unchanged), the first `history` frame is the newest slice (count +
+  byte budget), and older turns follow as `history-prepend`. Portal defers
+  remark-gfm until a bubble is near the viewport (plaintext first; huge
+  visible replies parse on idle). Mid-flight HISTORY guards still apply;
+  a tail must not shrink an already-loaded transcript. Agent prompts still
+  use the full on-disk log.
+
 - **DeepSeek V4 compat hardening (P0–P3)**: Agim Agent thinking map now
   keeps Composer `low` as API `low` (was clamped off→high), maps
   `medium→high`, and sets `supportsReasoningEffort` so `reasoning_effort`

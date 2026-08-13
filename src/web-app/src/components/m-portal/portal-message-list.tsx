@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Bot } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MarkdownView } from '@/components/chat/markdown-view'
+import { DeferredMarkdownView } from '@/components/chat/deferred-markdown-view'
 import { MessageActions } from '@/components/chat/message-actions'
 import { agentVisual, displayAgentName } from './agent-visuals'
 import { PortalRunStatus } from './portal-run-status'
@@ -131,9 +131,11 @@ export const PortalMessageList = memo(function PortalMessageList({
                       'min-w-0 select-text break-words text-base leading-relaxed',
                       dark ? 'text-zinc-200' : 'text-zinc-800',
                     )}>
-                      <MarkdownView
+                      <DeferredMarkdownView
                         content={msg.content}
                         className="break-words text-base leading-relaxed"
+                        eager={isTyping && msg.id === currentReplyId}
+                        rootRef={listRef}
                       />
                       {!(isTyping && msg.id === currentReplyId) && (
                         <MessageActions

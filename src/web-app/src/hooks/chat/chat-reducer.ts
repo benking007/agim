@@ -20,6 +20,15 @@ import type {
 // Action union
 // ---------------------------------------------------------------------------
 
+/** Legacy servers omit these flags — treat as a complete transcript. */
+export function isHistoryComplete(flags: {
+  historyComplete?: boolean
+  olderCount?: number
+}): boolean {
+  if (flags.historyComplete === false) return false
+  return (flags.olderCount ?? 0) === 0
+}
+
 export type ChatAction =
   | { kind: 'WS_STATUS'; status: ChatState['status'] }
   | { kind: 'INIT'; agents: string[]; defaultAgent: string; clientId?: string }
@@ -33,7 +42,10 @@ export type ChatAction =
       thinkVariant?: string
       sessionModel?: string
       compactRate?: string
+      historyComplete?: boolean
+      olderCount?: number
     }
+  | { kind: 'HISTORY_PREPEND'; messages: ChatMessage[] }
   | { kind: 'PLAN_MODE'; enabled: boolean }
   | { kind: 'THINK_MODE'; variant: string }
   | { kind: 'SESSION_MODEL'; model: string }
@@ -128,6 +140,77 @@ function findRunningActivityIndex(messages: ChatMessage[]): number {
     if (m?.role === 'assistant' && m.activity?.status === 'running') return i
   }
   return -1
+}
+
+function lastAssistantIndex(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'assistant') return i
+  }
+  return -1
+}
+
+function assistantContentAhead(local: ChatMessage[], hist: ChatMessage[]): boolean {
+  const hi = lastAssistantIndex(hist)
+  if (hi < 0) return false
+  const h = hist[hi]
+  if (!h) return false
+  let li = h.id ? local.findIndex((m) => m.id === h.id) : -1
+  if (li < 0 && h.activity?.runId) {
+    li = local.findIndex((m) => m.activity?.runId === h.activity?.runId)
+  }
+  if (li < 0) {
+    if (local.length > hist.length) return false
+    li = lastAssistantIndex(local)
+  }
+  const localAsst = li >= 0 ? local[li] : undefined
+  if (!localAsst) return false
+  return h.content.length > localAsst.content.length + 40
+}
+
+function historyMeta(s: ChatState, a: Extract<ChatAction, { kind: 'HISTORY' }>): Pick<
+  ChatState,
+  'agent' | 'preferredWorkerAgent' | 'planMode' | 'thinkVariant' | 'sessionModel' | 'compactRate'
+> {
+  return {
+    agent: a.agent || s.agent,
+    preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
+    planMode: a.planMode ?? s.planMode,
+    thinkVariant: a.thinkVariant ?? s.thinkVariant,
+    sessionModel: a.sessionModel ?? s.sessionModel,
+    compactRate: a.compactRate ?? s.compactRate,
+  }
+}
+
+/** Overlay the tail's last assistant onto local (sleep/wake with a windowed HISTORY). */
+function patchAssistantFromHistory(
+  local: ChatMessage[],
+  hist: ChatMessage[],
+  runId: string | null,
+): ChatMessage[] {
+  const histIdx = lastAssistantIndex(hist)
+  if (histIdx < 0) return local
+  const histAsst = hist[histIdx]
+  if (!histAsst) return local
+  let idx = -1
+  if (runId) {
+    idx = local.findIndex((m) => m.activity?.runId === runId)
+  }
+  if (idx < 0 && histAsst.id) {
+    idx = local.findIndex((m) => m.id === histAsst.id)
+  }
+  if (idx < 0) idx = lastAssistantIndex(local)
+  const cur = idx >= 0 ? local[idx] : undefined
+  if (!cur || idx < 0) return local
+  const next = [...local]
+  next[idx] = {
+    ...cur,
+    content: histAsst.content.length >= cur.content.length ? histAsst.content : cur.content,
+    activity: histAsst.activity ?? cur.activity,
+    id: histAsst.id || cur.id,
+    feedback: histAsst.feedback ?? cur.feedback,
+    serverIndex: histAsst.serverIndex ?? cur.serverIndex,
+  }
+  return next
 }
 
 /** Close any open Plan items when the turn finishes successfully. */
@@ -235,7 +318,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       }
     case 'SET_CLIENT_ID':
       return { ...s, clientId: a.clientId }
-    case 'HISTORY':
+    case 'HISTORY': {
       // Non-empty history is authoritative (refresh / reconnect).
       // Empty history must NOT wipe in-memory bubbles: after MESSAGES_TTL
       // the server drops .log but the tab may still show the transcript,
@@ -257,7 +340,37 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // that empty placeholder to the previous turn's long assistant used
       // to false-trigger `contentAhead`, wipe the new turn, and bind the
       // next RUN_START / Plan / Subagents onto historical messages.
-      if (a.messages.length > 0 && (s.currentReplyId != null || s.activeRunId != null)) {
+      //
+      // Windowed (incomplete) history: never shrink a non-empty local
+      // transcript down to the tail. Reconnect already has the bubbles;
+      // prepend chunks fill older turns by id. Sleep/wake still patches
+      // the last assistant when the tail is finished / content-ahead.
+      const meta = historyMeta(s, a)
+      const complete = isHistoryComplete(a)
+      if (a.messages.length === 0) {
+        return { ...s, ...meta }
+      }
+      if (!complete && s.messages.length > 0) {
+        const inFlight = s.currentReplyId != null || s.activeRunId != null
+        if (inFlight) {
+          const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
+            m.activity?.runId === s.activeRunId
+            && (m.activity.status === 'success' || m.activity.status === 'error')
+          ))
+          const contentAhead = assistantContentAhead(s.messages, a.messages)
+          if (finishedInHistory || contentAhead) {
+            return {
+              ...s,
+              ...meta,
+              messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
+              currentReplyId: finishedInHistory ? null : s.currentReplyId,
+              activeRunId: finishedInHistory ? null : s.activeRunId,
+            }
+          }
+        }
+        return { ...s, ...meta }
+      }
+      if (s.currentReplyId != null || s.activeRunId != null) {
         const localAhead = s.messages.length > a.messages.length
         const finishedInHistory = !localAhead && !!s.activeRunId && a.messages.some((m) => (
           m.activity?.runId === s.activeRunId
@@ -266,46 +379,27 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         const histAhead = a.messages.length > s.messages.length
         let contentAhead = false
         if (!localAhead && !finishedInHistory && !histAhead) {
-          let localLen = 0
-          let histLen = 0
-          for (let i = s.messages.length - 1; i >= 0; i--) {
-            if (s.messages[i]?.role === 'assistant') {
-              localLen = s.messages[i]!.content.length
-              break
-            }
-          }
-          for (let i = a.messages.length - 1; i >= 0; i--) {
-            if (a.messages[i]?.role === 'assistant') {
-              histLen = a.messages[i]!.content.length
-              break
-            }
-          }
-          contentAhead = histLen > localLen + 40
+          contentAhead = assistantContentAhead(s.messages, a.messages)
         }
         if (localAhead || (!finishedInHistory && !histAhead && !contentAhead)) {
-          return {
-            ...s,
-            agent: a.agent || s.agent,
-            preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
-            planMode: a.planMode ?? s.planMode,
-            thinkVariant: a.thinkVariant ?? s.thinkVariant,
-            sessionModel: a.sessionModel ?? s.sessionModel,
-            compactRate: a.compactRate ?? s.compactRate,
-          }
+          return { ...s, ...meta }
         }
       }
       return {
         ...s,
-        messages: a.messages.length > 0 ? a.messages : s.messages,
-        agent: a.agent || s.agent,
-        preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
-        currentReplyId: a.messages.length > 0 ? null : s.currentReplyId,
-        activeRunId: a.messages.length > 0 ? null : s.activeRunId,
-        planMode: a.planMode ?? s.planMode,
-        thinkVariant: a.thinkVariant ?? s.thinkVariant,
-        sessionModel: a.sessionModel ?? s.sessionModel,
-        compactRate: a.compactRate ?? s.compactRate,
+        ...meta,
+        messages: a.messages,
+        currentReplyId: null,
+        activeRunId: null,
       }
+    }
+    case 'HISTORY_PREPEND': {
+      if (a.messages.length === 0) return s
+      const seen = new Set(s.messages.map((m) => m.id))
+      const incoming = a.messages.filter((m) => m.id && !seen.has(m.id))
+      if (incoming.length === 0) return s
+      return { ...s, messages: [...incoming, ...s.messages] }
+    }
     case 'PLAN_MODE':
       return { ...s, planMode: a.enabled }
     case 'THINK_MODE':

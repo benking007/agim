@@ -19,6 +19,11 @@ import {
   logger as rootLogger,
   sanitizeUserText,
 } from '../core/logger.js'
+import type { ChatMessage } from '../core/types.js'
+import {
+  buildHistoryWireFrames,
+  slimActivitySteps,
+} from './history-payload.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -118,6 +123,11 @@ export async function latestWebAssistantMessageId(threadId: string): Promise<str
  * cleared the transcript. Previously we skipped empty histories, which left
  * the agent picker on the process default after refresh.
  *
+ * Large transcripts are windowed: the first frame is the newest slice
+ * (count + byte budget, activity previews capped). Older turns follow as
+ * `history-prepend` so first paint is not one giant JSON.parse + markdown
+ * pass. Disk `.log` is unchanged.
+ *
  * After history, replay any in-flight (or recently finished) ActiveRun so
  * tab-switch / refresh can restore the activity accordion and "接收中".
  */
@@ -131,36 +141,32 @@ export async function sendSessionHistory(
     if (history.session.agent) {
       client.agent = history.session.agent
     }
+    const meta = {
+      agent: history.session.agent,
+      preferredWorkerAgent: history.session.preferredWorkerAgent || '',
+      planMode: !!history.session.planMode,
+      thinkVariant: history.session.variant || 'auto',
+      sessionModel: history.session.model || '',
+      compactRate: history.session.compactRate || 'auto',
+    }
+    let decorate = (m: ChatMessage, absIndex: number): Record<string, unknown> => ({
+      ...m,
+      serverIndex: absIndex,
+    })
     try {
       const { listMessageFeedback, resolveFeedbackVote } = await import('../core/message-feedback.js')
       const feedbackEntries = await listMessageFeedback('web', 'web', client.id)
-      sendToClient(ws, {
-        type: 'history',
-        messages: history.messages.map((m, i) => ({
-          ...m,
-          feedback: resolveFeedbackVote(feedbackEntries, {
-            messageId: m.id,
-            messageIndex: i,
-          }),
-        })),
-        agent: history.session.agent,
-        preferredWorkerAgent: history.session.preferredWorkerAgent || '',
-        planMode: !!history.session.planMode,
-        thinkVariant: history.session.variant || 'auto',
-        sessionModel: history.session.model || '',
-        compactRate: history.session.compactRate || 'auto',
+      decorate = (m, absIndex) => ({
+        ...m,
+        serverIndex: absIndex,
+        feedback: resolveFeedbackVote(feedbackEntries, {
+          messageId: m.id,
+          messageIndex: absIndex,
+        }),
       })
-    } catch {
-      sendToClient(ws, {
-        type: 'history',
-        messages: history.messages,
-        agent: history.session.agent,
-        preferredWorkerAgent: history.session.preferredWorkerAgent || '',
-        planMode: !!history.session.planMode,
-        thinkVariant: history.session.variant || 'auto',
-        sessionModel: history.session.model || '',
-        compactRate: history.session.compactRate || 'auto',
-      })
+    } catch { /* feedback sidecar optional */ }
+    for (const frame of buildHistoryWireFrames(history.messages, meta, decorate)) {
+      sendToClient(ws, frame)
     }
   }
   const { getActiveRun } = await import('./active-runs.js')
@@ -176,7 +182,7 @@ export async function sendSessionHistory(
       agent: active.agent,
       startedAt: new Date(active.startedAt).toISOString(),
       status: active.status,
-      steps: active.steps,
+      steps: slimActivitySteps(active.steps),
       partialText: active.partialText,
       finishedAt: active.finishedAt != null
         ? new Date(active.finishedAt).toISOString()
@@ -718,6 +724,8 @@ export async function handleClientMessage(
         messages: [],
         agent: client.agent,
         preferredWorkerAgent: '',
+        olderCount: 0,
+        historyComplete: true,
       })
       break
     }

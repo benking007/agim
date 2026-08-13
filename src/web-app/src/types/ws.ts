@@ -48,6 +48,25 @@ export type ChatIncoming =
       sessionModel?: string
       /** Session compression rate (`auto` | `full` | `balanced` | `frequent`). */
       compactRate?: string
+      /**
+       * Messages still older than this frame (full `.log` count − tail).
+       * Omitted / 0 = this frame is the complete transcript (legacy servers).
+       */
+      olderCount?: number
+      /** False when older turns will follow as `history-prepend`. */
+      historyComplete?: boolean
+      /** First user line of the full log (not the tail) — session rail title. */
+      sessionTitle?: string
+    }
+  /**
+   * Older transcript chunk, prepended in front of the current messages.
+   * Sent nearest-to-tail first so there is never a gap.
+   */
+  | {
+      type: 'history-prepend'
+      messages: HistoryMessage[]
+      /** Messages still older than this chunk (0 = oldest has arrived). */
+      remaining?: number
     }
   | { type: 'plan-mode'; enabled: boolean }
   /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
@@ -249,6 +268,8 @@ export interface HistoryMessage {
     error?: string
     steps: ActivityStepEvent['step'][]
   }
+  /** Absolute index in durable `session.messages` (feedback fallback). */
+  serverIndex?: number
 }
 
 export interface AgentMetric {

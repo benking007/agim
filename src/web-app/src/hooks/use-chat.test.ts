@@ -463,6 +463,141 @@ describe('chatReducer', () => {
     expect(afterRun.messages[3]?.activity?.steps?.some((st) => st.id === 'sub-new')).toBe(true)
   })
 
+  it('incomplete HISTORY adopts a tail when local is empty', () => {
+    const tail = [
+      userMsg('u-40', 'latest'),
+      asstMsg('a-40', 'latest reply'),
+    ]
+    const s = reduce(initialChatState, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      messages: tail,
+      historyComplete: false,
+      olderCount: 80,
+    })
+    expect(s.messages).toEqual(tail)
+    expect(s.agent).toBe('agim')
+  })
+
+  it('incomplete HISTORY does not shrink an already-loaded transcript', () => {
+    const local = [
+      userMsg('u-1', 'old'),
+      asstMsg('a-1', 'old reply'),
+      userMsg('u-2', 'latest'),
+      asstMsg('a-2', 'latest reply'),
+    ]
+    const s = reduce(
+      { ...initialChatState, messages: local, agent: 'agim' },
+      {
+        kind: 'HISTORY',
+        agent: 'agim',
+        messages: [userMsg('u-2', 'latest'), asstMsg('a-2', 'latest reply')],
+        historyComplete: false,
+        olderCount: 2,
+      },
+    )
+    expect(s.messages).toHaveLength(4)
+    expect(s.messages[0]?.id).toBe('u-1')
+  })
+
+  it('incomplete HISTORY patches a finished run without dropping extra local bubbles', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-old', 'prior'), placeholder: asstMsg('p-old', 'prior done') },
+      { kind: 'RUN_FINISH', runId: 'run-old', status: 'success', finishedAt: 500, durationMs: 100 },
+      { kind: 'SEND_USER', message: userMsg('u-1', 'go'), placeholder: asstMsg('p-1', 'partial…') },
+      { kind: 'RUN_START', runId: 'run-wake', agent: 'agim', startedAt: 1_000 },
+    )
+    expect(mid.messages).toHaveLength(4)
+    const summary = 'done while asleep — full summary'
+    const after = reduce(mid, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 40,
+      messages: [
+        userMsg('hist-old', 'prior'),
+        asstMsg('hist-old-a', 'prior done'),
+        userMsg('hist-0', 'go'),
+        {
+          ...asstMsg('hist-1', summary),
+          activity: {
+            runId: 'run-wake',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.messages).toHaveLength(4)
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
+    expect(after.messages[3]?.content).toBe(summary)
+    expect(after.messages[3]?.activity?.status).toBe('success')
+  })
+
+  it('incomplete HISTORY does not paste a prior long reply onto a new empty placeholder', () => {
+    const long = '研究报告正文：'.repeat(30)
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1', 'first'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1_000 },
+      { kind: 'CHUNK', replyId: 'p-1', text: long },
+      {
+        kind: 'RUN_FINISH',
+        runId: 'run-1',
+        status: 'success',
+        finishedAt: 2_000,
+        durationMs: 1_000,
+      },
+      { kind: 'SEND_USER', message: userMsg('u-2', 'again'), placeholder: asstMsg('p-2') },
+    )
+    const after = reduce(mid, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 10,
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'first', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: long,
+          timestamp: 2,
+          activity: {
+            runId: 'run-1',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.messages).toHaveLength(4)
+    expect(after.currentReplyId).toBe('p-2')
+    expect(after.messages[3]?.id).toBe('p-2')
+    expect(after.messages[3]?.content).toBe('')
+  })
+
+  it('HISTORY_PREPEND inserts older turns in front and skips duplicates', () => {
+    const tail = [userMsg('u-2', 'later'), asstMsg('a-2', 'later reply')]
+    const base = reduce(initialChatState, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      messages: tail,
+      historyComplete: false,
+      olderCount: 2,
+    })
+    const after = reduce(base, {
+      kind: 'HISTORY_PREPEND',
+      messages: [userMsg('u-1', 'first'), asstMsg('a-1', 'first reply'), userMsg('u-2', 'later')],
+    })
+    expect(after.messages.map((m) => m.id)).toEqual(['u-1', 'a-1', 'u-2', 'a-2'])
+  })
+
   it('RUN_START binds the empty placeholder even if currentReplyId was cleared', () => {
     const mid = reduce(
       initialChatState,

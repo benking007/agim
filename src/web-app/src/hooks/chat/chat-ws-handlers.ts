@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import i18n from '@/i18n'
 import { adoptThreadId, sessionTitleFromText, upsertSession } from '@/lib/web-sessions'
 import type { ActivityStepEvent, ChatIncoming, HistoryMessage, ApprovalCardOutcome } from '@/types/ws'
-import type { ChatAction } from './chat-reducer'
+import { isHistoryComplete, type ChatAction } from './chat-reducer'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat-types'
 import type { ChatActivityStep, ChatMessage } from './chat-types'
 
@@ -74,13 +74,13 @@ export function normalizeHistoryMessage(h: HistoryMessage, i: number): ChatMessa
       }
     : undefined
   return {
-    id: h.id || `hist-${i}`,
+    id: h.id || `hist-${typeof h.serverIndex === 'number' ? h.serverIndex : i}`,
     role: h.role,
     content: h.content,
     agent: h.agent,
     timestamp: h.timestamp ? Date.parse(h.timestamp) : Date.now() - i * 1000,
     activity,
-    serverIndex: i,
+    serverIndex: typeof h.serverIndex === 'number' ? h.serverIndex : i,
     ...(h.feedback === 'up' || h.feedback === 'down' ? { feedback: h.feedback } : {}),
   }
 }
@@ -142,6 +142,7 @@ export function makeOnIncoming(
         return
       case 'history': {
         const messages = msg.messages.map(normalizeHistoryMessage)
+        const complete = isHistoryComplete(msg)
         dispatch({
           kind: 'HISTORY',
           agent: msg.agent,
@@ -150,17 +151,38 @@ export function makeOnIncoming(
           thinkVariant: msg.thinkVariant,
           sessionModel: msg.sessionModel,
           compactRate: msg.compactRate,
+          historyComplete: complete,
+          olderCount: msg.olderCount ?? 0,
           messages,
         })
         const threadId = opts?.threadIdRef?.current
         if (threadId) {
-          const firstUser = messages.find((m) => m.role === 'user' && m.content.trim())
+          const titleSource = (msg.sessionTitle || '').trim()
+            || (complete
+              ? (messages.find((m) => m.role === 'user' && m.content.trim())?.content ?? '')
+              : '')
           upsertSession({
             id: threadId,
             updatedAt: Date.now(),
             agent: msg.agent,
-            ...(firstUser ? { title: sessionTitleFromText(firstUser.content) } : {}),
+            ...(titleSource ? { title: sessionTitleFromText(titleSource) } : {}),
           })
+        }
+        return
+      }
+      case 'history-prepend': {
+        const messages = msg.messages.map(normalizeHistoryMessage)
+        dispatch({ kind: 'HISTORY_PREPEND', messages })
+        const threadId = opts?.threadIdRef?.current
+        if (threadId && (msg.remaining ?? 0) === 0) {
+          const firstUser = messages.find((m) => m.role === 'user' && m.content.trim())
+          if (firstUser) {
+            upsertSession({
+              id: threadId,
+              updatedAt: Date.now(),
+              title: sessionTitleFromText(firstUser.content),
+            })
+          }
         }
         return
       }

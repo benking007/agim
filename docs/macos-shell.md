@@ -56,6 +56,21 @@ https://host/m/login?c=<exchange-code>&next=/m/chat
 
 深链：`agim://pair?c=<code>&host=<urlencoded origin>`（旧 `?t=` 仍兼容）。
 
+## 后台唤醒 / 会话恢复
+
+Mac 合盖、iPhone 切走一段时间后再打开，WKWebView 里的 WebSocket **经常仍显示 OPEN**，但 TCP 已经断了。旧逻辑只在 `readyState === CLOSED` 时重连，结果是：
+
+- 状态仍像「已连接」，发送无响应
+- 不会再走 `get-history`，会话像掉了
+
+现行路径：
+
+1. 壳在 `scenePhase == .active` 时向页面派发 `agim-resume`（macOS 另监听 `NSWorkspace.didWakeNotification`）
+2. SPA（`src/web-app/src/lib/api/ws.ts`）在 `visibilitychange` / `pageshow` / `agim-resume` / `online` 上 **强制重新握手**（1.5s 去抖，避免冷启动连打）
+3. `useChat` 在每次 WS `open` 发 `get-history { threadId }`，把当前会话拉回来
+
+若仍空白，菜单 **重新加载（⌘R）** 会重走 `/m/login` → `/m/chat`。
+
 ## 菜单
 
 | 命令 | 作用 |

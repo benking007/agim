@@ -1,6 +1,6 @@
 /**
  * lib/api/ws.ts — WebSocket client with exponential backoff + mobile-
- * aware reconnect (visibility / online events).
+ * aware reconnect (visibility / online / native-shell resume).
  *
  * One module-level instance per path: openChatWs() returns the same
  * connection across remounts of the chat route, so a fast navigate
@@ -12,12 +12,13 @@
  * request, so the backend's loopback / token gate applies the same
  * way it does for REST.
  *
- * Mobile reconnect strategy:
- *   * `visibilitychange` → on `document.visible`, if the socket is
- *     not OPEN, close-and-reconnect. iOS suspends background WS
- *     after ~30s; we don't notice the close until the tab focuses.
- *   * `online` → if the device was offline, immediately attempt one
- *     fresh connect (skip backoff).
+ * Mobile / native-shell reconnect strategy:
+ *   * `visibilitychange` / `pageshow` / `agim-resume` → force a new
+ *     handshake even when readyState still looks OPEN. iOS/macOS
+ *     WKWebView suspends the TCP session in the background but often
+ *     leaves readyState=OPEN (zombie). Sends then silently drop and
+ *     get-history never re-runs — the chat looks "dead".
+ *   * `online` → same forced handshake (skip backoff).
  *   * `offline` → leave the socket alone; the OS will close it.
  *
  * Backoff: 1s → 2s → 5s → 10s → 30s (cap), reset on first
@@ -42,6 +43,21 @@ interface ChatWsHandle {
 
 const BACKOFF_STEPS_MS = [1000, 2000, 5000, 10_000, 30_000]
 
+/** visibility + pageshow + native `agim-resume` often fire together. */
+export const WS_RESUME_DEBOUNCE_MS = 1500
+
+/**
+ * Whether a resume event (app foreground / tab visible) should tear
+ * down the current socket and handshake again.
+ */
+export function shouldForceResumeReconnect(
+  now: number,
+  lastForcedAt: number,
+  debounceMs = WS_RESUME_DEBOUNCE_MS,
+): boolean {
+  return now - lastForcedAt >= debounceMs
+}
+
 function buildWsUrl(path: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.host}${path}`
@@ -57,6 +73,8 @@ export function openChatWs(): ChatWsHandle {
   let attempt = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let closed = false
+  let connGen = 0
+  let lastForcedAt = 0
   const listeners = new Set<Listener>()
 
   function notifyStatus(next: WsStatus): void {
@@ -83,41 +101,62 @@ export function openChatWs(): ChatWsHandle {
     reconnectTimer = setTimeout(() => connect(), delay)
   }
 
+  function abandonSocket(socket: WebSocket | null): void {
+    if (!socket) return
+    try { socket.close() } catch { /* ignore */ }
+  }
+
   function connect(): void {
     clearReconnect()
+    const myGen = ++connGen
+    lastForcedAt = Date.now()
     notifyStatus('connecting')
+    const prev = ws
+    ws = null
+    // Close the previous socket AFTER bumping gen so its `close`
+    // handler is stale and cannot schedule a competing reconnect.
+    abandonSocket(prev)
     try {
-      ws = new WebSocket(buildWsUrl('/ws'))
+      const socket = new WebSocket(buildWsUrl('/ws'))
+      ws = socket
+      socket.addEventListener('open', () => {
+        if (myGen !== connGen) return
+        attempt = 0
+        notifyStatus('open')
+      })
+      socket.addEventListener('message', (e: MessageEvent<string>) => {
+        if (myGen !== connGen) return
+        let parsed: ChatIncoming
+        try {
+          parsed = JSON.parse(e.data) as ChatIncoming
+        } catch {
+          console.warn('[ws] bad json', e.data?.slice?.(0, 200))
+          return
+        }
+        notifyMessage(parsed)
+      })
+      socket.addEventListener('close', () => {
+        if (myGen !== connGen) return
+        if (ws === socket) ws = null
+        notifyStatus('closed')
+        if (!closed) scheduleReconnect()
+      })
+      socket.addEventListener('error', () => {
+        if (myGen !== connGen) return
+        notifyStatus('error')
+      })
     } catch (err) {
-      // Construction itself failed (CSP, invalid URL, etc.). Retry.
       notifyStatus('error')
       console.warn('[ws] construct failed', err)
       scheduleReconnect()
-      return
     }
-    ws.addEventListener('open', () => {
-      attempt = 0
-      notifyStatus('open')
-    })
-    ws.addEventListener('message', (e: MessageEvent<string>) => {
-      let parsed: ChatIncoming
-      try {
-        parsed = JSON.parse(e.data) as ChatIncoming
-      } catch {
-        console.warn('[ws] bad json', e.data?.slice?.(0, 200))
-        return
-      }
-      notifyMessage(parsed)
-    })
-    ws.addEventListener('close', () => {
-      notifyStatus('closed')
-      if (!closed) scheduleReconnect()
-    })
-    ws.addEventListener('error', () => {
-      // The browser will fire `close` right after; don't double-
-      // schedule a reconnect here.
-      notifyStatus('error')
-    })
+  }
+
+  function resumeReconnect(): void {
+    if (closed) return
+    if (!shouldForceResumeReconnect(Date.now(), lastForcedAt)) return
+    attempt = 0
+    connect()
   }
 
   function send(msg: ChatOutgoing): boolean {
@@ -142,28 +181,35 @@ export function openChatWs(): ChatWsHandle {
 
   function close(): void {
     closed = true
+    connGen += 1
     clearReconnect()
-    try { ws?.close() } catch { /* ignore */ }
+    abandonSocket(ws)
     ws = null
     singleton = null  // allow a future openChatWs() to start fresh
   }
 
-  // Mobile: re-handshake on visibility / online events. iOS suspends
-  // background tabs' WS after ~30s and the SPA only finds out when
-  // the user comes back. Forcing a reconnect on visible+closed is
-  // cheap and keeps the chat stream live.
   function onVisibility(): void {
     if (document.visibilityState !== 'visible') return
-    if (!ws || ws.readyState === WebSocket.CLOSED) {
-      attempt = 0
-      connect()
-    }
+    resumeReconnect()
+  }
+  function onPageShow(): void {
+    resumeReconnect()
+  }
+  function onAgimResume(): void {
+    resumeReconnect()
   }
   function onOnline(): void {
     attempt = 0
-    if (!ws || ws.readyState !== WebSocket.OPEN) connect()
+    if (closed) return
+    // Network back — handshake even if the old socket still looks OPEN.
+    if (!shouldForceResumeReconnect(Date.now(), lastForcedAt) && ws?.readyState === WebSocket.OPEN) {
+      return
+    }
+    connect()
   }
   document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('pageshow', onPageShow)
+  window.addEventListener('agim-resume', onAgimResume)
   window.addEventListener('online', onOnline)
 
   connect()
@@ -174,6 +220,8 @@ export function openChatWs(): ChatWsHandle {
     status: () => status,
     close: () => {
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pageshow', onPageShow)
+      window.removeEventListener('agim-resume', onAgimResume)
       window.removeEventListener('online', onOnline)
       close()
     },

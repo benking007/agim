@@ -6,6 +6,7 @@
  */
 
 import type { WsStatus } from '@/lib/api/ws'
+import type { WebSessionEntry } from '@/lib/web-sessions'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChoiceCardPrompt } from '@/types/ws'
 
 /** How long a resolved approval/ask card lingers in the dock before auto-dismiss. */
@@ -177,9 +178,14 @@ export interface UseChat {
    *  optimistically resolves + dismisses the dock row, since the bus
    *  doesn't push a card edit back for asks. */
   choiceSubmit: (messageId: string, data: string) => boolean
-  /** Drop all messages + tell the server to fork a new session
-   *  (resetConversation: new id, drops CLI session pins + auto-allow
-   *  rules + plan-mode). The server replies with empty history. */
+  /** Mint a new `web-*` thread (previous sessions stay in the rail).
+   *  Loads empty history via `get-history` — does not wipe the old log. */
   newConversation: () => void
+  /** Reload a previously opened thread via `get-history`. */
+  switchSession: (threadId: string) => void
+  /** Newest-first index of this browser's web threads. */
+  sessions: WebSessionEntry[]
+  /** Active `web-*` id (same as `state.clientId` once bootstrapped). */
+  activeSessionId: string
   clearError: () => void
 }

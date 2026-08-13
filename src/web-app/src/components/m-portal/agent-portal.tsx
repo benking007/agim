@@ -102,7 +102,8 @@ export function AgentPortal(): JSX.Element {
   }
 
   const {
-    state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+    state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
+    newConversation, switchSession, sessions, activeSessionId, clearError,
   } = useChat()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
@@ -582,6 +583,13 @@ export function AgentPortal(): JSX.Element {
     onExplore: () => { setActiveTab('explore'); setSidebarOpen(false) },
     onNew: () => { newConversation(); setSidebarOpen(false); setActiveTab('chat') },
     onToggleLang: toggleLang,
+    sessions,
+    activeSessionId,
+    onSwitchSession: (threadId: string) => {
+      switchSession(threadId)
+      setActiveTab('chat')
+      setSidebarOpen(false)
+    },
   } as const
 
   return (

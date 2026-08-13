@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Portal multi-session**: 「新对话」铸造新的 `web-*` thread 并保留在左侧会话列表；点选通过已有 `get-history` rekey 重载历史。不再对当前 thread 发 `new-conversation`（原地 wipe）。索引存在 `localStorage['agim-web-sessions']`，`agim-web-thread-id` 仍表示当前 active id。
+
 - **Workspace file editor Download**: Agent Files (`/workspace`) text
   editor toolbar gains **Download** next to Save — exports the current
   draft (incl. unsaved edits) via Save As / browser download. Useful for

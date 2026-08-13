@@ -60,6 +60,11 @@ function renderChat(
     approvalClick: vi.fn(() => true),
     choiceSubmit: vi.fn(() => true),
     newConversation: vi.fn(),
+    switchSession: vi.fn(),
+    sessions: [],
+    activeSessionId: 'web-test',
+    stop: vi.fn(),
+    stopSubagent: vi.fn(() => true),
     clearError: vi.fn(),
   }
   mocks.useChat.mockReturnValue(hook)

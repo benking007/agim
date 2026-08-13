@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import type { WebSessionEntry } from '@/lib/web-sessions'
 import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
 
@@ -30,15 +31,19 @@ export function PortalSidePanel(props: {
   onExplore: () => void
   onNew: () => void
   onToggleLang: () => void
+  sessions: WebSessionEntry[]
+  activeSessionId: string
+  onSwitchSession: (threadId: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const {
     dark, agentId, visual, AgentIcon, activeTab, status, lang, showClose,
     onClose, onChat, onExplore, onNew, onToggleLang,
+    sessions, activeSessionId, onSwitchSession,
   } = props
   return (
-    <>
-      <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-teal-500">
             <Sparkles className="h-5 w-5" />
@@ -99,7 +104,49 @@ export function PortalSidePanel(props: {
         </nav>
       </div>
 
-      <div className="space-y-3">
+      <div className="mt-6 flex min-h-0 flex-1 flex-col">
+        <p className="mb-2 shrink-0 text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+          {t('chat.portal.conversations')}
+        </p>
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label={t('chat.portal.conversations')}>
+          {sessions.length === 0 ? (
+            <p className="px-2.5 py-2 text-[11px] text-zinc-400">
+              {t('chat.portal.conversationsEmpty')}
+            </p>
+          ) : sessions.map((session) => {
+            const active = session.id === activeSessionId
+            const title = session.title?.trim() || t('chat.portal.untitledConversation')
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => onSwitchSession(session.id)}
+                title={title}
+                aria-current={active ? 'true' : undefined}
+                className={cn(
+                  'flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left transition-all',
+                  active
+                    ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
+                    : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
+                )}
+              >
+                <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold">{title}</span>
+                  <span className={cn(
+                    'mt-0.5 block truncate text-[10px] font-medium',
+                    active ? 'text-teal-500/80' : 'text-zinc-400',
+                  )}>
+                    {formatSessionAge(session.updatedAt, lang, t('chat.portal.justNow'))}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </nav>
+      </div>
+
+      <div className="mt-4 shrink-0 space-y-3">
         <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
           <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.language')}</p>
           <button
@@ -130,8 +177,24 @@ export function PortalSidePanel(props: {
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
+}
+
+function formatSessionAge(ts: number, lang: Lang, justNow: string, now = Date.now()): string {
+  const diffMs = now - ts
+  if (diffMs < 45_000) return justNow
+  const locale = lang === 'zh' ? 'zh' : 'en'
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+  const diffSec = Math.round(-diffMs / 1000)
+  const abs = Math.abs(diffSec)
+  if (abs < 3600) return rtf.format(Math.round(diffSec / 60), 'minute')
+  if (abs < 86400) return rtf.format(Math.round(diffSec / 3600), 'hour')
+  if (abs < 86400 * 7) return rtf.format(Math.round(diffSec / 86400), 'day')
+  return new Date(ts).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en', {
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 function SideNavButton(props: {

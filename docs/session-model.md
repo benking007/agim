@@ -276,16 +276,16 @@ web:web:<threadId>
 
 | 机制 | 说明 |
 |---|---|
-| 浏览器 thread id | SPA 把 id 存在 `localStorage['agim-web-thread-id']`（`web-…` 形） |
-| 恢复协议 | 每次 WS `open` 发 `get-history { threadId }`；服务端 rekey 到该 id 并回放 `.log` |
-| 归属冲突 | localStorage 的 thread 已被**其他 token** 占用 → 不下发 `error`；发 `thread-reassigned`（本连接新 id）+ 空/新会话 `history`，SPA 改写 `agim-web-thread-id` |
+| 浏览器 thread id | SPA 把 **当前** id 存在 `localStorage['agim-web-thread-id']`（`web-…` 形）；多会话列表在 `localStorage['agim-web-sessions']` |
+| 恢复协议 | 每次 WS `open` 发 `get-history { threadId }`（**当前** active id）；服务端 rekey 到该 id 并回放 `.log` |
+| 归属冲突 | localStorage 的 thread 已被**其他 token** 占用 → 不下发 `error`；发 `thread-reassigned`（本连接新 id）+ 空/新会话 `history`，SPA 改写 `agim-web-thread-id` 并把该 id 写进会话索引（替换被拒的旧 id） |
 | 空历史 | session 仍在但消息已过 Web 消息 TTL 时仍发 `history`（可为空），用于恢复 sticky agent |
-| 「新对话」 | WS `new-conversation` → `resetConversation`；**同一** localStorage thread id，气泡清空 |
+| 「新对话」 | Portal / 桌面 **新对话** 铸造新的 `web-*` id，写入会话索引，发 `get-history` 加载空历史。**不**发 `new-conversation`（那会原地 wipe 当前 `.log`）。左侧「会话」列表点选即 `get-history { threadId }` 重载 |
 | Agent 切换 | UI 气泡可保留；Agim Agent JSONL 按 §九 quarantine |
 | 消息 TTL | Web 默认与 `META_TTL` 对齐（7 d，`AGIM_WEB_SESSION_MESSAGES_TTL_MS`），**服务重启后气泡可恢复**；IM 仍默认 30 min |
 
 排障：
 
-1. DevTools → Application → `agim-web-thread-id`
+1. DevTools → Application → `agim-web-thread-id`（当前）与 `agim-web-sessions`（列表）
 2. `ls ~/.agim/sessions/` 下对应 safe-key 的 `.json` / `.log`
 3. Web 气泡被清：检查是否超过 `AGIM_WEB_SESSION_MESSAGES_TTL_MS`（默认 = META 7 d）；IM 渠道仍看 `AGIM_SESSION_MESSAGES_TTL_MS`（默认 30 min）

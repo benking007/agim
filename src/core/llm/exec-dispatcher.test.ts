@@ -297,6 +297,17 @@ describe('exec-dispatcher', () => {
         expect(r.text).not.toMatch(/dangerous-pattern/i)
       }
     })
+
+    it('blocks self-protect patterns before spawn (native name)', async () => {
+      const d = buildExecDispatcher({ cwd })
+      const r = await d(
+        { id: 't', name: 'agim_exec', arguments: { command: 'systemctl restart agim' } },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toContain('重启服务')
+      expect(r.text).not.toMatch(/dangerous-pattern/i)
+    })
   })
 
   describe('internal URL in command (v1.2.66)', () => {

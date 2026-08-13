@@ -96,6 +96,7 @@ import {
 import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
 import { AGIM_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
 import { expandToolNameList } from '../../../core/llm/tool-names.js'
+import { bindNativeSession } from '../../../core/agim-session-bind.js'
 import { agimToolsToPi } from './tool-bridge.js'
 import { failureSignature, stableStringify } from './loop-fingerprint.js'
 import {
@@ -673,6 +674,8 @@ export class NativeAgentAdapter implements AgentAdapter {
   // session per process lifetime.
   private readonly sessionMeta = new Map<string, Awaited<ReturnType<JsonlSessionRepo['list']>>[number]>()
   private readonly sessionModelOverrides = new Map<string, string>()
+  /** Once-per-process join rows for threadId ↔ pi JSONL session.id. */
+  private readonly boundNativeSessions = new Set<string>()
 
   // Per-sessionId serial lock. IM threads reuse one session id across
   // messages (session.ts getOrCreateSession), and that id maps to a single
@@ -698,6 +701,7 @@ export class NativeAgentAdapter implements AgentAdapter {
   invalidateSessionMeta(sessionId: string): void {
     this.sessionMeta.delete(sessionId)
     this.sessionModelOverrides.delete(sessionId)
+    this.boundNativeSessions.delete(sessionId)
   }
 
   async isAvailable(): Promise<boolean> {
@@ -844,6 +848,17 @@ export class NativeAgentAdapter implements AgentAdapter {
       ])
     }
     env.protectSessionPath(currentMeta.path)
+    // Join table only — UI ~/.agim/sessions/*.log and pi JSONL stay separate.
+    if (!this.boundNativeSessions.has(sessionId)) {
+      this.boundNativeSessions.add(sessionId)
+      bindNativeSession({
+        nativeSessionId: sessionId,
+        threadId: opts?.threadId,
+        platform: opts?.platform,
+        channelId: opts?.channelId,
+        parentJobId: opts?.parentJobId,
+      })
+    }
     if (opts?.signal?.aborted) {
       opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
@@ -858,6 +873,12 @@ export class NativeAgentAdapter implements AgentAdapter {
       ? agimToolsToPi(toolSurface.tools, toolSurface.dispatch, {
           traceId: opts?.traceId,
           parallelSafe: toolSurface.parallelSafe ?? this.deps.parallelSafe,
+          audit: {
+            traceId: opts?.traceId,
+            userId: opts?.userId,
+            platform: opts?.platform,
+            agent: 'agim',
+          },
           ...(goalScope ? {
             // Needed so missing-bwrap + active goal can escalate to an
             // explicit approval card instead of hard-failing.
@@ -1174,6 +1195,23 @@ export class NativeAgentAdapter implements AgentAdapter {
             preview: 'plan-mode: tool is not in the read/approval allowlist',
           })
           return { block: true, reason: 'plan-mode: tool is not in the read/approval allowlist' }
+        }
+        if (opts?.allowedTools && opts.allowedTools.length > 0) {
+          const allow = expandToolNameList(opts.allowedTools)
+          if (!allow.has(ev.toolName)) {
+            emitToolActivity({
+              id: ev.toolCallId,
+              label: ev.toolName,
+              status: 'denied',
+              startedAt: Date.now(),
+              finishedAt: Date.now(),
+              preview: `allowedTools: ${ev.toolName} is not in the spawn allowlist`,
+            })
+            return {
+              block: true,
+              reason: `allowedTools: ${ev.toolName} is not in the spawn allowlist`,
+            }
+          }
         }
         // Todo-first gate: block mutations until a non-empty checklist exists
         // (before approval cards — "write a plan" is cheaper than pinging IM).
@@ -1775,6 +1813,18 @@ export class NativeAgentAdapter implements AgentAdapter {
       void harness.abort().catch((err) => {
         console.error('[agim-agent] harness abort failed:', err instanceof Error ? err.message : err)
       })
+      const platform = opts?.platform
+      const threadId = opts?.threadId
+      if (platform && threadId) {
+        void import('../../../core/job-board.js').then(({ abortChildJobsForParentTurn }) => {
+          abortChildJobsForParentTurn(
+            platform,
+            opts?.channelId ?? '',
+            threadId,
+            'cancelled: parent turn aborted',
+          )
+        }).catch(() => { /* job board optional */ })
+      }
     }
     turnSignal.addEventListener('abort', onRunAbort, { once: true })
 

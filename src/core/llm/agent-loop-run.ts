@@ -7,16 +7,15 @@ import { logger as rootLogger } from '../logger.js'
 import type { ChatResult, LlmMessage } from './provider-base.js'
 import { runGoalCritic, resolveCriticMode, shouldHardStopOnOffTrack } from './goal-critic.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from './hallucination-detector.js'
-import { validateAgainstSchema, formatValidationErrors } from './schema-validate.js'
 import type { AgentLoopInput, AgentLoopResult, ToolCallReport } from './agent-loop-types.js'
 import { alwaysAllowGate } from './agent-loop-types.js'
+import { prevalidateToolArgs } from './tool-call-spine.js'
 import {
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_TIMEOUT_MS,
   CRITIC_MIN_TOOL_CALLS,
   CRITIC_EVERY_N,
   CRITIC_MAX_CALLS,
-  resolveSchemaValidate,
   resolveStreamEnabled,
   resolveLengthRecoveryMax,
   resolveBlankRetryMax,
@@ -71,7 +70,6 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   // tool-args validator (just before dispatch) can look up the declared
   // shape in O(1). When the validator is disabled or a tool isn't in
   // the map (caller didn't declare it; defensive), validation is a no-op.
-  const schemaValidateOn = resolveSchemaValidate()
   const schemaByName = new Map<string, unknown>(
     (tools ?? []).map((t) => [t.name, t.parameters]),
   )
@@ -493,29 +491,24 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // the dispatcher had to defensively parse / coerce, and any
       // failure surfaced as an opaque "tool threw: …" the model rarely
       // self-corrected. Disabled when AGIM_TOOL_SCHEMA_VALIDATE=off.
-      const toolSchema = schemaByName.get(call.name)
-      if (schemaValidateOn && toolSchema) {
-        const verrs = validateAgainstSchema(call.arguments, toolSchema)
-        if (verrs.length > 0) {
-          const msg = formatValidationErrors(call.name, verrs)
-          historySlots[idx] = { role: 'tool', toolCallId: call.id, content: msg }
-          reportSlots[idx] = {
-            ...reportBase,
-            decision: 'allow',
-            isError: true,
-            durationMs: 0,
-            source: 'schema-validation',
-            preview: msg.slice(0, 200),
-            errorType: extractErrorType(true, msg),
-          }
-          log.debug({
-            event: 'agent-loop.schema_validation_failed',
-            tool: call.name,
-            errors: verrs.length,
-            firstError: verrs[0],
-          })
-          continue
+      const schemaFail = prevalidateToolArgs(call.name, call.arguments, schemaByName.get(call.name))
+      if (!schemaFail.ok) {
+        const msg = schemaFail.message
+        historySlots[idx] = { role: 'tool', toolCallId: call.id, content: msg }
+        reportSlots[idx] = {
+          ...reportBase,
+          decision: 'allow',
+          isError: true,
+          durationMs: 0,
+          source: 'schema-validation',
+          preview: msg.slice(0, 200),
+          errorType: extractErrorType(true, msg),
         }
+        log.debug({
+          event: 'agent-loop.schema_validation_failed',
+          tool: call.name,
+        })
+        continue
       }
 
       // Capture dispatch into an async closure so it can be awaited
@@ -533,6 +526,9 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       const toolDef = tools?.find((t) => t.name === call.name)
       const perToolTimeoutMs = resolveToolTimeoutMs(toolDef?.timeoutMs)
       const toolResultMaxChars = resolveToolResultMaxChars()
+      const isParallel = input.parallelSafeClassifier
+        ? classifyParallelSafe(input.parallelSafeClassifier, call)
+        : !!parallelSafe?.has(call.name)
       const runDispatch = async (): Promise<void> => {
         try { input.hooks?.onToolStart?.(call) } catch { /* observer must not break loop */ }
         const dispatchT0 = Date.now()
@@ -543,6 +539,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
             signal.signal,
             perToolTimeoutMs,
             call.name,
+            isParallel,
           )
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -582,9 +579,6 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         }
       }
 
-      const isParallel = input.parallelSafeClassifier
-        ? classifyParallelSafe(input.parallelSafeClassifier, call)
-        : !!parallelSafe?.has(call.name)
       if (isParallel) {
         pendingTasks.push(runDispatch())
       } else {

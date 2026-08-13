@@ -975,6 +975,17 @@ export function cancelActiveChildJobsByThread(
   return n
 }
 
+/** Cancel in-flight Subagent jobs for a parent turn abort (Stop, timeout). */
+export function abortChildJobsForParentTurn(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  result = 'cancelled: parent turn aborted',
+): number {
+  if (!platform || !threadId) return 0
+  return cancelActiveChildJobsByThread(jobThreadKey(platform, channelId, threadId), result)
+}
+
 export function cancelJob(id: number, opts: OwnerOpts & { result?: string | null } = {}): boolean {
   const job = getJob(id, opts)
   if (!job || (job.status !== 'pending' && job.status !== 'running')) return false

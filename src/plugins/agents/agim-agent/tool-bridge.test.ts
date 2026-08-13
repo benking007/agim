@@ -97,6 +97,36 @@ describe('Agim Agent tool-bridge (agim ToolDef + dispatcher → pi AgentTool)', 
     }
   })
 
+  it('refuses missing required args before dispatch (schema pre-check)', async () => {
+    let dispatched = 0
+    const dispatch: ToolDispatcher = async () => {
+      dispatched += 1
+      return { text: 'should not run', isError: false }
+    }
+    const [tool] = agimToolsToPi([QUOTE_TOOL], dispatch)
+    await expect(tool!.execute('c1', {}, new AbortController().signal)).rejects.toThrow(/validation failed/)
+    expect(dispatched).toBe(0)
+  })
+
+  it('schema pre-check can be disabled', async () => {
+    const prev = process.env.AGIM_TOOL_SCHEMA_VALIDATE
+    process.env.AGIM_TOOL_SCHEMA_VALIDATE = 'off'
+    try {
+      let dispatched = 0
+      const dispatch: ToolDispatcher = async () => {
+        dispatched += 1
+        return { text: 'ran without symbol', isError: false }
+      }
+      const [tool] = agimToolsToPi([QUOTE_TOOL], dispatch)
+      const out = await tool!.execute('c1', {}, new AbortController().signal)
+      expect(dispatched).toBe(1)
+      expect((out.content[0] as { text: string }).text).toBe('ran without symbol')
+    } finally {
+      if (prev === undefined) delete process.env.AGIM_TOOL_SCHEMA_VALIDATE
+      else process.env.AGIM_TOOL_SCHEMA_VALIDATE = prev
+    }
+  })
+
   it('times out a hung tool (AGIM_NATIVE_TOOL_TIMEOUT_MS) and surfaces an error', async () => {
     const prev = process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS
     process.env.AGIM_NATIVE_TOOL_TIMEOUT_MS = '20'

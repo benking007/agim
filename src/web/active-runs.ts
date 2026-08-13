@@ -72,10 +72,18 @@ export function startActiveRun(input: {
   return snap
 }
 
-export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): void {
+export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): boolean {
   const snap = runs.get(threadId)
-  if (!snap || snap.status !== 'running') return
+  if (!snap) return false
   const idx = snap.steps.findIndex((s) => s.id === step.id)
+  const terminalAgent = step.kind === 'agent'
+    && (step.status === 'success' || step.status === 'error' || step.status === 'denied')
+  if (snap.status !== 'running') {
+    // Late Subagent terminal: update an existing card so it does not stay
+    // Waiting after the parent turn already finished. Do not insert new
+    // rows (that would reopen a finished accordion).
+    if (!terminalAgent || idx < 0) return false
+  }
   if (idx >= 0) {
     const prev = snap.steps[idx]
     snap.steps[idx] = {
@@ -88,6 +96,7 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): void
   } else {
     snap.steps.push(step)
   }
+  return true
 }
 
 export function appendActiveRunChunk(threadId: string, chunk: string): void {

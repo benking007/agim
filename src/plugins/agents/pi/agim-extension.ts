@@ -398,8 +398,27 @@ export default function agimPiExtension(pi: PiExtensionApi): void {
     label: 'Agim call agent',
     description:
       'Spawn ONE Subagent and wait for its result. For 2+ independent lanes use '
-      + 'mcp__agim__call_agents. Loop Engineering (/loop, loop_verdict) stays Agim-only.',
+      + 'mcp__agim__call_agents. Loop Engineering (/loop, loop_verdict) stays Agim-only. '
+      + 'Unknown keys are refused. Optional: outputFormat, maxDepth, allowedTools (Agim only).',
     type: 'a2a',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['agent', 'prompt'],
+      properties: {
+        agent: { type: 'string' },
+        prompt: { type: 'string' },
+        backend: { type: 'string' },
+        role: { type: 'string' },
+        isolate: { type: 'boolean' },
+        outputFormat: { type: 'string' },
+        maxDepth: { type: 'integer', minimum: 1 },
+        allowedTools: { type: 'array', minItems: 1, items: { type: 'string' } },
+        timeoutMs: { type: 'number' },
+        inputs: { type: 'array' },
+        expectOutputs: { type: 'array', items: { type: 'string' } },
+      },
+    },
   })
   pi.registerTool({
     name: 'mcp__agim__call_agents',
@@ -420,10 +439,18 @@ export default function agimPiExtension(pi: PiExtensionApi): void {
             properties: {
               agent: { type: 'string' },
               prompt: { type: 'string' },
+              backend: { type: 'string' },
+              role: { type: 'string' },
+              isolate: { type: 'boolean' },
+              outputFormat: { type: 'string' },
+              maxDepth: { type: 'integer', minimum: 1 },
+              allowedTools: { type: 'array', minItems: 1, items: { type: 'string' } },
               timeoutMs: { type: 'number' },
+              inputs: { type: 'array' },
+              expectOutputs: { type: 'array', items: { type: 'string' } },
             },
             required: ['agent', 'prompt'],
-            additionalProperties: true,
+            additionalProperties: false,
           },
         },
       },

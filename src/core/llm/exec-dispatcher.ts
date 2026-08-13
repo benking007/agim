@@ -49,7 +49,9 @@ import { logger as rootLogger } from '../logger.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
 import { canonicalizeToolName } from './tool-names.js'
+import { isExecSandboxConfigured } from './execution-world.js'
 import { checkUrlSafety } from './web-dispatcher.js'
+import { checkToolUse } from '../self-protect.js'
 
 const log = rootLogger.child({ component: 'exec-dispatcher' })
 
@@ -125,8 +127,23 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   // Expand portable SOP prefixes (`"${AGIM_HOME:-$HOME/.agim}/scripts/bgjob"`)
   // to the resolved absolute wrapper BEFORE danger/meta/carve-out checks —
   // otherwise `$` trips SHELL_CHAIN_META and bwrap tears down detached workers.
-  const command = rewriteBgjobCommand(typeof args.command === 'string' ? args.command : '')
+  const command = rewriteBgjobCommand(
+    typeof args.command === 'string'
+      ? args.command
+      : (typeof args.cmd === 'string' ? args.cmd : ''),
+  )
   if (!command.trim()) return { text: 'command required', isError: true, source: 'exec' }
+
+  // Self-protect (Layer 2): same patterns as Bash on the approval bus, so
+  // native / Subagent HITL-skip cannot `agim_exec` the Agim service down.
+  const selfGuard = checkToolUse('agim_exec', { command })
+  if (selfGuard) {
+    log.warn({
+      event: 'exec.refused.self_protect',
+      commandPreview: command.slice(0, 120),
+    })
+    return { text: selfGuard.message, isError: true, source: 'exec' }
+  }
 
   // v1.2.66 — pre-flight: dangerous shell pattern denylist. These are
   // hard-blocked regardless of approval card / autoAllow — destructive
@@ -182,7 +199,7 @@ async function runExec(args: Record<string, unknown>, ctx: ExecContext, signal: 
   // unless the operator explicitly opts out with AGIM_EXEC_SANDBOX=off.
   // Previously this was opt-in (=== 'bwrap'), which left every default
   // deployment running native_exec unconfined despite bwrap being available.
-  const sandboxConfigured = bwrapAvail && sandboxMode !== 'off'
+  const sandboxConfigured = isExecSandboxConfigured()
   if (bwrapAvail && sandboxMode === 'off') warnSandboxDisabledOnce()
   const sandboxNetOff = (process.env.AGIM_EXEC_SANDBOX_NET || '').toLowerCase() === 'off'
 

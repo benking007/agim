@@ -6,6 +6,10 @@ import { logger as rootLogger } from '../logger.js'
 import { logInvocation } from '../audit-log.js'
 import type { LlmMessage, ToolCallRequest } from './provider-base.js'
 import type { DispatcherResult } from './tool-dispatcher.js'
+import {
+  dispatchToolWithTimeout,
+  EN_TOOL_TIMEOUT_MESSAGES,
+} from './tool-call-spine.js'
 import type {
   AgentLoopInput,
   AgentLoopPolicy,
@@ -146,42 +150,35 @@ export async function decideToolAccess(
  * sees a tool-level failure (not a thrown rejection).
  *
  * `timeoutMs === 0` disables the per-tool cap for explicitly slow calls.
+ * `detachOnAbort` (default true): return immediately on timeout/abort
+ * (retired loop / read-only). False waits for the dispatcher to settle
+ * so mutations cannot land after the caller has moved on.
  */
 export async function dispatchWithTimeout(
   invoke: (signal: AbortSignal) => Promise<DispatcherResult>,
   outerSignal: AbortSignal,
   timeoutMs: number,
   toolName: string,
+  detachOnAbort = true,
 ): Promise<DispatcherResult> {
-  if (timeoutMs === 0) return invoke(outerSignal)
-  const ctrl = new AbortController()
-  const onOuterAbort = (): void => ctrl.abort(outerSignal.reason ?? new Error('outer abort'))
-  if (outerSignal.aborted) onOuterAbort()
-  else outerSignal.addEventListener('abort', onOuterAbort, { once: true })
-  let timer: NodeJS.Timeout | undefined
-  let timedOut = false
-  const timeout = new Promise<DispatcherResult>((resolve) => {
-    timer = setTimeout(() => {
-      timedOut = true
-      try { ctrl.abort(new Error(`tool ${toolName} timed out after ${timeoutMs}ms`)) } catch { /* ignore */ }
-      resolve({
-        text: `tool ${toolName} timed out after ${timeoutMs}ms (set AGIM_NATIVE_TOOL_TIMEOUT_MS or the tool's timeoutMs to raise the cap)`,
-        isError: true,
-        source: 'timeout',
-      })
-    }, timeoutMs)
-    if (typeof timer === 'object' && timer && 'unref' in timer) {
-      (timer as { unref: () => void }).unref()
-    }
-  })
   try {
-    return await Promise.race([invoke(ctrl.signal), timeout])
-  } finally {
-    if (timer) clearTimeout(timer)
-    outerSignal.removeEventListener('abort', onOuterAbort)
-    if (timedOut) {
-      log.warn({ event: 'agent-loop.tool_timeout', tool: toolName, timeoutMs })
+    return await dispatchToolWithTimeout(invoke, outerSignal, timeoutMs, toolName, {
+      detachOnAbort,
+      messages: EN_TOOL_TIMEOUT_MESSAGES,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (
+      err instanceof Error
+      && (err.name === 'TimeoutError' || err.name === 'AbortError' || /timed out|cancelled/i.test(msg))
+    ) {
+      return {
+        text: msg,
+        isError: true,
+        source: err.name === 'AbortError' ? 'error' : 'timeout',
+      }
     }
+    throw err
   }
 }
 

@@ -71,6 +71,33 @@ describe('self-protect', () => {
     })
   })
 
+  describe('native exec / write names', () => {
+    const sh = ['systemctl', 'restart', 'agim'].join(' ')
+
+    it('blocks agim_exec with the same command as Bash', () => {
+      expect(checkToolUse('agim_exec', { command: sh })).not.toBeNull()
+      expect(checkToolUse('native_exec', { command: sh })).not.toBeNull()
+    })
+    it('blocks agim_exec cmd alias', () => {
+      expect(checkToolUse('agim_exec', { cmd: sh })).not.toBeNull()
+    })
+    it('does NOT block agim_exec on unrelated commands', () => {
+      expect(checkToolUse('agim_exec', { command: 'ls -la' })).toBeNull()
+    })
+    it('blocks process.kill in agim_write_file content', () => {
+      expect(checkToolUse('agim_write_file', {
+        path: '/tmp/x.js',
+        content: "process.kill(123, 'SIGTERM')",
+      })).not.toBeNull()
+    })
+    it('does NOT scan shell literals in agim_write_file content', () => {
+      expect(checkToolUse('agim_write_file', {
+        path: '/tmp/runbook.md',
+        content: `If hung: ${sh}`,
+      })).toBeNull()
+    })
+  })
+
   describe('process.kill in Edit/Write tools', () => {
     it('blocks process.kill(pid, SIGTERM) attempts', () => {
       const r = checkToolUse('Edit', {

@@ -5,9 +5,10 @@ import { JsonlSessionRepo } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 import { fauxAssistantMessage, fauxToolCall, type Model, registerFauxProvider } from '@earendil-works/pi-ai'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, statSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { nativeSessionIndexPath } from '../../../core/agim-session-bind.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
 import {
@@ -83,6 +84,40 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveModel: async () => bindingFromFaux(reg),
     })
     expect(await collect(adapter.sendPrompt('s1', 'hi'))).toBe('hi from pi engine')
+  })
+
+  it('records threadId ↔ native JSONL session join without merging transcripts', async () => {
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage('bound'),
+      fauxAssistantMessage('bound-2'),
+    ])
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-bind-')),
+      resolveModel: async () => bindingFromFaux(reg),
+    })
+    await collect(adapter.sendPrompt('a2a-12', 'hi', undefined, {
+      threadId: 'web-thread-1',
+      platform: 'web',
+      channelId: 'web',
+      parentJobId: 12,
+    }))
+    await collect(adapter.sendPrompt('a2a-12', 'again', undefined, {
+      threadId: 'web-thread-1',
+      platform: 'web',
+      channelId: 'web',
+      parentJobId: 12,
+    }))
+    const raw = readFileSync(nativeSessionIndexPath(), 'utf8').trim().split('\n')
+    const rows = raw.map((l) => JSON.parse(l) as {
+      nativeSessionId: string
+      threadId: string
+      parentJobId?: number
+    })
+    const hits = rows.filter((r) => r.nativeSessionId === 'a2a-12')
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.threadId).toBe('web-thread-1')
+    expect(hits[0]?.parentJobId).toBe(12)
   })
 
   it('stores pi session directories and JSONL files with private POSIX modes', async () => {

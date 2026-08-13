@@ -6,6 +6,7 @@ import { resolveAgentCwd, defaultAgentCwd } from '../../../core/agent-cwd.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import type { ToolDef } from '../../../core/llm/provider-base.js'
 import type { ToolDispatcher } from '../../../core/llm/tool-dispatcher.js'
+import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { effectivePlanModeOn } from '../../../core/plan-mode-state.js'
 import type { AgentSendOpts } from '../../../core/types.js'
 import { assembleNativeTools } from '../agim-agent-shared/tool-registry.js'
@@ -29,6 +30,8 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     userId: o.userId || 'unknown',
     callerAgent: 'agim',
     callerDepth: o.callDepth ?? 0,
+    ...(typeof o.a2aMaxDepth === 'number' ? { a2aMaxDepth: o.a2aMaxDepth } : {}),
+    ...(o.allowedTools && o.allowedTools.length > 0 ? { allowedTools: o.allowedTools } : {}),
     // Link A2A callee rows to the parent turn so the web A2A views can see them.
     ...(typeof o.parentJobId === 'number' ? { parentJobId: o.parentJobId } : {}),
     // Propagate plan-mode to any call_agent the agim dispatcher fires, so a
@@ -59,8 +62,19 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     agimCtx,
   })
 
+  let tools = assembled.tools
+  if (o.allowedTools && o.allowedTools.length > 0) {
+    const allow = expandToolNameList(o.allowedTools)
+    tools = assembled.tools.filter((t) => allow.has(t.name))
+    if (tools.length === 0) {
+      throw new Error(
+        `allowedTools matched no advertised tools (asked: ${o.allowedTools.join(', ')})`,
+      )
+    }
+  }
+
   return {
-    tools: assembled.tools,
+    tools,
     dispatch: assembled.dispatch,
     parallelSafe: (name: string) => assembled.isParallelSafe({ id: '', name, arguments: {} }),
   }

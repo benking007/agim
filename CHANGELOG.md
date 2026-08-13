@@ -6,6 +6,56 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Native self-protect gap**: Layer 2 only matched Claude `Bash` / `Write`
+  names, so `agim_exec('systemctl restart agim')` (including Subagent
+  HITL-skip) could take the process down. `checkToolUse` now treats
+  `agim_exec` / `native_exec` as exec and `agim_write_file` as write; the
+  exec dispatcher runs the same check before spawn.
+
+- **Exec sandbox vs FS writes**: `agim_exec` defaulted to bubblewrap while
+  `agim_write_file` could still mutate host paths. Writes now follow the
+  exec sandbox unless `AGIM_NATIVE_FS_RESTRICT=0`. Reads stay opt-in
+  (`=1`). Settings posture flags the explicit unconfine mismatch.
+
+- **Parent Stop left Subagents running**: Web Stop / native turn abort /
+  IM `/abort` now cancel in-flight child jobs on the same thread (same
+  helper Loop stop already used).
+
+- **Late Subagent cards stuck on Waiting**: terminal `kind=agent` activity
+  can still update a finished web run snapshot and is forwarded to the
+  SPA. `new-conversation` history and `loop-changed` carry / filter
+  `threadId`.
+
+- **Loop VERIFY stray-child false busy**: `countRoundLiveSubagents` no longer
+  falls back to every child job on the thread when `roundJobIds` is empty.
+  Unrelated leftovers cannot block 待验收; live wait is round-scoped only.
+
+- **call_agent contract was fail-soft**: unknown keys were ignored, and there
+  was no per-spawn `outputFormat` / `maxDepth` / `allowedTools`. Extra keys
+  now refuse; `outputFormat` is appended to the child brief; `maxDepth`
+  cannot exceed `AGIM_A2A_MAX_DEPTH` and is inherited by nested Agim
+  spawns; `allowedTools` confines same-family Agim (advertised + tool_call
+  block) and is refused for CLI adapters.
+
+- **P1-6 Tool-call spine**: Agim Agent's Pi path (`tool_call` → tool-bridge)
+  now shares one pre → execute → post pipeline with the retired loop:
+  JSON-Schema pre-check (`AGIM_TOOL_SCHEMA_VALIDATE=off` still disables),
+  per-tool wall timeout (read-only detaches; mutations wait to settle so
+  a late `loop_verdict` cannot land after the caller moved on), result
+  truncation, and `tool.<name>` audit rows. Do not resurrect `runAgentLoop`
+  as a production path.
+
+- **P1-7 Security posture banner**: `agim start` prints exec sandbox
+  (bwrap on / off / unavailable), native FS restrict
+  (`AGIM_NATIVE_FS_RESTRICT`), and auto-approve — even when the approval
+  bus is disabled — so an unconfined host is visible at boot.
+
+- **P1-10 Native session bind**: opening an Agim Agent JSONL session
+  appends `~/.agim/agim-session-index.jsonl` mapping `threadId` ↔
+  `session.id` (including A2A `a2a-<jobId>` children). UI
+  `~/.agim/sessions/*.log` and pi JSONL stay separate; this is a join
+  table, not a merged transcript.
+
 - **Web chat live stream mix-up**: with two sessions both running, switching
   A→B let A's `chunk` / `done` / `run-*` land on B's placeholder (one WS,
   rekey does not abort the previous run). Live frames now stamp the run's

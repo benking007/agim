@@ -64,7 +64,8 @@ import {
   notifyA2AFailed,
   startHeartbeat,
 } from './a2a-notify.js'
-import { isSameAgent, parseCallAgentTarget } from './subagent.js'
+import { isAgimAgentId } from './naming-migrate.js'
+import { isSameAgent, parseCallAgentTarget, resolveSubtreeMaxDepth } from './subagent.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
@@ -225,6 +226,16 @@ export interface CallAgentOpts {
    * opening a second `a2a-${jobId}` row.
    */
   activityStepId?: string
+  /**
+   * Absolute subtree depth ceiling for this spawn (and descendants via
+   * AgentSendOpts.a2aMaxDepth). Cannot exceed AGIM_A2A_MAX_DEPTH.
+   */
+  maxDepth?: number
+  /**
+   * Same-family Agim only: restrict the child's advertised / dispatchable
+   * tools. Cross-adapter CLI agents cannot honor this — spawn is refused.
+   */
+  allowedTools?: readonly string[]
 }
 
 export type CallAgentResult =
@@ -346,7 +357,14 @@ export async function callAgentByName(
 
   const callerDepth = opts.callerDepth ?? 0
   const nextDepth = callerDepth + 1
-  const maxDepth = getA2AMaxDepth()
+  const depthCap = resolveSubtreeMaxDepth({
+    requested: opts.maxDepth,
+    globalMax: getA2AMaxDepth(),
+  })
+  if (!depthCap.ok) {
+    return earlyFail(depthCap.error)
+  }
+  const maxDepth = depthCap.maxDepth
   if (nextDepth > maxDepth) {
     log.warn({
       event: 'a2a.depth_exceeded',
@@ -377,6 +395,13 @@ export async function callAgentByName(
     return earlyFail(
       `cannot call self (${resolvedAgentName}) without isolate/role/backend. `
         + `Pass isolate:true or a role/backend for a same-family Subagent.`,
+    )
+  }
+
+  if (opts.allowedTools && opts.allowedTools.length > 0 && !isAgimAgentId(resolvedAgentName)) {
+    return earlyFail(
+      `allowedTools is only supported for same-family Agim Subagents `
+      + `(cannot confine ${resolvedAgentName} CLI tools).`,
     )
   }
 
@@ -571,6 +596,10 @@ export async function callAgentByName(
       // a write task to claude-code and the child would launch with full
       // write access, bypassing the user's intent.
       ...(opts.planMode ? { planMode: true } : {}),
+      ...(typeof maxDepth === 'number' ? { a2aMaxDepth: maxDepth } : {}),
+      ...(opts.allowedTools && opts.allowedTools.length > 0
+        ? { allowedTools: opts.allowedTools }
+        : {}),
       signal: abortController.signal,
       onOutcome: (value) => { calleeOutcomes.push(value) },
     })

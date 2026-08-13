@@ -11,6 +11,7 @@ import {
   getProviderByName,
   listProviders,
 } from './llm/registry.js'
+import { canonicalizeToolName, expandToolNameList } from './llm/tool-names.js'
 
 export interface ParsedCallAgentTarget {
   agent: string
@@ -74,6 +75,216 @@ export interface SubagentSpawnInput {
   backend?: string
   /** Allow same-agent nested spawn with isolated context (same or default model). */
   isolate?: boolean
+}
+
+/** Keys accepted on a native `call_agent` / `call_agents` task object. */
+export const CALL_AGENT_TASK_KEYS = [
+  'agent',
+  'prompt',
+  'role',
+  'backend',
+  'isolate',
+  'outputFormat',
+  'maxDepth',
+  'allowedTools',
+] as const
+
+/** Extra keys the CLI MCP / PI bus payload may carry. */
+export const CALL_AGENT_CLI_EXTRA_KEYS = ['timeoutMs', 'inputs', 'expectOutputs'] as const
+
+export const CALL_AGENTS_ROOT_KEYS = ['tasks'] as const
+
+export interface ParsedCallAgentTask {
+  agent: string
+  prompt: string
+  role?: string
+  backend?: string
+  isolate?: boolean
+  outputFormat?: string
+  /** Absolute subtree depth ceiling (clamped to AGIM_A2A_MAX_DEPTH at spawn). */
+  maxDepth?: number
+  /** Same-family Agim only: advertise/allow only these tool names. */
+  allowedTools?: string[]
+}
+
+export type ParseCallAgentResult =
+  | { ok: true; task: ParsedCallAgentTask }
+  | { ok: false; error: string }
+
+function unknownKeysError(raw: Record<string, unknown>, allowed: ReadonlySet<string>, path: string): string | null {
+  const extra = Object.keys(raw).filter((k) => !allowed.has(k))
+  if (extra.length === 0) return null
+  return `${path} has unknown key(s): ${extra.join(', ')}. Allowed: ${[...allowed].join(', ')}.`
+}
+
+function optionalNonEmptyString(value: unknown, field: string, path: string):
+  | { ok: true; value?: string }
+  | { ok: false; error: string } {
+  if (value === undefined) return { ok: true }
+  if (typeof value !== 'string') {
+    return { ok: false, error: `${path}.${field} must be a string.` }
+  }
+  const trimmed = value.trim()
+  if (!trimmed) return { ok: true }
+  return { ok: true, value: trimmed }
+}
+
+/**
+ * Fail-loud parse of one call_agent / call_agents task object.
+ * Unknown keys are refused (capability seam: do not silently drop fields).
+ */
+export function parseCallAgentTask(
+  raw: unknown,
+  opts?: { extraKeys?: readonly string[]; path?: string },
+): ParseCallAgentResult {
+  const path = opts?.path || 'call_agent'
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: `${path} must be an object.` }
+  }
+  const rec = raw as Record<string, unknown>
+  const allowed = new Set<string>([...CALL_AGENT_TASK_KEYS, ...(opts?.extraKeys ?? [])])
+  const extra = unknownKeysError(rec, allowed, path)
+  if (extra) return { ok: false, error: extra }
+
+  const agent = typeof rec.agent === 'string' ? rec.agent.trim() : ''
+  const prompt = typeof rec.prompt === 'string' ? rec.prompt : ''
+  if (!agent || typeof rec.prompt !== 'string' || !prompt) {
+    return { ok: false, error: `${path} requires both agent and prompt strings.` }
+  }
+
+  if (rec.isolate !== undefined && typeof rec.isolate !== 'boolean') {
+    return { ok: false, error: `${path}.isolate must be a boolean.` }
+  }
+
+  const role = optionalNonEmptyString(rec.role, 'role', path)
+  if (!role.ok) return role
+  const backend = optionalNonEmptyString(rec.backend, 'backend', path)
+  if (!backend.ok) return backend
+  const outputFormat = optionalNonEmptyString(rec.outputFormat, 'outputFormat', path)
+  if (!outputFormat.ok) return outputFormat
+
+  let maxDepth: number | undefined
+  if (rec.maxDepth !== undefined) {
+    if (typeof rec.maxDepth !== 'number' || !Number.isInteger(rec.maxDepth) || rec.maxDepth < 1) {
+      return { ok: false, error: `${path}.maxDepth must be an integer ≥ 1.` }
+    }
+    maxDepth = rec.maxDepth
+  }
+
+  let allowedTools: string[] | undefined
+  if (rec.allowedTools !== undefined) {
+    if (!Array.isArray(rec.allowedTools) || rec.allowedTools.length === 0) {
+      return { ok: false, error: `${path}.allowedTools must be a non-empty array of tool names.` }
+    }
+    const names: string[] = []
+    for (let i = 0; i < rec.allowedTools.length; i++) {
+      const n = rec.allowedTools[i]
+      if (typeof n !== 'string' || !n.trim()) {
+        return { ok: false, error: `${path}.allowedTools[${i}] must be a non-empty string.` }
+      }
+      names.push(n.trim())
+    }
+    allowedTools = names
+  }
+
+  return {
+    ok: true,
+    task: {
+      agent,
+      prompt,
+      ...(role.value ? { role: role.value } : {}),
+      ...(backend.value ? { backend: backend.value } : {}),
+      ...(rec.isolate === true ? { isolate: true } : {}),
+      ...(outputFormat.value ? { outputFormat: outputFormat.value } : {}),
+      ...(maxDepth != null ? { maxDepth } : {}),
+      ...(allowedTools ? { allowedTools } : {}),
+    },
+  }
+}
+
+/** Fail-loud parse of `call_agents` root `{ tasks: [...] }`. */
+export function parseCallAgentsArgs(
+  raw: unknown,
+  opts?: { extraTaskKeys?: readonly string[]; path?: string },
+): { ok: true; tasks: ParsedCallAgentTask[] } | { ok: false; error: string } {
+  const path = opts?.path || 'call_agents'
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: `${path} must be an object.` }
+  }
+  const rec = raw as Record<string, unknown>
+  const extra = unknownKeysError(rec, new Set(CALL_AGENTS_ROOT_KEYS), path)
+  if (extra) return { ok: false, error: extra }
+  const rawTasks = rec.tasks
+  if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
+    return { ok: false, error: `${path} requires a non-empty \`tasks\` array.` }
+  }
+  const tasks: ParsedCallAgentTask[] = []
+  for (let i = 0; i < rawTasks.length; i++) {
+    const parsed = parseCallAgentTask(rawTasks[i], {
+      extraKeys: opts?.extraTaskKeys,
+      path: `${path}.tasks[${i}]`,
+    })
+    if (!parsed.ok) return parsed
+    tasks.push(parsed.task)
+  }
+  return { ok: true, tasks }
+}
+
+/** Append an explicit output-format contract to the child brief. */
+export function applyCallAgentOutputFormat(prompt: string, outputFormat?: string): string {
+  const fmt = outputFormat?.trim()
+  if (!fmt) return prompt
+  return `${prompt.replace(/\s+$/, '')}\n\n[Output format]\n${fmt}`
+}
+
+/**
+ * Intersect child `allowedTools` with an inherited parent allowlist.
+ * Missing child list inherits the parent; empty intersection fails loud.
+ */
+export function intersectAllowedTools(
+  parent: readonly string[] | undefined,
+  child: readonly string[] | undefined,
+): { ok: true; tools?: string[] } | { ok: false; error: string } {
+  if (!parent?.length) {
+    return { ok: true, tools: child?.length ? [...child] : undefined }
+  }
+  if (!child?.length) return { ok: true, tools: [...parent] }
+  const allow = expandToolNameList(parent)
+  const out = child.filter((n) => allow.has(n) || allow.has(canonicalizeToolName(n)))
+  if (out.length === 0) {
+    return {
+      ok: false,
+      error:
+        'allowedTools is empty after intersecting with the parent allowlist. '
+        + `Parent: ${parent.join(', ')}; child: ${child.join(', ')}.`,
+    }
+  }
+  return { ok: true, tools: out }
+}
+
+/** Clamp spawn `maxDepth` to the global + inherited subtree ceiling. */
+export function resolveSubtreeMaxDepth(opts: {
+  requested?: number
+  inherited?: number
+  globalMax: number
+}): { ok: true; maxDepth: number } | { ok: false; error: string } {
+  const { requested, inherited, globalMax } = opts
+  if (typeof requested === 'number' && requested > globalMax) {
+    return {
+      ok: false,
+      error: `maxDepth ${requested} exceeds AGIM_A2A_MAX_DEPTH ${globalMax}`,
+    }
+  }
+  if (typeof requested === 'number' && typeof inherited === 'number' && requested > inherited) {
+    return {
+      ok: false,
+      error: `maxDepth ${requested} exceeds inherited subtree cap ${inherited}`,
+    }
+  }
+  return {
+    ok: true,
+    maxDepth: Math.min(globalMax, requested ?? globalMax, inherited ?? globalMax),
+  }
 }
 
 export type ResolvedSubagentSpawn =

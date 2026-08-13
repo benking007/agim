@@ -232,6 +232,44 @@ describe('buildAgimDispatcher', () => {
       } finally { restoreEnv() }
     })
 
+    it('refuses unknown call_agent keys', async () => {
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      const d = buildAgimDispatcher(CTX)
+      try {
+        const r = await d(
+          {
+            id: 'spawn-unk',
+            name: 'mcp__agim__call_agent',
+            arguments: { agent: 'agim', prompt: 'hi', isolate: true, foo: 1 },
+          },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/unknown key/i)
+      } finally { restoreEnv() }
+    })
+
+    it('refuses allowedTools on a cross-adapter target', async () => {
+      process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN = '5'
+      const d = buildAgimDispatcher(CTX)
+      try {
+        const r = await d(
+          {
+            id: 'spawn-tools',
+            name: 'mcp__agim__call_agent',
+            arguments: {
+              agent: 'claude-code',
+              prompt: 'hi',
+              allowedTools: ['agim_read_file'],
+            },
+          },
+          NOOP_SIGNAL,
+        )
+        expect(r.isError).toBe(true)
+        expect(r.text).toMatch(/allowedTools is only supported/i)
+      } finally { restoreEnv() }
+    })
+
     it('depth exceed: isolate same-family rejects when nextDepth > maxDepth', async () => {
       process.env.AGIM_A2A_MAX_DEPTH = '1'
       process.env.AGIM_NATIVE_CALL_AGENT_IN_PROCESS = 'on'
@@ -292,6 +330,10 @@ describe('buildAgimDispatcher', () => {
       expect(props).toHaveProperty('role')
       expect(props).toHaveProperty('backend')
       expect(props).toHaveProperty('isolate')
+      expect(props).toHaveProperty('outputFormat')
+      expect(props).toHaveProperty('maxDepth')
+      expect(props).toHaveProperty('allowedTools')
+      expect((callAgent?.parameters as { additionalProperties?: boolean }).additionalProperties).toBe(false)
     })
 
     it('call_agent tool description locks Phase A3 decompose heuristics', async () => {

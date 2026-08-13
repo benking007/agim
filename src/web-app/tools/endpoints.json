@@ -12,6 +12,7 @@
     "src/web/env-api.ts",
     "src/web/env-mask.ts",
     "src/web/health-api.ts",
+    "src/web/history-payload.ts",
     "src/web/http-utils.ts",
     "src/web/jobs-api.ts",
     "src/web/llm-api.ts",

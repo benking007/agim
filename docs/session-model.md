@@ -278,6 +278,7 @@ web:web:<threadId>
 |---|---|
 | 浏览器 thread id | SPA 把 **当前** id 存在 `localStorage['agim-web-thread-id']`（`web-…` 形）；多会话列表在 `localStorage['agim-web-sessions']` |
 | 恢复协议 | 每次 WS `open` 发 `get-history { threadId }`（**当前** active id）；服务端 rekey 到该 id 并回放 `.log` |
+| 大会话载荷 | 首帧 `history` 只带**最近**一段（条数 + 体积预算），`activity.steps[].preview` 截断；更早的回合随后 `history-prepend`。Agent 提示词仍读完整磁盘 `.log` |
 | 归属冲突 | localStorage 的 thread 已被**其他 token** 占用 → 不下发 `error`；发 `thread-reassigned`（本连接新 id）+ 空/新会话 `history`，SPA 改写 `agim-web-thread-id` 并把该 id 写进会话索引（替换被拒的旧 id） |
 | 空历史 | session 仍在但消息已过 Web 消息 TTL 时仍发 `history`（可为空），用于恢复 sticky agent |
 | 「新对话」 | Portal / 桌面 **新对话** 铸造新的 `web-*` id，写入会话索引，发 `get-history` 加载空历史。**不**发 `new-conversation`（那会原地 wipe 当前 `.log`）。左侧「会话」列表点选即 `get-history { threadId }` 重载 |

@@ -30,6 +30,7 @@ import { useChat } from '@/hooks/use-chat'
 import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
 import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
+import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
 import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -131,12 +132,13 @@ export default function ChatRoute(): JSX.Element {
   )
 
   const latestFollowSignal = activityFollowSignal(state.messages.at(-1)?.activity)
-  const { stickToBottom } = useChatFollowBottom({
+  const { stickToBottom, showJumpToLatest } = useChatFollowBottom({
     listRef,
     messageCount,
     latestMessageContent,
     streaming: state.currentReplyId != null,
     followSignal: latestFollowSignal,
+    threadKey: state.clientId,
   })
   useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
   useBlurComposerOnUserScroll(listRef, inputRef)
@@ -358,6 +360,14 @@ export default function ChatRoute(): JSX.Element {
         onSubmit={(mid, data) => choiceSubmit(mid, data)}
       />
 
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-0 justify-center">
+          <ChatJumpToLatest
+            show={showJumpToLatest}
+            onJump={stickToBottom}
+            className="pointer-events-auto -translate-y-[calc(100%+0.5rem)]"
+          />
+        </div>
       <ChatComposer
         value={input}
         onChange={setInput}
@@ -444,6 +454,7 @@ export default function ChatRoute(): JSX.Element {
           </div>
         )}
       />
+      </div>
     </div>
   )
 }

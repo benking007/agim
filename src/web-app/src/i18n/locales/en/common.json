@@ -440,6 +440,7 @@
       "steerQueue": "Pending messages",
       "steerQueueSend": "Steer",
       "steerQueueSendHint": "Interrupt this turn and send",
+      "jumpToLatest": "Scroll to latest",
       "steerQueueDismiss": "Delete",
       "steerQueueMore": "More",
       "steerQueueEdit": "Re-edit",

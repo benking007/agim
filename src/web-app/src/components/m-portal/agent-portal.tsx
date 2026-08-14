@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
+import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
 import { findSession, upsertSession } from '@/lib/web-sessions'
 import { addLocalWorkspace, setActiveWorkspace, toggleWorkspaceCollapsed } from '@/lib/web-workspaces'
 import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
@@ -298,12 +299,13 @@ export function AgentPortal(): JSX.Element {
   // Follow the bottom only while the user is near it. Scrolling up to
   // read history pauses follow so streaming / tool steps do not yank
   // the viewport back down.
-  const { stickToBottom } = useChatFollowBottom({
+  const { stickToBottom, showJumpToLatest } = useChatFollowBottom({
     listRef: messagesListRef,
     messageCount: chatMessages.length,
     latestMessageContent: chatMessages[chatMessages.length - 1]?.content ?? '',
     streaming: isTyping,
     followSignal: activityFollowSignal(chatMessages[chatMessages.length - 1]?.activity),
+    threadKey: state.clientId,
   })
 
   const agentsCatalog = useMemo((): AgentCatalogEntry[] => {
@@ -768,6 +770,14 @@ export function AgentPortal(): JSX.Element {
             composerMenuOpen ? 'z-50' : 'z-20',
             dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
           )}>
+            <div className="pointer-events-none relative z-40 mx-auto flex h-0 max-w-[750px] justify-center">
+              <ChatJumpToLatest
+                show={showJumpToLatest}
+                dark={dark}
+                onJump={stickToBottom}
+                className="pointer-events-auto absolute -top-1 -translate-y-full"
+              />
+            </div>
             <div className="mx-auto w-full max-w-[750px]">
               <Suspense fallback={null}>
                 <PortalLoopDock

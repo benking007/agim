@@ -296,5 +296,6 @@ describe('ChatActivityBlock', () => {
     await user.click(btn)
     expect(screen.getByText(/Step reflect · Run tests next|一步一想 · Run tests next/)).toBeInTheDocument()
     expect(screen.getByText(/^reflect$|^步思$/)).toBeInTheDocument()
+    expect(screen.getByTestId('activity-icon-reflect')).toBeInTheDocument()
   })
 })

@@ -8,20 +8,16 @@
 import { lazy, Suspense, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Bot,
+  Brain,
   Check,
   ChevronRight,
   CircleAlert,
-  Loader2,
-  MessageCircle,
-  MessageCircleQuestion,
-  ShieldAlert,
-  Wrench,
-  X,
   type LucideIcon,
 } from 'lucide-react'
 
+import { ActivityStepIcon } from '@/components/chat/activity-step-icon'
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
+import { formatCollapsedRunSummary } from '@/lib/collapsed-run-summary'
 import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
 const ChatTodoList = lazy(async () => {
@@ -82,22 +78,6 @@ function countKinds(activity: ChatActivity): {
     else if (step.kind !== 'approval') tools += 1
   }
   return { tools, skills, asks, agents, total: activity.steps.length }
-}
-
-function StepIcon({ step, dark }: { step: ChatActivityStep; dark: boolean }): JSX.Element {
-  const cls = 'h-3.5 w-3.5 shrink-0'
-  if (step.status === 'running' || step.status === 'pending') {
-    return <Loader2 className={cn(cls, 'animate-spin text-teal-500')} />
-  }
-  if (step.status === 'denied' || step.status === 'error') {
-    return <X className={cn(cls, 'text-red-400')} />
-  }
-  if (step.kind === 'approval') return <ShieldAlert className={cn(cls, 'text-amber-400')} />
-  if (step.kind === 'ask') return <MessageCircleQuestion className={cn(cls, 'text-sky-400')} />
-  if (step.kind === 'agent') return <Bot className={cn(cls, 'text-teal-400')} />
-  if (step.kind === 'reflect') return <MessageCircle className={cn(cls, 'text-teal-400')} />
-  if (step.status === 'success') return <Check className={cn(cls, 'text-emerald-400')} />
-  return <Wrench className={cn(cls, dark ? 'text-zinc-500' : 'text-zinc-400')} />
 }
 
 function stepLabel(
@@ -189,7 +169,9 @@ export function PortalRunStatus({
 
   const canExpandWhileRunning = running && hasSteps
   const showDoneSummary = !running && !!activity && (hasSteps || failed)
-  const runningLabel = `${t('chat.activityRunning', { defaultValue: 'Running' })}...`
+  const collapsedSummary = activity ? formatCollapsedRunSummary(activity) : ''
+  const runningLabel = collapsedSummary
+    || `${t('chat.activityRunning', { defaultValue: 'Running' })}...`
 
   return (
     <div className={cn('w-full space-y-2', className)}>
@@ -204,7 +186,15 @@ export function PortalRunStatus({
             aria-expanded={open}
             className="flex min-w-0 items-center gap-1 rounded-md py-0.5 text-left transition hover:opacity-80"
           >
-            <span className="truncate text-[9px] font-bold uppercase tracking-wider text-zinc-400 animate-pulse">
+            <span
+              data-testid="portal-run-collapsed-line"
+              className={cn(
+                'min-w-0 truncate text-zinc-400 animate-pulse',
+                collapsedSummary
+                  ? 'text-[11px] font-medium normal-case tracking-normal'
+                  : 'text-[9px] font-bold uppercase tracking-wider',
+              )}
+            >
               {runningLabel}
             </span>
             <ChevronRight
@@ -239,7 +229,7 @@ export function PortalRunStatus({
           )}
         >
           <div className="flex items-center gap-1.5">
-            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-teal-500" />
+            <Brain className="h-3.5 w-3.5 shrink-0 text-teal-500" />
             <span className="truncate font-medium">
               {stepLabel(latestReflect, t)}
             </span>
@@ -318,7 +308,7 @@ export function PortalRunStatus({
                 'flex items-center gap-1.5 text-[12px]',
                 dark ? 'text-zinc-300' : 'text-zinc-700',
               )}>
-                <StepIcon step={step} dark={dark} />
+                <ActivityStepIcon step={step} />
                 <span className={cn(
                   'truncate',
                   step.kind === 'agent' || step.kind === 'status'

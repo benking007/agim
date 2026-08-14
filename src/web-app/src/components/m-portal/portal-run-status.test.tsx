@@ -30,7 +30,7 @@ function activity(over: Partial<ChatActivity> = {}): ChatActivity {
 }
 
 describe('PortalRunStatus', () => {
-  it('shows RUNNING… with dots (no duplicate Running · tool line) and expandable steps', async () => {
+  it('shows a collapsed think · tool line and expandable steps', async () => {
     const user = userEvent.setup()
     render(
       <PortalRunStatus
@@ -38,16 +38,35 @@ describe('PortalRunStatus', () => {
         agentName="Agim"
         agentColor="from-blue-500 to-cyan-600"
         AgentIcon={Brain}
-        activity={activity()}
+        activity={activity({
+          steps: [
+            {
+              id: 'r1',
+              kind: 'reflect',
+              label: '先确认港股代码',
+              status: 'success',
+              startedAt: 1,
+            },
+            {
+              id: 's1',
+              kind: 'tool',
+              label: 'web_search',
+              status: 'running',
+              startedAt: 2,
+            },
+          ],
+        })}
         streaming
       />,
     )
-    expect(screen.getByRole('button', { name: /Running|执行中/i })).toBeTruthy()
-    // Collapsed live view: no secondary "Running · web_search" line.
-    expect(screen.queryByText(/Running · web_search|执行中 · web_search/i)).toBeNull()
-    expect(screen.queryByText('web_search')).toBeNull()
-    await user.click(screen.getByRole('button', { name: /Running|执行中/i }))
-    expect(screen.getByText('web_search')).toBeTruthy()
+    const line = screen.getByTestId('portal-run-collapsed-line')
+    expect(line.textContent).toMatch(/先确认港股代码/)
+    expect(line.textContent).toMatch(/web_search/)
+    expect(screen.queryByTestId('activity-icon-reflect')).toBeNull()
+    await user.click(screen.getByRole('button', { name: /先确认港股代码/ }))
+    expect(screen.getByTestId('activity-icon-reflect')).toBeTruthy()
+    expect(screen.getByTestId('activity-icon-tool')).toBeTruthy()
+    expect(screen.getAllByText('web_search').length).toBeGreaterThan(0)
   })
 
   it('shows expandable Worked summary when finished', async () => {

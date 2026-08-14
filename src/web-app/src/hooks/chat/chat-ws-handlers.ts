@@ -201,8 +201,10 @@ export function makeOnIncoming(
               : '')
           upsertSession({
             id: threadId,
-            updatedAt: Date.now(),
             agent: msg.agent,
+            ...(typeof msg.updatedAt === 'number' && Number.isFinite(msg.updatedAt)
+              ? { updatedAt: msg.updatedAt }
+              : {}),
             ...(titleSource ? { title: sessionTitleFromText(titleSource) } : {}),
           })
         }
@@ -222,7 +224,6 @@ export function makeOnIncoming(
           if (firstUser) {
             upsertSession({
               id: threadId,
-              updatedAt: Date.now(),
               title: sessionTitleFromText(firstUser.content),
             })
           }

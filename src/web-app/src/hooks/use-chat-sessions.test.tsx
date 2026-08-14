@@ -35,7 +35,7 @@ vi.mock('@/lib/api/ws', () => ({
 }))
 
 import { useChat } from './use-chat'
-import { THREAD_ID_KEY, SESSIONS_KEY, listSessions } from '@/lib/web-sessions'
+import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
 import { writeCachedHistory } from '@/lib/web-history-cache'
 
 describe('useChat multi-session', () => {
@@ -91,6 +91,19 @@ describe('useChat multi-session', () => {
 
     const historyCalls = mocks.sent.filter((m) => m.type === 'get-history')
     expect(historyCalls.at(-1)).toEqual({ type: 'get-history', threadId: firstId })
+    unmount()
+  })
+
+  it('switchSession does not refresh the previous thread updatedAt', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const firstId = result.current.activeSessionId
+    act(() => { result.current.send('hello from first') })
+    const stamped = findSession(firstId)?.updatedAt
+    expect(stamped).toBeGreaterThan(0)
+
+    act(() => { result.current.newConversation() })
+    act(() => { result.current.switchSession(firstId) })
+    expect(findSession(firstId)?.updatedAt).toBe(stamped)
     unmount()
   })
 

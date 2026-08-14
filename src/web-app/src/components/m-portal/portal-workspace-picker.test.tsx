@@ -78,6 +78,7 @@ describe('PortalWorkspacePicker', () => {
     await waitFor(() => {
       expect(screen.getByText('proj')).toBeInTheDocument()
     })
+    expect(screen.getByRole('dialog', { name: 'Choose a directory' })).toBeInTheDocument()
     expect(screen.queryByText('AGENTS.md')).not.toBeInTheDocument()
     expect(screen.queryByTestId('workspace-picker-use-current')).not.toBeInTheDocument()
     expect(getWorkspaceFiles).toHaveBeenCalledWith({ agent: 'agim', path: undefined })
@@ -112,7 +113,7 @@ describe('PortalWorkspacePicker', () => {
     })
   })
 
-  it('resolves a typed cloud path', async () => {
+  it('resolves a typed workspace path', async () => {
     getWorkspaceFiles.mockResolvedValue(ROOT)
     resolveWorkspacePath.mockResolvedValue({
       ok: true,
@@ -123,9 +124,9 @@ describe('PortalWorkspacePicker', () => {
     const onPicked = renderPicker()
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Or type a cloud path')).toBeInTheDocument()
+      expect(screen.getByLabelText('Or type a path')).toBeInTheDocument()
     })
-    await user.type(screen.getByLabelText('Or type a cloud path'), 'proj')
+    await user.type(screen.getByLabelText('Or type a path'), 'proj')
     await user.keyboard('{Enter}')
 
     await waitFor(() => {
@@ -144,9 +145,9 @@ describe('PortalWorkspacePicker', () => {
     const onPicked = renderPicker()
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Or type a cloud path')).toBeInTheDocument()
+      expect(screen.getByLabelText('Or type a path')).toBeInTheDocument()
     })
-    await user.type(screen.getByLabelText('Or type a cloud path'), '/etc')
+    await user.type(screen.getByLabelText('Or type a path'), '/etc')
     await user.keyboard('{Enter}')
 
     await waitFor(() => {

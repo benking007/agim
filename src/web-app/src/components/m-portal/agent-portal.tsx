@@ -21,11 +21,8 @@ import { toast } from 'sonner'
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
-<<<<<<< HEAD
 import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
 import { api } from '@/lib/api/endpoints'
-=======
->>>>>>> c0fc7503 (feat: browse agent workspace subdirs when adding a Portal folder)
 import { findSession, upsertSession } from '@/lib/web-sessions'
 import {
   addLocalWorkspace,
@@ -83,11 +80,8 @@ import {
   widthDemoMessages,
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
-<<<<<<< HEAD
 import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
-=======
 import { PortalWorkspacePicker } from './portal-workspace-picker'
->>>>>>> c0fc7503 (feat: browse agent workspace subdirs when adding a Portal folder)
 import { PortalPet } from './portal-pet'
 import {
   skillMarker,

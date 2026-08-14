@@ -84,7 +84,7 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).not.toHaveBeenCalled()
   })
 
-  it('nests sessions under their workspace and opens the cloud folder picker', async () => {
+  it('nests sessions under their workspace and opens the directory picker', async () => {
     const user = userEvent.setup()
     const { onNewWorkspace } = renderPanel({
       workspaces: [

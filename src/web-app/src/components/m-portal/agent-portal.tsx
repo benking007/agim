@@ -779,7 +779,7 @@ export function AgentPortal(): JSX.Element {
                 show={showJumpToLatest}
                 dark={dark}
                 onJump={stickToBottom}
-                className="pointer-events-auto absolute -top-1 -translate-y-full"
+                className="pointer-events-auto absolute left-1/2 -top-1 -translate-x-1/2 -translate-y-full"
               />
             </div>
             <div className="mx-auto w-full max-w-[750px]">

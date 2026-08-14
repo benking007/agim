@@ -22,6 +22,16 @@ import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
 import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { findSession } from '@/lib/web-sessions'
+import {
+  clampPortalRailWidth,
+  PORTAL_RAIL_COLLAPSED_WIDTH,
+  readPortalRailCollapsed,
+  readPortalRailWidth,
+  writePortalRailCollapsed,
+  writePortalRailWidth,
+} from '@/lib/portal-rail-prefs'
 import {
   findWorkspace,
   setActiveWorkspace,
@@ -125,6 +135,14 @@ export function AgentPortal(): JSX.Element {
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
+  const [railWidth, setRailWidth] = useState(readPortalRailWidth)
+  const [railCollapsed, setRailCollapsed] = useState(readPortalRailCollapsed)
+  const [railResizing, setRailResizing] = useState(false)
+  const [archiveConfirm, setArchiveConfirm] = useState<null | {
+    kind: 'session' | 'workspace'
+    id: string
+    title: string
+  }>(null)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
   const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
   const [optimisticStepReflect, setOptimisticStepReflect] = useState<boolean | null>(null)
@@ -164,6 +182,32 @@ export function AgentPortal(): JSX.Element {
     mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
   }, [])
+
+  useEffect(() => {
+    writePortalRailWidth(railWidth)
+  }, [railWidth])
+
+  useEffect(() => {
+    writePortalRailCollapsed(railCollapsed)
+  }, [railCollapsed])
+
+  useEffect(() => {
+    if (!railResizing) return
+    const onMove = (e: MouseEvent): void => {
+      setRailWidth(clampPortalRailWidth(e.clientX))
+    }
+    const onUp = (): void => setRailResizing(false)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [railResizing])
 
   // Agim Agent missing LLM → same one-click DeepSeek dialog as desktop `/`.
   useEffect(() => {
@@ -647,6 +691,7 @@ export function AgentPortal(): JSX.Element {
 
   const dark = theme === 'dark'
   const composerMenuOpen = plusMenuOpen || slashOpen || atOpen
+  const desktopRailWidth = railCollapsed ? PORTAL_RAIL_COLLAPSED_WIDTH : railWidth
   const sidePanelProps = {
     dark,
     agentId,
@@ -654,6 +699,8 @@ export function AgentPortal(): JSX.Element {
     AgentIcon,
     status: state.status,
     lang: prefs.lang,
+    railCollapsed,
+    onToggleRailCollapsed: () => setRailCollapsed((v) => !v),
     onClose: () => setSidebarOpen(false),
     onNew: () => { newConversation(); setSidebarOpen(false) },
     onToggleLang: toggleLang,
@@ -673,8 +720,16 @@ export function AgentPortal(): JSX.Element {
       syncWorkspace(ws?.kind === 'local' ? (ws.path || ws.name) : '')
     },
     onNewWorkspace: () => setWorkspacePickerOpen(true),
-    onArchiveSession: (threadId: string) => { archiveSession(threadId) },
-    onArchiveWorkspace: (id: string) => { archiveWorkspace(id) },
+    onArchiveSession: (threadId: string) => {
+      const session = findSession(threadId)
+      const title = session?.title?.trim() || t('chat.portal.untitledConversation')
+      setArchiveConfirm({ kind: 'session', id: threadId, title })
+    },
+    onArchiveWorkspace: (id: string) => {
+      const ws = findWorkspace(id)
+      const title = ws?.name || id
+      setArchiveConfirm({ kind: 'workspace', id, title })
+    },
   } as const
 
   return (
@@ -703,15 +758,54 @@ export function AgentPortal(): JSX.Element {
           createWorkspace(dir)
         }}
       />
-      {/* Desktop rail — always visible ≥ lg */}
+      <ConfirmDialog
+        open={archiveConfirm != null}
+        onOpenChange={(open) => { if (!open) setArchiveConfirm(null) }}
+        title={archiveConfirm?.kind === 'workspace'
+          ? t('chat.portal.archiveWorkspaceConfirmTitle')
+          : t('chat.portal.archiveSessionConfirmTitle')}
+        description={archiveConfirm?.kind === 'workspace'
+          ? t('chat.portal.archiveWorkspaceConfirmDesc', { name: archiveConfirm.title })
+          : t('chat.portal.archiveSessionConfirmDesc', { title: archiveConfirm?.title ?? '' })}
+        confirmLabel={t('chat.portal.archive')}
+        intent="danger"
+        onConfirm={() => {
+          if (!archiveConfirm) return
+          if (archiveConfirm.kind === 'workspace') archiveWorkspace(archiveConfirm.id)
+          else archiveSession(archiveConfirm.id)
+          setArchiveConfirm(null)
+        }}
+      />
+      {/* Desktop rail — always visible ≥ lg; width is user-resizable with a max. */}
       <aside
+        style={{ width: desktopRailWidth }}
         className={cn(
-          'hidden h-full w-64 shrink-0 flex-col justify-between border-r p-5 lg:flex',
+          'relative hidden h-full shrink-0 flex-col justify-between border-r lg:flex',
+          railCollapsed ? 'px-1.5 py-2' : 'p-5',
           dark ? 'border-zinc-800 bg-[#121214]' : 'border-zinc-200 bg-white',
         )}
         aria-label={t('chat.portal.brand')}
+        data-testid="portal-desktop-rail"
       >
         <PortalSidePanel {...sidePanelProps} showClose={false} />
+        {!railCollapsed && (
+          <button
+            type="button"
+            aria-label={t('chat.portal.resizeRail')}
+            title={t('chat.portal.resizeRail')}
+            data-testid="portal-rail-resize"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              setRailResizing(true)
+            }}
+            className={cn(
+              'absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize',
+              'after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-transparent after:transition-colors',
+              'hover:after:bg-teal-500/60',
+              railResizing && 'after:bg-teal-500',
+            )}
+          />
+        )}
       </aside>
 
       {/* Main surface — blurred only while the mobile drawer is open */}
@@ -1025,7 +1119,7 @@ export function AgentPortal(): JSX.Element {
             'absolute inset-y-0 left-0 z-10 flex h-full w-[min(20rem,78%)] animate-in slide-in-from-left flex-col justify-between border-r p-6 shadow-2xl duration-300',
             dark ? 'border-zinc-800 bg-[#121214]' : 'border-zinc-200 bg-white',
           )}>
-            <PortalSidePanel {...sidePanelProps} showClose />
+            <PortalSidePanel {...sidePanelProps} showClose railCollapsed={false} />
           </div>
         </div>
       )}

@@ -134,4 +134,12 @@ describe('PortalSidePanel conversations', () => {
     expect(onArchiveWorkspace).toHaveBeenCalledWith('ws-local1')
     expect(onSelectWorkspace).not.toHaveBeenCalled()
   })
+
+  it('renders an icon-only rail when collapsed', () => {
+    const onToggle = vi.fn()
+    renderPanel({ railCollapsed: true, onToggleRailCollapsed: onToggle })
+    expect(screen.getByTestId('portal-rail-collapsed')).toBeInTheDocument()
+    expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
+  })
 })

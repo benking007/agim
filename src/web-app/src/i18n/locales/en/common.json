@@ -224,7 +224,7 @@
     "title": "Something went wrong.",
     "description": "An unexpected error broke the page render. Try reloading or heading back to the home screen; if it persists, copy the message below and report it.",
     "reload": "Reload",
-    "home":   "Home"
+    "home": "Home"
   },
   "chat": {
     "mobileTitle": "agim chat",
@@ -381,9 +381,9 @@
       "risks": "List risks and rollback steps",
       "summary": "Write an executive summary"
     },
-    "newConv":     "New",
+    "newConv": "New",
     "newConvHint": "Start a new session — previous chats stay in the list",
-    "newConvToast":"Started a new conversation",
+    "newConvToast": "Started a new conversation",
     "switchAgentConfirm": "Switch to agent “{{agent}}”?",
     "copy": "Copy",
     "copied": "Copied",
@@ -395,20 +395,20 @@
     "share": "Share",
     "shareCopied": "Copied — paste into WeChat / DingTalk / QQ",
     "shareFailed": "Share failed",
-    "approvalTitle":      "Tool approval",
-    "approvalSubtitle":   "Review the tool call before it continues",
+    "approvalTitle": "Tool approval",
+    "approvalSubtitle": "Review the tool call before it continues",
     "approvalPendingCount": "{{count}} pending decisions",
-    "approvalAutoBadge":  "auto-allow",
+    "approvalAutoBadge": "auto-allow",
     "approvalExplicitBadge": "one-time decision",
     "approvalNeedsConfirmBadge": "needs confirmation",
-    "approvalToolLabel":  "Tool",
+    "approvalToolLabel": "Tool",
     "approvalInputLabel": "Input",
-    "approvalAllow":      "Allow",
-    "approvalAuto":       "Auto for similar",
-    "approvalAutoTip":    "Allow and auto-allow similar calls for the rest of the session",
-    "approvalDeny":       "Deny",
+    "approvalAllow": "Allow",
+    "approvalAuto": "Auto for similar",
+    "approvalAutoTip": "Allow and auto-allow similar calls for the rest of the session",
+    "approvalDeny": "Deny",
     "approvalSubmitting": "Sending…",
-    "approvalAutoIn":     "Auto-allowing in {{count}}s — Deny to stop.",
+    "approvalAutoIn": "Auto-allowing in {{count}}s — Deny to stop.",
     "approvalAutoResolving": "Auto-allowing now…",
     "askTitle": "Choose an option",
     "askSubtitle": "The agent needs your answer to continue",
@@ -418,11 +418,11 @@
     "askCustomPlaceholder": "Custom answer…",
     "askResolved": "Answered",
     "outcome": {
-      "allowed":        "Allowed",
-      "allowedPinned":  "Allowed + auto-allow further",
-      "denied":         "Denied",
-      "deniedRevoked":  "Denied (auto-allow revoked)",
-      "expired":        "Timed out"
+      "allowed": "Allowed",
+      "allowedPinned": "Allowed + auto-allow further",
+      "denied": "Denied",
+      "deniedRevoked": "Denied (auto-allow revoked)",
+      "expired": "Timed out"
     },
     "portal": {
       "brand": "AGIM Space",
@@ -505,22 +505,70 @@
         "empty": "No matching skills or commands",
         "planOn": "Plan mode is on — click to turn off",
         "cmd": {
-          "plan": { "label": "Plan", "description": "Generate an implementation plan" },
-          "memo": { "label": "Memo", "description": "Save a 5W1H memo" },
-          "focus": { "label": "Focus", "description": "Set attention focus (on/off)" },
-          "loop": { "label": "Loop", "description": "Align → dispatch → verify (/loop)" },
-          "subagent": { "label": "Subagent", "description": "Ask the agent to spawn a Subagent" },
-          "remember": { "label": "Remember", "description": "Set a reminder" },
-          "models": { "label": "Models", "description": "List available models" },
-          "new": { "label": "New", "description": "Start a new conversation" },
-          "help": { "label": "Help", "description": "Show command help" },
-          "agents": { "label": "Agents", "description": "List available agents" },
-          "status": { "label": "Status", "description": "Service status" },
-          "think": { "label": "Think", "description": "Toggle extended thinking" },
-          "skill": { "label": "Skill", "description": "List or show skills" },
-          "sessions": { "label": "Sessions", "description": "Recent sessions" },
-          "stats": { "label": "Stats", "description": "Usage statistics" },
-          "abort": { "label": "Abort", "description": "Abort the current run" }
+          "plan": {
+            "label": "Plan",
+            "description": "Generate an implementation plan"
+          },
+          "memo": {
+            "label": "Memo",
+            "description": "Save a 5W1H memo"
+          },
+          "focus": {
+            "label": "Focus",
+            "description": "Set attention focus (on/off)"
+          },
+          "loop": {
+            "label": "Loop",
+            "description": "Align → dispatch → verify (/loop)"
+          },
+          "subagent": {
+            "label": "Subagent",
+            "description": "Ask the agent to spawn a Subagent"
+          },
+          "remember": {
+            "label": "Remember",
+            "description": "Set a reminder"
+          },
+          "models": {
+            "label": "Models",
+            "description": "List available models"
+          },
+          "new": {
+            "label": "New",
+            "description": "Start a new conversation"
+          },
+          "help": {
+            "label": "Help",
+            "description": "Show command help"
+          },
+          "agents": {
+            "label": "Agents",
+            "description": "List available agents"
+          },
+          "status": {
+            "label": "Status",
+            "description": "Service status"
+          },
+          "think": {
+            "label": "Think",
+            "description": "Toggle extended thinking"
+          },
+          "skill": {
+            "label": "Skill",
+            "description": "List or show skills"
+          },
+          "sessions": {
+            "label": "Sessions",
+            "description": "Recent sessions"
+          },
+          "stats": {
+            "label": "Stats",
+            "description": "Usage statistics"
+          },
+          "abort": {
+            "label": "Abort",
+            "description": "Abort the current run"
+          }
         }
       },
       "at": {
@@ -547,9 +595,23 @@
       "stepReflectWaiting": "Step reflect…",
       "pet": {
         "aria": "Agim pet",
-        "idle": ["Tap me!", "I'm listening", "Ready when you are"],
-        "running": ["Working…", "On it!", "Thinking hard"],
-        "tap": ["Hi!", "Boop!", "♪", "I'm here", "Keep going!"],
+        "idle": [
+          "Tap me!",
+          "I'm listening",
+          "Ready when you are"
+        ],
+        "running": [
+          "Working…",
+          "On it!",
+          "Thinking hard"
+        ],
+        "tap": [
+          "Hi!",
+          "Boop!",
+          "♪",
+          "I'm here",
+          "Keep going!"
+        ],
         "panelTitle": "In progress",
         "empty": "No tasks in progress",
         "runLabel": "Agent running",
@@ -576,7 +638,14 @@
       "feedbackFailed": "Could not save feedback",
       "feedbackTellWhy": "Tell it what was wrong",
       "feedbackPrefill": "That last reply wasn't helpful. The issue was: ",
-      "language": "Language"
+      "language": "Language",
+      "collapseRail": "Collapse sidebar",
+      "expandRail": "Expand sidebar",
+      "resizeRail": "Drag to resize sidebar",
+      "archiveSessionConfirmTitle": "Archive this conversation?",
+      "archiveSessionConfirmDesc": "“{{title}}” will leave the sidebar. You can still find the server transcript later — this only hides it from the list.",
+      "archiveWorkspaceConfirmTitle": "Archive this workspace?",
+      "archiveWorkspaceConfirmDesc": "“{{name}}” and its conversations will leave the sidebar. Server files are not deleted."
     }
   }
 }

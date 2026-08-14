@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CLOUD_WORKSPACE_ID,
   WORKSPACES_KEY,
+  activeWorkspacePath,
   addLocalWorkspace,
   findWorkspace,
   listWorkspaces,
@@ -55,6 +56,12 @@ describe('web-workspaces', () => {
     removeLocalWorkspace(ws.id)
     expect(findWorkspace(ws.id)).toBeUndefined()
     expect(loadActiveWorkspaceId()).toBe(CLOUD_WORKSPACE_ID)
+  })
+
+  it('activeWorkspacePath is empty on cloud and set on a local workspace', () => {
+    expect(activeWorkspacePath()).toBeUndefined()
+    addLocalWorkspace({ name: 'agim', path: '/tmp/agim' })
+    expect(activeWorkspacePath()).toBe('/tmp/agim')
   })
 
   it('workspaceBasename handles posix and windows paths', () => {

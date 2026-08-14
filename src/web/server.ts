@@ -22,6 +22,7 @@ import { handleEnvApi } from './env-api.js'
 import { createSerialQueue } from './serial-queue.js'
 import { handleWorkspacesApi } from './workspaces-api.js'
 import { handleWorkspaceFilesApi } from './workspace-files-api.js'
+import { handleWorkspaceCwdApi } from './workspace-cwd-api.js'
 import { handleMessengersApi } from './messengers-api.js'
 import { handleViewerApi } from './viewer-api.js'
 import { handleOutboxA2AApi } from './outbox-a2a-api.js'
@@ -437,6 +438,9 @@ export async function startWebServer(options: {
     // PR-D: Agent workspace file browser.
     if (url.pathname === '/api/workspace-files') {
       if (await handleWorkspaceFilesApi(req, res, url)) return
+    }
+    if (url.pathname === '/api/workspace-resolve') {
+      if (await handleWorkspaceCwdApi(req, res, url)) return
     }
     // Stage 4 — native LLM backend admin. GET is open (no secret
     // VALUES surfaced — only source); writes require admin.

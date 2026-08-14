@@ -327,14 +327,18 @@ export async function ensureAgentMemoryLink(
  *
  * Decision order:
  *   1. Env override `AGIM_<AGENT>_CWD` always wins.
- *   2. If we're in an IM context (threadId + platform both present), pin to
+ *   2. Explicit Portal / web `opts.workspacePath` (resolved directory).
+ *   3. If we're in an IM context (threadId + platform both present), pin to
  *      `~/.agim-workspaces/<agent>/`.
- *   3. Otherwise return undefined → adapter inherits agim's cwd. This
- *      keeps web/scheduler/intent-llm judge paths exactly as they were.
+ *   4. Otherwise return undefined → adapter inherits agim's cwd. This
+ *      keeps scheduler/intent-llm judge paths exactly as they were.
  */
 export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string | undefined {
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit) return explicit
+
+  const portal = typeof opts.workspacePath === 'string' ? opts.workspacePath.trim() : ''
+  if (portal) return portal
 
   if (opts.threadId && opts.platform) {
     return defaultAgentCwd(agentName)

@@ -36,6 +36,7 @@ vi.mock('@/lib/api/ws', () => ({
 
 import { useChat } from './use-chat'
 import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
+import { addLocalWorkspace } from '@/lib/web-workspaces'
 import { writeCachedHistory } from '@/lib/web-history-cache'
 
 describe('useChat multi-session', () => {
@@ -91,6 +92,18 @@ describe('useChat multi-session', () => {
 
     const historyCalls = mocks.sent.filter((m) => m.type === 'get-history')
     expect(historyCalls.at(-1)).toEqual({ type: 'get-history', threadId: firstId })
+    unmount()
+  })
+
+  it('send attaches the active local workspace path', () => {
+    addLocalWorkspace({ name: 'agim', path: '/tmp/agim-portal-ws' })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('list this workspace') })
+    expect(mocks.sent.some((m) => (
+      m.type === 'message'
+      && m.text === 'list this workspace'
+      && m.workspacePath === '/tmp/agim-portal-ws'
+    ))).toBe(true)
     unmount()
   })
 

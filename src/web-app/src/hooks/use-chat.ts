@@ -36,7 +36,12 @@ import {
   upsertSession,
   type WebSessionEntry,
 } from '@/lib/web-sessions'
-import { CLOUD_WORKSPACE_ID, loadActiveWorkspaceId, setActiveWorkspace } from '@/lib/web-workspaces'
+import {
+  CLOUD_WORKSPACE_ID,
+  activeWorkspacePath,
+  loadActiveWorkspaceId,
+  setActiveWorkspace,
+} from '@/lib/web-workspaces'
 import {
   cachedHistoryToAction,
   hydrateInitialChatState,
@@ -220,7 +225,13 @@ export function useChat(): UseChat {
         timestamp: Date.now(),
       },
     })
-    const ok = ws.send({ type: 'message', text: trimmed, agent: state.agent })
+    const workspacePath = activeWorkspacePath()
+    const ok = ws.send({
+      type: 'message',
+      text: trimmed,
+      agent: state.agent,
+      ...(workspacePath ? { workspacePath } : {}),
+    })
     if (!ok) {
       dispatch({
         kind: 'ERROR',
@@ -354,6 +365,11 @@ export function useChat(): UseChat {
       workspaceId: loadActiveWorkspaceId(),
     })
     activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  function syncWorkspace(path?: string): void {
+    wsRef.current.send({ type: 'set-workspace', workspacePath: path || '' })
   }
 
   function switchSession(threadId: string): void {
@@ -361,6 +377,7 @@ export function useChat(): UseChat {
     if (!isWebThreadId(id) || id === threadIdRef.current) return
     setActiveWorkspace(findSession(id)?.workspaceId || CLOUD_WORKSPACE_ID)
     activateThread(id)
+    syncWorkspace(activeWorkspacePath())
   }
 
   function stop(): void {
@@ -396,6 +413,7 @@ export function useChat(): UseChat {
     choiceSubmit,
     newConversation,
     switchSession,
+    syncWorkspace,
     sessions: sessionSnap.sessions,
     activeSessionId: sessionSnap.activeId,
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),

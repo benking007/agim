@@ -60,6 +60,11 @@ describe('resolveAgentCwd', () => {
     expect(resolveAgentCwd('claude-code', { platform: 'feishu' })).toBeUndefined()
   })
 
+  it('explicit workspacePath beats the IM default dir', () => {
+    expect(resolveAgentCwd('claude-code', { ...FULL_IM_OPTS, workspacePath: '/tmp/portal-ws' }))
+      .toBe('/tmp/portal-ws')
+  })
+
   it('env override beats default IM dir', () => {
     process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
     expect(resolveAgentCwd('claude-code', FULL_IM_OPTS)).toBe('/srv/explicit')

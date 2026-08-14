@@ -170,6 +170,9 @@ function deserializeSession(value: unknown): Session | null {
     preferredWorkerAgent: typeof parsed.preferredWorkerAgent === 'string'
       ? parsed.preferredWorkerAgent
       : undefined,
+    workspacePath: typeof parsed.workspacePath === 'string' && parsed.workspacePath.trim()
+      ? parsed.workspacePath.trim()
+      : undefined,
   }
 }
 
@@ -538,7 +541,7 @@ class SessionManager {
    */
   async patchSession(
     platform: string, channelId: string, threadId: string,
-    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'compactRate'>>,
+    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'compactRate' | 'workspacePath'>>,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -561,6 +564,10 @@ class SessionManager {
         } else {
           delete session.compactRate
         }
+      }
+      if (patch.workspacePath !== undefined) {
+        if (patch.workspacePath.trim()) session.workspacePath = patch.workspacePath.trim()
+        else delete session.workspacePath
       }
       session.lastActivity = new Date()
       this.sessions.set(key, session)
@@ -1142,6 +1149,7 @@ class SessionManager {
         copilotSessionId: session.copilotSessionId,
         cursorSessionId: session.cursorSessionId,
         planMode: session.planMode,
+        workspacePath: session.workspacePath,
         messageCount: session.messages.length,
       }
       await this.atomicWrite(filePath, JSON.stringify(meta, null, 2))

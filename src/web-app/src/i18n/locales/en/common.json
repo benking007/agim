@@ -429,6 +429,7 @@
       "cloudWorkspaceHint": "Server working directory",
       "newWorkspace": "New workspace",
       "workspaceEmpty": "No sessions yet",
+      "workspaceUnresolved": "That folder is not visible on the Agim host. The agent can only open directories on the machine running Agim.",
       "justNow": "Just now",
       "connected": "Connected",
       "selectAgent": "Select Agent",

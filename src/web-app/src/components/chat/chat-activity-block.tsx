@@ -214,7 +214,10 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
         defaultValue: 'Running · {{count}} subagents',
       })
     } else {
-      const collapsed = formatCollapsedRunSummary(activity)
+      const hasThinkOrTool = activity.steps.some((s) => (
+        s.kind === 'reflect' || s.kind === 'tool' || s.kind === 'skill'
+      ))
+      const collapsed = hasThinkOrTool ? formatCollapsedRunSummary(activity) : ''
       const titleStep = waitingAgent ?? liveStep
       title = collapsed
         || (titleStep

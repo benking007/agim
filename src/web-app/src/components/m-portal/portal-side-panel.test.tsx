@@ -77,7 +77,7 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).toHaveBeenCalledWith('web-bbbb2222')
   })
 
-  it('keeps New conversation as a shortcut that mints a thread', async () => {
+  it('keeps New conversation as the only shortcut and hides Explore', async () => {
     const user = userEvent.setup()
     const { onNew, onSwitchSession } = renderPanel()
     expect(screen.queryByRole('button', { name: 'Interactive Chat' })).not.toBeInTheDocument()

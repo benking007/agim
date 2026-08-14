@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
+import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
 import { findSession, upsertSession } from '@/lib/web-sessions'
 import { addLocalWorkspace, setActiveWorkspace, toggleWorkspaceCollapsed } from '@/lib/web-workspaces'
 import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
@@ -66,12 +67,14 @@ import {
 import { mentionLabel } from './portal-mention-chip'
 import {
   collapseDemoMessages,
+  jumpLatestDemoMessages,
   mediaDemoMessages,
   petDemoMessages,
   todoDemoMessages,
   widthDemoMessages,
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
+import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
 import { PortalPet } from './portal-pet'
 import {
   skillMarker,
@@ -105,7 +108,7 @@ export function AgentPortal(): JSX.Element {
   }
 
   const {
-    state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
+    state, send, steer, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
     newConversation, switchSession, sessions, activeSessionId, clearError,
   } = useChat()
   const {
@@ -169,6 +172,8 @@ export function AgentPortal(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const [exploreCategory, setExploreCategory] = useState<ExploreCategory>('All')
   const [inputMessage, setInputMessage] = useState('')
+  const [pendingSends, setPendingSends] = useState<PendingSendItem[]>([])
+  const [queueThreadId, setQueueThreadId] = useState(state.clientId)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [uploading, setUploading] = useState(false)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
@@ -223,10 +228,15 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'media'
   const demoCollapse = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'collapse'
+  const demoSteer = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'steer-queue'
+  const demoJump = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'jump-latest'
   const chatMessages = useMemo(
     () => {
+      if (demoSteer || demoPet) return petDemoMessages()
+      if (demoJump) return jumpLatestDemoMessages()
       if (demoTodo) return todoDemoMessages()
-      if (demoPet) return petDemoMessages()
       if (demoWidth) return widthDemoMessages()
       if (demoCollapse) return collapseDemoMessages()
       if (demoMedia) {
@@ -240,13 +250,27 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoSteer, demoJump, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
   // Fallback only when the placeholder message has not landed yet.
   const streamingFallback = isTyping && !currentReplyInList
-  const canStop = isTyping || state.activeRunId != null
+  const liveBusy = isTyping || state.activeRunId != null
+  const canStop = liveBusy || demoSteer
+  const canSteerLive = liveBusy && (agentId === 'agim' || agentId === 'native')
+  if (state.clientId !== queueThreadId) {
+    setQueueThreadId(state.clientId)
+    setPendingSends([])
+  }
+
+  useEffect(() => {
+    if (canStop) return
+    const ready = pendingSends.filter((item) => item.flushAfter)
+    if (ready.length === 0) return
+    setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
+    for (const item of ready) send(item.text)
+  }, [canStop, pendingSends, send])
 
   const portalThreadId = state.clientId
   // Include WS status + activeRunId so reconnect / new run re-polls Loop
@@ -279,12 +303,13 @@ export function AgentPortal(): JSX.Element {
   // Follow the bottom only while the user is near it. Scrolling up to
   // read history pauses follow so streaming / tool steps do not yank
   // the viewport back down.
-  const { stickToBottom } = useChatFollowBottom({
+  const { stickToBottom, showJumpToLatest } = useChatFollowBottom({
     listRef: messagesListRef,
     messageCount: chatMessages.length,
     latestMessageContent: chatMessages[chatMessages.length - 1]?.content ?? '',
     streaming: isTyping,
     followSignal: activityFollowSignal(chatMessages[chatMessages.length - 1]?.activity),
+    threadKey: state.clientId,
   })
 
   const agentsCatalog = useMemo((): AgentCatalogEntry[] => {
@@ -335,6 +360,13 @@ export function AgentPortal(): JSX.Element {
       setSlashOpen(false)
       setAtOpen(false)
       stickToBottom()
+      if (canStop) {
+        setPendingSends((cur) => [
+          ...cur,
+          { id: `q-${Date.now()}-${cur.length}`, text: body },
+        ])
+        return
+      }
       send(body)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('chat.portal.attach.uploadFailed', {
@@ -343,6 +375,32 @@ export function AgentPortal(): JSX.Element {
     } finally {
       setUploading(false)
     }
+  }
+
+  function dismissPending(id: string): void {
+    setPendingSends((cur) => cur.filter((item) => item.id !== id))
+  }
+
+  function flushPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item || item.flushAfter) return
+    if (demoSteer && !liveBusy) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      return
+    }
+    if (canSteerLive) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      steer(item.text)
+      return
+    }
+    if (canStop) {
+      setPendingSends((cur) => cur.map((row) => (
+        row.id === id ? { ...row, flushAfter: true } : row
+      )))
+      return
+    }
+    setPendingSends((cur) => cur.filter((row) => row.id !== id))
+    send(item.text)
   }
 
   const handleTranscribed = useCallback((transcribedText: string) => {
@@ -559,6 +617,18 @@ export function AgentPortal(): JSX.Element {
     })
   }, [syncTriggers])
 
+  function reeditPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item) return
+    const draft = inputMessage.trim()
+    setPendingSends((cur) => {
+      const next = cur.filter((row) => row.id !== id)
+      if (!draft) return next
+      return [...next, { id: `q-${Date.now()}-${next.length}`, text: draft }]
+    })
+    fillComposer(item.text)
+  }
+
   const emptyChatSlot = useMemo(() => (
     <PortalEmptyChat
       dark={theme === 'dark'}
@@ -704,6 +774,14 @@ export function AgentPortal(): JSX.Element {
             composerMenuOpen ? 'z-50' : 'z-20',
             dark ? 'bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent' : 'bg-gradient-to-t from-zinc-100 via-zinc-100/95 to-transparent',
           )}>
+            <div className="pointer-events-none relative z-40 mx-auto flex h-0 max-w-[750px] justify-center">
+              <ChatJumpToLatest
+                show={showJumpToLatest}
+                dark={dark}
+                onJump={stickToBottom}
+                className="pointer-events-auto absolute left-1/2 -top-1 -translate-x-1/2 -translate-y-full"
+              />
+            </div>
             <div className="mx-auto w-full max-w-[750px]">
               <Suspense fallback={null}>
                 <PortalLoopDock
@@ -740,16 +818,25 @@ export function AgentPortal(): JSX.Element {
                   }}
                   className="absolute bottom-[calc(100%-0.55rem)] right-1 z-[5]"
                 />
-                <AttachmentStrip
-                  dark={dark}
-                  attachments={attachments}
-                  onRemove={(id) => {
-                    const target = attachments.find((a) => a.id === id)
-                    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
-                    setAttachments(attachments.filter((a) => a.id !== id))
-                  }}
-                  className="absolute bottom-full left-0 z-20 mb-1.5 max-w-[calc(100%-3.5rem)]"
-                />
+                <div className="absolute bottom-full left-0 right-[5.25rem] z-30 mb-1.5 space-y-1">
+                  <PortalSteerQueue
+                    dark={dark}
+                    items={pendingSends}
+                    onSend={flushPending}
+                    onDismiss={dismissPending}
+                    onReedit={reeditPending}
+                  />
+                  <AttachmentStrip
+                    dark={dark}
+                    attachments={attachments}
+                    onRemove={(id) => {
+                      const target = attachments.find((a) => a.id === id)
+                      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+                      setAttachments(attachments.filter((a) => a.id !== id))
+                    }}
+                    className=""
+                  />
+                </div>
                 <form
                   ref={composerFormRef}
                   onSubmit={(e) => { void onSend(e) }}
@@ -822,18 +909,34 @@ export function AgentPortal(): JSX.Element {
                         <ArrowUp className="h-3.5 w-3.5" />
                       </button>
                     ) : canStop ? (
-                      <button
-                        type="button"
-                        onClick={() => stop()}
-                        className={cn(
-                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
-                          dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
-                        )}
-                        title={t('chat.portal.stop')}
-                        aria-label={t('chat.portal.stop')}
-                      >
-                        <Square className="h-3 w-3 fill-current" />
-                      </button>
+                      <>
+                        {(inputMessage.trim() || attachments.length > 0) ? (
+                          <button
+                            type="submit"
+                            disabled={uploading}
+                            className={cn(
+                              'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
+                              dark ? 'bg-teal-400 text-zinc-950 hover:bg-teal-300' : 'bg-teal-600 text-white hover:bg-teal-700',
+                            )}
+                            title={t('chat.portal.enqueue', { defaultValue: '加入队列' })}
+                            aria-label={t('chat.portal.enqueue', { defaultValue: '加入队列' })}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => stop()}
+                          className={cn(
+                            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
+                            dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
+                          )}
+                          title={t('chat.portal.stop')}
+                          aria-label={t('chat.portal.stop')}
+                        >
+                          <Square className="h-3 w-3 fill-current" />
+                        </button>
+                      </>
                     ) : (
                       <button
                         type="button"

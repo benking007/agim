@@ -21,6 +21,8 @@ export type ChatOutgoing =
   | { type: 'new-conversation' }
   /** Abort the in-flight web chat run for this thread (Stop button). */
   | { type: 'stop' }
+  /** Inject a mid-turn user supplement into the live Agim run. */
+  | { type: 'steer'; text: string }
   /** Cancel one live Subagent/A2A inline job; parent turn continues. */
   | { type: 'stop-subagent'; jobId: number }
   /** Approval card button click. `data` MUST be the
@@ -97,6 +99,8 @@ export type ChatIncoming =
   | ActivityStepEvent
   | ActiveRunEvent
   | { type: 'error'; message: string; threadId?: string }
+  /** Ack that a mid-turn supplement was persisted / handed to the harness. */
+  | { type: 'steer-accepted'; text: string; mode: 'live' | 'queued'; threadId?: string }
   /**
    * Server refused rekey to a foreign threadId (owned by another token).
    * SPA must persist `threadId` and continue — history for the new

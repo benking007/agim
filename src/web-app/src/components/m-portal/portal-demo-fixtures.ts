@@ -7,6 +7,7 @@
  *   ?demo=todo     — Cursor-style plan checklist card
  *   ?demo=media    — image thumbnails + @file attachment
  *   ?demo=collapse — long user body for fold/mask behaviour
+ *   ?demo=jump-latest — long transcript to exercise jump-to-latest
  */
 
 import type { ChatMessage } from '@/hooks/use-chat'
@@ -177,4 +178,28 @@ export const COLLAPSE_DEMO_MESSAGES: ChatMessage[] = [
 
 export function collapseDemoMessages(): ChatMessage[] {
   return COLLAPSE_DEMO_MESSAGES
+}
+
+/** Local visual QA (`/m/chat?demo=jump-latest`) — enough turns to scroll. */
+export function jumpLatestDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  const out: ChatMessage[] = []
+  for (let i = 1; i <= 18; i += 1) {
+    out.push({
+      id: `demo-jump-user-${i}`,
+      role: 'user',
+      content: `第 ${i} 条用户消息：请继续往下看。`,
+      timestamp: now - (19 - i) * 8_000,
+    })
+    out.push({
+      id: `demo-jump-assistant-${i}`,
+      role: 'assistant',
+      agent: 'agim',
+      content: i === 18
+        ? '这是最新一条回复，切会话或点「回到最新」应落到这里。'
+        : `第 ${i} 条助手回复。`,
+      timestamp: now - (19 - i) * 8_000 + 1_000,
+    })
+  }
+  return out
 }

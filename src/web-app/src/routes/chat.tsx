@@ -30,12 +30,14 @@ import { useChat } from '@/hooks/use-chat'
 import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset'
 import { useChatFollowBottom, useChatKeyboardAnchor } from '@/hooks/use-chat-scroll'
+import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
 import { blurComposerOnListInteract, useBlurComposerOnUserScroll } from '@/hooks/use-blur-composer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { bubbleGroupFlags } from '@/components/chat/bubble-group'
 import { ChatComposer } from '@/components/chat/chat-composer'
+import { PortalSteerQueue, type PendingSendItem } from '@/components/m-portal/portal-steer-queue'
 import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
@@ -75,9 +77,11 @@ const STATUS_STYLES: Record<string, string> = {
 export default function ChatRoute(): JSX.Element {
   const { t } = useTranslation()
   const {
-    state, send, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+    state, send, steer, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
+  const [pendingSends, setPendingSends] = useState<PendingSendItem[]>([])
+  const [queueThreadId, setQueueThreadId] = useState(state.clientId)
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
@@ -128,12 +132,13 @@ export default function ChatRoute(): JSX.Element {
   )
 
   const latestFollowSignal = activityFollowSignal(state.messages.at(-1)?.activity)
-  const { stickToBottom } = useChatFollowBottom({
+  const { stickToBottom, showJumpToLatest } = useChatFollowBottom({
     listRef,
     messageCount,
     latestMessageContent,
     streaming: state.currentReplyId != null,
     followSignal: latestFollowSignal,
+    threadKey: state.clientId,
   })
   useChatKeyboardAnchor({ listRef, inputRef, keyboardInset })
   useBlurComposerOnUserScroll(listRef, inputRef)
@@ -151,6 +156,21 @@ export default function ChatRoute(): JSX.Element {
     clearError()
   }, [state.error, clearError])
 
+  const busy = state.currentReplyId != null || state.activeRunId != null
+  const canSteerLive = busy && (state.agent === 'agim' || state.agent === 'native')
+  if (state.clientId !== queueThreadId) {
+    setQueueThreadId(state.clientId)
+    setPendingSends([])
+  }
+
+  useEffect(() => {
+    if (busy) return
+    const ready = pendingSends.filter((item) => item.flushAfter)
+    if (ready.length === 0) return
+    setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
+    for (const item of ready) send(item.text)
+  }, [busy, pendingSends, send])
+
   function onSubmit(): void {
     const v = input.trim()
     if (!v) return
@@ -159,8 +179,50 @@ export default function ChatRoute(): JSX.Element {
       return
     }
     stickToBottom()
-    send(v)
     setInput('')
+    if (busy) {
+      setPendingSends((cur) => [
+        ...cur,
+        { id: `q-${Date.now()}-${cur.length}`, text: v },
+      ])
+      return
+    }
+    send(v)
+  }
+
+  function dismissPending(id: string): void {
+    setPendingSends((cur) => cur.filter((item) => item.id !== id))
+  }
+
+  function reeditPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item) return
+    const draft = input.trim()
+    setPendingSends((cur) => {
+      const next = cur.filter((row) => row.id !== id)
+      if (!draft) return next
+      return [...next, { id: `q-${Date.now()}-${next.length}`, text: draft }]
+    })
+    setInput(item.text)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
+  function flushPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item || item.flushAfter) return
+    if (canSteerLive) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      steer(item.text)
+      return
+    }
+    if (busy) {
+      setPendingSends((cur) => cur.map((row) => (
+        row.id === id ? { ...row, flushAfter: true } : row
+      )))
+      return
+    }
+    setPendingSends((cur) => cur.filter((row) => row.id !== id))
+    send(item.text)
   }
 
   return (
@@ -298,12 +360,30 @@ export default function ChatRoute(): JSX.Element {
         onSubmit={(mid, data) => choiceSubmit(mid, data)}
       />
 
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-0 justify-center">
+          <ChatJumpToLatest
+            show={showJumpToLatest}
+            onJump={stickToBottom}
+            className="pointer-events-auto -translate-y-[calc(100%+0.5rem)]"
+          />
+        </div>
       <ChatComposer
         value={input}
         onChange={setInput}
         onSubmit={onSubmit}
         disabled={state.status !== 'open'}
-        busy={!!state.currentReplyId}
+        busy={busy}
+        allowBusySubmit
+        prepend={(
+          <PortalSteerQueue
+            dark={false}
+            items={pendingSends}
+            onSend={flushPending}
+            onDismiss={dismissPending}
+            onReedit={reeditPending}
+          />
+        )}
         enterNewline={enterNewline}
         keyboardInset={keyboardInset}
         inputRef={inputRef}
@@ -374,6 +454,7 @@ export default function ChatRoute(): JSX.Element {
           </div>
         )}
       />
+      </div>
     </div>
   )
 }

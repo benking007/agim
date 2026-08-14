@@ -19,6 +19,8 @@ import {
   logger as rootLogger,
   sanitizeUserText,
 } from '../core/logger.js'
+import { dispatchTurnSteer, threadSteerKey } from '../core/turn-steer.js'
+import { isAgimAgentId } from '../core/naming-migrate.js'
 import type { ChatMessage } from '../core/types.js'
 import {
   buildHistoryWireFrames,
@@ -618,6 +620,36 @@ export async function handleClientMessage(
         break
       }
       ac.abort()
+      break
+    }
+
+    case 'steer': {
+      // Mid-turn supplement: persist as a user bubble and inject into the
+      // live Agim harness. Must not start a new turn / placeholder.
+      const text = msg.text?.trim() ?? ''
+      if (!text) break
+      if (!webRunAborts.get(clientId)) {
+        emit({ type: 'error', message: '当前没有正在执行的任务' })
+        break
+      }
+      if (!isAgimAgentId(client.agent)) {
+        emit({ type: 'error', message: '当前 Agent 不支持本轮补充，请等本轮结束后再发，或点终止。' })
+        break
+      }
+      try {
+        await sessionManager.addMessage('web', 'web', clientId, {
+          role: 'user',
+          content: text,
+          timestamp: new Date(),
+        })
+        const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', clientId), text)
+        emit({ type: 'steer-accepted', text, mode })
+      } catch (err) {
+        emit({
+          type: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
       break
     }
 

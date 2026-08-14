@@ -27,6 +27,22 @@ describe('ChatComposer Enter semantics', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('submits while busy when allowBusySubmit is set', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <ChatComposer
+        value="also run tests"
+        onChange={() => {}}
+        onSubmit={onSubmit}
+        busy
+        allowBusySubmit
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /send/i }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
   it('does not submit on Enter when enterNewline (phone)', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()

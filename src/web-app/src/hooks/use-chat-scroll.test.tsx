@@ -39,7 +39,12 @@ function mountScroller(opts: {
 }
 
 describe('useChatFollowBottom', () => {
+  let now = 0
+
   beforeEach(() => {
+    now = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       cb(0)
       return 0
@@ -47,7 +52,9 @@ describe('useChatFollowBottom', () => {
   })
   afterEach(() => {
     document.body.replaceChildren()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('follows the bottom while the user stays near it during streaming', () => {
@@ -98,7 +105,6 @@ describe('useChatFollowBottom', () => {
     const listRef = createRef<HTMLElement>()
     // @ts-expect-error test assigns the live node
     listRef.current = el
-    const scrolledUpTop = metrics.scrollTop
 
     const { rerender } = renderHook(
       (props) => useChatFollowBottom(props),
@@ -109,10 +115,15 @@ describe('useChatFollowBottom', () => {
           latestMessageContent: 'partial',
           streaming: true,
           followSignal: 1,
+          threadKey: 'web-a',
         },
       },
     )
 
+    act(() => { vi.advanceTimersByTime(80) })
+    now = 2000
+    metrics.scrollTop = 200
+    const scrolledUpTop = metrics.scrollTop
     // Latch "not following" from the scrolled-up geometry.
     el.dispatchEvent(new Event('scroll'))
     expect(metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight)
@@ -125,6 +136,7 @@ describe('useChatFollowBottom', () => {
       latestMessageContent: 'partial… tool done',
       streaming: true,
       followSignal: 4,
+      threadKey: 'web-a',
     })
 
     expect(metrics.scrollTop).toBe(scrolledUpTop)
@@ -168,6 +180,92 @@ describe('useChatFollowBottom', () => {
       streaming: true,
       followSignal: 0,
     })
+    expect(metrics.scrollTop).toBe(metrics.scrollHeight)
+  })
+
+  it('re-pins to the latest message when the thread changes', () => {
+    const metrics = {
+      scrollHeight: 2000,
+      clientHeight: 400,
+      scrollTop: 80,
+    }
+    const el = mountScroller(metrics)
+    const listRef = createRef<HTMLElement>()
+    // @ts-expect-error test assigns the live node
+    listRef.current = el
+
+    const { result, rerender } = renderHook(
+      (props) => useChatFollowBottom(props),
+      {
+        initialProps: {
+          listRef,
+          messageCount: 4,
+          latestMessageContent: 'old thread',
+          streaming: false,
+          followSignal: 0,
+          threadKey: 'web-a',
+        },
+      },
+    )
+
+    act(() => { vi.advanceTimersByTime(80) })
+    now = 2000
+    metrics.scrollTop = 80
+    act(() => { el.dispatchEvent(new Event('scroll')) })
+    expect(result.current.showJumpToLatest).toBe(true)
+
+    metrics.scrollHeight = 3200
+    rerender({
+      listRef,
+      messageCount: 12,
+      latestMessageContent: 'new thread latest',
+      streaming: false,
+      followSignal: 0,
+      threadKey: 'web-b',
+    })
+    act(() => { vi.advanceTimersByTime(80) })
+
+    expect(metrics.scrollTop).toBe(metrics.scrollHeight)
+    expect(result.current.showJumpToLatest).toBe(false)
+  })
+
+  it('keeps pinning while history arrives after a thread switch', () => {
+    const metrics = {
+      scrollHeight: 400,
+      clientHeight: 400,
+      scrollTop: 0,
+    }
+    const el = mountScroller(metrics)
+    const listRef = createRef<HTMLElement>()
+    // @ts-expect-error test assigns the live node
+    listRef.current = el
+
+    const { rerender } = renderHook(
+      (props) => useChatFollowBottom(props),
+      {
+        initialProps: {
+          listRef,
+          messageCount: 0,
+          latestMessageContent: '',
+          streaming: false,
+          followSignal: 0,
+          threadKey: 'web-new',
+        },
+      },
+    )
+
+    now = 400
+    metrics.scrollHeight = 2800
+    metrics.scrollTop = 0
+    rerender({
+      listRef,
+      messageCount: 20,
+      latestMessageContent: 'latest after hydrate',
+      streaming: false,
+      followSignal: 0,
+      threadKey: 'web-new',
+    })
+
     expect(metrics.scrollTop).toBe(metrics.scrollHeight)
   })
 })

@@ -333,7 +333,7 @@ describe('buildAgimDispatcher', () => {
       expect(props).toHaveProperty('outputFormat')
       expect(props).toHaveProperty('maxDepth')
       expect(props).toHaveProperty('allowedTools')
-      expect((callAgent?.parameters as { additionalProperties?: boolean }).additionalProperties).toBe(false)
+      expect((callAgent?.parameters as { additionalProperties?: boolean } | undefined)?.additionalProperties).toBe(false)
     })
 
     it('call_agent tool description locks Phase A3 decompose heuristics', async () => {

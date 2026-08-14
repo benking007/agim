@@ -5,12 +5,15 @@
  *
  * While the user is reading older history (scrolled up), streaming /
  * tool-activity updates must NOT yank the viewport back to the end.
+ * Switching threads always re-pins to the latest message.
  */
 
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 
 /** Distance from the bottom that still counts as "following". */
 export const CHAT_NEAR_BOTTOM_PX = 200
+/** After a thread switch, keep pinning until history has had time to land. */
+export const CHAT_THREAD_PIN_MS = 1200
 
 function distanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight
@@ -23,6 +26,11 @@ function scrollToEnd(el: HTMLElement, smooth: boolean): void {
   } else {
     el.scrollTop = top
   }
+}
+
+function jumpToEnd(el: HTMLElement): void {
+  scrollToEnd(el, false)
+  requestAnimationFrame(() => scrollToEnd(el, false))
 }
 
 export function useChatKeyboardAnchor(opts: {
@@ -46,12 +54,15 @@ export function useChatKeyboardAnchor(opts: {
 export interface ChatFollowBottomApi {
   /** Re-enable follow and jump to the end (call when the user sends). */
   stickToBottom: () => void
+  /** True when the viewport is not following the latest message. */
+  showJumpToLatest: boolean
 }
 
 /**
  * Scroll to bottom when new messages / streaming chunks / activity arrive,
  * but only while the user is still following the bottom. Scrolling up to
  * read history pauses follow until they return near the end (or send).
+ * A thread change always re-pins to the latest message.
  */
 export function useChatFollowBottom(opts: {
   listRef: RefObject<HTMLElement | null>
@@ -60,15 +71,22 @@ export function useChatFollowBottom(opts: {
   streaming: boolean
   /** Extra signal (e.g. activity step count) that should retry follow. */
   followSignal?: unknown
+  /** Session / thread id. Changing it jumps to the latest message. */
+  threadKey?: string | null
 }): ChatFollowBottomApi {
-  const { listRef, messageCount, latestMessageContent, streaming, followSignal } = opts
+  const { listRef, messageCount, latestMessageContent, streaming, followSignal, threadKey } = opts
   const followingRef = useRef(true)
+  const suppressScrollSyncUntilRef = useRef(0)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
 
   useEffect(() => {
     const el = listRef.current
     if (!el) return
     const syncFollow = (): void => {
-      followingRef.current = distanceFromBottom(el) < CHAT_NEAR_BOTTOM_PX
+      if (performance.now() < suppressScrollSyncUntilRef.current) return
+      const away = distanceFromBottom(el) >= CHAT_NEAR_BOTTOM_PX
+      followingRef.current = !away
+      setShowJumpToLatest(away)
     }
     syncFollow()
     el.addEventListener('scroll', syncFollow, { passive: true })
@@ -77,20 +95,46 @@ export function useChatFollowBottom(opts: {
 
   const stickToBottom = (): void => {
     followingRef.current = true
+    setShowJumpToLatest(false)
+    suppressScrollSyncUntilRef.current = performance.now() + 240
     const el = listRef.current
     if (!el) return
-    requestAnimationFrame(() => scrollToEnd(el, false))
+    jumpToEnd(el)
   }
+
+  useEffect(() => {
+    // threadKey is a dep-only trigger: switching sessions re-pins to latest.
+    void threadKey
+    followingRef.current = true
+    setShowJumpToLatest(false)
+    suppressScrollSyncUntilRef.current = performance.now() + CHAT_THREAD_PIN_MS
+    const el = listRef.current
+    if (!el) return
+    jumpToEnd(el)
+    const later = window.setTimeout(() => jumpToEnd(el), 80)
+    const settle = window.setTimeout(() => jumpToEnd(el), 360)
+    return () => {
+      window.clearTimeout(later)
+      window.clearTimeout(settle)
+    }
+  }, [threadKey, listRef])
 
   useEffect(() => {
     // followSignal is intentionally a dep-only trigger (e.g. activity steps).
     void followSignal
     if (messageCount === 0 && !latestMessageContent && !streaming) return
-    if (!followingRef.current) return
+    const settling = performance.now() < suppressScrollSyncUntilRef.current
+    if (!followingRef.current && !settling) return
     const el = listRef.current
     if (!el) return
+    if (settling) {
+      followingRef.current = true
+      setShowJumpToLatest(false)
+      jumpToEnd(el)
+      return
+    }
     requestAnimationFrame(() => scrollToEnd(el, streaming))
   }, [latestMessageContent, messageCount, streaming, followSignal, listRef])
 
-  return { stickToBottom }
+  return { stickToBottom, showJumpToLatest }
 }

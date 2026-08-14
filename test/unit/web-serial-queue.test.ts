@@ -179,3 +179,53 @@ describe('web serial queue — stop bypass', () => {
     expect(d.events).toContain('chat:end')
   })
 })
+
+// Mid-turn steer — `{ type: 'steer' }` must reach the live harness while
+// chat is in flight. Same deadlock class as stop.
+describe('web serial queue — steer bypass', () => {
+  function makeDispatcher() {
+    const enqueue = createSerialQueue()
+    const events: string[] = []
+    let chatRunning = false
+    let steeredWhileChatRunning = false
+
+    async function handleChatMessage(): Promise<void> {
+      chatRunning = true
+      events.push('chat:start')
+      await new Promise((r) => setTimeout(r, 80))
+      events.push('chat:end')
+      chatRunning = false
+    }
+
+    function handleSteer(): void {
+      steeredWhileChatRunning = chatRunning
+      events.push('steer')
+    }
+
+    function dispatch(msg: { type: string }): void {
+      if (msg.type === 'steer') {
+        handleSteer()
+        return
+      }
+      enqueue(async () => { await handleChatMessage() })
+    }
+
+    return { dispatch, events, get steeredWhileChatRunning() { return steeredWhileChatRunning } }
+  }
+
+  it('steer runs while a slow chat handler is still in the queue', async () => {
+    const d = makeDispatcher()
+    d.dispatch({ type: 'message' })
+    await new Promise((r) => setTimeout(r, 1))
+    expect(d.events).toEqual(['chat:start'])
+
+    d.dispatch({ type: 'steer' })
+    await new Promise((r) => setTimeout(r, 1))
+    expect(d.events).toContain('steer')
+    expect(d.events).not.toContain('chat:end')
+    expect(d.steeredWhileChatRunning).toBe(true)
+
+    await new Promise((r) => setTimeout(r, 120))
+    expect(d.events).toContain('chat:end')
+  })
+})

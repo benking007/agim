@@ -67,6 +67,11 @@ import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
+import {
+  formatMidTurnSteer,
+  registerLiveSteer,
+  threadSteerKey,
+} from '../../../core/turn-steer.js'
 import { detectHallucinatedToolCall, isHallucinationDetectorOn } from '../../../core/llm/hallucination-detector.js'
 import {
   isConcreteTurnAsk,
@@ -1849,11 +1854,23 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     let result: Awaited<ReturnType<AgentHarness['prompt']>>
     let loopForcedExitSummary: string | undefined
+    let unregisterSteer: (() => void) | undefined
     if (loopScope) {
       markLoopParentTurnActive(loopScope.platform, loopScope.channelId, loopScope.threadId)
     }
     try {
       const promptPromise = harness.prompt(prompt)
+      // prompt() flips phase to `turn` synchronously — steer() is legal now.
+      const steerKey = opts?.platform && opts?.threadId
+        ? threadSteerKey(opts.platform, opts.channelId ?? '', opts.threadId)
+        : `agim:${sessionId}`
+      unregisterSteer = registerLiveSteer(steerKey, async (text) => {
+        ephemeralSteer = [
+          ephemeralSteer,
+          '用户刚通过本轮补充加入了新的约束。先停一下读完补充，再决定是否调整方案，然后继续本轮工作。',
+        ].filter(Boolean).join('\n\n')
+        await harness.steer(formatMidTurnSteer(text))
+      })
       // Covers abort between the final pre-check and listener registration.
       if (turnSignal.aborted) onRunAbort()
       result = await promptPromise
@@ -1894,6 +1911,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         }
       }
     } finally {
+      unregisterSteer?.()
       if (timeoutTimer) clearTimeout(timeoutTimer)
       externalSignal?.removeEventListener('abort', forwardExternalAbort)
       runController.signal.removeEventListener('abort', onRunAbort)

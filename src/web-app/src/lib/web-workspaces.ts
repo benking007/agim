@@ -3,8 +3,9 @@
  *
  * Workspaces are a client grouping over `web-*` sessions — not the IM
  * tenant `/api/workspaces` registry. The default `cloud` workspace is
- * the Agim server working directory; local entries are folders the
- * operator picked on this machine.
+ * the agent cwd (`~/.agim-workspaces/<agent>/`). Named entries are
+ * subdirectories of that host tree — never folders on the browser's
+ * machine.
  */
 
 export const CLOUD_WORKSPACE_ID = 'cloud'

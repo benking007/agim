@@ -1,10 +1,10 @@
 /**
- * Open the browser's native folder picker.
+ * Open the browser's native folder picker (same-machine convenience).
  *
- * Prefer File System Access `showDirectoryPicker` (Chrome / Edge — the
- * OS directory dialog). When that API is missing, the rail clicks a
- * hidden `<input webkitdirectory>` which still opens the same kind of
- * folder chooser in Firefox / Safari / most webviews.
+ * File System Access `showDirectoryPicker` only yields a folder name.
+ * The Portal still has to resolve that name under
+ * `.agim-workspaces/<agent>/` on the Agim host — a local laptop folder
+ * that does not exist there is rejected.
  */
 
 export interface PickedWorkspaceDir {
@@ -32,6 +32,7 @@ export function canPickDirectory(): boolean {
 export function dirFromFileList(files: FileList | File[] | null | undefined): PickedWorkspaceDir | null {
   if (!files || files.length === 0) return null
   const first = files[0]
+  if (!first) return null
   const rel = (first.webkitRelativePath || first.name || '').replace(/\\/g, '/')
   const root = rel.split('/').find((part) => part.trim())
   if (!root) return null

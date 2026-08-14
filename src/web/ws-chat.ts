@@ -353,7 +353,7 @@ export async function handleClientMessage(
       runAbort.signal.addEventListener('abort', onParentAbort, { once: true })
 
       try {
-        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath)
+        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath, client.agent)
         const routeCtx: RouteContext = {
           threadId: clientId,
           channelId: 'web',
@@ -750,7 +750,7 @@ export async function handleClientMessage(
     // list so the UI repaints the cleared state.
     case 'set-workspace': {
       const raw = typeof msg.workspacePath === 'string' ? msg.workspacePath : ''
-      const resolved = resolvePortalWorkspacePath(raw)
+      const resolved = resolvePortalWorkspacePath(raw, client.agent)
       await sessionManager.getOrCreateSession('web', 'web', clientId, client.agent)
       await sessionManager.patchSession('web', 'web', clientId, {
         workspacePath: resolved || '',

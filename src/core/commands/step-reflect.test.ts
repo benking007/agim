@@ -49,6 +49,7 @@ describe('parseMessage /step-reflect', () => {
     expect(parseMessage('/step-reflect on')).toEqual({ type: 'step-reflect', args: 'on' })
     expect(parseMessage('/步思 off')).toEqual({ type: 'step-reflect', args: 'off' })
     expect(parseMessage('/一步一想')).toEqual({ type: 'step-reflect', args: '' })
+    expect(parseMessage('/执行过程')).toEqual({ type: 'step-reflect', args: '' })
   })
 })
 
@@ -57,7 +58,7 @@ describe('handleStepReflectCommand', () => {
     const ctx = makeCtx(uid(), uid())
     await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, 'agim')
     const out = await handleStepReflectCommand('', ctx)
-    expect(out).toContain('一步一想')
+    expect(out).toContain('执行过程')
     expect(out).toMatch(/`on`/)
     expect(out).toContain('/step-reflect off')
     expect(out).toContain('DeepSeek')

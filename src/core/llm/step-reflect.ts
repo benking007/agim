@@ -1,5 +1,5 @@
 /**
- * Step Reflect (步思) — DeepSeek-style per-hop think-then-act for Agim Agent.
+ * 执行过程 — DeepSeek-style per-hop think-then-act for Agim Agent.
  *
  * When on, Agim forces the provider thinking channel (even if /think is off)
  * and surfaces each hop's reasoning as reflect activity while the harness

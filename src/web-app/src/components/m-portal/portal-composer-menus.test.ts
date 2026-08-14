@@ -94,6 +94,7 @@ describe('filterSlashCommands', () => {
   it('does not advertise /step-reflect (always-on, no composer toggle)', () => {
     expect(filterSlashCommands('step').some((c) => c.id === 'step-reflect')).toBe(false)
     expect(filterSlashCommands('一步一想').some((c) => c.id === 'step-reflect')).toBe(false)
+    expect(filterSlashCommands('执行过程').some((c) => c.id === 'step-reflect')).toBe(false)
   })
 })
 

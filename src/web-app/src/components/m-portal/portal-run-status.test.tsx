@@ -64,7 +64,7 @@ describe('PortalRunStatus', () => {
     expect(line.textContent).toMatch(/web_search/)
     expect(screen.queryByTestId('activity-icon-reflect')).toBeNull()
     await user.click(screen.getByRole('button', { name: /先确认港股代码/ }))
-    expect(screen.getByTestId('activity-icon-reflect')).toBeTruthy()
+    expect(screen.queryByTestId('activity-icon-reflect')).toBeNull()
     expect(screen.getByTestId('activity-icon-tool')).toBeTruthy()
     expect(screen.getAllByText('web_search').length).toBeGreaterThan(0)
   })
@@ -166,7 +166,7 @@ describe('PortalRunStatus', () => {
       />,
     )
     expect(screen.queryByTestId('portal-step-reflect-card')).toBeNull()
-    expect(screen.queryByText(/Step reflect · Dispatch a checker|一步一想 · Dispatch a checker/)).toBeNull()
+    expect(screen.queryByText(/Execution · Dispatch a checker|执行过程 · Dispatch a checker|Step reflect · Dispatch a checker|一步一想 · Dispatch a checker/)).toBeNull()
     const line = screen.getByTestId('portal-run-collapsed-line')
     expect(line.textContent).toMatch(/Dispatch a checker/)
     expect(line.textContent).toMatch(/write_file/)

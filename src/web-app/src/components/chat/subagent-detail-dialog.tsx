@@ -295,7 +295,7 @@ export function SubagentDetailDialog({
                   dark ? 'text-zinc-500' : 'text-text-muted',
                 )}
                 >
-                  {t('chat.subagentReflectHeading', { defaultValue: 'Step reflect' })}
+                  {t('chat.subagentReflectHeading', { defaultValue: 'Execution' })}
                 </h3>
                 <ul className="space-y-1">
                   {step.reflects.map((rec) => (

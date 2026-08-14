@@ -282,7 +282,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'sessions') return { type: 'sessions', args: rest }
   if (cmd === 'approval' || cmd === 'auto') return { type: 'approval', args: rest }
   if (cmd === 'plan') return { type: 'plan', args: rest }
-  if (cmd === 'step-reflect' || cmd === '步思' || cmd === '一步一想') {
+  if (cmd === 'step-reflect' || cmd === '步思' || cmd === '一步一想' || cmd === '执行过程') {
     return { type: 'step-reflect', args: rest }
   }
   // /web — print the web console URL (Viewer's public base URL or cloudflared tunnel).

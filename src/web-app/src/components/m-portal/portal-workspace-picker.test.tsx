@@ -79,7 +79,7 @@ describe('PortalWorkspacePicker', () => {
       expect(screen.getByText('proj')).toBeInTheDocument()
     })
     expect(screen.queryByText('AGENTS.md')).not.toBeInTheDocument()
-    expect(screen.getByTestId('workspace-picker-use-current')).toBeDisabled()
+    expect(screen.queryByTestId('workspace-picker-use-current')).not.toBeInTheDocument()
     expect(getWorkspaceFiles).toHaveBeenCalledWith({ agent: 'agim', path: undefined })
   })
 

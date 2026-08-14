@@ -67,6 +67,7 @@ import {
 import { mentionLabel } from './portal-mention-chip'
 import {
   collapseDemoMessages,
+  jumpLatestDemoMessages,
   mediaDemoMessages,
   petDemoMessages,
   todoDemoMessages,
@@ -229,9 +230,12 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'collapse'
   const demoSteer = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'steer-queue'
+  const demoJump = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'jump-latest'
   const chatMessages = useMemo(
     () => {
       if (demoSteer || demoPet) return petDemoMessages()
+      if (demoJump) return jumpLatestDemoMessages()
       if (demoTodo) return todoDemoMessages()
       if (demoWidth) return widthDemoMessages()
       if (demoCollapse) return collapseDemoMessages()
@@ -246,7 +250,7 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoSteer, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoSteer, demoJump, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)

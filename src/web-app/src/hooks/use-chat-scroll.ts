@@ -12,6 +12,8 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 
 /** Distance from the bottom that still counts as "following". */
 export const CHAT_NEAR_BOTTOM_PX = 200
+/** After a thread switch, keep pinning until history has had time to land. */
+export const CHAT_THREAD_PIN_MS = 1200
 
 function distanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight
@@ -105,21 +107,32 @@ export function useChatFollowBottom(opts: {
     void threadKey
     followingRef.current = true
     setShowJumpToLatest(false)
-    suppressScrollSyncUntilRef.current = performance.now() + 240
+    suppressScrollSyncUntilRef.current = performance.now() + CHAT_THREAD_PIN_MS
     const el = listRef.current
     if (!el) return
     jumpToEnd(el)
     const later = window.setTimeout(() => jumpToEnd(el), 80)
-    return () => window.clearTimeout(later)
+    const settle = window.setTimeout(() => jumpToEnd(el), 360)
+    return () => {
+      window.clearTimeout(later)
+      window.clearTimeout(settle)
+    }
   }, [threadKey, listRef])
 
   useEffect(() => {
     // followSignal is intentionally a dep-only trigger (e.g. activity steps).
     void followSignal
     if (messageCount === 0 && !latestMessageContent && !streaming) return
-    if (!followingRef.current) return
+    const settling = performance.now() < suppressScrollSyncUntilRef.current
+    if (!followingRef.current && !settling) return
     const el = listRef.current
     if (!el) return
+    if (settling) {
+      followingRef.current = true
+      setShowJumpToLatest(false)
+      jumpToEnd(el)
+      return
+    }
     requestAnimationFrame(() => scrollToEnd(el, streaming))
   }, [latestMessageContent, messageCount, streaming, followSignal, listRef])
 

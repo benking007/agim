@@ -121,7 +121,7 @@ describe('useChatFollowBottom', () => {
     )
 
     act(() => { vi.advanceTimersByTime(80) })
-    now = 1000
+    now = 2000
     metrics.scrollTop = 200
     const scrolledUpTop = metrics.scrollTop
     // Latch "not following" from the scrolled-up geometry.
@@ -209,7 +209,7 @@ describe('useChatFollowBottom', () => {
     )
 
     act(() => { vi.advanceTimersByTime(80) })
-    now = 1000
+    now = 2000
     metrics.scrollTop = 80
     act(() => { el.dispatchEvent(new Event('scroll')) })
     expect(result.current.showJumpToLatest).toBe(true)
@@ -227,5 +227,45 @@ describe('useChatFollowBottom', () => {
 
     expect(metrics.scrollTop).toBe(metrics.scrollHeight)
     expect(result.current.showJumpToLatest).toBe(false)
+  })
+
+  it('keeps pinning while history arrives after a thread switch', () => {
+    const metrics = {
+      scrollHeight: 400,
+      clientHeight: 400,
+      scrollTop: 0,
+    }
+    const el = mountScroller(metrics)
+    const listRef = createRef<HTMLElement>()
+    // @ts-expect-error test assigns the live node
+    listRef.current = el
+
+    const { rerender } = renderHook(
+      (props) => useChatFollowBottom(props),
+      {
+        initialProps: {
+          listRef,
+          messageCount: 0,
+          latestMessageContent: '',
+          streaming: false,
+          followSignal: 0,
+          threadKey: 'web-new',
+        },
+      },
+    )
+
+    now = 400
+    metrics.scrollHeight = 2800
+    metrics.scrollTop = 0
+    rerender({
+      listRef,
+      messageCount: 20,
+      latestMessageContent: 'latest after hydrate',
+      streaming: false,
+      followSignal: 0,
+      threadKey: 'web-new',
+    })
+
+    expect(metrics.scrollTop).toBe(metrics.scrollHeight)
   })
 })

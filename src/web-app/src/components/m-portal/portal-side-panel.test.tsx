@@ -1,8 +1,8 @@
 /**
  * Portal left rail — conversation list click switches the active thread.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Brain } from 'lucide-react'
 
@@ -26,7 +26,7 @@ const cloudWorkspace = {
 function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) {
   const onSwitchSession = vi.fn()
   const onNew = vi.fn()
-  const onWorkspaceCreated = vi.fn()
+  const onNewWorkspace = vi.fn()
   const onSelectWorkspace = vi.fn()
   const onToggleWorkspace = vi.fn()
   render(
@@ -55,18 +55,14 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       collapsedWorkspaces={{}}
       onToggleWorkspace={onToggleWorkspace}
       onSelectWorkspace={onSelectWorkspace}
-      onWorkspaceCreated={onWorkspaceCreated}
+      onNewWorkspace={onNewWorkspace}
       {...over}
     />,
   )
-  return { onSwitchSession, onNew, onWorkspaceCreated, onSelectWorkspace, onToggleWorkspace }
+  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace }
 }
 
 describe('PortalSidePanel conversations', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
   it('lists saved sessions under the cloud workspace and click calls onSwitchSession', async () => {
     const user = userEvent.setup()
     const { onSwitchSession } = renderPanel()
@@ -88,12 +84,12 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).not.toHaveBeenCalled()
   })
 
-  it('nests sessions under their workspace and creates one from the directory file input', async () => {
+  it('nests sessions under their workspace and opens the cloud folder picker', async () => {
     const user = userEvent.setup()
-    const { onWorkspaceCreated } = renderPanel({
+    const { onNewWorkspace } = renderPanel({
       workspaces: [
         cloudWorkspace,
-        { id: 'ws-local1', kind: 'local', name: 'agim', path: '/Users/a/Work/agim', createdAt: 2 },
+        { id: 'ws-local1', kind: 'local', name: 'proj', path: '/home/u/.agim-workspaces/agim/proj', createdAt: 2 },
       ],
       sessions: [
         { id: 'web-aaaa1111', title: 'Cloud chat', updatedAt: Date.now() - 3_600_000, workspaceId: 'cloud' },
@@ -103,25 +99,9 @@ describe('PortalSidePanel conversations', () => {
 
     expect(screen.getByText('Cloud chat')).toBeInTheDocument()
     expect(screen.getByText('Local review')).toBeInTheDocument()
-    expect(screen.getByText('agim')).toBeInTheDocument()
+    expect(screen.getByText('proj')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'New workspace' }))
-    expect(screen.queryByText('Select workspace directory')).not.toBeInTheDocument()
-
-    const input = screen.getByTestId('workspace-dir-input') as HTMLInputElement
-    const file = new File(['x'], 'package.json')
-    Object.defineProperty(file, 'webkitRelativePath', { value: 'ceshi/package.json' })
-    fireEvent.change(input, { target: { files: [file] } })
-    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'ceshi', path: 'ceshi' })
-  })
-
-  it('uses showDirectoryPicker when the browser exposes it', async () => {
-    const pick = vi.fn(async () => ({ name: 'agim' }))
-    vi.stubGlobal('showDirectoryPicker', pick)
-    const user = userEvent.setup()
-    const { onWorkspaceCreated } = renderPanel()
-    await user.click(screen.getByRole('button', { name: 'New workspace' }))
-    expect(pick).toHaveBeenCalled()
-    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'agim', path: 'agim' })
+    expect(onNewWorkspace).toHaveBeenCalled()
   })
 })

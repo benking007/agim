@@ -4,7 +4,6 @@
  * focused on wiring and layout.
  */
 
-import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -13,11 +12,6 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import {
-  canPickDirectory,
-  dirFromFileList,
-  pickWorkspaceDirectory,
-} from '@/lib/pick-workspace-dir'
 import { sessionWorkspaceId, type WebSessionEntry } from '@/lib/web-sessions'
 import type { WebWorkspace } from '@/lib/web-workspaces'
 import type { Lang } from '@/stores/prefs'
@@ -47,7 +41,7 @@ export function PortalSidePanel(props: {
   collapsedWorkspaces: Record<string, boolean>
   onToggleWorkspace: (id: string) => void
   onSelectWorkspace: (id: string) => void
-  onWorkspaceCreated: (dir: { name: string; path: string }) => void
+  onNewWorkspace: () => void
 }): JSX.Element {
   const { t } = useTranslation()
   const {
@@ -55,24 +49,8 @@ export function PortalSidePanel(props: {
     onClose, onChat, onExplore, onNew, onToggleLang,
     sessions, activeSessionId, onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
-    onToggleWorkspace, onSelectWorkspace, onWorkspaceCreated,
+    onToggleWorkspace, onSelectWorkspace, onNewWorkspace,
   } = props
-  const dirInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleNewWorkspace(): Promise<void> {
-    if (canPickDirectory()) {
-      const result = await pickWorkspaceDirectory()
-      if (result.status === 'picked') onWorkspaceCreated(result.dir)
-      return
-    }
-    dirInputRef.current?.click()
-  }
-
-  function handleDirectoryInput(files: FileList | null): void {
-    const dir = dirFromFileList(files)
-    if (dirInputRef.current) dirInputRef.current.value = ''
-    if (dir) onWorkspaceCreated(dir)
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -144,7 +122,7 @@ export function PortalSidePanel(props: {
           </p>
           <button
             type="button"
-            onClick={() => { void handleNewWorkspace() }}
+            onClick={onNewWorkspace}
             title={t('chat.portal.newWorkspace')}
             aria-label={t('chat.portal.newWorkspace')}
             className={cn(
@@ -155,17 +133,6 @@ export function PortalSidePanel(props: {
             <FolderPlus className="h-3.5 w-3.5" />
           </button>
         </div>
-        <input
-          ref={dirInputRef}
-          type="file"
-          data-testid="workspace-dir-input"
-          className="sr-only"
-          tabIndex={-1}
-          aria-hidden
-          multiple
-          {...{ webkitdirectory: '', directory: '' }}
-          onChange={(e) => handleDirectoryInput(e.target.files)}
-        />
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
           {workspaces.map((workspace) => {
             const collapsed = !!collapsedWorkspaces[workspace.id]

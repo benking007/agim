@@ -21,8 +21,11 @@ import { toast } from 'sonner'
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
+<<<<<<< HEAD
 import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
 import { api } from '@/lib/api/endpoints'
+=======
+>>>>>>> c0fc7503 (feat: browse agent workspace subdirs when adding a Portal folder)
 import { findSession, upsertSession } from '@/lib/web-sessions'
 import {
   addLocalWorkspace,
@@ -80,7 +83,11 @@ import {
   widthDemoMessages,
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
+<<<<<<< HEAD
 import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
+=======
+import { PortalWorkspacePicker } from './portal-workspace-picker'
+>>>>>>> c0fc7503 (feat: browse agent workspace subdirs when adding a Portal folder)
 import { PortalPet } from './portal-pet'
 import {
   skillMarker,
@@ -129,6 +136,7 @@ export function AgentPortal(): JSX.Element {
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
   const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
   const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
@@ -683,26 +691,7 @@ export function AgentPortal(): JSX.Element {
       const ws = findWorkspace(id)
       syncWorkspace(ws?.kind === 'local' ? (ws.path || ws.name) : '')
     },
-    onWorkspaceCreated: (dir: { name: string; path: string }) => {
-      void (async () => {
-        let next = dir
-        try {
-          const resolved = await api.resolveWorkspacePath({ path: dir.path })
-          if (resolved.ok && resolved.path) {
-            next = { name: resolved.name || dir.name, path: resolved.path }
-          } else {
-            toast.warning(t('chat.portal.workspaceUnresolved'))
-          }
-        } catch {
-          toast.warning(t('chat.portal.workspaceUnresolved'))
-        }
-        const ws = addLocalWorkspace(next)
-        const sess = findSession(activeSessionId)
-        const blank = !state.messages.some((m) => m.role === 'user' && m.content.trim())
-        if (sess && blank) upsertSession({ id: sess.id, workspaceId: ws.id })
-        syncWorkspace(ws.kind === 'local' ? (ws.path || ws.name) : '')
-      })()
-    },
+    onNewWorkspace: () => setWorkspacePickerOpen(true),
   } as const
 
   return (
@@ -722,6 +711,18 @@ export function AgentPortal(): JSX.Element {
         reason={nativeSetupReason}
         onOpenChange={setNativeSetupDialogOpen}
         onConfigured={() => switchAgent('agim')}
+      />
+      <PortalWorkspacePicker
+        open={workspacePickerOpen}
+        agentId={agentId}
+        onOpenChange={setWorkspacePickerOpen}
+        onPicked={(dir) => {
+          const ws = addLocalWorkspace(dir)
+          const sess = findSession(activeSessionId)
+          const blank = !state.messages.some((m) => m.role === 'user' && m.content.trim())
+          if (sess && blank) upsertSession({ id: sess.id, workspaceId: ws.id })
+          syncWorkspace(ws.kind === 'local' ? (ws.path || ws.name) : '')
+        }}
       />
       {/* Desktop rail — always visible ≥ lg */}
       <aside

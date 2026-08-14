@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { canPickDirectory, pickWorkspaceDirectory } from './pick-workspace-dir'
+import { canPickDirectory, dirFromFileList, pickWorkspaceDirectory } from './pick-workspace-dir'
 
 describe('pickWorkspaceDirectory', () => {
   afterEach(() => {
@@ -21,6 +21,13 @@ describe('pickWorkspaceDirectory', () => {
       status: 'picked',
       dir: { name: 'agim', path: 'agim' },
     })
+  })
+
+  it('reads the folder name from a webkitdirectory FileList', () => {
+    const file = new File(['x'], 'package.json')
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'ceshi/package.json' })
+    expect(dirFromFileList([file])).toEqual({ name: 'ceshi', path: 'ceshi' })
+    expect(dirFromFileList([])).toBeNull()
   })
 
   it('treats a dismissed picker as abort', async () => {

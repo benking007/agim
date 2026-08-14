@@ -4,7 +4,7 @@
  * focused on wiring and layout.
  */
 
-import { useState } from 'react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -13,9 +13,13 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { pickWorkspaceDirectory } from '@/lib/pick-workspace-dir'
+import {
+  canPickDirectory,
+  dirFromFileList,
+  pickWorkspaceDirectory,
+} from '@/lib/pick-workspace-dir'
 import { sessionWorkspaceId, type WebSessionEntry } from '@/lib/web-sessions'
-import { workspaceBasename, type WebWorkspace } from '@/lib/web-workspaces'
+import type { WebWorkspace } from '@/lib/web-workspaces'
 import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
 
@@ -53,25 +57,21 @@ export function PortalSidePanel(props: {
     workspaces, activeWorkspaceId, collapsedWorkspaces,
     onToggleWorkspace, onSelectWorkspace, onWorkspaceCreated,
   } = props
-  const [pathFormOpen, setPathFormOpen] = useState(false)
-  const [pathDraft, setPathDraft] = useState('')
+  const dirInputRef = useRef<HTMLInputElement>(null)
 
   async function handleNewWorkspace(): Promise<void> {
-    const result = await pickWorkspaceDirectory()
-    if (result.status === 'picked') {
-      onWorkspaceCreated(result.dir)
+    if (canPickDirectory()) {
+      const result = await pickWorkspaceDirectory()
+      if (result.status === 'picked') onWorkspaceCreated(result.dir)
       return
     }
-    if (result.status === 'unsupported') setPathFormOpen(true)
+    dirInputRef.current?.click()
   }
 
-  function submitPathForm(): void {
-    const path = pathDraft.trim()
-    const name = workspaceBasename(path)
-    if (!name) return
-    onWorkspaceCreated({ name, path })
-    setPathDraft('')
-    setPathFormOpen(false)
+  function handleDirectoryInput(files: FileList | null): void {
+    const dir = dirFromFileList(files)
+    if (dirInputRef.current) dirInputRef.current.value = ''
+    if (dir) onWorkspaceCreated(dir)
   }
 
   return (
@@ -155,15 +155,17 @@ export function PortalSidePanel(props: {
             <FolderPlus className="h-3.5 w-3.5" />
           </button>
         </div>
-        {pathFormOpen && (
-          <WorkspacePathForm
-            dark={dark}
-            pathDraft={pathDraft}
-            onPathDraft={setPathDraft}
-            onCancel={() => { setPathFormOpen(false); setPathDraft('') }}
-            onSubmit={submitPathForm}
-          />
-        )}
+        <input
+          ref={dirInputRef}
+          type="file"
+          data-testid="workspace-dir-input"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          multiple
+          {...{ webkitdirectory: '', directory: '' }}
+          onChange={(e) => handleDirectoryInput(e.target.files)}
+        />
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
           {workspaces.map((workspace) => {
             const collapsed = !!collapsedWorkspaces[workspace.id]
@@ -296,60 +298,6 @@ export function PortalSidePanel(props: {
         </div>
       </div>
     </div>
-  )
-}
-
-function WorkspacePathForm(props: {
-  dark: boolean
-  pathDraft: string
-  onPathDraft: (value: string) => void
-  onCancel: () => void
-  onSubmit: () => void
-}): JSX.Element {
-  const { t } = useTranslation()
-  const { dark, pathDraft, onPathDraft, onCancel, onSubmit } = props
-  return (
-    <form
-      className={cn(
-        'mb-2 shrink-0 space-y-2 rounded-xl border p-2.5',
-        dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
-      )}
-      onSubmit={(e) => { e.preventDefault(); onSubmit() }}
-    >
-      <p className={cn('text-[11px] font-semibold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
-        {t('chat.portal.workspacePathTitle')}
-      </p>
-      <p className="text-[10px] text-zinc-400">{t('chat.portal.workspacePathHint')}</p>
-      <input
-        value={pathDraft}
-        onChange={(e) => onPathDraft(e.target.value)}
-        placeholder={t('chat.portal.workspacePathPlaceholder')}
-        className={cn(
-          'w-full rounded-lg border px-2 py-1.5 text-[11px] outline-none',
-          dark
-            ? 'border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus:border-teal-600'
-            : 'border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400 focus:border-teal-500',
-        )}
-      />
-      <div className="flex justify-end gap-1.5">
-        <button
-          type="button"
-          onClick={onCancel}
-          className={cn(
-            'rounded-lg px-2 py-1 text-[11px] font-semibold',
-            dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100',
-          )}
-        >
-          {t('chat.portal.workspacePathCancel')}
-        </button>
-        <button
-          type="submit"
-          className="rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-500"
-        >
-          {t('chat.portal.workspacePathSelect')}
-        </button>
-      </div>
-    </form>
   )
 }
 

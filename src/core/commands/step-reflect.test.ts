@@ -60,12 +60,14 @@ describe('handleStepReflectCommand', () => {
     expect(out).toContain('一步一想')
     expect(out).toContain('off')
     expect(out).toContain('/step-reflect on')
+    expect(out).toContain('DeepSeek')
   })
 
   it('/step-reflect on persists true', async () => {
     const ctx = makeCtx(uid(), uid())
     const out = await handleStepReflectCommand('on', ctx)
     expect(out).toContain('已开启')
+    expect(out).toContain('思考')
     const session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
     expect(session?.stepReflect).toBe(true)
   })

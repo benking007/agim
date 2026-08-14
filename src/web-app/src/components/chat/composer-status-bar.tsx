@@ -312,7 +312,7 @@ export function ComposerStatusBar({
               onSendCommand(stepReflect ? '/step-reflect off' : '/step-reflect on')
             }}
             title={t('chat.statusBar.stepReflectHint', {
-              defaultValue: 'After write/exec, pause for a short reflection',
+              defaultValue: 'Think each hop, then call tools — live feedback',
             })}
             aria-pressed={stepReflect}
           >

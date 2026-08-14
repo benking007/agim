@@ -46,9 +46,13 @@ import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
 import {
   actNeedsReflect,
+  classifyThinkingStreamEvent,
   extractAssistantText,
+  extractAssistantThinking,
   formatStepReflectSteer,
   parseStepReflectFence,
+  resolveStepReflectThinkingLevel,
+  stepReflectFromThinking,
   type ParsedStepReflect,
 } from '../../../core/llm/step-reflect.js'
 import { evaluateLoopDispatchGate } from '../../../core/loop-dispatch-gate.js'
@@ -926,10 +930,13 @@ export class NativeAgentAdapter implements AgentAdapter {
     const thinkingFallback = binding.model.reasoning
       ? resolveDefaultThinking(binding.model.baseUrl, binding.model.id)
       : 'off'
-    const thinkingLevel = mapVariantToThinkingLevel(
-      effectiveOpts?.variant,
-      // Catalog/heuristic reasoning with no vendor preset → prefer high over off.
-      thinkingFallback === 'off' && binding.model.reasoning ? 'high' : thinkingFallback,
+    const thinkingLevel = resolveStepReflectThinkingLevel(
+      mapVariantToThinkingLevel(
+        effectiveOpts?.variant,
+        // Catalog/heuristic reasoning with no vendor preset → prefer high over off.
+        thinkingFallback === 'off' && binding.model.reasoning ? 'high' : thinkingFallback,
+      ),
+      { enabled: !!opts?.stepReflect, modelReasoning: !!binding.model.reasoning },
     )
     const harness = new AgentHarness({
       env,
@@ -944,10 +951,13 @@ export class NativeAgentAdapter implements AgentAdapter {
     const ephemeralContext = opts?.ephemeralContext?.trim() ?? ''
     /** Mid-turn soft steers (goal critic) — injected only via the context hook,
      *  never appended as durable user messages. */
-    let ephemeralSteer = ''
-    /** Soft Step Reflect: set after a mutating act; consumed into ephemeralSteer. */
-    let pendingReflect = false
+    let ephemeralSteer = opts?.stepReflect ? formatStepReflectSteer() : ''
     let reflectSeq = 0
+    let liveReflectId = ''
+    let hopThinking = ''
+    let hopThinkingAt = 0
+    let hopReflectEmitted = false
+    let liveThinkTimer: ReturnType<typeof setTimeout> | undefined
     // Snapshot budget knobs once per turn (env can change via /api/env;
     // session compactRate overlays reserve/keep when not auto).
     const budget = resolveContextBudgetSettings(
@@ -1130,10 +1140,34 @@ export class NativeAgentAdapter implements AgentAdapter {
       } catch { /* observer must not break the harness loop */ }
     }
 
-    const emitStepReflect = (parsed: ParsedStepReflect): void => {
-      const at = Date.now()
+    const resetHopReflect = (): void => {
+      if (liveThinkTimer) {
+        clearTimeout(liveThinkTimer)
+        liveThinkTimer = undefined
+      }
+      hopThinking = ''
+      hopThinkingAt = 0
+      hopReflectEmitted = false
+      liveReflectId = ''
+    }
+
+    const beginHopReflect = (): string => {
+      if (!hopThinkingAt) hopThinkingAt = Date.now()
+      hopReflectEmitted = false
+      reflectSeq += 1
+      liveReflectId = `step-reflect-${reflectSeq}`
+      return liveReflectId
+    }
+
+    const emitStepReflect = (
+      parsed: ParsedStepReflect,
+      emitOpts?: { id?: string; status?: 'running' | 'success'; at?: number },
+    ): void => {
+      const at = emitOpts?.at ?? (hopThinkingAt || Date.now())
+      const status = emitOpts?.status ?? 'success'
       const record = { stance: parsed.stance, next: parsed.next, at }
       if ((opts?.callDepth ?? 0) > 0) {
+        if (!parsed.next) return
         emitToolActivity({
           id: opts?.parentActivityStepId || 'step-reflect-forward',
           kind: 'agent',
@@ -1144,16 +1178,49 @@ export class NativeAgentAdapter implements AgentAdapter {
         })
         return
       }
-      reflectSeq += 1
+      const id = emitOpts?.id ?? (liveReflectId || `step-reflect-${++reflectSeq}`)
+      liveReflectId = id
       emitToolActivity({
-        id: `step-reflect-${reflectSeq}`,
+        id,
         kind: 'reflect',
         label: parsed.next,
-        status: 'success',
+        status,
         startedAt: at,
-        finishedAt: at,
+        ...(status === 'running' ? {} : { finishedAt: Date.now() }),
         preview: parsed.observed || undefined,
       })
+    }
+
+    const flushLiveThinking = (done: boolean): void => {
+      if (liveThinkTimer) {
+        clearTimeout(liveThinkTimer)
+        liveThinkTimer = undefined
+      }
+      const parsed = stepReflectFromThinking(hopThinking)
+      if (!parsed) return
+      if (!liveReflectId) beginHopReflect()
+      hopReflectEmitted = true
+      emitStepReflect(parsed, {
+        id: liveReflectId,
+        status: done ? 'success' : 'running',
+        at: hopThinkingAt,
+      })
+    }
+
+    const scheduleLiveThinking = (): void => {
+      if (liveThinkTimer) return
+      liveThinkTimer = setTimeout(() => {
+        liveThinkTimer = undefined
+        flushLiveThinking(false)
+      }, 180)
+      liveThinkTimer.unref?.()
+    }
+
+    const applyHopReflect = (parsed: ParsedStepReflect | null, status: 'running' | 'success'): void => {
+      if (!parsed) return
+      if (!liveReflectId) beginHopReflect()
+      hopReflectEmitted = true
+      emitStepReflect(parsed, { id: liveReflectId, status, at: hopThinkingAt || Date.now() })
     }
 
     const runCompactionCycle = async (reason: 'pre-turn' | 'mid-turn'): Promise<void> => {
@@ -1483,6 +1550,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         throw new Error(`native model-turn budget reached: ${maxIter}`)
       }
       providerRequests += 1
+      if (opts?.stepReflect) resetHopReflect()
       return undefined
     })
     // DeepSeek payload rewrite: user_id isolation, Anthropic thinking/effort,
@@ -1518,6 +1586,24 @@ export class NativeAgentAdapter implements AgentAdapter {
       return { payload }
     })
     const unsubscribeBudget = harness.subscribe(async (event) => {
+      if (event.type === 'message_update' && opts?.stepReflect) {
+        const phase = classifyThinkingStreamEvent(
+          'assistantMessageEvent' in event ? event.assistantMessageEvent : undefined,
+        )
+        if (phase?.kind === 'start') {
+          if (!liveReflectId) beginHopReflect()
+          emitStepReflect(
+            { observed: '', stance: 'keep', next: '' },
+            { id: liveReflectId, status: 'running', at: hopThinkingAt },
+          )
+        } else if (phase?.kind === 'delta') {
+          hopThinking += phase.delta
+          scheduleLiveThinking()
+        } else if (phase?.kind === 'end') {
+          flushLiveThinking(true)
+        }
+        return
+      }
       if (event.type === 'turn_end' && event.message.role === 'assistant') {
         const calls = (event.message.content ?? []).filter((item) => item.type === 'toolCall')
         for (const result of event.toolResults) {
@@ -1534,18 +1620,19 @@ export class NativeAgentAdapter implements AgentAdapter {
             preview,
           )
         }
-        // Step Reflect R1 — parse the last assistant fence, then (if this
-        // beat mutated) inject a soft steer before the critic appends.
+        // Step Reflect — thinking traces already streamed per hop. Fence is
+        // a fallback; non-reasoning models get another think-then-act steer.
         if (opts?.stepReflect && !stopReason) {
           const beatNames = event.toolResults
             .map((r) => r.toolName)
             .filter((n): n is string => typeof n === 'string' && n.length > 0)
-          if (actNeedsReflect(beatNames)) pendingReflect = true
-          const parsed = parseStepReflectFence(extractAssistantText(event.message.content))
-          if (parsed) emitStepReflect(parsed)
-          if (pendingReflect) {
+          const thinking = extractAssistantThinking(event.message.content)
+          if (thinking && !hopThinking) hopThinking = thinking
+          const fence = parseStepReflectFence(extractAssistantText(event.message.content))
+          const parsed = fence ?? stepReflectFromThinking(hopThinking)
+          if (parsed && (!hopReflectEmitted || fence)) applyHopReflect(parsed, 'success')
+          if (!binding.model.reasoning && actNeedsReflect(beatNames)) {
             ephemeralSteer = [formatStepReflectSteer(), ephemeralSteer].filter(Boolean).join('\n\n')
-            pendingReflect = false
           }
         }
         // Mid-turn goal critic (soft steer once, hard-stop on repeat).
@@ -1670,6 +1757,13 @@ export class NativeAgentAdapter implements AgentAdapter {
           + event.message.usage.cacheWrite
         usageOutput += event.message.usage.output
         usageCost += event.message.usage.cost?.total ?? 0
+      }
+      if (opts?.stepReflect) {
+        const thinking = extractAssistantThinking(event.message.content)
+        if (thinking && !hopThinking) hopThinking = thinking
+        const fence = parseStepReflectFence(extractAssistantText(event.message.content))
+        const parsed = fence ?? stepReflectFromThinking(hopThinking)
+        if (parsed && (!hopReflectEmitted || fence)) applyHopReflect(parsed, 'success')
       }
       const content = event.message.content ?? []
       const batchCalls = content.filter((c) => c.type === 'toolCall').length
@@ -1917,7 +2011,6 @@ export class NativeAgentAdapter implements AgentAdapter {
         ? threadSteerKey(opts.platform, opts.channelId ?? '', opts.threadId)
         : `agim:${sessionId}`
       unregisterSteer = registerLiveSteer(steerKey, async (text) => {
-        pendingReflect = false
         ephemeralSteer = [
           ephemeralSteer,
           '用户刚通过本轮补充加入了新的约束。先停一下读完补充，再决定是否调整方案，然后继续本轮工作。',

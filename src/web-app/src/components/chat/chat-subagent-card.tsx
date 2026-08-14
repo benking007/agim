@@ -185,7 +185,7 @@ function StepReflectSlot({
           </>
         ) : (
           <span className="truncate">
-            {t('chat.portal.stepReflectWaiting', { defaultValue: 'Step reflect…' })}
+            {t('chat.portal.stepReflectWaiting', { defaultValue: 'Thinking…' })}
           </span>
         )}
       </div>

@@ -87,8 +87,11 @@ export default function ChatRoute(): JSX.Element {
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
   const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
+  const [optimisticStepReflect, setOptimisticStepReflect] = useState<boolean | null>(null)
+  const [stepReflectBaseline, setStepReflectBaseline] = useState(state.stepReflect)
   const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
   const thinkVariant = optimisticThink ?? state.thinkVariant
+  const stepReflect = optimisticStepReflect ?? state.stepReflect
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
   const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
   const [optimisticCompactRate, setOptimisticCompactRate] = useState<string | null>(null)
@@ -99,6 +102,10 @@ export default function ChatRoute(): JSX.Element {
   if (state.thinkVariant !== thinkBaseline) {
     setThinkBaseline(state.thinkVariant)
     setOptimisticThink(null)
+  }
+  if (state.stepReflect !== stepReflectBaseline) {
+    setStepReflectBaseline(state.stepReflect)
+    setOptimisticStepReflect(null)
   }
   if (state.sessionModel !== modelBaseline) {
     setModelBaseline(state.sessionModel)
@@ -327,6 +334,7 @@ export default function ChatRoute(): JSX.Element {
                     <ChatSubagentCard
                       activity={m.activity}
                       onStopSubagent={stopSubagent}
+                      stepReflectEnabled={stepReflect}
                     />
                   </Suspense>
                 )}
@@ -421,6 +429,8 @@ export default function ChatRoute(): JSX.Element {
               activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
               thinkVariant={thinkVariant}
               showThinking={modelStatus.showThinking}
+              stepReflect={stepReflect}
+              stepReflectDisabled={state.stepReflectDisabled}
               contextUsed={modelStatus.contextUsed}
               contextWindow={modelStatus.contextWindow}
               breakdown={modelStatus.breakdown}
@@ -443,6 +453,10 @@ export default function ChatRoute(): JSX.Element {
                 if (cmd.startsWith('/think')) {
                   const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
                   setOptimisticThink(level)
+                }
+                if (cmd.startsWith('/step-reflect')) {
+                  const token = cmd.replace(/^\/step-reflect\s*/, '').trim()
+                  setOptimisticStepReflect(token !== 'off')
                 }
                 if (cmd.startsWith('/ctx')) {
                   const rate = cmd.replace(/^\/ctx\s*/, '').trim() || 'auto'

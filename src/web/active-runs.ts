@@ -1,3 +1,5 @@
+import { mergeStepReflects } from '../core/llm/step-reflect.js'
+
 /**
  * In-flight web chat run snapshots.
  *
@@ -9,7 +11,7 @@
  */
 
 export type ActiveRunStepStatus = 'pending' | 'running' | 'success' | 'error' | 'denied'
-export type ActiveRunStepKind = 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'
+export type ActiveRunStepKind = 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent' | 'reflect'
 
 export interface ActiveRunStep {
   id: string
@@ -22,6 +24,7 @@ export interface ActiveRunStep {
   todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
   /** Subagent / A2A inline job id when known. */
   jobId?: number
+  reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
 }
 
 export interface ActiveRunSnapshot {
@@ -78,11 +81,12 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): bool
   const idx = snap.steps.findIndex((s) => s.id === step.id)
   const terminalAgent = step.kind === 'agent'
     && (step.status === 'success' || step.status === 'error' || step.status === 'denied')
+  const lateAgentReflect = step.kind === 'agent' && idx >= 0 && !!step.reflects?.length
   if (snap.status !== 'running') {
     // Late Subagent terminal: update an existing card so it does not stay
     // Waiting after the parent turn already finished. Do not insert new
     // rows (that would reopen a finished accordion).
-    if (!terminalAgent || idx < 0) return false
+    if ((!terminalAgent && !lateAgentReflect) || idx < 0) return false
   }
   if (idx >= 0) {
     const prev = snap.steps[idx]
@@ -92,6 +96,7 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): bool
       preview: step.preview ?? prev.preview,
       todoItems: step.todoItems ?? prev.todoItems,
       jobId: step.jobId ?? prev.jobId,
+      reflects: mergeStepReflects(prev.reflects, step.reflects) ?? prev.reflects,
     }
   } else {
     snap.steps.push(step)

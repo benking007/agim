@@ -10,7 +10,7 @@
 
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Brain, Check, ChevronDown, Settings2 } from 'lucide-react'
+import { Brain, Check, ChevronDown, Repeat, Settings2 } from 'lucide-react'
 
 import {
   DropdownMenu,
@@ -58,6 +58,9 @@ export interface ComposerStatusBarProps {
   thinkVariant: string
   /** When false, hide thinking controls (non-Agim agents). */
   showThinking?: boolean
+  /** Session Step Reflect (一步一想). Hidden when disabled or non-Agim. */
+  stepReflect?: boolean
+  stepReflectDisabled?: boolean
   contextUsed: number
   contextWindow: number
   breakdown?: ContextBreakdownItem[]
@@ -137,6 +140,8 @@ export function ComposerStatusBar({
   activeBackendName,
   thinkVariant,
   showThinking = true,
+  stepReflect = false,
+  stepReflectDisabled = false,
   contextUsed,
   contextWindow,
   breakdown = [],
@@ -293,6 +298,33 @@ export function ComposerStatusBar({
               </DropdownMenuSub>
             </DropdownMenuContent>
           </DropdownMenu>
+        )}
+
+        {showThinking && !stepReflectDisabled && (
+          <button
+            type="button"
+            className={chip}
+            disabled={disabled}
+            onClick={() => {
+              if (disabled) return
+              onSendCommand(stepReflect ? '/step-reflect off' : '/step-reflect on')
+            }}
+            title={t('chat.statusBar.stepReflectHint', {
+              defaultValue: 'After write/exec, pause for a short reflection',
+            })}
+            aria-pressed={stepReflect}
+          >
+            <Repeat className={cn(
+              'h-3 w-3 shrink-0',
+              stepReflect ? (dark ? 'text-teal-400' : 'text-teal-600') : 'opacity-50',
+            )}
+            />
+            <span className="whitespace-nowrap">
+              {stepReflect
+                ? t('chat.statusBar.stepReflectOn', { defaultValue: 'Step reflect' })
+                : t('chat.statusBar.stepReflectOff', { defaultValue: 'No step reflect' })}
+            </span>
+          </button>
         )}
 
         <Suspense

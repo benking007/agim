@@ -22,6 +22,7 @@ import {
 import { dispatchTurnSteer, threadSteerKey } from '../core/turn-steer.js'
 import { isAgimAgentId } from '../core/naming-migrate.js'
 import type { ChatMessage } from '../core/types.js'
+import { isStepReflectDisabled, isStepReflectEnabled } from '../core/llm/step-reflect.js'
 import {
   buildHistoryWireFrames,
   historyUpdatedAt,
@@ -150,6 +151,8 @@ export async function sendSessionHistory(
       agent: history.session.agent,
       preferredWorkerAgent: history.session.preferredWorkerAgent || '',
       planMode: !!history.session.planMode,
+      stepReflect: isStepReflectEnabled(history.session),
+      ...(isStepReflectDisabled() ? { stepReflectDisabled: true } : {}),
       thinkVariant: history.session.variant || 'auto',
       sessionModel: history.session.model || '',
       compactRate: history.session.compactRate || 'auto',
@@ -375,6 +378,7 @@ export async function handleClientMessage(
               preview: step.preview,
               ...(step.todoItems ? { todoItems: step.todoItems } : {}),
               ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
+              ...(step.reflects ? { reflects: step.reflects } : {}),
             })
             if (!applied) return
             const snap = getActiveRun(sessionThreadId)
@@ -443,6 +447,14 @@ export async function handleClientMessage(
           if (parsed.type === 'plan') {
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
             emit({ type: 'plan-mode', enabled: !!sess?.planMode })
+          }
+          if (parsed.type === 'step-reflect') {
+            const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)
+            emit({
+              type: 'step-reflect-mode',
+              enabled: isStepReflectEnabled(sess),
+              ...(isStepReflectDisabled() ? { disabled: true } : {}),
+            })
           }
           if (parsed.type === 'think') {
             const sess = await sessionManager.getExistingSession('web', 'web', sessionThreadId)

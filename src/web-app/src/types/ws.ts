@@ -46,6 +46,8 @@ export type ChatIncoming =
       /** Preferred Loop Subagent (CLI) while Agim parents. Empty = none. */
       preferredWorkerAgent?: string
       planMode?: boolean
+      stepReflect?: boolean
+      stepReflectDisabled?: boolean
       thinkVariant?: string
       sessionModel?: string
       /** Session compression rate (`auto` | `full` | `balanced` | `frequent`). */
@@ -83,6 +85,7 @@ export type ChatIncoming =
       threadId?: string
     }
   | { type: 'plan-mode'; enabled: boolean; threadId?: string }
+  | { type: 'step-reflect-mode'; enabled: boolean; disabled?: boolean; threadId?: string }
   /** Session /think depth (`auto` | `off` | `high` | `max` | …). */
   | { type: 'think-mode'; variant: string; threadId?: string }
   /** Session `/model` backend override (empty = role default). */
@@ -159,7 +162,7 @@ export interface ActivityStepEvent {
   threadId?: string
   step: {
     id: string
-    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'
+    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent' | 'reflect'
     label: string
     status: 'pending' | 'running' | 'success' | 'error' | 'denied'
     /** Epoch ms (server may also send ISO — SPA normalizes). */
@@ -170,6 +173,7 @@ export interface ActivityStepEvent {
     todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
     /** Subagent / A2A inline job id when known. */
     jobId?: number
+    reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
   }
 }
 

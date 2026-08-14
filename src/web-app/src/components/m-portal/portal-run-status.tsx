@@ -13,6 +13,7 @@ import {
   ChevronRight,
   CircleAlert,
   Loader2,
+  MessageCircle,
   MessageCircleQuestion,
   ShieldAlert,
   Wrench,
@@ -44,6 +45,8 @@ export interface PortalRunStatusProps {
   className?: string
   /** Cancel one live Subagent job from the inline card. */
   onStopSubagent?: (jobId: number) => boolean | undefined
+  /** Reserve the 1-line Step Reflect slot on same-family Agim workers. */
+  stepReflectEnabled?: boolean
 }
 
 function formatDuration(ms: number | undefined): string | null {
@@ -73,8 +76,8 @@ function countKinds(activity: ChatActivity): {
     if (step.kind === 'skill') skills += 1
     else if (step.kind === 'ask') asks += 1
     else if (step.kind === 'agent') agents += 1
-    else if (step.kind === 'status') {
-      // Status rows (e.g. compaction) are not tool calls.
+    else if (step.kind === 'status' || step.kind === 'reflect') {
+      // Status / reflect rows are not tool calls.
     } else if (step.kind === 'tool') tools += 1
     else if (step.kind !== 'approval') tools += 1
   }
@@ -92,6 +95,7 @@ function StepIcon({ step, dark }: { step: ChatActivityStep; dark: boolean }): JS
   if (step.kind === 'approval') return <ShieldAlert className={cn(cls, 'text-amber-400')} />
   if (step.kind === 'ask') return <MessageCircleQuestion className={cn(cls, 'text-sky-400')} />
   if (step.kind === 'agent') return <Bot className={cn(cls, 'text-teal-400')} />
+  if (step.kind === 'reflect') return <MessageCircle className={cn(cls, 'text-teal-400')} />
   if (step.status === 'success') return <Check className={cn(cls, 'text-emerald-400')} />
   return <Wrench className={cn(cls, dark ? 'text-zinc-500' : 'text-zinc-400')} />
 }
@@ -112,6 +116,14 @@ function stepLabel(
   if (isTodoActivityStep(step)) {
     return t('chat.todoActivityLabel', { defaultValue: 'Plan updated' })
   }
+  if (step.kind === 'reflect') {
+    return step.label
+      ? t('chat.activityReflectNext', {
+          next: step.label,
+          defaultValue: 'Step reflect · {{next}}',
+        })
+      : t('chat.activityReflect', { defaultValue: 'Step reflect' })
+  }
   return step.label
 }
 
@@ -124,6 +136,7 @@ export function PortalRunStatus({
   streaming = false,
   className,
   onStopSubagent,
+  stepReflectEnabled = false,
 }: PortalRunStatusProps): JSX.Element {
   const { t } = useTranslation()
   const running = streaming || activity?.status === 'running'
@@ -218,6 +231,7 @@ export function PortalRunStatus({
             dark={dark}
             className="max-w-full"
             onStopSubagent={onStopSubagent}
+            stepReflectEnabled={stepReflectEnabled}
           />
         </Suspense>
       )}
@@ -301,6 +315,11 @@ export function PortalRunStatus({
                 {step.kind === 'agent' && (
                   <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
                     {t('chat.activitySubagentBadge', { defaultValue: 'subagent' })}
+                  </span>
+                )}
+                {step.kind === 'reflect' && (
+                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+                    {t('chat.activityReflectBadge', { defaultValue: 'reflect' })}
                   </span>
                 )}
               </div>

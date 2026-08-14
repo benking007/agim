@@ -210,6 +210,8 @@ export interface CallAgentOpts {
    *  to e.g. claude-code, which would launch with full write access and
    *  bypass the user's intent. */
   planMode?: boolean
+  /** Inherit parent's Step Reflect so same-family Agim workers run the beat. */
+  stepReflect?: boolean
   /** Web chat activity accordion — live "Waiting for subagent" steps.
    *  Prefer this over RouteContext.onToolActivity when both are set. */
   onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
@@ -596,6 +598,20 @@ export async function callAgentByName(
       // a write task to claude-code and the child would launch with full
       // write access, bypassing the user's intent.
       ...(opts.planMode ? { planMode: true } : {}),
+      ...(opts.stepReflect ? { stepReflect: true } : {}),
+      onToolActivity: (step) => {
+        // Child tool rows stay off the parent accordion. Only forward
+        // Step Reflect beats onto this Subagent card.
+        if (!step.reflects?.length) return
+        emitAgentActivity(opts, ctx, {
+          id: activityStepId,
+          kind: 'agent',
+          label: activityLabel,
+          status: 'running',
+          startedAt: activityStartedAt,
+          reflects: step.reflects,
+        })
+      },
       ...(typeof maxDepth === 'number' ? { a2aMaxDepth: maxDepth } : {}),
       ...(opts.allowedTools && opts.allowedTools.length > 0
         ? { allowedTools: opts.allowedTools }

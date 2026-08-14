@@ -6,6 +6,7 @@
  */
 
 import type { ToolActivityStep } from './types.js'
+import { mergeStepReflects } from './llm/step-reflect.js'
 
 export type ChatActivityStepKind = ToolActivityStep['kind'] | 'approval' | 'ask'
 
@@ -20,6 +21,7 @@ export interface ChatActivityStep {
   todoItems?: ToolActivityStep['todoItems']
   /** Subagent / A2A inline job id when known. */
   jobId?: number
+  reflects?: ToolActivityStep['reflects']
 }
 
 export interface ChatActivity {
@@ -58,6 +60,7 @@ export function mergeActivityStep(
       preview: step.preview ?? prev.preview,
       todoItems: step.todoItems ?? prev.todoItems,
       jobId: step.jobId ?? prev.jobId,
+      reflects: mergeStepReflects(prev.reflects, step.reflects) ?? prev.reflects,
     }
   } else {
     steps.push(step)
@@ -84,6 +87,7 @@ export function mergeToolActivityStep(
     preview: step.preview,
     todoItems: step.todoItems,
     ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
+    ...(step.reflects ? { reflects: step.reflects } : {}),
   })
 }
 
@@ -289,6 +293,8 @@ export function countActivityStepKinds(
         break
       case 'ask':
         asks += 1
+        break
+      case 'reflect':
         break
       default:
         tools += 1

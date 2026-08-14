@@ -69,6 +69,7 @@ import {
   collapseDemoMessages,
   jumpLatestDemoMessages,
   mediaDemoMessages,
+  stepReflectDemoMessages,
   petDemoMessages,
   todoDemoMessages,
   widthDemoMessages,
@@ -125,8 +126,11 @@ export function AgentPortal(): JSX.Element {
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
   const [optimisticThink, setOptimisticThink] = useState<string | null>(null)
   const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
+  const [optimisticStepReflect, setOptimisticStepReflect] = useState<boolean | null>(null)
+  const [stepReflectBaseline, setStepReflectBaseline] = useState(state.stepReflect)
   const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
   const thinkVariant = optimisticThink ?? state.thinkVariant
+  const stepReflect = optimisticStepReflect ?? state.stepReflect
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
   const [modelBaseline, setModelBaseline] = useState(state.sessionModel)
   const [optimisticCompactRate, setOptimisticCompactRate] = useState<string | null>(null)
@@ -136,6 +140,10 @@ export function AgentPortal(): JSX.Element {
   if (state.thinkVariant !== thinkBaseline) {
     setThinkBaseline(state.thinkVariant)
     setOptimisticThink(null)
+  }
+  if (state.stepReflect !== stepReflectBaseline) {
+    setStepReflectBaseline(state.stepReflect)
+    setOptimisticStepReflect(null)
   }
   if (state.sessionModel !== modelBaseline) {
     setModelBaseline(state.sessionModel)
@@ -232,10 +240,13 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'steer-queue'
   const demoJump = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'jump-latest'
+  const demoStepReflect = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'step-reflect'
   const chatMessages = useMemo(
     () => {
       if (demoSteer || demoPet) return petDemoMessages()
       if (demoJump) return jumpLatestDemoMessages()
+      if (demoStepReflect) return stepReflectDemoMessages()
       if (demoTodo) return todoDemoMessages()
       if (demoWidth) return widthDemoMessages()
       if (demoCollapse) return collapseDemoMessages()
@@ -250,7 +261,7 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoSteer, demoJump, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoSteer, demoJump, demoStepReflect, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -749,6 +760,7 @@ export function AgentPortal(): JSX.Element {
           listRef={messagesListRef}
           onFillComposer={fillComposer}
           onStopSubagent={onStopSubagent}
+          stepReflectEnabled={demoStepReflect || stepReflect}
           emptySlot={emptyChatSlot}
         />
 
@@ -981,6 +993,8 @@ export function AgentPortal(): JSX.Element {
                   activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
                   thinkVariant={thinkVariant}
                   showThinking={modelStatus.showThinking}
+                  stepReflect={stepReflect}
+                  stepReflectDisabled={state.stepReflectDisabled}
                   contextUsed={modelStatus.contextUsed}
                   contextWindow={modelStatus.contextWindow}
                   breakdown={modelStatus.breakdown}
@@ -1003,6 +1017,10 @@ export function AgentPortal(): JSX.Element {
                     if (cmd.startsWith('/think')) {
                       const level = cmd.replace(/^\/think\s*/, '').trim() || 'auto'
                       setOptimisticThink(level)
+                    }
+                    if (cmd.startsWith('/step-reflect')) {
+                      const token = cmd.replace(/^\/step-reflect\s*/, '').trim()
+                      setOptimisticStepReflect(token !== 'off')
                     }
                     if (cmd.startsWith('/ctx')) {
                       const next = cmd.replace(/^\/ctx\s*/, '').trim() || 'auto'

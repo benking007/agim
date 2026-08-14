@@ -276,4 +276,25 @@ describe('ChatActivityBlock', () => {
     expect(btn.textContent).not.toMatch(/tool|工具/)
     expect(btn.textContent).toMatch(/1 step|1 步/)
   })
+
+  it('renders a reflect step without counting it as a tool', async () => {
+    const user = userEvent.setup()
+    render(<ChatActivityBlock activity={activity({
+      steps: [{
+        id: 'step-reflect-1',
+        kind: 'reflect',
+        label: 'Run tests next',
+        status: 'success',
+        startedAt: 1,
+        finishedAt: 2,
+        preview: 'wrote foo.ts',
+      }],
+    })}
+    />)
+    const btn = screen.getByRole('button', { name: /Worked|已完成/ })
+    expect(btn.textContent).not.toMatch(/tool|工具/)
+    await user.click(btn)
+    expect(screen.getByText(/Step reflect · Run tests next|一步一想 · Run tests next/)).toBeInTheDocument()
+    expect(screen.getByText(/^reflect$|^步思$/)).toBeInTheDocument()
+  })
 })

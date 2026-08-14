@@ -14,6 +14,7 @@ import {
   ChevronRight,
   CircleAlert,
   Loader2,
+  MessageCircle,
   MessageCircleQuestion,
   ShieldAlert,
   Wrench,
@@ -67,6 +68,14 @@ function localizeStepLabel(
   if (isTodoActivityStep(step)) {
     return t('chat.todoActivityLabel', { defaultValue: 'Plan updated' })
   }
+  if (step.kind === 'reflect') {
+    return step.label
+      ? t('chat.activityReflectNext', {
+          next: step.label,
+          defaultValue: 'Step reflect · {{next}}',
+        })
+      : t('chat.activityReflect', { defaultValue: 'Step reflect' })
+  }
   return step.label
 }
 
@@ -91,7 +100,8 @@ function countStepKinds(activity: ChatActivity): KindCounts {
         asks += 1
         break
       case 'status':
-        // Status rows (e.g. compaction) are not tool calls.
+      case 'reflect':
+        // Status / reflect rows are not tool calls.
         break
       default:
         tools += 1
@@ -112,6 +122,7 @@ function StepIcon({ step }: { step: ChatActivityStep }): JSX.Element {
   if (step.kind === 'approval') return <ShieldAlert className={cn(cls, 'text-warning')} />
   if (step.kind === 'ask') return <MessageCircleQuestion className={cn(cls, 'text-info')} />
   if (step.kind === 'agent') return <Bot className={cn(cls, 'text-accent')} />
+  if (step.kind === 'reflect') return <MessageCircle className={cn(cls, 'text-accent')} />
   if (step.kind === 'skill') return <Wrench className={cn(cls, 'text-accent')} />
   if (step.status === 'success') return <Check className={cn(cls, 'text-success')} />
   return <Wrench className={cn(cls, 'text-text-muted')} />
@@ -309,6 +320,11 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                 {step.kind === 'agent' && (
                   <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
                     {t('chat.activitySubagentBadge', { defaultValue: 'subagent' })}
+                  </span>
+                )}
+                {step.kind === 'reflect' && (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
+                    {t('chat.activityReflectBadge', { defaultValue: 'reflect' })}
                   </span>
                 )}
                 <AgentStatusBadge step={step} />

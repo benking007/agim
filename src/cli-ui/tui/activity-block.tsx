@@ -31,6 +31,7 @@ function stepGlyph(step: ChatActivityStep): string {
   if (step.kind === 'approval') return '⚠'
   if (step.kind === 'ask') return '?'
   if (step.kind === 'agent') return '◆'
+  if (step.kind === 'reflect') return '◇'
   return '·'
 }
 
@@ -43,6 +44,7 @@ function stepKindBadge(step: ChatActivityStep): string | null {
     if (step.status === 'success') return '已完成'
     if (step.status === 'error' || step.status === 'denied') return '失败'
   }
+  if (step.kind === 'reflect') return '步思'
   return null
 }
 

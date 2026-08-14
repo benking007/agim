@@ -8,6 +8,7 @@
  *   ?demo=media    — image thumbnails + @file attachment
  *   ?demo=collapse — long user body for fold/mask behaviour
  *   ?demo=jump-latest — long transcript to exercise jump-to-latest
+ *   ?demo=step-reflect — parent reflect card + live Agim Subagent carousel
  */
 
 import type { ChatMessage } from '@/hooks/use-chat'
@@ -181,6 +182,74 @@ export function collapseDemoMessages(): ChatMessage[] {
 }
 
 /** Local visual QA (`/m/chat?demo=jump-latest`) — enough turns to scroll. */
+/** Local visual QA (`/m/chat?demo=step-reflect`) — parent reflect + Agim carousel. */
+export function stepReflectDemoMessages(): ChatMessage[] {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo-sr-user',
+      role: 'user',
+      content: '改一下 README 的安装步骤，并让子代理核对链接。',
+      timestamp: now - 20_000,
+    },
+    {
+      id: 'demo-sr-assistant',
+      role: 'assistant',
+      agent: 'agim',
+      timestamp: now - 2_000,
+      activity: {
+        runId: 'demo-sr-run',
+        status: 'running',
+        startedAt: now - 18_000,
+        steps: [
+          {
+            id: 't-write',
+            kind: 'tool',
+            label: 'agim_write_file',
+            status: 'success',
+            startedAt: now - 17_000,
+            finishedAt: now - 14_000,
+            preview: 'README.md',
+          },
+          {
+            id: 'step-reflect-1',
+            kind: 'reflect',
+            label: 'Dispatch a checker for the new install URLs',
+            status: 'success',
+            startedAt: now - 13_500,
+            finishedAt: now - 13_400,
+            preview: 'Wrote install steps; links still unverified.',
+          },
+          {
+            id: 'a2a-agim',
+            kind: 'agent',
+            label: 'agim/cheap',
+            status: 'running',
+            startedAt: now - 13_000,
+            jobId: 42,
+            preview: 'Verify README install URLs',
+            reflects: [
+              { stance: 'keep', next: 'Fetch the first install URL', at: now - 9_000 },
+              { stance: 'adjust', next: 'Retry the 404 with the docs host', at: now - 5_000 },
+              { stance: 'keep', next: 'Summarize which links still fail', at: now - 2_000 },
+            ],
+          },
+          {
+            id: 'a2a-cli',
+            kind: 'agent',
+            label: 'claude-code',
+            status: 'running',
+            startedAt: now - 12_000,
+            jobId: 43,
+            preview: 'CLI worker — no step-reflect slot',
+          },
+        ],
+      },
+      content: '正在核对安装链接…',
+    },
+  ]
+}
+
 export function jumpLatestDemoMessages(): ChatMessage[] {
   const now = Date.now()
   const out: ChatMessage[] = []

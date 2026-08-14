@@ -167,6 +167,7 @@ function deserializeSession(value: unknown): Session | null {
     copilotSessionId: parsed.copilotSessionId,
     cursorSessionId: parsed.cursorSessionId,
     planMode: parsed.planMode,
+    stepReflect: typeof parsed.stepReflect === 'boolean' ? parsed.stepReflect : undefined,
     preferredWorkerAgent: typeof parsed.preferredWorkerAgent === 'string'
       ? parsed.preferredWorkerAgent
       : undefined,
@@ -404,6 +405,7 @@ class SessionManager {
         copilotSessionId: existing?.copilotSessionId,
         cursorSessionId: existing?.cursorSessionId,
         planMode: existing?.planMode,
+        stepReflect: existing?.stepReflect,
         compactRate: existing?.compactRate,
         ...(preferredWorkerAgent ? { preferredWorkerAgent } : {}),
       }
@@ -538,7 +540,7 @@ class SessionManager {
    */
   async patchSession(
     platform: string, channelId: string, threadId: string,
-    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'compactRate'>>,
+    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'stepReflect' | 'compactRate'>>,
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -553,6 +555,10 @@ class SessionManager {
         // a missing field unambiguously mean "off".
         if (patch.planMode) session.planMode = true
         else delete session.planMode
+      }
+      if (patch.stepReflect !== undefined) {
+        // Persist both true and false: env=on + user off must stick as false.
+        session.stepReflect = patch.stepReflect
       }
       if (patch.compactRate !== undefined) {
         // auto / empty → drop field (global default); otherwise persist.
@@ -884,6 +890,7 @@ class SessionManager {
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
         delete session.planMode
+        delete session.stepReflect
         // Compression rate is also per-conversation; /new returns to auto.
         delete session.compactRate
         // Preferred Loop worker is conversation-scoped.
@@ -1142,6 +1149,7 @@ class SessionManager {
         copilotSessionId: session.copilotSessionId,
         cursorSessionId: session.cursorSessionId,
         planMode: session.planMode,
+        ...(typeof session.stepReflect === 'boolean' ? { stepReflect: session.stepReflect } : {}),
         messageCount: session.messages.length,
       }
       await this.atomicWrite(filePath, JSON.stringify(meta, null, 2))

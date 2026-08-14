@@ -134,14 +134,6 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     action: { type: 'fill', text: '/think ' },
   },
   {
-    id: 'step-reflect',
-    label: 'Step reflect',
-    description: 'Think each hop, then call tools (DeepSeek-style)',
-    keywords: ['step-reflect', 'reflect', '步思', '一步一想'],
-    priority: 24,
-    action: { type: 'fill', text: '/step-reflect ' },
-  },
-  {
     id: 'skill',
     label: 'Skill',
     description: 'List or show skills',

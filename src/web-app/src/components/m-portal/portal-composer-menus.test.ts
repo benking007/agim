@@ -90,6 +90,11 @@ describe('filterSlashCommands', () => {
     expect(sub?.id).toBe('subagent')
     expect(filterSlashCommands('goal').some((c) => c.id === 'goal')).toBe(false)
   })
+
+  it('does not advertise /step-reflect (always-on, no composer toggle)', () => {
+    expect(filterSlashCommands('step').some((c) => c.id === 'step-reflect')).toBe(false)
+    expect(filterSlashCommands('一步一想').some((c) => c.id === 'step-reflect')).toBe(false)
+  })
 })
 
 describe('backspace deletes trailing chip', () => {

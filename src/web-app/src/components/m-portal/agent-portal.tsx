@@ -611,6 +611,18 @@ export function AgentPortal(): JSX.Element {
     })
   }, [syncTriggers])
 
+  function reeditPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item) return
+    const draft = inputMessage.trim()
+    setPendingSends((cur) => {
+      const next = cur.filter((row) => row.id !== id)
+      if (!draft) return next
+      return [...next, { id: `q-${Date.now()}-${next.length}`, text: draft }]
+    })
+    fillComposer(item.text)
+  }
+
   const emptyChatSlot = useMemo(() => (
     <PortalEmptyChat
       dark={theme === 'dark'}
@@ -798,6 +810,7 @@ export function AgentPortal(): JSX.Element {
                     items={pendingSends}
                     onSend={flushPending}
                     onDismiss={dismissPending}
+                    onReedit={reeditPending}
                   />
                   <AttachmentStrip
                     dark={dark}

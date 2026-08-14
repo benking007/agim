@@ -192,6 +192,19 @@ export default function ChatRoute(): JSX.Element {
     setPendingSends((cur) => cur.filter((item) => item.id !== id))
   }
 
+  function reeditPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item) return
+    const draft = input.trim()
+    setPendingSends((cur) => {
+      const next = cur.filter((row) => row.id !== id)
+      if (!draft) return next
+      return [...next, { id: `q-${Date.now()}-${next.length}`, text: draft }]
+    })
+    setInput(item.text)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
   function flushPending(id: string): void {
     const item = pendingSends.find((row) => row.id === id)
     if (!item || item.flushAfter) return
@@ -358,6 +371,7 @@ export default function ChatRoute(): JSX.Element {
             items={pendingSends}
             onSend={flushPending}
             onDismiss={dismissPending}
+            onReedit={reeditPending}
           />
         )}
         enterNewline={enterNewline}

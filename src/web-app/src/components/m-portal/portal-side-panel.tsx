@@ -61,11 +61,19 @@ export function PortalSidePanel(props: {
           type="button"
           title={t('chat.portal.brand')}
           aria-label={t('chat.portal.brand')}
-          className="mb-4 text-teal-500"
+          className="mb-2 text-teal-500"
         >
           <Sparkles className="h-5 w-5" />
         </button>
-        <div className={cn('mb-3 rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)} title={displayAgentName(agentId)}>
+        {onToggleRailCollapsed && (
+          <IconRailButton
+            dark={dark}
+            label={t('chat.portal.expandRail')}
+            onClick={onToggleRailCollapsed}
+            icon={<PanelLeftOpen className="h-4 w-4" />}
+          />
+        )}
+        <div className={cn('mb-3 mt-2 rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)} title={displayAgentName(agentId)}>
           <AgentIcon className="h-4 w-4" />
         </div>
         <IconRailButton
@@ -122,14 +130,6 @@ export function PortalSidePanel(props: {
             onClick={onToggleLang}
             icon={<Languages className="h-4 w-4" />}
           />
-          {onToggleRailCollapsed && (
-            <IconRailButton
-              dark={dark}
-              label={t('chat.portal.expandRail')}
-              onClick={onToggleRailCollapsed}
-              icon={<PanelLeftOpen className="h-4 w-4" />}
-            />
-          )}
           <div
             className={cn(
               'mt-1 flex h-8 w-8 items-center justify-center rounded-full',

@@ -429,8 +429,6 @@ export default function ChatRoute(): JSX.Element {
               activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
               thinkVariant={thinkVariant}
               showThinking={modelStatus.showThinking}
-              stepReflect={stepReflect}
-              stepReflectDisabled={state.stepReflectDisabled}
               contextUsed={modelStatus.contextUsed}
               contextWindow={modelStatus.contextWindow}
               breakdown={modelStatus.breakdown}

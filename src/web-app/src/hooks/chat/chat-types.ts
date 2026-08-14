@@ -155,9 +155,9 @@ export interface ChatState {
   error: string | null
   /** Live session plan-mode flag (from history / plan-mode events). */
   planMode: boolean
-  /** Live session Step Reflect flag (from history / step-reflect-mode). */
+  /** Live session Step Reflect flag (from history / step-reflect-mode). Default on. */
   stepReflect: boolean
-  /** Ops kill switch AGIM_STEP_REFLECT=disabled — hide the composer chip. */
+  /** Ops kill switch AGIM_STEP_REFLECT=disabled. */
   stepReflectDisabled: boolean
   /** Live session /think variant (from history / think-mode events). */
   thinkVariant: string

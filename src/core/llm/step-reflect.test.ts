@@ -22,16 +22,16 @@ afterEach(() => {
 })
 
 describe('resolveStepReflectEnv', () => {
-  it('defaults to off', () => {
-    expect(resolveStepReflectEnv()).toBe('off')
-    expect(isStepReflectEnabled()).toBe(false)
+  it('defaults to on', () => {
+    expect(resolveStepReflectEnv()).toBe('on')
+    expect(isStepReflectEnabled()).toBe(true)
     expect(isStepReflectDisabled()).toBe(false)
   })
 
-  it('reads on / disabled', () => {
-    process.env.AGIM_STEP_REFLECT = 'on'
-    expect(resolveStepReflectEnv()).toBe('on')
-    expect(isStepReflectEnabled()).toBe(true)
+  it('reads off / disabled', () => {
+    process.env.AGIM_STEP_REFLECT = 'off'
+    expect(resolveStepReflectEnv()).toBe('off')
+    expect(isStepReflectEnabled()).toBe(false)
     process.env.AGIM_STEP_REFLECT = 'disabled'
     expect(isStepReflectDisabled()).toBe(true)
     expect(isStepReflectEnabled({ stepReflect: true })).toBe(false)
@@ -45,6 +45,8 @@ describe('isStepReflectEnabled', () => {
     process.env.AGIM_STEP_REFLECT = 'off'
     expect(isStepReflectEnabled({ stepReflect: true })).toBe(true)
     expect(isStepReflectEnabled({})).toBe(false)
+    delete process.env.AGIM_STEP_REFLECT
+    expect(isStepReflectEnabled({})).toBe(true)
   })
 })
 

@@ -227,9 +227,8 @@ export interface Session {
    *      already stricter than the IM gate).
    *  Persists across turns and `/oc`↔`/cc` agent switches; cleared by /new. */
   planMode?: boolean
-  /** Step Reflect (步思) — DeepSeek-style per-hop think-then-act. Toggled by
-   *  /step-reflect on|off. Both true and false persist so env=on can still be
-   *  turned off per session. Cleared by /new. */
+  /** Step Reflect (步思) — DeepSeek-style per-hop think-then-act. Default on.
+   *  /step-reflect on|off still persists a per-session override. Cleared by /new. */
   stepReflect?: boolean
 }
 

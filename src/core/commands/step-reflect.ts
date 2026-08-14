@@ -1,8 +1,8 @@
-// /step-reflect [on|off] — per-session Step Reflect (步思) toggle for Agim Agent.
+// /step-reflect [on|off] — per-session Step Reflect (步思) override for Agim Agent.
 //
-// DeepSeek-style per-hop think-then-act. The flag travels with the conversation
-// (like /think), default off. Both true and false persist so AGIM_STEP_REFLECT=on
-// can still be turned off for one thread. AGIM_STEP_REFLECT=disabled is an ops kill switch.
+// DeepSeek-style per-hop think-then-act. Default on (no composer chip).
+// Both true and false persist so a thread can still opt out.
+// AGIM_STEP_REFLECT=disabled is an ops kill switch.
 
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
@@ -35,14 +35,14 @@ export async function handleStepReflectCommand(args: string, ctx: RouteContext):
         : `跟随环境 AGIM_STEP_REFLECT=${env}`
     const agentNote = agim
       ? ''
-      : `\n\n⚠️ 一步一想只对 Agim Agent 生效。当前 agent **${agent}** 会忽略该标志（不会出现芯片或思考反馈）。`
+      : `\n\n⚠️ 一步一想只对 Agim Agent 生效。当前 agent **${agent}** 会忽略该标志（不会出现思考反馈）。`
     return `一步一想: \`${cur}\`（${override}；当前 agent: \`${agent}\`）
 
 切换：
   /step-reflect on   开启（每步先思考再调工具，过程中持续反馈）
   /step-reflect off  关闭
 
-默认关。开启后像 DeepSeek 一样：短思考 → 工具 → 短思考 → 工具。${agentNote}`
+默认开。像 DeepSeek 一样：短思考 → 工具 → 短思考 → 工具。${agentNote}`
   }
 
   await sessionManager.getOrCreateSession(

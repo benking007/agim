@@ -53,14 +53,15 @@ describe('parseMessage /step-reflect', () => {
 })
 
 describe('handleStepReflectCommand', () => {
-  it('shows off + usage on a fresh session', async () => {
+  it('shows on + usage on a fresh session', async () => {
     const ctx = makeCtx(uid(), uid())
     await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, 'agim')
     const out = await handleStepReflectCommand('', ctx)
     expect(out).toContain('一步一想')
-    expect(out).toContain('off')
-    expect(out).toContain('/step-reflect on')
+    expect(out).toMatch(/`on`/)
+    expect(out).toContain('/step-reflect off')
     expect(out).toContain('DeepSeek')
+    expect(out).toContain('默认开')
   })
 
   it('/step-reflect on persists true', async () => {

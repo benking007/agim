@@ -1062,8 +1062,6 @@ export function AgentPortal(): JSX.Element {
                   activeBackendName={optimisticModel ?? modelStatus.activeBackendName}
                   thinkVariant={thinkVariant}
                   showThinking={modelStatus.showThinking}
-                  stepReflect={demoStepReflect || stepReflect}
-                  stepReflectDisabled={state.stepReflectDisabled}
                   contextUsed={modelStatus.contextUsed}
                   contextWindow={modelStatus.contextWindow}
                   breakdown={modelStatus.breakdown}

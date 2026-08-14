@@ -6,8 +6,9 @@
  * keeps calling tools. The HTML fence is a fallback for models with no
  * thinking trace — not the primary path.
  *
- * Env: AGIM_STEP_REFLECT=on|off|disabled (default off).
+ * Env: AGIM_STEP_REFLECT=on|off|disabled (default on).
  * Session: session.stepReflect true|false overrides env (both persist).
+ * `disabled` is an ops kill switch.
  */
 
 import { canonicalizeToolName } from './tool-names.js'
@@ -44,8 +45,8 @@ const THINKING_OBSERVED_MAX = 240
 export function resolveStepReflectEnv(): StepReflectEnv {
   const raw = (process.env.AGIM_STEP_REFLECT ?? '').toLowerCase().trim()
   if (raw === 'disabled' || raw === 'disable') return 'disabled'
-  if (raw === 'on' || raw === '1' || raw === 'true' || raw === 'yes') return 'on'
-  return 'off'
+  if (raw === 'off' || raw === '0' || raw === 'false' || raw === 'no') return 'off'
+  return 'on'
 }
 
 export function isStepReflectDisabled(): boolean {

@@ -3,6 +3,10 @@ import { chatReducer, initialChatState } from './chat-reducer'
 import type { ChatMessage } from './chat-types'
 
 describe('STEP_REFLECT_MODE', () => {
+  it('defaults on before history arrives', () => {
+    expect(initialChatState.stepReflect).toBe(true)
+  })
+
   it('toggles the session flag', () => {
     const on = chatReducer(initialChatState, { kind: 'STEP_REFLECT_MODE', enabled: true })
     expect(on.stepReflect).toBe(true)

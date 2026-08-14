@@ -11,7 +11,7 @@ export interface StepReflectRecord {
 const STANCES = new Set<StepReflectStance>(['keep', 'adjust', 'stop'])
 
 export function isAgimFamilyLabel(label: string): boolean {
-  const head = (label || '').split(/[/:]/)[0].trim().toLowerCase()
+  const head = (label || '').split(/[/:]/)[0]?.trim().toLowerCase() ?? ''
   return head === 'agim' || head === 'native'
 }
 

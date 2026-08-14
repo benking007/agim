@@ -32,6 +32,7 @@ export function canPickDirectory(): boolean {
 export function dirFromFileList(files: FileList | File[] | null | undefined): PickedWorkspaceDir | null {
   if (!files || files.length === 0) return null
   const first = files[0]
+  if (!first) return null
   const rel = (first.webkitRelativePath || first.name || '').replace(/\\/g, '/')
   const root = rel.split('/').find((part) => part.trim())
   if (!root) return null

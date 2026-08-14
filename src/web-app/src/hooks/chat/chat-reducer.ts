@@ -7,6 +7,7 @@
  * directly and the hook stays thin.
  */
 
+import { mergeStepReflects } from '@/lib/step-reflect'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChoiceCardPrompt } from '@/types/ws'
 import type {
   ChatActivity,
@@ -69,6 +70,8 @@ export type ChatAction =
       agent: string
       preferredWorkerAgent?: string
       planMode?: boolean
+      stepReflect?: boolean
+      stepReflectDisabled?: boolean
       thinkVariant?: string
       sessionModel?: string
       compactRate?: string
@@ -81,6 +84,7 @@ export type ChatAction =
     }
   | { kind: 'HISTORY_PREPEND'; messages: ChatMessage[]; threadId?: string }
   | { kind: 'PLAN_MODE'; enabled: boolean }
+  | { kind: 'STEP_REFLECT_MODE'; enabled: boolean; disabled?: boolean }
   | { kind: 'THINK_MODE'; variant: string }
   | { kind: 'SESSION_MODEL'; model: string }
   | { kind: 'COMPACT_RATE'; rate: string }
@@ -145,6 +149,8 @@ export const initialChatState: ChatState = {
   currentReplyId: null,
   error: null,
   planMode: false,
+  stepReflect: false,
+  stepReflectDisabled: false,
   thinkVariant: 'auto',
   sessionModel: '',
   compactRate: 'auto',
@@ -224,12 +230,14 @@ function assistantContentAhead(local: ChatMessage[], hist: ChatMessage[]): boole
 
 function historyMeta(s: ChatState, a: Extract<ChatAction, { kind: 'HISTORY' }>): Pick<
   ChatState,
-  'agent' | 'preferredWorkerAgent' | 'planMode' | 'thinkVariant' | 'sessionModel' | 'compactRate'
+  'agent' | 'preferredWorkerAgent' | 'planMode' | 'stepReflect' | 'stepReflectDisabled' | 'thinkVariant' | 'sessionModel' | 'compactRate'
 > {
   return {
     agent: a.agent || s.agent,
     preferredWorkerAgent: a.preferredWorkerAgent ?? s.preferredWorkerAgent,
     planMode: a.planMode ?? s.planMode,
+    stepReflect: typeof a.stepReflect === 'boolean' ? a.stepReflect : s.stepReflect,
+    stepReflectDisabled: a.stepReflectDisabled === true || s.stepReflectDisabled,
     thinkVariant: a.thinkVariant ?? s.thinkVariant,
     sessionModel: a.sessionModel ?? s.sessionModel,
     compactRate: a.compactRate ?? s.compactRate,
@@ -508,6 +516,12 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
     }
     case 'PLAN_MODE':
       return { ...s, planMode: a.enabled }
+    case 'STEP_REFLECT_MODE':
+      return {
+        ...s,
+        stepReflect: a.enabled,
+        stepReflectDisabled: a.disabled === true,
+      }
     case 'THINK_MODE':
       return { ...s, thinkVariant: a.variant || 'auto' }
     case 'SESSION_MODEL':
@@ -1024,6 +1038,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           preview: a.step.preview ?? prev.preview,
           todoItems: a.step.todoItems ?? prev.todoItems,
           jobId: a.step.jobId ?? prev.jobId,
+          reflects: mergeStepReflects(prev.reflects, a.step.reflects) ?? prev.reflects,
         }
       } else {
         steps.push(a.step)
@@ -1050,6 +1065,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         currentReplyId: null,
         error: null,
         planMode: false,
+        stepReflect: false,
         thinkVariant: 'auto',
         sessionModel: '',
         compactRate: 'auto',

@@ -22,6 +22,7 @@ import {
   listSubagentSteps,
   resolveSubagentJobId,
 } from '@/lib/activity-subagent'
+import { isAgimFamilyLabel } from '@/lib/step-reflect'
 import { cn } from '@/lib/utils'
 import { SubagentDetailDialog } from './subagent-detail-dialog'
 
@@ -54,6 +55,8 @@ export interface ChatSubagentCardProps {
   className?: string
   /** Cancel one live Subagent job (WS `stop-subagent`). */
   onStopSubagent?: (jobId: number) => boolean | undefined
+  /** Session Step Reflect on — reserve the 1-line carousel on Agim workers. */
+  stepReflectEnabled?: boolean
 }
 
 function StatusIcon({
@@ -105,18 +108,105 @@ function statusLabel(
   return step.status
 }
 
+function stanceLabel(
+  stance: string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (stance === 'adjust') return t('chat.activityReflectAdjust', { defaultValue: 'adjust' })
+  if (stance === 'stop') return t('chat.activityReflectStop', { defaultValue: 'stop' })
+  return t('chat.activityReflectKeep', { defaultValue: 'keep' })
+}
+
+function StepReflectSlot({
+  step,
+  enabled,
+  dark,
+}: {
+  step: ChatActivityStep
+  enabled: boolean
+  dark?: boolean
+}): JSX.Element | null {
+  const { t } = useTranslation()
+  const live = isSubagentLive(step)
+  const family = isAgimFamilyLabel(step.label)
+  const items = (step.reflects ?? []).slice(-3)
+  const show = enabled && family && (live || items.length > 0)
+  const [idx, setIdx] = useState(0)
+  const [hover, setHover] = useState(false)
+  const [fade, setFade] = useState(true)
+
+  useEffect(() => {
+    if (idx >= items.length && items.length > 0) setIdx(items.length - 1)
+  }, [idx, items.length])
+
+  useEffect(() => {
+    if (!show || hover || items.length < 2) return
+    const id = window.setInterval(() => {
+      setFade(false)
+      window.setTimeout(() => {
+        setIdx((i) => (i + 1) % Math.max(1, items.length))
+        setFade(true)
+      }, 160)
+    }, 3500)
+    return () => window.clearInterval(id)
+  }, [show, hover, items.length])
+
+  if (!show) return null
+  const current = items[Math.min(idx, Math.max(0, items.length - 1))]
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="h-5 overflow-hidden pl-5"
+      data-testid="step-reflect-slot"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
+    >
+      <div
+        className={cn(
+          'flex h-5 items-center gap-1.5 truncate whitespace-nowrap text-[11px] leading-5 transition-opacity duration-200',
+          fade ? 'opacity-100' : 'opacity-0',
+          dark ? 'text-zinc-400' : 'text-text-muted',
+        )}
+      >
+        {current ? (
+          <>
+            <span className={cn(
+              'shrink-0 rounded px-1 text-[10px] uppercase tracking-wide',
+              dark ? 'bg-zinc-800 text-teal-300' : 'bg-surface-2 text-teal-700',
+            )}
+            >
+              {stanceLabel(current.stance, t)}
+            </span>
+            <span className="min-w-0 truncate">{current.next}</span>
+          </>
+        ) : (
+          <span className="truncate">
+            {t('chat.portal.stepReflectWaiting', { defaultValue: 'Step reflect…' })}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SubagentRow({
   step,
   dark,
   onOpen,
   onStop,
   stopping,
+  stepReflectEnabled,
 }: {
   step: ChatActivityStep
   dark?: boolean
   onOpen: () => void
   onStop?: () => void
   stopping?: boolean
+  stepReflectEnabled?: boolean
 }): JSX.Element {
   const { t } = useTranslation()
   const live = isSubagentLive(step)
@@ -183,6 +273,7 @@ function SubagentRow({
             {detail.length > 280 ? `${detail.slice(0, 280)}…` : detail}
           </p>
         )}
+        <StepReflectSlot step={step} enabled={!!stepReflectEnabled} dark={dark} />
         <p className={cn(
           'pl-5 text-[11px] leading-snug',
           live
@@ -236,6 +327,7 @@ export function ChatSubagentCard({
   dark,
   className,
   onStopSubagent,
+  stepReflectEnabled = false,
 }: ChatSubagentCardProps): JSX.Element | null {
   const { t } = useTranslation()
   const steps = listSubagentSteps(activity)
@@ -361,6 +453,7 @@ export function ChatSubagentCard({
                     ? () => handleStop(step)
                     : undefined}
                   stopping={jobId != null && stoppingIds.has(jobId)}
+                  stepReflectEnabled={stepReflectEnabled}
                 />
               )
             })}

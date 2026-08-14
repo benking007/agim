@@ -120,6 +120,8 @@ export interface AgimDispatcherCtx {
    *  run read-only. Resolved by native/index.ts via
    *  effectivePlanModeOn(planThreadKey) before building the dispatcher. */
   callerPlanMode?: boolean
+  /** Parent Step Reflect flag — same-family workers inherit the beat. */
+  callerStepReflect?: boolean
   /** The parent turn's inline-job id (cli.ts stamps routeCtx.parentJobId on
    *  every inbound turn). Threaded into callAgentByName so the A2A callee row
    *  gets parent_id set — without it native-originated A2A jobs have a NULL
@@ -817,6 +819,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
       callerAgent: ctx.callerAgent,
       ...(typeof ctx.parentJobId === 'number' ? { parentJobId: ctx.parentJobId } : {}),
       ...(ctx.callerPlanMode ? { planMode: true } : {}),
+      ...(ctx.callerStepReflect ? { stepReflect: true } : {}),
       ...(ctx.onToolActivity ? { onToolActivity: ctx.onToolActivity } : {}),
       ...(spawn.isolate ? { isolate: true } : {}),
       ...(spawn.model ? { model: spawn.model } : {}),

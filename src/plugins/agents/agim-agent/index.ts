@@ -44,6 +44,13 @@ import {
 } from '../../../core/llm/todo-items.js'
 import { reconcileTodoOnSuccessfulTurn } from '../../../core/llm/todo-dispatcher.js'
 import { evaluateTodoMutationGate } from '../../../core/llm/todo-gate.js'
+import {
+  actNeedsReflect,
+  extractAssistantText,
+  formatStepReflectSteer,
+  parseStepReflectFence,
+  type ParsedStepReflect,
+} from '../../../core/llm/step-reflect.js'
 import { evaluateLoopDispatchGate } from '../../../core/loop-dispatch-gate.js'
 import { evaluateLoopParentWaitGate } from '../../../core/loop-parent-wait-gate.js'
 import {
@@ -938,6 +945,9 @@ export class NativeAgentAdapter implements AgentAdapter {
     /** Mid-turn soft steers (goal critic) — injected only via the context hook,
      *  never appended as durable user messages. */
     let ephemeralSteer = ''
+    /** Soft Step Reflect: set after a mutating act; consumed into ephemeralSteer. */
+    let pendingReflect = false
+    let reflectSeq = 0
     // Snapshot budget knobs once per turn (env can change via /api/env;
     // session compactRate overlays reserve/keep when not auto).
     const budget = resolveContextBudgetSettings(
@@ -1088,19 +1098,20 @@ export class NativeAgentAdapter implements AgentAdapter {
     const emitToolActivity = (
       step: {
         id: string
-        kind?: 'tool' | 'skill' | 'status' | 'agent'
+        kind?: 'tool' | 'skill' | 'status' | 'agent' | 'reflect'
         label: string
         status: 'pending' | 'running' | 'success' | 'error' | 'denied'
         startedAt: number
         finishedAt?: number
         preview?: string
         todoItems?: TodoItem[]
+        reflects?: import('../../../core/types.js').ToolActivityStep['reflects']
       },
     ): void => {
       if (!opts?.onToolActivity) return
       // call_agent(s) activity is owned by callAgentByName (per-lane step ids)
       // so the accordion does not also show the raw tool row.
-      if (isSubagentTool(step.label) && step.status !== 'denied') return
+      if (isSubagentTool(step.label) && step.status !== 'denied' && step.kind !== 'reflect') return
       try {
         // Collapse every todo_write onto one step id so the Plan card
         // refreshes in place as items complete mid-turn (observer UX).
@@ -1114,8 +1125,35 @@ export class NativeAgentAdapter implements AgentAdapter {
           finishedAt: step.finishedAt,
           preview: step.preview,
           ...(step.todoItems ? { todoItems: step.todoItems } : {}),
+          ...(step.reflects ? { reflects: step.reflects } : {}),
         })
       } catch { /* observer must not break the harness loop */ }
+    }
+
+    const emitStepReflect = (parsed: ParsedStepReflect): void => {
+      const at = Date.now()
+      const record = { stance: parsed.stance, next: parsed.next, at }
+      if ((opts?.callDepth ?? 0) > 0) {
+        emitToolActivity({
+          id: opts?.parentActivityStepId || 'step-reflect-forward',
+          kind: 'agent',
+          label: 'agim',
+          status: 'running',
+          startedAt: at,
+          reflects: [record],
+        })
+        return
+      }
+      reflectSeq += 1
+      emitToolActivity({
+        id: `step-reflect-${reflectSeq}`,
+        kind: 'reflect',
+        label: parsed.next,
+        status: 'success',
+        startedAt: at,
+        finishedAt: at,
+        preview: parsed.observed || undefined,
+      })
     }
 
     const runCompactionCycle = async (reason: 'pre-turn' | 'mid-turn'): Promise<void> => {
@@ -1496,6 +1534,20 @@ export class NativeAgentAdapter implements AgentAdapter {
             preview,
           )
         }
+        // Step Reflect R1 — parse the last assistant fence, then (if this
+        // beat mutated) inject a soft steer before the critic appends.
+        if (opts?.stepReflect && !stopReason) {
+          const beatNames = event.toolResults
+            .map((r) => r.toolName)
+            .filter((n): n is string => typeof n === 'string' && n.length > 0)
+          if (actNeedsReflect(beatNames)) pendingReflect = true
+          const parsed = parseStepReflectFence(extractAssistantText(event.message.content))
+          if (parsed) emitStepReflect(parsed)
+          if (pendingReflect) {
+            ephemeralSteer = [formatStepReflectSteer(), ephemeralSteer].filter(Boolean).join('\n\n')
+            pendingReflect = false
+          }
+        }
         // Mid-turn goal critic (soft steer once, hard-stop on repeat).
         if (!stopReason && toolRuns.length > 0) {
           const activeGoal = goalScope
@@ -1865,6 +1917,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         ? threadSteerKey(opts.platform, opts.channelId ?? '', opts.threadId)
         : `agim:${sessionId}`
       unregisterSteer = registerLiveSteer(steerKey, async (text) => {
+        pendingReflect = false
         ephemeralSteer = [
           ephemeralSteer,
           '用户刚通过本轮补充加入了新的约束。先停一下读完补充，再决定是否调整方案，然后继续本轮工作。',

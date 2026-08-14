@@ -39,6 +39,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'activity-step',
   'agent-switched',
   'plan-mode',
+  'step-reflect-mode',
   'think-mode',
   'session-model',
   'compact-rate',
@@ -185,6 +186,8 @@ export function makeOnIncoming(
           agent: msg.agent,
           preferredWorkerAgent: msg.preferredWorkerAgent || '',
           planMode: msg.planMode,
+          stepReflect: msg.stepReflect,
+          stepReflectDisabled: msg.stepReflectDisabled,
           thinkVariant: msg.thinkVariant,
           sessionModel: msg.sessionModel,
           compactRate: msg.compactRate,
@@ -233,6 +236,13 @@ export function makeOnIncoming(
       }
       case 'plan-mode':
         dispatch({ kind: 'PLAN_MODE', enabled: !!msg.enabled })
+        return
+      case 'step-reflect-mode':
+        dispatch({
+          kind: 'STEP_REFLECT_MODE',
+          enabled: !!msg.enabled,
+          disabled: msg.disabled,
+        })
         return
       case 'think-mode':
         dispatch({ kind: 'THINK_MODE', variant: msg.variant || 'auto' })

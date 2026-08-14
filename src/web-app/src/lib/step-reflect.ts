@@ -24,8 +24,13 @@ export function mergeStepReflects(
   for (const rec of incoming) {
     if (!rec || !STANCES.has(rec.stance) || !rec.next) continue
     const at = typeof rec.at === 'number' && Number.isFinite(rec.at) ? rec.at : Date.now()
-    if (out.some((x) => x.at === at && x.next === rec.next && x.stance === rec.stance)) continue
-    out.push({ stance: rec.stance, next: rec.next.trim(), at })
+    const next = rec.next.trim()
+    const idx = out.findIndex((x) => x.at === at)
+    if (idx >= 0) {
+      out[idx] = { stance: rec.stance, next, at }
+      continue
+    }
+    out.push({ stance: rec.stance, next, at })
   }
   return out.length > 0 ? out.slice(-3) : undefined
 }

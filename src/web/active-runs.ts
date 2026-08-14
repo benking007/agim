@@ -25,6 +25,11 @@ export interface ActiveRunStep {
   /** Subagent / A2A inline job id when known. */
   jobId?: number
   reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
+  lastTool?: {
+    label: string
+    status: ActiveRunStepStatus
+    at: number
+  }
 }
 
 export interface ActiveRunSnapshot {
@@ -97,6 +102,7 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): bool
       todoItems: step.todoItems ?? prev.todoItems,
       jobId: step.jobId ?? prev.jobId,
       reflects: mergeStepReflects(prev.reflects, step.reflects) ?? prev.reflects,
+      lastTool: step.lastTool ?? prev.lastTool,
     }
   } else {
     snap.steps.push(step)

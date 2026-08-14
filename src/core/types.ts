@@ -56,6 +56,12 @@ export interface PersistedChatActivity {
     todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
     /** Step Reflect carousel on a Subagent (`kind: 'agent'`) row. */
     reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
+    /** Latest child tool/skill on a Subagent row (not a parent accordion row). */
+    lastTool?: {
+      label: string
+      status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+      at: number
+    }
   }>
 }
 
@@ -611,6 +617,12 @@ export interface ToolActivityStep {
   jobId?: number
   /** Step Reflect beats on a Subagent row (same-family Agim workers). */
   reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
+  /** Latest child tool/skill folded onto this Subagent card. */
+  lastTool?: {
+    label: string
+    status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+    at: number
+  }
 }
 
 /**

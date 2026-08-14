@@ -19,4 +19,11 @@ describe('mergeStepReflects', () => {
     const d = { stance: 'stop' as const, next: 'four', at: 4 }
     expect(mergeStepReflects([a, b, c], [d])).toEqual([b, c, d])
   })
+
+  it('updates the same hop `at` in place', () => {
+    const a = { stance: 'keep' as const, next: 'one', at: 1 }
+    expect(mergeStepReflects([a], [{ stance: 'keep', next: 'one then two', at: 1 }])).toEqual([
+      { stance: 'keep', next: 'one then two', at: 1 },
+    ])
+  })
 })

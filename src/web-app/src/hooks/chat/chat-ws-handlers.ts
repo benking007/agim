@@ -80,7 +80,7 @@ export function normalizeActivityStep(st: ActivityStepEvent['step']): ChatActivi
     id: st.id,
     kind: st.kind === 'skill' || st.kind === 'status'
       || st.kind === 'approval' || st.kind === 'ask'
-      || st.kind === 'agent'
+      || st.kind === 'agent' || st.kind === 'reflect'
       ? st.kind
       : 'tool',
     label: st.label,
@@ -90,6 +90,8 @@ export function normalizeActivityStep(st: ActivityStepEvent['step']): ChatActivi
     preview: st.preview,
     ...(st.todoItems ? { todoItems: st.todoItems } : {}),
     ...(typeof st.jobId === 'number' ? { jobId: st.jobId } : {}),
+    ...(st.reflects?.length ? { reflects: st.reflects } : {}),
+    ...(st.lastTool ? { lastTool: st.lastTool } : {}),
   }
 }
 
@@ -318,36 +320,10 @@ export function makeOnIncoming(
         })
         return
       case 'activity-step': {
-        const startedAt = typeof msg.step.startedAt === 'number'
-          ? msg.step.startedAt
-          : (Number.isFinite(Date.parse(String(msg.step.startedAt)))
-              ? Date.parse(String(msg.step.startedAt))
-              : Date.now())
-        const finishedAt = msg.step.finishedAt == null
-          ? undefined
-          : typeof msg.step.finishedAt === 'number'
-            ? msg.step.finishedAt
-            : (Number.isFinite(Date.parse(String(msg.step.finishedAt)))
-                ? Date.parse(String(msg.step.finishedAt))
-                : undefined)
         dispatch({
           kind: 'ACTIVITY_STEP',
           runId: msg.runId,
-          step: {
-            id: msg.step.id,
-            kind: msg.step.kind === 'skill' || msg.step.kind === 'status'
-              || msg.step.kind === 'approval' || msg.step.kind === 'ask'
-              || msg.step.kind === 'agent'
-              ? msg.step.kind
-              : 'tool',
-            label: msg.step.label,
-            status: msg.step.status,
-            startedAt,
-            finishedAt,
-            preview: msg.step.preview,
-            ...(msg.step.todoItems ? { todoItems: msg.step.todoItems } : {}),
-            ...(typeof msg.step.jobId === 'number' ? { jobId: msg.step.jobId } : {}),
-          },
+          step: normalizeActivityStep(msg.step),
         })
         return
       }

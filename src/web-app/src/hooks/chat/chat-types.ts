@@ -64,6 +64,12 @@ export interface ChatActivityStep {
   jobId?: number
   /** Step Reflect carousel on a same-family Agim Subagent row. */
   reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
+  /** Latest child tool/skill folded onto this Subagent card. */
+  lastTool?: {
+    label: string
+    status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+    at: number
+  }
 }
 
 /** Cursor-style "Worked ›" block bound to an assistant reply. */

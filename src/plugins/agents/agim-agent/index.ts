@@ -1166,7 +1166,8 @@ export class NativeAgentAdapter implements AgentAdapter {
       const at = emitOpts?.at ?? (hopThinkingAt || Date.now())
       const status = emitOpts?.status ?? 'success'
       const record = { stance: parsed.stance, next: parsed.next, at }
-      if ((opts?.callDepth ?? 0) > 0) {
+      const nestedCard = (opts?.callDepth ?? 0) > 0 || !!opts?.parentActivityStepId
+      if (nestedCard) {
         if (!parsed.next) return
         emitToolActivity({
           id: opts?.parentActivityStepId || 'step-reflect-forward',

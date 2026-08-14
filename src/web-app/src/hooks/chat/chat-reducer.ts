@@ -1039,6 +1039,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           todoItems: a.step.todoItems ?? prev.todoItems,
           jobId: a.step.jobId ?? prev.jobId,
           reflects: mergeStepReflects(prev.reflects, a.step.reflects) ?? prev.reflects,
+          lastTool: a.step.lastTool ?? prev.lastTool,
         }
       } else {
         steps.push(a.step)

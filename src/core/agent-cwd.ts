@@ -45,6 +45,40 @@ export function defaultAgentCwd(agentName: string): string {
   return join(agimWorkspacesRoot(), id)
 }
 
+/**
+ * Agent workspace root for role / memory / PROJECTS — not the Portal
+ * subdirectory bound as process cwd.
+ *
+ * Env `AGIM_<AGENT>_CWD` wins (same as bootstrap). Portal `workspacePath`
+ * never moves this root: selected folders are for project file I/O only.
+ */
+export function resolveAgentWorkspaceRoot(agentName: string): string {
+  const explicit = process.env[envKeyFor(agentName)]
+  if (explicit?.trim()) return explicit.trim()
+  return defaultAgentCwd(agentName)
+}
+
+/**
+ * Ephemeral hint when Portal binds a subdirectory as the working directory.
+ * Project files follow `workspacePath`; AGENTS.md / MEMORY.md stay at root.
+ */
+export function buildPortalWorkspaceHint(agentName: string, workspacePath: string): string {
+  const cwd = workspacePath.trim()
+  const root = resolveAgentWorkspaceRoot(agentName)
+  const lines = [
+    '## Portal workspace',
+    `Working directory: \`${cwd}\``,
+    'Treat this path as the project root for listing, reading, and writing project files unless the user names another path.',
+  ]
+  if (cwd && cwd !== root) {
+    lines.push(
+      `Workspace root: \`${root}\``,
+      'Keep AGENTS.md / CLAUDE.md, MEMORY.md, PROJECTS, and Loop reports at the workspace root. Do not move them into the working directory.',
+    )
+  }
+  return lines.join('\n')
+}
+
 /** Env var name for an explicit override on a given agent. */
 function envKeyFor(agentName: string): string {
   // claude-code -> AGIM_CLAUDE_CODE_CWD
@@ -327,14 +361,18 @@ export async function ensureAgentMemoryLink(
  *
  * Decision order:
  *   1. Env override `AGIM_<AGENT>_CWD` always wins.
- *   2. If we're in an IM context (threadId + platform both present), pin to
+ *   2. Explicit Portal / web `opts.workspacePath` (resolved directory).
+ *   3. If we're in an IM context (threadId + platform both present), pin to
  *      `~/.agim-workspaces/<agent>/`.
- *   3. Otherwise return undefined → adapter inherits agim's cwd. This
- *      keeps web/scheduler/intent-llm judge paths exactly as they were.
+ *   4. Otherwise return undefined → adapter inherits agim's cwd. This
+ *      keeps scheduler/intent-llm judge paths exactly as they were.
  */
 export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string | undefined {
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit) return explicit
+
+  const portal = typeof opts.workspacePath === 'string' ? opts.workspacePath.trim() : ''
+  if (portal) return portal
 
   if (opts.threadId && opts.platform) {
     return defaultAgentCwd(agentName)

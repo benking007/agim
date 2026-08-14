@@ -25,7 +25,10 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
 import { openChatWs } from '@/lib/api/ws'
 import {
+  archiveSession as markSessionArchived,
+  archiveSessionsForWorkspace,
   findSession,
+  isSessionArchived,
   isWebThreadId,
   listSessions,
   loadTabThreadId,
@@ -36,7 +39,15 @@ import {
   upsertSession,
   type WebSessionEntry,
 } from '@/lib/web-sessions'
-import { CLOUD_WORKSPACE_ID, loadActiveWorkspaceId, setActiveWorkspace } from '@/lib/web-workspaces'
+import {
+  CLOUD_WORKSPACE_ID,
+  activeWorkspacePath,
+  addLocalWorkspace,
+  archiveLocalWorkspace,
+  listWorkspaces,
+  loadActiveWorkspaceId,
+  setActiveWorkspace,
+} from '@/lib/web-workspaces'
 import {
   cachedHistoryToAction,
   hydrateInitialChatState,
@@ -220,7 +231,13 @@ export function useChat(): UseChat {
         timestamp: Date.now(),
       },
     })
-    const ok = ws.send({ type: 'message', text: trimmed, agent: state.agent })
+    const workspacePath = activeWorkspacePath()
+    const ok = ws.send({
+      type: 'message',
+      text: trimmed,
+      agent: state.agent,
+      ...(workspacePath ? { workspacePath } : {}),
+    })
     if (!ok) {
       dispatch({
         kind: 'ERROR',
@@ -354,6 +371,43 @@ export function useChat(): UseChat {
       workspaceId: loadActiveWorkspaceId(),
     })
     activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  function startSessionInWorkspace(workspaceId: string): void {
+    const current = findSession(threadIdRef.current)
+    const blank = !transcriptHasUserTurn(messagesRef.current)
+    if (blank && current) {
+      upsertSession({ id: current.id, workspaceId })
+      syncWorkspace(activeWorkspacePath())
+      return
+    }
+    const id = mintThreadId()
+    upsertSession({
+      id,
+      updatedAt: Date.now(),
+      agent: state.agent,
+      workspaceId,
+    })
+    activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  /** New named folder only — re-picking an existing path does not mint. */
+  function createWorkspace(dir: { name: string; path: string }): void {
+    const path = dir.path.trim()
+    const existed = listWorkspaces().some((w) => w.kind === 'local' && w.path === path)
+    const ws = addLocalWorkspace(dir)
+    if (ws.kind !== 'local') {
+      syncWorkspace('')
+      return
+    }
+    if (!existed) startSessionInWorkspace(ws.id)
+    else syncWorkspace(ws.path || ws.name)
+  }
+
+  function syncWorkspace(path?: string): void {
+    wsRef.current.send({ type: 'set-workspace', workspacePath: path || '' })
   }
 
   function switchSession(threadId: string): void {
@@ -361,6 +415,53 @@ export function useChat(): UseChat {
     if (!isWebThreadId(id) || id === threadIdRef.current) return
     setActiveWorkspace(findSession(id)?.workspaceId || CLOUD_WORKSPACE_ID)
     activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  function followVisibleSession(preferredId?: string): void {
+    const next = (preferredId && listSessions().some((s) => s.id === preferredId) ? preferredId : undefined)
+      || listSessions()[0]?.id
+    if (next && next !== threadIdRef.current) {
+      switchSession(next)
+      return
+    }
+    if (next && next === threadIdRef.current) {
+      syncWorkspace(activeWorkspacePath())
+      return
+    }
+    const id = mintThreadId()
+    upsertSession({
+      id,
+      updatedAt: Date.now(),
+      agent: state.agent,
+      workspaceId: loadActiveWorkspaceId(),
+    })
+    activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  function archiveSession(threadId: string): void {
+    const id = threadId.trim()
+    if (!isWebThreadId(id)) return
+    const wasActive = id === threadIdRef.current
+    const index = markSessionArchived(id)
+    if (!wasActive) return
+    followVisibleSession(index.activeId)
+  }
+
+  function archiveWorkspace(workspaceId: string): void {
+    const id = workspaceId.trim()
+    if (!id || id === CLOUD_WORKSPACE_ID) return
+    const currentId = threadIdRef.current
+    archiveSessionsForWorkspace(id)
+    const next = archiveLocalWorkspace(id)
+    const current = findSession(currentId)
+    if (!current || isSessionArchived(current)) {
+      setActiveWorkspace(CLOUD_WORKSPACE_ID)
+      followVisibleSession()
+      return
+    }
+    if (next.activeId === CLOUD_WORKSPACE_ID) syncWorkspace('')
   }
 
   function stop(): void {
@@ -396,6 +497,10 @@ export function useChat(): UseChat {
     choiceSubmit,
     newConversation,
     switchSession,
+    archiveSession,
+    archiveWorkspace,
+    syncWorkspace,
+    createWorkspace,
     sessions: sessionSnap.sessions,
     activeSessionId: sessionSnap.activeId,
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),

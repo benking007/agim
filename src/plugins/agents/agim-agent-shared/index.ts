@@ -51,6 +51,7 @@ export function buildSystemPrompt(
   role: string,
   cwd: string,
   threadKey?: string,
+  constraintRoot?: string,
 ): string {
   const skillsBlock = buildSkillsSummary().trim()
     || '(no skill cards loaded; see docs/skills.md to add one)'
@@ -73,7 +74,8 @@ export function buildSystemPrompt(
     lines.push('')
   }
 
-  const opRole = readOperatorRole(cwd)
+  const roleRoot = constraintRoot?.trim() || cwd
+  const opRole = readOperatorRole(roleRoot)
   if (opRole) {
     lines.push('[operator role definition]')
     lines.push(opRole)
@@ -81,7 +83,7 @@ export function buildSystemPrompt(
     lines.push('')
   }
 
-  const workspaceMemory = readWorkspaceMemory(cwd)
+  const workspaceMemory = readWorkspaceMemory(roleRoot)
   if (workspaceMemory) {
     lines.push('[workspace memory: MEMORY.md]')
     lines.push('Operator-maintained long-term notes for this Agim agent. Current user, developer, and system instructions take precedence if they conflict.')
@@ -90,15 +92,19 @@ export function buildSystemPrompt(
     lines.push('')
   }
 
-  lines.push(
+  const runtimeLines = [
     `You are agim native — agim's in-process LLM agent talking to a user over an IM platform.`,
     '',
     'Runtime:',
     `  Backend:           ${provider.providerType}:${provider.name}`,
     `  Role:              ${role}`,
     `  Working directory: ${cwd}`,
-    '',
-  )
+  ]
+  if (roleRoot !== cwd) {
+    runtimeLines.push(`  Workspace root:    ${roleRoot} (AGENTS.md / MEMORY.md / PROJECTS)`)
+  }
+  runtimeLines.push('')
+  lines.push(...runtimeLines)
 
   if (isPlanModeOn(threadKey)) {
     lines.push(

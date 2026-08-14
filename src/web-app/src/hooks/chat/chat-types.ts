@@ -192,6 +192,14 @@ export interface UseChat {
   newConversation: () => void
   /** Reload a previously opened thread via `get-history`. */
   switchSession: (threadId: string) => void
+  /** Hide a thread from the Portal rail. */
+  archiveSession: (threadId: string) => void
+  /** Hide a named workspace and its sessions from the Portal rail. */
+  archiveWorkspace: (workspaceId: string) => void
+  /** Bind this thread's agent cwd to a Portal workspace path (empty = cloud). */
+  syncWorkspace: (path?: string) => void
+  /** Add a named host subdirectory and start a new session in it. */
+  createWorkspace: (dir: { name: string; path: string }) => void
   /** Newest-first index of this browser's web threads. */
   sessions: WebSessionEntry[]
   /** Active `web-*` id (same as `state.clientId` once bootstrapped). */

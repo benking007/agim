@@ -1,8 +1,8 @@
 /**
  * Portal left rail — conversation list click switches the active thread.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Brain } from 'lucide-react'
 
@@ -26,22 +26,21 @@ const cloudWorkspace = {
 function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) {
   const onSwitchSession = vi.fn()
   const onNew = vi.fn()
-  const onWorkspaceCreated = vi.fn()
+  const onNewWorkspace = vi.fn()
   const onSelectWorkspace = vi.fn()
   const onToggleWorkspace = vi.fn()
+  const onArchiveSession = vi.fn()
+  const onArchiveWorkspace = vi.fn()
   render(
     <PortalSidePanel
       dark={false}
       agentId="agim"
       visual={visual}
       AgentIcon={Brain}
-      activeTab="chat"
       status="open"
       lang="en"
       showClose={false}
       onClose={() => {}}
-      onChat={() => {}}
-      onExplore={() => {}}
       onNew={onNew}
       onToggleLang={() => {}}
       sessions={[
@@ -55,18 +54,16 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       collapsedWorkspaces={{}}
       onToggleWorkspace={onToggleWorkspace}
       onSelectWorkspace={onSelectWorkspace}
-      onWorkspaceCreated={onWorkspaceCreated}
+      onNewWorkspace={onNewWorkspace}
+      onArchiveSession={onArchiveSession}
+      onArchiveWorkspace={onArchiveWorkspace}
       {...over}
     />,
   )
-  return { onSwitchSession, onNew, onWorkspaceCreated, onSelectWorkspace, onToggleWorkspace }
+  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace, onArchiveSession, onArchiveWorkspace }
 }
 
 describe('PortalSidePanel conversations', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
   it('lists saved sessions under the cloud workspace and click calls onSwitchSession', async () => {
     const user = userEvent.setup()
     const { onSwitchSession } = renderPanel()
@@ -80,20 +77,23 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).toHaveBeenCalledWith('web-bbbb2222')
   })
 
-  it('keeps New conversation as a shortcut that mints a thread', async () => {
+  it('keeps New conversation as the only shortcut and hides Explore', async () => {
     const user = userEvent.setup()
     const { onNew, onSwitchSession } = renderPanel()
+    expect(screen.getByRole('button', { name: 'New conversation' })).toBeInTheDocument()
+    expect(screen.queryByText('Explore Agents Directory')).not.toBeInTheDocument()
+    expect(screen.queryByText('Interactive Chat')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
     expect(onNew).toHaveBeenCalled()
     expect(onSwitchSession).not.toHaveBeenCalled()
   })
 
-  it('nests sessions under their workspace and creates one from the directory file input', async () => {
+  it('nests sessions under their workspace and opens the directory picker', async () => {
     const user = userEvent.setup()
-    const { onWorkspaceCreated } = renderPanel({
+    const { onNewWorkspace } = renderPanel({
       workspaces: [
         cloudWorkspace,
-        { id: 'ws-local1', kind: 'local', name: 'agim', path: '/Users/a/Work/agim', createdAt: 2 },
+        { id: 'ws-local1', kind: 'local', name: 'proj', path: '/home/u/.agim-workspaces/agim/proj', createdAt: 2 },
       ],
       sessions: [
         { id: 'web-aaaa1111', title: 'Cloud chat', updatedAt: Date.now() - 3_600_000, workspaceId: 'cloud' },
@@ -103,25 +103,35 @@ describe('PortalSidePanel conversations', () => {
 
     expect(screen.getByText('Cloud chat')).toBeInTheDocument()
     expect(screen.getByText('Local review')).toBeInTheDocument()
-    expect(screen.getByText('agim')).toBeInTheDocument()
+    expect(screen.getByText('proj')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'New workspace' }))
-    expect(screen.queryByText('Select workspace directory')).not.toBeInTheDocument()
-
-    const input = screen.getByTestId('workspace-dir-input') as HTMLInputElement
-    const file = new File(['x'], 'package.json')
-    Object.defineProperty(file, 'webkitRelativePath', { value: 'ceshi/package.json' })
-    fireEvent.change(input, { target: { files: [file] } })
-    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'ceshi', path: 'ceshi' })
+    expect(onNewWorkspace).toHaveBeenCalled()
   })
 
-  it('uses showDirectoryPicker when the browser exposes it', async () => {
-    const pick = vi.fn(async () => ({ name: 'agim' }))
-    vi.stubGlobal('showDirectoryPicker', pick)
+  it('archives a session from the row button without switching', async () => {
     const user = userEvent.setup()
-    const { onWorkspaceCreated } = renderPanel()
-    await user.click(screen.getByRole('button', { name: 'New workspace' }))
-    expect(pick).toHaveBeenCalled()
-    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'agim', path: 'agim' })
+    const { onArchiveSession, onSwitchSession } = renderPanel()
+    const buttons = screen.getAllByRole('button', { name: 'Archive conversation' })
+    expect(buttons).toHaveLength(2)
+    const older = buttons[1]
+    expect(older).toBeTruthy()
+    await user.click(older)
+    expect(onArchiveSession).toHaveBeenCalledWith('web-bbbb2222')
+    expect(onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('archives a named workspace but not the cloud root', async () => {
+    const user = userEvent.setup()
+    const { onArchiveWorkspace, onSelectWorkspace } = renderPanel({
+      workspaces: [
+        cloudWorkspace,
+        { id: 'ws-local1', kind: 'local', name: 'proj', path: '/tmp/proj', createdAt: 2 },
+      ],
+    })
+    expect(screen.getByRole('button', { name: 'Archive workspace' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Archive workspace' }))
+    expect(onArchiveWorkspace).toHaveBeenCalledWith('ws-local1')
+    expect(onSelectWorkspace).not.toHaveBeenCalled()
   })
 })

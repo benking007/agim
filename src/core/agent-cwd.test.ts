@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   resolveAgentCwd,
+  resolveAgentWorkspaceRoot,
+  buildPortalWorkspaceHint,
   defaultAgentCwd,
   agimWorkspacesRoot,
   ensureAgentWorkspace,
@@ -60,6 +62,11 @@ describe('resolveAgentCwd', () => {
     expect(resolveAgentCwd('claude-code', { platform: 'feishu' })).toBeUndefined()
   })
 
+  it('explicit workspacePath beats the IM default dir', () => {
+    expect(resolveAgentCwd('claude-code', { ...FULL_IM_OPTS, workspacePath: '/tmp/portal-ws' }))
+      .toBe('/tmp/portal-ws')
+  })
+
   it('env override beats default IM dir', () => {
     process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
     expect(resolveAgentCwd('claude-code', FULL_IM_OPTS)).toBe('/srv/explicit')
@@ -80,6 +87,74 @@ describe('resolveAgentCwd', () => {
     expect(agimWorkspacesRoot()).toBe(tmpRoot)
     expect(defaultAgentCwd('claude-code')).toBe(join(tmpRoot, 'claude-code'))
     expect(defaultAgentCwd('opencode')).toBe(join(tmpRoot, 'opencode'))
+  })
+})
+
+describe('resolveAgentWorkspaceRoot', () => {
+  let tmpRoot: string
+  let prevRoot: string | undefined
+  let prevClaudeOverride: string | undefined
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), 'agim-wsroot-'))
+    prevRoot = process.env.AGIM_WORKSPACES_ROOT
+    prevClaudeOverride = process.env.AGIM_CLAUDE_CODE_CWD
+    process.env.AGIM_WORKSPACES_ROOT = tmpRoot
+    delete process.env.AGIM_CLAUDE_CODE_CWD
+  })
+
+  afterEach(async () => {
+    if (prevRoot === undefined) delete process.env.AGIM_WORKSPACES_ROOT
+    else process.env.AGIM_WORKSPACES_ROOT = prevRoot
+    if (prevClaudeOverride === undefined) delete process.env.AGIM_CLAUDE_CODE_CWD
+    else process.env.AGIM_CLAUDE_CODE_CWD = prevClaudeOverride
+    await rm(tmpRoot, { recursive: true, force: true })
+  })
+
+  it('stays on the agent tree even when Portal binds a subdirectory cwd', () => {
+    const selected = join(tmpRoot, 'claude-code', 'demo-proj')
+    expect(resolveAgentCwd('claude-code', { ...FULL_IM_OPTS, workspacePath: selected }))
+      .toBe(selected)
+    expect(resolveAgentWorkspaceRoot('claude-code')).toBe(join(tmpRoot, 'claude-code'))
+  })
+
+  it('maps native to the agim tree', () => {
+    expect(resolveAgentWorkspaceRoot('native')).toBe(join(tmpRoot, 'agim'))
+    expect(resolveAgentWorkspaceRoot('agim')).toBe(join(tmpRoot, 'agim'))
+  })
+
+  it('honors AGIM_<AGENT>_CWD', () => {
+    process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
+    expect(resolveAgentWorkspaceRoot('claude-code')).toBe('/srv/explicit')
+  })
+})
+
+describe('buildPortalWorkspaceHint', () => {
+  let prevRoot: string | undefined
+
+  beforeEach(() => {
+    prevRoot = process.env.AGIM_WORKSPACES_ROOT
+    process.env.AGIM_WORKSPACES_ROOT = '/tmp/agim-workspaces-hint'
+    delete process.env.AGIM_AGIM_CWD
+  })
+
+  afterEach(() => {
+    if (prevRoot === undefined) delete process.env.AGIM_WORKSPACES_ROOT
+    else process.env.AGIM_WORKSPACES_ROOT = prevRoot
+  })
+
+  it('tells the agent to keep constraints at the workspace root', () => {
+    const hint = buildPortalWorkspaceHint('agim', '/tmp/agim-workspaces-hint/agim/demo-proj')
+    expect(hint).toContain('Working directory: `/tmp/agim-workspaces-hint/agim/demo-proj`')
+    expect(hint).toContain('Workspace root: `/tmp/agim-workspaces-hint/agim`')
+    expect(hint).toContain('MEMORY.md')
+    expect(hint).toContain('AGENTS.md')
+  })
+
+  it('omits the root reminder when cwd is already the workspace root', () => {
+    const hint = buildPortalWorkspaceHint('agim', '/tmp/agim-workspaces-hint/agim')
+    expect(hint).toContain('Working directory: `/tmp/agim-workspaces-hint/agim`')
+    expect(hint).not.toContain('Workspace root:')
   })
 })
 

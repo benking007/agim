@@ -4,39 +4,28 @@
  * focused on wiring and layout.
  */
 
-import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
-  ChevronDown, ChevronRight, Cloud, Compass, Folder, FolderPlus,
+  Archive, ChevronDown, ChevronRight, Cloud, Folder, FolderPlus,
   Languages, MessageSquare, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import {
-  canPickDirectory,
-  dirFromFileList,
-  pickWorkspaceDirectory,
-} from '@/lib/pick-workspace-dir'
 import { sessionWorkspaceId, type WebSessionEntry } from '@/lib/web-sessions'
 import type { WebWorkspace } from '@/lib/web-workspaces'
 import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
-
-type Tab = 'chat' | 'explore'
 
 export function PortalSidePanel(props: {
   dark: boolean
   agentId: string
   visual: AgentVisual
   AgentIcon: LucideIcon
-  activeTab: Tab
   status: string
   lang: Lang
   showClose: boolean
   onClose: () => void
-  onChat: () => void
-  onExplore: () => void
   onNew: () => void
   onToggleLang: () => void
   sessions: WebSessionEntry[]
@@ -47,32 +36,19 @@ export function PortalSidePanel(props: {
   collapsedWorkspaces: Record<string, boolean>
   onToggleWorkspace: (id: string) => void
   onSelectWorkspace: (id: string) => void
-  onWorkspaceCreated: (dir: { name: string; path: string }) => void
+  onNewWorkspace: () => void
+  onArchiveSession: (threadId: string) => void
+  onArchiveWorkspace: (id: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const {
-    dark, agentId, visual, AgentIcon, activeTab, status, lang, showClose,
-    onClose, onChat, onExplore, onNew, onToggleLang,
+    dark, agentId, visual, AgentIcon, status, lang, showClose,
+    onClose, onNew, onToggleLang,
     sessions, activeSessionId, onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
-    onToggleWorkspace, onSelectWorkspace, onWorkspaceCreated,
+    onToggleWorkspace, onSelectWorkspace, onNewWorkspace,
+    onArchiveSession, onArchiveWorkspace,
   } = props
-  const dirInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleNewWorkspace(): Promise<void> {
-    if (canPickDirectory()) {
-      const result = await pickWorkspaceDirectory()
-      if (result.status === 'picked') onWorkspaceCreated(result.dir)
-      return
-    }
-    dirInputRef.current?.click()
-  }
-
-  function handleDirectoryInput(files: FileList | null): void {
-    const dir = dirFromFileList(files)
-    if (dirInputRef.current) dirInputRef.current.value = ''
-    if (dir) onWorkspaceCreated(dir)
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -114,20 +90,6 @@ export function PortalSidePanel(props: {
         <nav className="space-y-1">
           <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
           <SideNavButton
-            active={activeTab === 'chat'}
-            dark={dark}
-            icon={<MessageSquare className="h-4 w-4" />}
-            label={t('chat.portal.chat')}
-            onClick={onChat}
-          />
-          <SideNavButton
-            active={activeTab === 'explore'}
-            dark={dark}
-            icon={<Compass className="h-4 w-4" />}
-            label={t('chat.portal.explore')}
-            onClick={onExplore}
-          />
-          <SideNavButton
             active={false}
             dark={dark}
             icon={<Plus className="h-4 w-4" />}
@@ -144,7 +106,7 @@ export function PortalSidePanel(props: {
           </p>
           <button
             type="button"
-            onClick={() => { void handleNewWorkspace() }}
+            onClick={onNewWorkspace}
             title={t('chat.portal.newWorkspace')}
             aria-label={t('chat.portal.newWorkspace')}
             className={cn(
@@ -155,17 +117,6 @@ export function PortalSidePanel(props: {
             <FolderPlus className="h-3.5 w-3.5" />
           </button>
         </div>
-        <input
-          ref={dirInputRef}
-          type="file"
-          data-testid="workspace-dir-input"
-          className="sr-only"
-          tabIndex={-1}
-          aria-hidden
-          multiple
-          {...{ webkitdirectory: '', directory: '' }}
-          onChange={(e) => handleDirectoryInput(e.target.files)}
-        />
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
           {workspaces.map((workspace) => {
             const collapsed = !!collapsedWorkspaces[workspace.id]
@@ -181,7 +132,7 @@ export function PortalSidePanel(props: {
               <div key={workspace.id} className="space-y-0.5">
                 <div
                   className={cn(
-                    'flex w-full items-center gap-0.5 rounded-xl px-1 py-1 transition-all',
+                    'group/ws flex w-full items-center gap-0.5 rounded-xl px-1 py-1 transition-all',
                     selected
                       ? (dark ? 'bg-zinc-800/80 text-teal-400' : 'bg-zinc-100 text-teal-600')
                       : (dark ? 'text-zinc-400' : 'text-zinc-600'),
@@ -221,6 +172,13 @@ export function PortalSidePanel(props: {
                       )}
                     </span>
                   </button>
+                  {workspace.kind === 'local' && (
+                    <ArchiveRowButton
+                      dark={dark}
+                      label={t('chat.portal.archiveWorkspace')}
+                      onClick={() => onArchiveWorkspace(workspace.id)}
+                    />
+                  )}
                 </div>
                 {!collapsed && (
                   <div className="space-y-0.5 pl-3">
@@ -232,30 +190,40 @@ export function PortalSidePanel(props: {
                       const active = session.id === activeSessionId
                       const title = session.title?.trim() || t('chat.portal.untitledConversation')
                       return (
-                        <button
+                        <div
                           key={session.id}
-                          type="button"
-                          onClick={() => onSwitchSession(session.id)}
-                          title={title}
-                          aria-current={active ? 'true' : undefined}
                           className={cn(
-                            'flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left transition-all',
+                            'group/session flex w-full items-start gap-1 rounded-xl p-1.5 transition-all',
                             active
                               ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
                               : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
                           )}
                         >
-                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-semibold">{title}</span>
-                            <span className={cn(
-                              'mt-0.5 block truncate text-[10px] font-medium',
-                              active ? 'text-teal-500/80' : 'text-zinc-400',
-                            )}>
-                              {formatSessionAge(session.updatedAt, lang, t('chat.portal.justNow'))}
+                          <button
+                            type="button"
+                            onClick={() => onSwitchSession(session.id)}
+                            title={title}
+                            aria-label={title}
+                            aria-current={active ? 'true' : undefined}
+                            className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg p-1 text-left"
+                          >
+                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-semibold">{title}</span>
+                              <span className={cn(
+                                'mt-0.5 block truncate text-[10px] font-medium',
+                                active ? 'text-teal-500/80' : 'text-zinc-400',
+                              )}>
+                                {formatSessionAge(session.updatedAt, lang, t('chat.portal.justNow'))}
+                              </span>
                             </span>
-                          </span>
-                        </button>
+                          </button>
+                          <ArchiveRowButton
+                            dark={dark}
+                            label={t('chat.portal.archiveSession')}
+                            onClick={() => onArchiveSession(session.id)}
+                          />
+                        </div>
                       )
                     })}
                   </div>
@@ -315,6 +283,28 @@ function formatSessionAge(ts: number, lang: Lang, justNow: string, now = Date.no
     month: 'short',
     day: 'numeric',
   })
+}
+
+function ArchiveRowButton(props: {
+  dark: boolean
+  label: string
+  onClick: () => void
+}): JSX.Element {
+  const { dark, label, onClick } = props
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn(
+        'mt-0.5 shrink-0 rounded-md p-1 opacity-70 transition hover:opacity-100',
+        dark ? 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700',
+      )}
+    >
+      <Archive className="h-3 w-3" />
+    </button>
+  )
 }
 
 function SideNavButton(props: {

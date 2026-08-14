@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CLOUD_WORKSPACE_ID,
   WORKSPACES_KEY,
+  activeWorkspacePath,
   addLocalWorkspace,
+  archiveLocalWorkspace,
   findWorkspace,
   listWorkspaces,
   loadActiveWorkspaceId,
@@ -55,6 +57,31 @@ describe('web-workspaces', () => {
     removeLocalWorkspace(ws.id)
     expect(findWorkspace(ws.id)).toBeUndefined()
     expect(loadActiveWorkspaceId()).toBe(CLOUD_WORKSPACE_ID)
+  })
+
+  it('archives a local workspace and leaves the cloud root', () => {
+    const ws = addLocalWorkspace({ name: 'ceshi', path: '/tmp/ceshi' })
+    archiveLocalWorkspace(CLOUD_WORKSPACE_ID)
+    expect(listWorkspaces().map((w) => w.id)).toEqual([CLOUD_WORKSPACE_ID, ws.id])
+    archiveLocalWorkspace(ws.id)
+    expect(listWorkspaces().map((w) => w.id)).toEqual([CLOUD_WORKSPACE_ID])
+    expect(findWorkspace(ws.id)?.archivedAt).toBeGreaterThan(0)
+    expect(loadActiveWorkspaceId()).toBe(CLOUD_WORKSPACE_ID)
+  })
+
+  it('restores an archived workspace when the same path is added again', () => {
+    const ws = addLocalWorkspace({ name: 'ceshi', path: '/tmp/ceshi' })
+    archiveLocalWorkspace(ws.id)
+    const again = addLocalWorkspace({ name: 'ceshi', path: '/tmp/ceshi' })
+    expect(again.id).toBe(ws.id)
+    expect(again.archivedAt).toBeUndefined()
+    expect(listWorkspaces().map((w) => w.id)).toEqual([CLOUD_WORKSPACE_ID, ws.id])
+  })
+
+  it('activeWorkspacePath is empty on cloud and set on a local workspace', () => {
+    expect(activeWorkspacePath()).toBeUndefined()
+    addLocalWorkspace({ name: 'agim', path: '/tmp/agim' })
+    expect(activeWorkspacePath()).toBe('/tmp/agim')
   })
 
   it('workspaceBasename handles posix and windows paths', () => {

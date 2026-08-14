@@ -3,8 +3,9 @@
  *
  * Workspaces are a client grouping over `web-*` sessions — not the IM
  * tenant `/api/workspaces` registry. The default `cloud` workspace is
- * the Agim server working directory; local entries are folders the
- * operator picked on this machine.
+ * the agent cwd (`~/.agim-workspaces/<agent>/`). Named entries are
+ * subdirectories of that host tree — never folders on the browser's
+ * machine.
  */
 
 export const CLOUD_WORKSPACE_ID = 'cloud'
@@ -19,6 +20,8 @@ export interface WebWorkspace {
   /** Local folder path or picker name. Cloud has none. */
   path?: string
   createdAt: number
+  /** Hidden from the Portal rail when set. Cloud cannot be archived. */
+  archivedAt?: number
 }
 
 export interface WebWorkspaceIndex {
@@ -67,7 +70,17 @@ function normalizeWorkspace(raw: unknown): WebWorkspace | null {
   const createdAt = typeof rec.createdAt === 'number' && Number.isFinite(rec.createdAt)
     ? rec.createdAt
     : Date.now()
-  return { id: rec.id.trim(), kind: 'local', name, path, createdAt }
+  const archivedAt = typeof rec.archivedAt === 'number' && Number.isFinite(rec.archivedAt) && rec.archivedAt > 0
+    ? rec.archivedAt
+    : undefined
+  return {
+    id: rec.id.trim(),
+    kind: 'local',
+    name,
+    path,
+    createdAt,
+    ...(archivedAt ? { archivedAt } : {}),
+  }
 }
 
 function parseIndex(raw: string): WebWorkspaceIndex | null {
@@ -91,7 +104,10 @@ function parseIndex(raw: string): WebWorkspaceIndex | null {
         if (typeof flag === 'boolean') collapsed[id] = flag
       }
     }
-    const activeId = typeof rec.activeId === 'string' && seen.has(rec.activeId)
+    const visible = new Set(
+      workspaces.filter((w) => w.kind === 'cloud' || !w.archivedAt).map((w) => w.id),
+    )
+    const activeId = typeof rec.activeId === 'string' && visible.has(rec.activeId)
       ? rec.activeId
       : CLOUD_WORKSPACE_ID
     return { activeId, workspaces, collapsed }
@@ -117,11 +133,17 @@ export function loadWorkspaceIndex(): WebWorkspaceIndex {
   return { activeId: CLOUD_WORKSPACE_ID, workspaces: [cloudWorkspace()], collapsed: {} }
 }
 
+export function isWorkspaceArchived(entry: WebWorkspace): boolean {
+  return entry.kind !== 'cloud' && typeof entry.archivedAt === 'number' && entry.archivedAt > 0
+}
+
 export function listWorkspaces(): WebWorkspace[] {
   const { workspaces } = loadWorkspaceIndex()
   return [
     ...workspaces.filter((w) => w.kind === 'cloud'),
-    ...workspaces.filter((w) => w.kind === 'local').sort((a, b) => a.createdAt - b.createdAt),
+    ...workspaces
+      .filter((w) => w.kind === 'local' && !isWorkspaceArchived(w))
+      .sort((a, b) => a.createdAt - b.createdAt),
   ]
 }
 
@@ -133,10 +155,31 @@ export function findWorkspace(id: string): WebWorkspace | undefined {
   return loadWorkspaceIndex().workspaces.find((w) => w.id === id)
 }
 
+/** Host path (or picker name) for the selected local workspace. Cloud → undefined. */
+export function activeWorkspacePath(): string | undefined {
+  const ws = findWorkspace(loadActiveWorkspaceId())
+  if (!ws || ws.kind === 'cloud') return undefined
+  const path = (ws.path || ws.name || '').trim()
+  return path || undefined
+}
+
+export function updateWorkspacePath(id: string, path: string): WebWorkspace | undefined {
+  const nextPath = path.trim()
+  if (!nextPath) return findWorkspace(id)
+  const index = loadWorkspaceIndex()
+  const name = workspaceBasename(nextPath) || nextPath
+  const workspaces = index.workspaces.map((w) => (
+    w.id === id && w.kind === 'local' ? { ...w, path: nextPath, name } : w
+  ))
+  writeIndex({ ...index, workspaces })
+  return workspaces.find((w) => w.id === id)
+}
+
 export function setActiveWorkspace(id: string): WebWorkspaceIndex {
   const index = loadWorkspaceIndex()
   const next = id.trim()
-  if (!index.workspaces.some((w) => w.id === next)) return index
+  const target = index.workspaces.find((w) => w.id === next)
+  if (!target || isWorkspaceArchived(target)) return index
   if (index.activeId === next && index.collapsed[next] !== true) return index
   return writeIndex({
     ...index,
@@ -165,12 +208,15 @@ export function addLocalWorkspace(input: { name: string; path: string }): WebWor
   const index = loadWorkspaceIndex()
   const dup = index.workspaces.find((w) => w.kind === 'local' && w.path === path)
   if (dup) {
+    const restored: WebWorkspace = { ...dup }
+    delete restored.archivedAt
     writeIndex({
       ...index,
       activeId: dup.id,
+      workspaces: index.workspaces.map((w) => (w.id === dup.id ? restored : w)),
       collapsed: { ...index.collapsed, [dup.id]: false },
     })
-    return dup
+    return restored
   }
   const entry: WebWorkspace = {
     id: mintWorkspaceId(),
@@ -197,6 +243,22 @@ export function removeLocalWorkspace(id: string): WebWorkspaceIndex {
     activeId: index.activeId === id ? CLOUD_WORKSPACE_ID : index.activeId,
     workspaces,
     collapsed,
+  })
+}
+
+/** Hide a named folder from the Portal rail. The cloud root cannot be archived. */
+export function archiveLocalWorkspace(id: string): WebWorkspaceIndex {
+  const index = loadWorkspaceIndex()
+  if (id === CLOUD_WORKSPACE_ID) return index
+  const target = index.workspaces.find((w) => w.id === id)
+  if (target?.kind !== 'local' || isWorkspaceArchived(target)) return index
+  const workspaces = index.workspaces.map((w) => (
+    w.id === id ? { ...w, archivedAt: Date.now() } : w
+  ))
+  return writeIndex({
+    activeId: index.activeId === id ? CLOUD_WORKSPACE_ID : index.activeId,
+    workspaces,
+    collapsed: index.collapsed,
   })
 }
 

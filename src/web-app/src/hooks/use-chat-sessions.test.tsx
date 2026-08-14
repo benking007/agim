@@ -36,6 +36,7 @@ vi.mock('@/lib/api/ws', () => ({
 
 import { useChat } from './use-chat'
 import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
+import { addLocalWorkspace, listWorkspaces } from '@/lib/web-workspaces'
 import { writeCachedHistory } from '@/lib/web-history-cache'
 
 describe('useChat multi-session', () => {
@@ -94,6 +95,18 @@ describe('useChat multi-session', () => {
     unmount()
   })
 
+  it('send attaches the active local workspace path', () => {
+    addLocalWorkspace({ name: 'agim', path: '/tmp/agim-portal-ws' })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('list this workspace') })
+    expect(mocks.sent.some((m) => (
+      m.type === 'message'
+      && m.text === 'list this workspace'
+      && m.workspacePath === '/tmp/agim-portal-ws'
+    ))).toBe(true)
+    unmount()
+  })
+
   it('switchSession does not refresh the previous thread updatedAt', () => {
     const { result, unmount } = renderHook(() => useChat())
     const firstId = result.current.activeSessionId
@@ -117,6 +130,33 @@ describe('useChat multi-session', () => {
     act(() => { result.current.switchSession(firstId) })
     expect(result.current.activeSessionId).toBe(firstId)
     expect(result.current.state.messages.some((m) => m.content === 'hello from first')).toBe(true)
+    unmount()
+  })
+
+  it('archiveSession drops the thread from the rail and switches away', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const firstId = result.current.activeSessionId
+    act(() => { result.current.send('keep this') })
+    act(() => { result.current.newConversation() })
+    const secondId = result.current.activeSessionId
+    act(() => { result.current.send('archive this') })
+    act(() => { result.current.archiveSession(secondId) })
+    expect(result.current.sessions.some((s) => s.id === secondId)).toBe(false)
+    expect(result.current.sessions.some((s) => s.id === firstId)).toBe(true)
+    expect(result.current.activeSessionId).toBe(firstId)
+    unmount()
+  })
+
+  it('archiveWorkspace hides the folder and its sessions', () => {
+    const ws = addLocalWorkspace({ name: 'proj', path: '/tmp/proj-archive' })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('seed') })
+    act(() => { result.current.newConversation() })
+    expect(findSession(result.current.activeSessionId)?.workspaceId).toBe(ws.id)
+    act(() => { result.current.send('in proj') })
+    act(() => { result.current.archiveWorkspace(ws.id) })
+    expect(result.current.sessions.every((s) => s.workspaceId !== ws.id)).toBe(true)
+    expect(listSessions().every((s) => s.workspaceId !== ws.id)).toBe(true)
     unmount()
   })
 
@@ -155,5 +195,38 @@ describe('useChat multi-session', () => {
     expect(again.current.activeSessionId).toBe(tabId)
     expect(again.current.state.messages.some((m) => m.content === 'only in this tab')).toBe(true)
     unmount2()
+  })
+
+  it('createWorkspace mints a session under a newly added folder', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const previousId = result.current.activeSessionId
+    act(() => { result.current.send('stay on cloud') })
+    act(() => {
+      result.current.createWorkspace({ name: 'other-proj', path: '/tmp/other-proj' })
+    })
+    const nextId = result.current.activeSessionId
+    expect(nextId).not.toBe(previousId)
+    expect(findSession(nextId)?.workspaceId).not.toBe('cloud')
+    expect(findSession(previousId)?.workspaceId).toBe('cloud')
+    expect(result.current.state.messages).toEqual([])
+    expect(listWorkspaces().some((w) => w.path === '/tmp/other-proj')).toBe(true)
+    expect(mocks.sent.some((m) => (
+      m.type === 'set-workspace' && m.workspacePath === '/tmp/other-proj'
+    ))).toBe(true)
+    unmount()
+  })
+
+  it('createWorkspace does not mint again when the folder already exists', () => {
+    addLocalWorkspace({ name: 'other-proj', path: '/tmp/other-proj' })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('already here') })
+    const previousId = result.current.activeSessionId
+    const before = result.current.sessions.length
+    act(() => {
+      result.current.createWorkspace({ name: 'other-proj', path: '/tmp/other-proj' })
+    })
+    expect(result.current.activeSessionId).toBe(previousId)
+    expect(result.current.sessions).toHaveLength(before)
+    unmount()
   })
 })

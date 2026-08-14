@@ -1,7 +1,10 @@
 /**
- * Open a native directory picker when the browser supports it
- * (`showDirectoryPicker` — Chromium / Edge, looks like the OS folder
- * dialog). Other engines fall back to a path field in the rail.
+ * Open the browser's native folder picker.
+ *
+ * Prefer File System Access `showDirectoryPicker` (Chrome / Edge — the
+ * OS directory dialog). When that API is missing, the rail clicks a
+ * hidden `<input webkitdirectory>` which still opens the same kind of
+ * folder chooser in Firefox / Safari / most webviews.
  */
 
 export interface PickedWorkspaceDir {
@@ -23,6 +26,16 @@ type DirectoryPickerWindow = Window & {
 
 export function canPickDirectory(): boolean {
   return typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function'
+}
+
+/** Root folder name from a `webkitdirectory` FileList. */
+export function dirFromFileList(files: FileList | File[] | null | undefined): PickedWorkspaceDir | null {
+  if (!files || files.length === 0) return null
+  const first = files[0]
+  const rel = (first.webkitRelativePath || first.name || '').replace(/\\/g, '/')
+  const root = rel.split('/').find((part) => part.trim())
+  if (!root) return null
+  return { name: root, path: root }
 }
 
 export async function pickWorkspaceDirectory(): Promise<PickWorkspaceDirResult> {

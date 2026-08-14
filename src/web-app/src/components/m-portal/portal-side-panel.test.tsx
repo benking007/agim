@@ -1,8 +1,8 @@
 /**
  * Portal left rail — conversation list click switches the active thread.
  */
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Brain } from 'lucide-react'
 
@@ -63,6 +63,10 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
 }
 
 describe('PortalSidePanel conversations', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('lists saved sessions under the cloud workspace and click calls onSwitchSession', async () => {
     const user = userEvent.setup()
     const { onSwitchSession } = renderPanel()
@@ -84,7 +88,7 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).not.toHaveBeenCalled()
   })
 
-  it('nests sessions under their workspace and can create a local workspace via path form', async () => {
+  it('nests sessions under their workspace and creates one from the directory file input', async () => {
     const user = userEvent.setup()
     const { onWorkspaceCreated } = renderPanel({
       workspaces: [
@@ -102,9 +106,22 @@ describe('PortalSidePanel conversations', () => {
     expect(screen.getByText('agim')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'New workspace' }))
-    expect(screen.getByText('Select workspace directory')).toBeInTheDocument()
-    await user.type(screen.getByPlaceholderText('/path/to/project'), '/tmp/ceshi')
-    await user.click(screen.getByRole('button', { name: 'Select' }))
-    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'ceshi', path: '/tmp/ceshi' })
+    expect(screen.queryByText('Select workspace directory')).not.toBeInTheDocument()
+
+    const input = screen.getByTestId('workspace-dir-input') as HTMLInputElement
+    const file = new File(['x'], 'package.json')
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'ceshi/package.json' })
+    fireEvent.change(input, { target: { files: [file] } })
+    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'ceshi', path: 'ceshi' })
+  })
+
+  it('uses showDirectoryPicker when the browser exposes it', async () => {
+    const pick = vi.fn(async () => ({ name: 'agim' }))
+    vi.stubGlobal('showDirectoryPicker', pick)
+    const user = userEvent.setup()
+    const { onWorkspaceCreated } = renderPanel()
+    await user.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(pick).toHaveBeenCalled()
+    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'agim', path: 'agim' })
   })
 })

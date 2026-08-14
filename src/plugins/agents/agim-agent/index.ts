@@ -1163,7 +1163,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       parsed: ParsedStepReflect,
       emitOpts?: { id?: string; status?: 'running' | 'success'; at?: number },
     ): void => {
-      const at = emitOpts?.at ?? hopThinkingAt || Date.now()
+      const at = emitOpts?.at ?? (hopThinkingAt || Date.now())
       const status = emitOpts?.status ?? 'success'
       const record = { stance: parsed.stance, next: parsed.next, at }
       if ((opts?.callDepth ?? 0) > 0) {
@@ -1178,7 +1178,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         })
         return
       }
-      const id = emitOpts?.id ?? liveReflectId || `step-reflect-${++reflectSeq}`
+      const id = emitOpts?.id ?? (liveReflectId || `step-reflect-${++reflectSeq}`)
       liveReflectId = id
       emitToolActivity({
         id,

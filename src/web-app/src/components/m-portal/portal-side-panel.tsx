@@ -8,7 +8,7 @@ import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
-  ChevronDown, ChevronRight, Cloud, Compass, Folder, FolderPlus,
+  ChevronDown, ChevronRight, Cloud, Folder, FolderPlus,
   Languages, MessageSquare, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
@@ -23,20 +23,15 @@ import type { WebWorkspace } from '@/lib/web-workspaces'
 import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
 
-type Tab = 'chat' | 'explore'
-
 export function PortalSidePanel(props: {
   dark: boolean
   agentId: string
   visual: AgentVisual
   AgentIcon: LucideIcon
-  activeTab: Tab
   status: string
   lang: Lang
   showClose: boolean
   onClose: () => void
-  onChat: () => void
-  onExplore: () => void
   onNew: () => void
   onToggleLang: () => void
   sessions: WebSessionEntry[]
@@ -51,8 +46,8 @@ export function PortalSidePanel(props: {
 }): JSX.Element {
   const { t } = useTranslation()
   const {
-    dark, agentId, visual, AgentIcon, activeTab, status, lang, showClose,
-    onClose, onChat, onExplore, onNew, onToggleLang,
+    dark, agentId, visual, AgentIcon, status, lang, showClose,
+    onClose, onNew, onToggleLang,
     sessions, activeSessionId, onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
     onToggleWorkspace, onSelectWorkspace, onWorkspaceCreated,
@@ -113,20 +108,6 @@ export function PortalSidePanel(props: {
 
         <nav className="space-y-1">
           <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
-          <SideNavButton
-            active={activeTab === 'chat'}
-            dark={dark}
-            icon={<MessageSquare className="h-4 w-4" />}
-            label={t('chat.portal.chat')}
-            onClick={onChat}
-          />
-          <SideNavButton
-            active={activeTab === 'explore'}
-            dark={dark}
-            icon={<Compass className="h-4 w-4" />}
-            label={t('chat.portal.explore')}
-            onClick={onExplore}
-          />
           <SideNavButton
             active={false}
             dark={dark}

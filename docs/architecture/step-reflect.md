@@ -109,7 +109,7 @@ assistant ──► tool A ┐
 |------|------|
 | 模式关闭 / `disabled` | 日常闲聊不纳税 |
 | 本拍 0 个工具（纯文本收尾） | 没有「结果」可反思 |
-| 本拍工具 ⊆ 豁免集 | 见 §5.2；澄清/勾清单自己不是行动 |
+| 本拍工具 ⊆ 豁免集（含纯只读） | 已拍板跳过；澄清/勾清单/读文件自己不是「待反思的 act」 |
 | 即将收尾：模型本请求不再调变更类工具 | 终局回复即可 |
 | 本轮到目前只有 1 次工具且随即终局 | 单工具问答不插卡片 |
 | sticky CLI / 非 Agim 父进程 | 无进程内 hook |
@@ -168,7 +168,7 @@ todo-gate       Step Reflect      critic（带外）      Steer            Loop 
 - `agim_echo` / `agim_now` / `agim_random_uuid` / `agim_sleep_ms`
 - 只读：`agim_read_file` / `list_dir` / `glob` / `grep` / `web_fetch` / `web_search` / memory·skill 查询
 
-**读也算 act 吗？** 默认：**一批纯只读可以跳过反思**（否则「先读三个文件」会被节拍拖死）。若该拍出现 **任一非豁免工具**（写、exec、`call_agent(s)`、浏览器操作等），该拍结束后进入「待反思」；下一拍变更类工具必须先反思。
+**读也算 act 吗？已拍板：跳过。** 一批纯只读不插反思、不挡下一拍。若该拍出现 **任一非豁免工具**（写、exec、`call_agent(s)`、浏览器操作等），该拍结束后进入「待反思」；下一拍变更类工具必须先反思。
 
 R1 可先用「有非豁免工具才提示」，不做硬挡。
 
@@ -250,13 +250,15 @@ Critic 与 Step Reflect 若同一拍都该跑：**先落反思标记 / 注入步
 
 视觉：与 tool 行同宽、弱一档底色；左图标用已有 Lucide（如 `MessageCircle` / `Thought`），**不要**新依赖。`stance` 三色点即可。
 
-### 6.2 Composer
+### 6.2 Composer（R1 就要做）
 
-对齐「思考开」：
+输入框下方状态栏加一颗开关，对齐现有「思考开」：
 
-- 仅 sticky = Agim Agent 时显示；  
-- 文案 zh：**一步一想** / en：`Step reflect`；  
-- `disabled` 时整颗芯片不渲染。
+- 仅 sticky = Agim Agent 时显示；切到 Codex 等 CLI 则隐藏  
+- 文案 zh：**一步一想** / en：`Step reflect`  
+- 默认关；拨开只影响**当前会话**（`session.stepReflect`），不改全局默认  
+- 环境 `AGIM_STEP_REFLECT=disabled` 时整颗开关不渲染  
+- 斜杠 `/step-reflect on|off` 与开关同源，互相同步  
 
 不要做第三套「模式菜单」。不要和 Plan 互斥——Plan 是动手前只读，步思是动手后复盘，可同时开。
 
@@ -277,7 +279,7 @@ Critic 与 Step Reflect 若同一拍都该跑：**先落反思标记 / 注入步
 | 节奏 | 内容 | 运行时 |
 |------|------|--------|
 | **R0** | 本文 + naming / L3 图 / roadmap 交叉链 | 无 |
-| **R1** | 会话开关 + ephemeral steer 提示 + `kind: 'reflect'` 渲染（文本围栏或临时解析）+ demo | 软；无硬门 |
+| **R1** | Composer「一步一想」开关（默认 off）+ `/step-reflect` + ephemeral steer 提示 + `kind: 'reflect'` 渲染 + demo | 软；无硬门 |
 | **R2** | `agim_reflect` + `evaluateStepReflectGate`（变更类）+ 去围栏解析 | 硬门仅挡非豁免工具 |
 | **R3** | 可选 cheap 拆分；子代理是否冒泡；Trajectory 分组回放 | 默认关 |
 
@@ -307,14 +309,21 @@ R2 额外：无 `agim_reflect` 时写文件被拒，原因含 `step-reflect`；�
 
 ---
 
-## 9. 开放决策（R1 前拍板）
+## 9. 已拍板
 
-1. **默认**：保持 `off`（推荐）还是「Agim + 本轮已有 todo 清单则自动 on」？  
-2. **纯只读拍**：跳过（推荐）还是每拍都反思？  
-3. **R1 是否做芯片**：还是先只做 `/step-reflect` + demo，芯片随 R2？  
-4. **子代理**：R1–R2 一律不冒泡（推荐）？
+| # | 决策 | 结论 |
+|---|------|------|
+| 1 | 默认开不开 | **默认 off**。Chat 输入框下方给「一步一想」开关（仅 Agim；当前会话） |
+| 2 | 纯只读拍 | **跳过**。只读探测不插卡、不挡下一拍；写出/执行/`call_agent(s)` 才进入待反思 |
+| 3 | 第一版做不做界面开关 | **做。** 原先问的「芯片」= 状态栏那颗小开关（和「思考开」一排）。已由 #1 拍板，R1 就做，不拖到 R2 |
+| 4 | 子代理要不要也出步思 | **R1–R2 不出。** 见下 |
 
-未拍板时按括号内推荐值实现。
+**#4 在说什么（大白话）**
+
+父 Agent 可以派工人（`call_agent` / Codex 等）。工人自己也会读文件、改代码。  
+「冒泡」= 把**工人内部**每一拍的「一步一想」也刷到你正在看的这条对话里。
+
+R1–R2 **不冒泡**：你只看到**主 Agent**自己的步思；工人仍是现在的 Subagent 卡片（开始/结束），不在主对话里再插一串反思。否则一条对话会被工人刷屏。若以后要看工人怎么想，放到 R3 再议。
 
 ---
 
@@ -334,7 +343,8 @@ R2 额外：无 `agim_reflect` 时写文件被拒，原因含 `step-reflect`；�
 > **步思 = L2：结果 → 2–4 句可见反思 → 再行动。**  
 > **一次 assistant 的并行工具 = 一拍 act。**  
 > **≠ Loop，≠ Focus，≠ `/think`，≠ Steer。**  
-> **R0 本文；R1 软提示 + 卡片；R2 `agim_reflect` 硬门；R3 才考虑 cheap 拆分。**
+> **默认 off，Chat 状态栏开关；只读拍跳过；子代理不往主对话刷步思。**  
+> **R0 本文；R1 开关 + 软提示 + 卡片；R2 `agim_reflect` 硬门；R3 才考虑 cheap 拆分。**
 
 ---
 
@@ -343,3 +353,4 @@ R2 额外：无 `agim_reflect` 时写文件被拒，原因含 `step-reflect`；�
 | 日期 | 变更 |
 |------|------|
 | 2026-08-14 | R0 初稿：beat / 门禁 / UI / 与 todo·critic·steer·loop 对照 |
+| 2026-08-14 | 拍板：默认 off + Chat 开关；只读跳过；R1 做状态栏开关；子代理 R1–R2 不冒泡 |

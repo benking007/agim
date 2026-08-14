@@ -266,7 +266,7 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | 节奏 | 内容 | 状态 |
 |---|---|---|
 | R0 | 设计 SSOT + naming / L3 图 / 本文交叉链 | **本批** |
-| R1 | 软提示 + activity `reflect` + 开关（无硬门） | 未开刀 |
+| R1 | Composer「一步一想」开关（默认 off）+ 软提示 + activity `reflect`（无硬门）；只读拍跳过；子代理不冒泡 | 未开刀 |
 | R2 | `agim_reflect` + 变更类门禁 | 未开刀 |
 | R3 | 可选 cheap 拆分 / Trajectory 分组 | 未开刀 |
 

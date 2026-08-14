@@ -9,19 +9,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Bot,
-  Check,
   ChevronRight,
   CircleAlert,
   Loader2,
-  MessageCircle,
-  MessageCircleQuestion,
-  ShieldAlert,
-  Wrench,
-  X,
 } from 'lucide-react'
 
+import { ActivityStepIcon } from '@/components/chat/activity-step-icon'
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
+import { formatCollapsedRunSummary } from '@/lib/collapsed-run-summary'
 import { isTodoActivityStep } from '@/lib/activity-todo'
 import { cn } from '@/lib/utils'
 
@@ -109,23 +104,6 @@ function countStepKinds(activity: ChatActivity): KindCounts {
     }
   }
   return { tools, skills, agents, approvals, asks, total: activity.steps.length }
-}
-
-function StepIcon({ step }: { step: ChatActivityStep }): JSX.Element {
-  const cls = 'h-3.5 w-3.5 shrink-0'
-  if (step.status === 'running' || step.status === 'pending') {
-    return <Loader2 className={cn(cls, 'animate-spin text-text-muted')} />
-  }
-  if (step.status === 'denied' || step.status === 'error') {
-    return <X className={cn(cls, 'text-danger')} />
-  }
-  if (step.kind === 'approval') return <ShieldAlert className={cn(cls, 'text-warning')} />
-  if (step.kind === 'ask') return <MessageCircleQuestion className={cn(cls, 'text-info')} />
-  if (step.kind === 'agent') return <Bot className={cn(cls, 'text-accent')} />
-  if (step.kind === 'reflect') return <MessageCircle className={cn(cls, 'text-accent')} />
-  if (step.kind === 'skill') return <Wrench className={cn(cls, 'text-accent')} />
-  if (step.status === 'success') return <Check className={cn(cls, 'text-success')} />
-  return <Wrench className={cn(cls, 'text-text-muted')} />
 }
 
 function AgentStatusBadge({ step }: { step: ChatActivityStep }): JSX.Element | null {
@@ -236,13 +214,15 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
         defaultValue: 'Running · {{count}} subagents',
       })
     } else {
+      const collapsed = formatCollapsedRunSummary(activity)
       const titleStep = waitingAgent ?? liveStep
-      title = titleStep
-        ? t('chat.activityRunningStep', {
-            step: localizeStepLabel(titleStep, t),
-            defaultValue: 'Running · {{step}}',
-          })
-        : t('chat.activityRunning', { defaultValue: 'Running' })
+      title = collapsed
+        || (titleStep
+          ? t('chat.activityRunningStep', {
+              step: localizeStepLabel(titleStep, t),
+              defaultValue: 'Running · {{step}}',
+            })
+          : t('chat.activityRunning', { defaultValue: 'Running' }))
     }
   } else if (activity.status === 'error') {
     title = t('chat.activityFailed', { defaultValue: 'Failed' })
@@ -294,7 +274,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
           {activity.steps.map((step) => (
             <div key={step.id} className="min-w-0">
               <div className="flex items-center gap-1.5 text-[12px] text-text-dim">
-                <StepIcon step={step} />
+                <ActivityStepIcon step={step} />
                 <span className={cn(
                   'truncate text-[12px] text-text',
                   step.kind === 'agent' || step.kind === 'status' ? 'font-medium' : 'font-mono',

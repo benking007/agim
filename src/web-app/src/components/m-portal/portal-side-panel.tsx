@@ -324,7 +324,6 @@ function WorkspacePathForm(props: {
         value={pathDraft}
         onChange={(e) => onPathDraft(e.target.value)}
         placeholder={t('chat.portal.workspacePathPlaceholder')}
-        autoFocus
         className={cn(
           'w-full rounded-lg border px-2 py-1.5 text-[11px] outline-none',
           dark

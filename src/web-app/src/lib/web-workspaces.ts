@@ -137,8 +137,12 @@ export function setActiveWorkspace(id: string): WebWorkspaceIndex {
   const index = loadWorkspaceIndex()
   const next = id.trim()
   if (!index.workspaces.some((w) => w.id === next)) return index
-  if (index.activeId === next) return index
-  return writeIndex({ ...index, activeId: next })
+  if (index.activeId === next && index.collapsed[next] !== true) return index
+  return writeIndex({
+    ...index,
+    activeId: next,
+    collapsed: { ...index.collapsed, [next]: false },
+  })
 }
 
 export function isWorkspaceCollapsed(id: string): boolean {

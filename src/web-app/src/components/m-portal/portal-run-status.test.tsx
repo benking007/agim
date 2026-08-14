@@ -113,4 +113,43 @@ describe('PortalRunStatus', () => {
     expect(await screen.findByText('→ agim/cheap')).toBeTruthy()
     expect(screen.getByText('→ claude-code')).toBeTruthy()
   })
+
+  it('surfaces the latest parent reflect card without expanding steps', () => {
+    render(
+      <PortalRunStatus
+        dark
+        agentName="Agim"
+        agentColor="from-blue-500 to-cyan-600"
+        AgentIcon={Brain}
+        activity={activity({
+          status: 'running',
+          steps: [
+            {
+              id: 't-write',
+              kind: 'tool',
+              label: 'agim_write_file',
+              status: 'success',
+              startedAt: 1,
+              finishedAt: 2,
+            },
+            {
+              id: 'step-reflect-1',
+              kind: 'reflect',
+              label: 'Dispatch a checker for the new install URLs',
+              status: 'success',
+              startedAt: 3,
+              finishedAt: 4,
+              preview: 'Wrote install steps; links still unverified.',
+            },
+          ],
+        })}
+        streaming
+      />,
+    )
+    const card = screen.getByTestId('portal-step-reflect-card')
+    expect(card.textContent).toMatch(/Step reflect · Dispatch a checker|一步一想 · Dispatch a checker/)
+    expect(card.textContent).toMatch(/Wrote install steps/)
+    // Tool rows stay collapsed until expand.
+    expect(screen.queryByText('agim_write_file')).toBeNull()
+  })
 })

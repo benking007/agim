@@ -150,6 +150,12 @@ export function PortalRunStatus({
         s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
       ))
     : []
+  const reflectSteps = activity
+    ? activity.steps.filter((s) => s.kind === 'reflect')
+    : []
+  const latestReflect = reflectSteps.length > 0
+    ? reflectSteps[reflectSteps.length - 1]
+    : undefined
 
   const duration = formatDuration(activity?.durationMs)
   const counts = activity
@@ -218,11 +224,35 @@ export function PortalRunStatus({
         )}
       </div>
 
-      {/* Plan first, then Subagents — both sit between run status and body. */}
+      {/* Plan → parent Step Reflect → Subagents — sit between run status and body. */}
       {activity && (
         <Suspense fallback={null}>
           <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
         </Suspense>
+      )}
+      {latestReflect && (
+        <div
+          data-testid="portal-step-reflect-card"
+          className={cn(
+            'rounded-lg border px-2.5 py-1.5 text-[12px]',
+            dark ? 'border-zinc-800 bg-zinc-900/60 text-zinc-300' : 'border-zinc-200 bg-zinc-50 text-zinc-700',
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-teal-500" />
+            <span className="truncate font-medium">
+              {stepLabel(latestReflect, t)}
+            </span>
+            <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+              {t('chat.activityReflectBadge', { defaultValue: 'reflect' })}
+            </span>
+          </div>
+          {latestReflect.preview && (
+            <p className="mt-0.5 line-clamp-2 pl-5 text-[11px] leading-snug text-zinc-500">
+              {latestReflect.preview}
+            </p>
+          )}
+        </div>
       )}
       {activity && (
         <Suspense fallback={null}>

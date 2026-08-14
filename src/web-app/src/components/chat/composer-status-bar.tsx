@@ -300,11 +300,13 @@ export function ComposerStatusBar({
           </DropdownMenu>
         )}
 
-        {showThinking && !stepReflectDisabled && (
+        {/* Agim thinking bar, or demo/session forcing stepReflect on (chip must still light). */}
+        {(showThinking || stepReflect) && !stepReflectDisabled && (
           <button
             type="button"
             className={chip}
             disabled={disabled}
+            data-testid="step-reflect-chip"
             onClick={() => {
               if (disabled) return
               onSendCommand(stepReflect ? '/step-reflect off' : '/step-reflect on')

@@ -238,10 +238,11 @@ export function PortalSidePanel(props: {
             return (
               <div key={workspace.id} className="space-y-0.5">
                 <div
+                  data-testid={`portal-workspace-row-${workspace.id}`}
                   className={cn(
                     'group/ws flex w-full items-center gap-0.5 rounded-xl px-1 py-1 transition-all',
                     selected
-                      ? (dark ? 'bg-zinc-800/80 text-teal-400' : 'bg-zinc-100 text-teal-600')
+                      ? (dark ? 'text-teal-400' : 'text-teal-600')
                       : (dark ? 'text-zinc-400' : 'text-zinc-600'),
                   )}
                 >

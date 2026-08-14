@@ -135,6 +135,15 @@ describe('PortalSidePanel conversations', () => {
     expect(onSelectWorkspace).not.toHaveBeenCalled()
   })
 
+  it('keeps workspace-row selection as teal text without a background fill', () => {
+    renderPanel()
+    const workspaceRow = screen.getByTestId('portal-workspace-row-cloud')
+    expect(workspaceRow.className).toMatch(/text-teal-600/)
+    expect(workspaceRow.className).not.toMatch(/bg-zinc-/)
+    const sessionRow = screen.getByText('First chat').closest('div.group\\/session')
+    expect(sessionRow?.className).toMatch(/bg-zinc-100/)
+  })
+
   it('renders an icon-only rail when collapsed', () => {
     const onToggle = vi.fn()
     renderPanel({ railCollapsed: true, onToggleRailCollapsed: onToggle })

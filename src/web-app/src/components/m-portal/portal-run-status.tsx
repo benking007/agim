@@ -8,7 +8,6 @@
 import { lazy, Suspense, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Brain,
   Check,
   ChevronRight,
   CircleAlert,
@@ -100,9 +99,9 @@ function stepLabel(
     return step.label
       ? t('chat.activityReflectNext', {
           next: step.label,
-          defaultValue: 'Step reflect · {{next}}',
+          defaultValue: 'Execution · {{next}}',
         })
-      : t('chat.activityReflect', { defaultValue: 'Step reflect' })
+      : t('chat.activityReflect', { defaultValue: 'Execution' })
   }
   return step.label
 }
@@ -130,13 +129,6 @@ export function PortalRunStatus({
         s.kind === 'agent' && (s.status === 'running' || s.status === 'pending')
       ))
     : []
-  const reflectSteps = activity
-    ? activity.steps.filter((s) => s.kind === 'reflect')
-    : []
-  const latestReflect = reflectSteps.length > 0
-    ? reflectSteps[reflectSteps.length - 1]
-    : undefined
-
   const duration = formatDuration(activity?.durationMs)
   const counts = activity
     ? countKinds(activity)
@@ -214,35 +206,11 @@ export function PortalRunStatus({
         )}
       </div>
 
-      {/* Plan → parent Step Reflect → Subagents — sit between run status and body. */}
+      {/* Plan → Subagents — sit between run status and body. */}
       {activity && (
         <Suspense fallback={null}>
           <ChatTodoList activity={activity} dark={dark} className="max-w-full" />
         </Suspense>
-      )}
-      {latestReflect && (
-        <div
-          data-testid="portal-step-reflect-card"
-          className={cn(
-            'rounded-lg border px-2.5 py-1.5 text-[12px]',
-            dark ? 'border-zinc-800 bg-zinc-900/60 text-zinc-300' : 'border-zinc-200 bg-zinc-50 text-zinc-700',
-          )}
-        >
-          <div className="flex items-center gap-1.5">
-            <Brain className="h-3.5 w-3.5 shrink-0 text-teal-500" />
-            <span className="truncate font-medium">
-              {stepLabel(latestReflect, t)}
-            </span>
-            <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
-              {t('chat.activityReflectBadge', { defaultValue: 'reflect' })}
-            </span>
-          </div>
-          {latestReflect.preview && (
-            <p className="mt-0.5 line-clamp-2 pl-5 text-[11px] leading-snug text-zinc-500">
-              {latestReflect.preview}
-            </p>
-          )}
-        </div>
       )}
       {activity && (
         <Suspense fallback={null}>
@@ -302,7 +270,7 @@ export function PortalRunStatus({
                 : t('chat.portal.noSteps')}
             </p>
           )}
-          {activity.steps.map((step) => (
+          {activity.steps.filter((step) => step.kind !== 'reflect').map((step) => (
             <div key={step.id} className="min-w-0">
               <div className={cn(
                 'flex items-center gap-1.5 text-[12px]',
@@ -339,7 +307,7 @@ export function PortalRunStatus({
                 )}
                 {step.kind === 'reflect' && (
                   <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
-                    {t('chat.activityReflectBadge', { defaultValue: 'reflect' })}
+                    {t('chat.activityReflectBadge', { defaultValue: 'run' })}
                   </span>
                 )}
               </div>

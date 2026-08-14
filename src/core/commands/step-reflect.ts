@@ -1,4 +1,4 @@
-// /step-reflect [on|off] — per-session Step Reflect (步思) override for Agim Agent.
+// /step-reflect [on|off] — per-session 执行过程 override for Agim Agent.
 //
 // DeepSeek-style per-hop think-then-act. Default on (no composer chip).
 // Both true and false persist so a thread can still opt out.
@@ -17,7 +17,7 @@ const OFF_TOKENS = new Set(['off', 'exit', 'stop', 'disable', '关', '关闭'])
 
 export async function handleStepReflectCommand(args: string, ctx: RouteContext): Promise<string> {
   if (isStepReflectDisabled()) {
-    return '🚫 一步一想已通过 AGIM_STEP_REFLECT=disabled 全局禁用，请联系运维。'
+    return '🚫 执行过程已通过 AGIM_STEP_REFLECT=disabled 全局禁用，请联系运维。'
   }
 
   const token = args.trim().toLowerCase()
@@ -35,8 +35,8 @@ export async function handleStepReflectCommand(args: string, ctx: RouteContext):
         : `跟随环境 AGIM_STEP_REFLECT=${env}`
     const agentNote = agim
       ? ''
-      : `\n\n⚠️ 一步一想只对 Agim Agent 生效。当前 agent **${agent}** 会忽略该标志（不会出现思考反馈）。`
-    return `一步一想: \`${cur}\`（${override}；当前 agent: \`${agent}\`）
+      : `\n\n⚠️ 执行过程只对 Agim Agent 生效。当前 agent **${agent}** 会忽略该标志（不会出现思考反馈）。`
+    return `执行过程: \`${cur}\`（${override}；当前 agent: \`${agent}\`）
 
 切换：
   /step-reflect on   开启（每步先思考再调工具，过程中持续反馈）
@@ -52,20 +52,20 @@ export async function handleStepReflectCommand(args: string, ctx: RouteContext):
 
   const capabilityNote = agim
     ? ''
-    : `\n\n⚠️ 当前 agent **${agent}** 不跑步思（仅 Agim）。标志会保存，切到 agim 后生效。`
+    : `\n\n⚠️ 当前 agent **${agent}** 不跑执行过程（仅 Agim）。标志会保存，切到 agim 后生效。`
 
   if (ON_TOKENS.has(token)) {
-    if (existing?.stepReflect === true) return `✅ 一步一想已开启（无变化）。${capabilityNote}`
+    if (existing?.stepReflect === true) return `✅ 执行过程已开启（无变化）。${capabilityNote}`
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { stepReflect: true })
-    return `✅ 一步一想已开启 — 每步先思考再调工具，过程中持续反馈。/step-reflect off 关闭。${capabilityNote}`
+    return `✅ 执行过程已开启 — 每步先思考再调工具，过程中持续反馈。/step-reflect off 关闭。${capabilityNote}`
   }
 
   if (OFF_TOKENS.has(token)) {
     if (existing?.stepReflect === false || (existing?.stepReflect == null && resolveStepReflectEnv() !== 'on')) {
-      return 'ℹ️ 一步一想本来就是关闭状态。'
+      return 'ℹ️ 执行过程本来就是关闭状态。'
     }
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { stepReflect: false })
-    return '✅ 一步一想已关闭。'
+    return '✅ 执行过程已关闭。'
   }
 
   return `⚠️ 无效参数: \`${token}\`

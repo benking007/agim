@@ -8,7 +8,7 @@
  *   ?demo=media    — image thumbnails + @file attachment
  *   ?demo=collapse — long user body for fold/mask behaviour
  *   ?demo=jump-latest — long transcript to exercise jump-to-latest
- *   ?demo=step-reflect — parent reflect card + live Agim Subagent carousel
+ *   ?demo=step-reflect — parent reflect on the collapsed line + live Agim Subagent carousel
  */
 
 import type { ChatMessage } from '@/hooks/use-chat'
@@ -182,7 +182,7 @@ export function collapseDemoMessages(): ChatMessage[] {
 }
 
 /** Local visual QA (`/m/chat?demo=jump-latest`) — enough turns to scroll. */
-/** Local visual QA (`/m/chat?demo=step-reflect`) — parent reflect + Agim carousel. */
+/** Local visual QA (`/m/chat?demo=step-reflect`) — collapsed-line reflect + Agim carousel. */
 export function stepReflectDemoMessages(): ChatMessage[] {
   const now = Date.now()
   return [

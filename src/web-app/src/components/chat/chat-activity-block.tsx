@@ -67,9 +67,9 @@ function localizeStepLabel(
     return step.label
       ? t('chat.activityReflectNext', {
           next: step.label,
-          defaultValue: 'Step reflect · {{next}}',
+          defaultValue: 'Execution · {{next}}',
         })
-      : t('chat.activityReflect', { defaultValue: 'Step reflect' })
+      : t('chat.activityReflect', { defaultValue: 'Execution' })
   }
   return step.label
 }
@@ -274,7 +274,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                   })}
             </p>
           )}
-          {activity.steps.map((step) => (
+          {activity.steps.filter((step) => step.kind !== 'reflect').map((step) => (
             <div key={step.id} className="min-w-0">
               <div className="flex items-center gap-1.5 text-[12px] text-text-dim">
                 <ActivityStepIcon step={step} />
@@ -307,7 +307,7 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
                 )}
                 {step.kind === 'reflect' && (
                   <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
-                    {t('chat.activityReflectBadge', { defaultValue: 'reflect' })}
+                    {t('chat.activityReflectBadge', { defaultValue: 'run' })}
                   </span>
                 )}
                 <AgentStatusBadge step={step} />

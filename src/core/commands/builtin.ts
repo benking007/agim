@@ -51,7 +51,7 @@ const HELP_ZH = [
   '/think on|off 切换深度思考',
   '/ctx auto|full|balanced|frequent 会话压缩率（别名 /压缩率）',
   '/plan on|off  切换 plan 模式',
-  '/step-reflect on|off  一步一想（默认开；每步先思考再行动；仅 Agim）',
+  '/step-reflect on|off  执行过程（默认开；每步先思考再行动；仅 Agim）',
   '/approval     审批规则（别名 /auto）',
   '/abort        中止当前 agent 任务（别名：纯文本 stop / 停止 / 中止 / esc）',
   '/btw <问题>   旁路快答（绕开主会话队列，开独立小线程）',
@@ -162,6 +162,7 @@ const TOPIC_ALIAS: Record<string, string> = {
   note: 'memo',
   '步思': 'step-reflect',
   '一步一想': 'step-reflect',
+  '执行过程': 'step-reflect',
 }
 
 /** Brief help for commands that don't have their own help subcommand. */
@@ -223,7 +224,7 @@ const TOPIC_HELP_ZH: Record<string, string> = {
   stats: '/stats — 用量统计 (别名 /usage /cost)',
   sessions: '/sessions — 列出最近的会话',
   plan: '/plan on|off — 切换 plan 模式 (agent 只能读、不能写/执行)',
-  'step-reflect': '/step-reflect on|off — 一步一想（默认开；每步先思考再调工具，过程中持续反馈；仅 Agim）',
+  'step-reflect': '/step-reflect on|off — 执行过程（默认开；每步先思考再调工具，过程中持续反馈；仅 Agim）',
   router: '/router status|explain — 看路由决策 (哪条 agent、为什么)',
   audit: '/audit [n] — 看最近 n 条调用记录',
   agents: '/agents — 列出已注册的 agent',

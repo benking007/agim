@@ -133,7 +133,7 @@ describe('PortalRunStatus', () => {
     expect(screen.getByText('→ claude-code')).toBeTruthy()
   })
 
-  it('surfaces the latest parent reflect card without expanding steps', () => {
+  it('keeps parent reflect on the gray status line and does not render a card', () => {
     render(
       <PortalRunStatus
         dark
@@ -165,10 +165,11 @@ describe('PortalRunStatus', () => {
         streaming
       />,
     )
-    const card = screen.getByTestId('portal-step-reflect-card')
-    expect(card.textContent).toMatch(/Step reflect · Dispatch a checker|一步一想 · Dispatch a checker/)
-    expect(card.textContent).toMatch(/Wrote install steps/)
-    // Tool rows stay collapsed until expand.
+    expect(screen.queryByTestId('portal-step-reflect-card')).toBeNull()
+    expect(screen.queryByText(/Step reflect · Dispatch a checker|一步一想 · Dispatch a checker/)).toBeNull()
+    const line = screen.getByTestId('portal-run-collapsed-line')
+    expect(line.textContent).toMatch(/Dispatch a checker/)
+    expect(line.textContent).toMatch(/write_file/)
     expect(screen.queryByText('agim_write_file')).toBeNull()
   })
 })

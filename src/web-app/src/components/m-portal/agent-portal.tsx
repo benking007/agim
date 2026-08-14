@@ -22,7 +22,6 @@ import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
 import { ChatJumpToLatest } from '@/components/chat/chat-jump-to-latest'
-import { api } from '@/lib/api/endpoints'
 import {
   findWorkspace,
   setActiveWorkspace,

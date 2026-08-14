@@ -42,7 +42,7 @@ import { buildContextSnippet as buildReminderContextSnippet } from './reminders.
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig, isViewerEnabledForPlatform } from './viewer-config.js'
 import { expandInlineChannelReply, needsFullInlineDelivery } from './inline-delivery.js'
-import { defaultAgentCwd, resolveAgentCwd } from './agent-cwd.js'
+import { buildPortalWorkspaceHint, defaultAgentCwd, resolveAgentCwd } from './agent-cwd.js'
 import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
@@ -833,7 +833,7 @@ export async function callAgentWithHistory(
     ) || ''
   } catch { /* optional */ }
   const workspaceHint = ctx.workspacePath
-    ? `## Portal workspace\nWorking directory: \`${ctx.workspacePath}\`\nTreat this path as the project root. List and edit files here unless the user names another path.`
+    ? buildPortalWorkspaceHint(agent.name, ctx.workspacePath)
     : ''
   const headerBlocks = [
     downvoteHint,

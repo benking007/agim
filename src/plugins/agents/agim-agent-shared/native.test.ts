@@ -294,6 +294,27 @@ describe('readWorkspaceMemory — MEMORY.md consumption', () => {
     const prompt = buildSystemPrompt(stubProvider, 'native-chat', dir)
     expect(prompt).not.toContain('SHOULD NOT LEAK')
   })
+
+  it('reads AGENTS.md / MEMORY.md from constraintRoot, not the selected cwd', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agim-constraint-root-'))
+    const selected = mkdtempSync(join(tmpdir(), 'agim-selected-cwd-'))
+    try {
+      writeFileSync(join(root, 'AGENTS.md'), 'ROOT ROLE: stay at workspace root')
+      writeFileSync(join(root, 'MEMORY.md'), 'ROOT MEMORY: prefer short answers')
+      writeFileSync(join(selected, 'AGENTS.md'), 'CHILD ROLE: should not inject')
+      writeFileSync(join(selected, 'MEMORY.md'), 'CHILD MEMORY: should not inject')
+      const prompt = buildSystemPrompt(stubProvider, 'native-chat', selected, undefined, root)
+      expect(prompt).toContain('ROOT ROLE: stay at workspace root')
+      expect(prompt).toContain('ROOT MEMORY: prefer short answers')
+      expect(prompt).not.toContain('CHILD ROLE')
+      expect(prompt).not.toContain('CHILD MEMORY')
+      expect(prompt).toContain(`Working directory: ${selected}`)
+      expect(prompt).toContain(`Workspace root:    ${root}`)
+    } finally {
+      try { rmSync(root, { recursive: true, force: true }) } catch { /* ignore */ }
+      try { rmSync(selected, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
 })
 
 describe('buildSystemPrompt — tool-call discipline (v1.2.147)', () => {

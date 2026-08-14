@@ -281,7 +281,7 @@ describe('ChatSubagentCard', () => {
     />)
     const slot = screen.getByTestId('step-reflect-slot')
     expect(slot.className).toMatch(/\bh-5\b/)
-    expect(slot.textContent).toMatch(/Step reflect|一步一想/)
+    expect(slot.textContent).toMatch(/Thinking|思考中|Step reflect|一步一想/)
   })
 
   it('does not show the slot on CLI workers', () => {

@@ -221,8 +221,9 @@ export interface Session {
    *      already stricter than the IM gate).
    *  Persists across turns and `/oc`↔`/cc` agent switches; cleared by /new. */
   planMode?: boolean
-  /** Step Reflect (步思) — toggled by /step-reflect on|off. Both true and
-   *  false persist so env=on can still be turned off per session. Cleared by /new. */
+  /** Step Reflect (步思) — DeepSeek-style per-hop think-then-act. Toggled by
+   *  /step-reflect on|off. Both true and false persist so env=on can still be
+   *  turned off per session. Cleared by /new. */
   stepReflect?: boolean
 }
 
@@ -547,8 +548,8 @@ export interface AgentSendOpts {
    *  translates it to `--agent plan` (stdio) or `agent: 'plan'` in the HTTP
    *  body. Other adapters ignore this. See Session.planMode for lifecycle. */
   planMode?: boolean
-  /** Step Reflect (步思) — Agim Agent injects a soft [step-reflect] steer
-   *  after a mutating act. Other adapters ignore this. */
+  /** Step Reflect (步思) — Agim Agent forces per-hop thinking and surfaces
+   *  the trace as reflect activity (DeepSeek-style). Other adapters ignore this. */
   stepReflect?: boolean
   /** Parent Subagent activity step id. Nested Agim workers attach reflects
    *  here instead of inserting `kind: 'reflect'` into the parent accordion. */

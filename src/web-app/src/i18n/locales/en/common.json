@@ -360,7 +360,7 @@
       "thinkingOffShort": "Off",
       "stepReflectOn": "Step reflect",
       "stepReflectOff": "No step reflect",
-      "stepReflectHint": "After write/exec, pause for a short reflection",
+      "stepReflectHint": "Think each hop, then call tools — live feedback",
       "autoApproveOn": "Approve for me",
       "autoApproveOff": "Ask to approve",
       "autoApproveSuppressed": "Approve (inactive)",
@@ -592,7 +592,7 @@
       "waitingAgent": "Waiting for {{agent}}",
       "waitingSteps": "Waiting for tool activity…",
       "noSteps": "No tool steps recorded.",
-      "stepReflectWaiting": "Step reflect…",
+      "stepReflectWaiting": "Thinking…",
       "pet": {
         "aria": "Agim pet",
         "idle": [

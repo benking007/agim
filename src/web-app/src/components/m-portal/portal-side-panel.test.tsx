@@ -35,13 +35,10 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       agentId="agim"
       visual={visual}
       AgentIcon={Brain}
-      activeTab="chat"
       status="open"
       lang="en"
       showClose={false}
       onClose={() => {}}
-      onChat={() => {}}
-      onExplore={() => {}}
       onNew={onNew}
       onToggleLang={() => {}}
       sessions={[
@@ -76,9 +73,12 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).toHaveBeenCalledWith('web-bbbb2222')
   })
 
-  it('keeps New conversation as a shortcut that mints a thread', async () => {
+  it('keeps New conversation as the only shortcut and hides Explore', async () => {
     const user = userEvent.setup()
     const { onNew, onSwitchSession } = renderPanel()
+    expect(screen.getByRole('button', { name: 'New conversation' })).toBeInTheDocument()
+    expect(screen.queryByText('Explore Agents Directory')).not.toBeInTheDocument()
+    expect(screen.queryByText('Interactive Chat')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
     expect(onNew).toHaveBeenCalled()
     expect(onSwitchSession).not.toHaveBeenCalled()

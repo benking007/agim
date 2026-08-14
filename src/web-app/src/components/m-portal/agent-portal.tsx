@@ -98,10 +98,6 @@ import { usePortalPetTasks } from './use-portal-pet-tasks'
 import { PortalHeader, type AgentCatalogEntry } from './portal-header'
 import { PortalEmptyChat } from './portal-empty-chat'
 import { PortalMessageList } from './portal-message-list'
-import { PortalExplore, type ExploreCategory } from './portal-explore'
-
-type Tab = 'chat' | 'explore'
-
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const prefs = usePrefs()
@@ -125,7 +121,6 @@ export function AgentPortal(): JSX.Element {
   } = useWebWorkspaces()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
-  const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
@@ -177,8 +172,6 @@ export function AgentPortal(): JSX.Element {
   }, [state.error, clearError])
 
   const [showModelDropdown, setShowModelDropdown] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [exploreCategory, setExploreCategory] = useState<ExploreCategory>('All')
   const [inputMessage, setInputMessage] = useState('')
   const [pendingSends, setPendingSends] = useState<PendingSendItem[]>([])
   const [queueThreadId, setQueueThreadId] = useState(state.clientId)
@@ -333,16 +326,6 @@ export function AgentPortal(): JSX.Element {
       }
     })
   }, [state.agents])
-
-  const filteredAgents = agentsCatalog.filter((a) => {
-    const q = searchQuery.toLowerCase()
-    const matchesSearch = !q
-      || a.name.toLowerCase().includes(q)
-      || a.tagline.toLowerCase().includes(q)
-      || a.id.toLowerCase().includes(q)
-    const matchesCategory = exploreCategory === 'All' || a.category === exploreCategory
-    return matchesSearch && matchesCategory
-  })
 
   async function onSend(e?: FormEvent): Promise<void> {
     e?.preventDefault()
@@ -649,7 +632,6 @@ export function AgentPortal(): JSX.Element {
 
   function selectAgent(id: string): void {
     switchAgent(id)
-    setActiveTab('chat')
     setShowModelDropdown(false)
     setSidebarOpen(false)
   }
@@ -661,19 +643,15 @@ export function AgentPortal(): JSX.Element {
     agentId,
     visual,
     AgentIcon,
-    activeTab,
     status: state.status,
     lang: prefs.lang,
     onClose: () => setSidebarOpen(false),
-    onChat: () => { setActiveTab('chat'); setSidebarOpen(false) },
-    onExplore: () => { setActiveTab('explore'); setSidebarOpen(false) },
-    onNew: () => { newConversation(); setSidebarOpen(false); setActiveTab('chat') },
+    onNew: () => { newConversation(); setSidebarOpen(false) },
     onToggleLang: toggleLang,
     sessions,
     activeSessionId,
     onSwitchSession: (threadId: string) => {
       switchSession(threadId)
-      setActiveTab('chat')
       setSidebarOpen(false)
     },
     workspaces,
@@ -747,15 +725,13 @@ export function AgentPortal(): JSX.Element {
           onToggleModelDropdown={() => setShowModelDropdown((v) => !v)}
           onCloseModelDropdown={() => setShowModelDropdown(false)}
           onSelectAgent={selectAgent}
-          onOpenExplore={() => { setActiveTab('explore'); setShowModelDropdown(false) }}
           onOpenSidebar={() => setSidebarOpen(true)}
           onToggleTheme={() => setTheme(dark ? 'light' : 'dark')}
         />
 
-        {/* Chat — keep mounted (hidden on Explore) so scroll position + follow-latch survive tab switches. */}
         <PortalMessageList
           dark={dark}
-          active={activeTab === 'chat'}
+          active
           chatTurns={chatTurns}
           isEmpty={chatMessages.length === 0}
           isTyping={isTyping}
@@ -771,23 +747,7 @@ export function AgentPortal(): JSX.Element {
           emptySlot={emptyChatSlot}
         />
 
-        {/* Explore */}
-        {activeTab === 'explore' && (
-          <PortalExplore
-            dark={dark}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            exploreCategory={exploreCategory}
-            onCategoryChange={setExploreCategory}
-            filteredAgents={filteredAgents}
-            onSelectAgent={selectAgent}
-            onClose={() => setActiveTab('chat')}
-          />
-        )}
-
-        {/* Docks + composer */}
-        {activeTab === 'chat' && (
-          <div className={cn(
+        <div className={cn(
             'absolute inset-x-0 bottom-0 px-4 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
             // Lift above header (z-30) while + / slash / @ menu is open so it isn't clipped/covered.
             composerMenuOpen ? 'z-50' : 'z-20',
@@ -1033,7 +993,6 @@ export function AgentPortal(): JSX.Element {
               </div>
             </div>
           </div>
-        )}
       </div>
 
       {/* Mobile drawer — lg+ uses the persistent rail instead */}

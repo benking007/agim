@@ -226,10 +226,12 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'media'
   const demoCollapse = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'collapse'
+  const demoSteer = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'steer-queue'
   const chatMessages = useMemo(
     () => {
+      if (demoSteer || demoPet) return petDemoMessages()
       if (demoTodo) return todoDemoMessages()
-      if (demoPet) return petDemoMessages()
       if (demoWidth) return widthDemoMessages()
       if (demoCollapse) return collapseDemoMessages()
       if (demoMedia) {
@@ -243,14 +245,15 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoSteer, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
   // Fallback only when the placeholder message has not landed yet.
   const streamingFallback = isTyping && !currentReplyInList
-  const canStop = isTyping || state.activeRunId != null
-  const canSteerLive = canStop && (agentId === 'agim' || agentId === 'native')
+  const liveBusy = isTyping || state.activeRunId != null
+  const canStop = liveBusy || demoSteer
+  const canSteerLive = liveBusy && (agentId === 'agim' || agentId === 'native')
   if (state.clientId !== queueThreadId) {
     setQueueThreadId(state.clientId)
     setPendingSends([])
@@ -375,6 +378,10 @@ export function AgentPortal(): JSX.Element {
   function flushPending(id: string): void {
     const item = pendingSends.find((row) => row.id === id)
     if (!item || item.flushAfter) return
+    if (demoSteer && !liveBusy) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      return
+    }
     if (canSteerLive) {
       setPendingSends((cur) => cur.filter((row) => row.id !== id))
       steer(item.text)

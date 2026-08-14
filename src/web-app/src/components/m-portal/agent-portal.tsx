@@ -804,7 +804,7 @@ export function AgentPortal(): JSX.Element {
                   }}
                   className="absolute bottom-[calc(100%-0.55rem)] right-1 z-[5]"
                 />
-                <div className="absolute bottom-full left-0 z-20 mb-1.5 w-full max-w-[calc(100%-3.5rem)] space-y-1">
+                <div className="absolute bottom-full left-0 right-[5.25rem] z-30 mb-1.5 space-y-1">
                   <PortalSteerQueue
                     dark={dark}
                     items={pendingSends}

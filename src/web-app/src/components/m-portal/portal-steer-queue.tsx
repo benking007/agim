@@ -96,7 +96,7 @@ export function PortalSteerQueue({
               title={t('chat.portal.steerQueueDismiss', { defaultValue: 'Delete' })}
               aria-label={t('chat.portal.steerQueueDismiss', { defaultValue: 'Delete' })}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-4 w-4" strokeWidth={1.75} />
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

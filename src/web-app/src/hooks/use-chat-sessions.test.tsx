@@ -133,6 +133,33 @@ describe('useChat multi-session', () => {
     unmount()
   })
 
+  it('archiveSession drops the thread from the rail and switches away', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const firstId = result.current.activeSessionId
+    act(() => { result.current.send('keep this') })
+    act(() => { result.current.newConversation() })
+    const secondId = result.current.activeSessionId
+    act(() => { result.current.send('archive this') })
+    act(() => { result.current.archiveSession(secondId) })
+    expect(result.current.sessions.some((s) => s.id === secondId)).toBe(false)
+    expect(result.current.sessions.some((s) => s.id === firstId)).toBe(true)
+    expect(result.current.activeSessionId).toBe(firstId)
+    unmount()
+  })
+
+  it('archiveWorkspace hides the folder and its sessions', () => {
+    const ws = addLocalWorkspace({ name: 'proj', path: '/tmp/proj-archive' })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('seed') })
+    act(() => { result.current.newConversation() })
+    expect(findSession(result.current.activeSessionId)?.workspaceId).toBe(ws.id)
+    act(() => { result.current.send('in proj') })
+    act(() => { result.current.archiveWorkspace(ws.id) })
+    expect(result.current.sessions.every((s) => s.workspaceId !== ws.id)).toBe(true)
+    expect(listSessions().every((s) => s.workspaceId !== ws.id)).toBe(true)
+    unmount()
+  })
+
   it('reconnect bootstrap uses the active thread, not the first-mount id', () => {
     const { result, unmount } = renderHook(() => useChat())
     act(() => { result.current.send('stay') })

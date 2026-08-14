@@ -112,7 +112,8 @@ export function AgentPortal(): JSX.Element {
 
   const {
     state, send, steer, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
-    newConversation, switchSession, syncWorkspace, sessions, activeSessionId, clearError,
+    newConversation, switchSession, archiveSession, archiveWorkspace, syncWorkspace,
+    sessions, activeSessionId, clearError,
   } = useChat()
   const {
     workspaces,
@@ -664,6 +665,8 @@ export function AgentPortal(): JSX.Element {
       syncWorkspace(ws?.kind === 'local' ? (ws.path || ws.name) : '')
     },
     onNewWorkspace: () => setWorkspacePickerOpen(true),
+    onArchiveSession: (threadId: string) => { archiveSession(threadId) },
+    onArchiveWorkspace: (id: string) => { archiveWorkspace(id) },
   } as const
 
   return (

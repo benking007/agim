@@ -25,7 +25,10 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
 import { openChatWs } from '@/lib/api/ws'
 import {
+  archiveSession as markSessionArchived,
+  archiveSessionsForWorkspace,
   findSession,
+  isSessionArchived,
   isWebThreadId,
   listSessions,
   loadTabThreadId,
@@ -39,6 +42,7 @@ import {
 import {
   CLOUD_WORKSPACE_ID,
   activeWorkspacePath,
+  archiveLocalWorkspace,
   loadActiveWorkspaceId,
   setActiveWorkspace,
 } from '@/lib/web-workspaces'
@@ -380,6 +384,52 @@ export function useChat(): UseChat {
     syncWorkspace(activeWorkspacePath())
   }
 
+  function followVisibleSession(preferredId?: string): void {
+    const next = (preferredId && listSessions().some((s) => s.id === preferredId) ? preferredId : undefined)
+      || listSessions()[0]?.id
+    if (next && next !== threadIdRef.current) {
+      switchSession(next)
+      return
+    }
+    if (next && next === threadIdRef.current) {
+      syncWorkspace(activeWorkspacePath())
+      return
+    }
+    const id = mintThreadId()
+    upsertSession({
+      id,
+      updatedAt: Date.now(),
+      agent: state.agent,
+      workspaceId: loadActiveWorkspaceId(),
+    })
+    activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  function archiveSession(threadId: string): void {
+    const id = threadId.trim()
+    if (!isWebThreadId(id)) return
+    const wasActive = id === threadIdRef.current
+    const index = markSessionArchived(id)
+    if (!wasActive) return
+    followVisibleSession(index.activeId)
+  }
+
+  function archiveWorkspace(workspaceId: string): void {
+    const id = workspaceId.trim()
+    if (!id || id === CLOUD_WORKSPACE_ID) return
+    const currentId = threadIdRef.current
+    archiveSessionsForWorkspace(id)
+    const next = archiveLocalWorkspace(id)
+    const current = findSession(currentId)
+    if (!current || isSessionArchived(current)) {
+      setActiveWorkspace(CLOUD_WORKSPACE_ID)
+      followVisibleSession()
+      return
+    }
+    if (next.activeId === CLOUD_WORKSPACE_ID) syncWorkspace('')
+  }
+
   function stop(): void {
     const ok = wsRef.current.send({ type: 'stop' })
     if (!ok) {
@@ -413,6 +463,8 @@ export function useChat(): UseChat {
     choiceSubmit,
     newConversation,
     switchSession,
+    archiveSession,
+    archiveWorkspace,
     syncWorkspace,
     sessions: sessionSnap.sessions,
     activeSessionId: sessionSnap.activeId,

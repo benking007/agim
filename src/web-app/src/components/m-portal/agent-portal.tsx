@@ -21,8 +21,14 @@ import { toast } from 'sonner'
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
+import { api } from '@/lib/api/endpoints'
 import { findSession, upsertSession } from '@/lib/web-sessions'
-import { addLocalWorkspace, setActiveWorkspace, toggleWorkspaceCollapsed } from '@/lib/web-workspaces'
+import {
+  addLocalWorkspace,
+  findWorkspace,
+  setActiveWorkspace,
+  toggleWorkspaceCollapsed,
+} from '@/lib/web-workspaces'
 import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
 import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
 import { shouldSubmitOnEnterKey } from '@/lib/composer-enter'
@@ -106,7 +112,7 @@ export function AgentPortal(): JSX.Element {
 
   const {
     state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
-    newConversation, switchSession, sessions, activeSessionId, clearError,
+    newConversation, switchSession, syncWorkspace, sessions, activeSessionId, clearError,
   } = useChat()
   const {
     workspaces,
@@ -602,12 +608,30 @@ export function AgentPortal(): JSX.Element {
     activeWorkspaceId,
     collapsedWorkspaces,
     onToggleWorkspace: toggleWorkspaceCollapsed,
-    onSelectWorkspace: setActiveWorkspace,
+    onSelectWorkspace: (id: string) => {
+      setActiveWorkspace(id)
+      const ws = findWorkspace(id)
+      syncWorkspace(ws?.kind === 'local' ? (ws.path || ws.name) : '')
+    },
     onWorkspaceCreated: (dir: { name: string; path: string }) => {
-      const ws = addLocalWorkspace(dir)
-      const sess = findSession(activeSessionId)
-      const blank = !state.messages.some((m) => m.role === 'user' && m.content.trim())
-      if (sess && blank) upsertSession({ id: sess.id, workspaceId: ws.id })
+      void (async () => {
+        let next = dir
+        try {
+          const resolved = await api.resolveWorkspacePath({ path: dir.path })
+          if (resolved.ok && resolved.path) {
+            next = { name: resolved.name || dir.name, path: resolved.path }
+          } else {
+            toast.warning(t('chat.portal.workspaceUnresolved'))
+          }
+        } catch {
+          toast.warning(t('chat.portal.workspaceUnresolved'))
+        }
+        const ws = addLocalWorkspace(next)
+        const sess = findSession(activeSessionId)
+        const blank = !state.messages.some((m) => m.role === 'user' && m.content.trim())
+        if (sess && blank) upsertSession({ id: sess.id, workspaceId: ws.id })
+        syncWorkspace(ws.kind === 'local' ? (ws.path || ws.name) : '')
+      })()
     },
   } as const
 

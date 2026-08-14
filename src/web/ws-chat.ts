@@ -13,6 +13,7 @@ import {
 } from '../core/onboarding.js'
 import { expandInlineChannelReply, needsFullInlineDelivery } from '../core/inline-delivery.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../core/agent-cwd.js'
+import { resolvePortalWorkspacePath } from '../core/workspace-path.js'
 import {
   generateTraceId,
   createLogger,
@@ -212,7 +213,7 @@ export async function sendSessionHistory(
  */
 export async function handleClientMessage(
   client: ClientConnection,
-  msg: { type: string; text?: string; agent?: string; threadId?: string; jobId?: number },
+  msg: { type: string; text?: string; agent?: string; threadId?: string; jobId?: number; workspacePath?: string },
   defaultAgent: string,
   /** Notify the caller that the client's id changed mid-handler so the
    *  WS handler can keep its `clients` map in sync when a browser refresh resumes
@@ -352,6 +353,7 @@ export async function handleClientMessage(
       runAbort.signal.addEventListener('abort', onParentAbort, { once: true })
 
       try {
+        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath)
         const routeCtx: RouteContext = {
           threadId: clientId,
           channelId: 'web',
@@ -361,6 +363,7 @@ export async function handleClientMessage(
           logger,
           userId: `web:${clientId}`,
           webRunId: runId,
+          ...(workspacePath ? { workspacePath } : {}),
           signal: runAbort.signal,
           onToolActivity: (step) => {
             const applied = upsertActiveRunStep(sessionThreadId, {
@@ -531,6 +534,7 @@ export async function handleClientMessage(
             platform: 'web',
             channelId: 'web',
             threadId: sessionThreadId,
+            ...(workspacePath ? { workspacePath } : {}),
           }) || defaultAgentCwd(client.agent)
           deliveredText = expandInlineChannelReply(fullText, { workspaceRoot: cwd })
         }
@@ -744,6 +748,21 @@ export async function handleClientMessage(
     // approval rules, so the next prompt starts on a clean slate. The
     // WS client receives a follow-up `history` message with an empty
     // list so the UI repaints the cleared state.
+    case 'set-workspace': {
+      const raw = typeof msg.workspacePath === 'string' ? msg.workspacePath : ''
+      const resolved = resolvePortalWorkspacePath(raw)
+      await sessionManager.getOrCreateSession('web', 'web', clientId, client.agent)
+      await sessionManager.patchSession('web', 'web', clientId, {
+        workspacePath: resolved || '',
+      })
+      emit({
+        type: 'workspace',
+        ok: !raw.trim() || !!resolved,
+        path: resolved || null,
+      })
+      break
+    }
+
     case 'new-conversation': {
       const { clearActiveRun } = await import('./active-runs.js')
       clearActiveRun(clientId)

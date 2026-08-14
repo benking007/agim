@@ -190,6 +190,8 @@ export interface UseChat {
   newConversation: () => void
   /** Reload a previously opened thread via `get-history`. */
   switchSession: (threadId: string) => void
+  /** Bind this thread's agent cwd to a Portal workspace path (empty = cloud). */
+  syncWorkspace: (path?: string) => void
   /** Newest-first index of this browser's web threads. */
   sessions: WebSessionEntry[]
   /** Active `web-*` id (same as `state.clientId` once bootstrapped). */

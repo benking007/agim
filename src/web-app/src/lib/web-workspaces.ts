@@ -133,6 +133,26 @@ export function findWorkspace(id: string): WebWorkspace | undefined {
   return loadWorkspaceIndex().workspaces.find((w) => w.id === id)
 }
 
+/** Host path (or picker name) for the selected local workspace. Cloud → undefined. */
+export function activeWorkspacePath(): string | undefined {
+  const ws = findWorkspace(loadActiveWorkspaceId())
+  if (!ws || ws.kind === 'cloud') return undefined
+  const path = (ws.path || ws.name || '').trim()
+  return path || undefined
+}
+
+export function updateWorkspacePath(id: string, path: string): WebWorkspace | undefined {
+  const nextPath = path.trim()
+  if (!nextPath) return findWorkspace(id)
+  const index = loadWorkspaceIndex()
+  const name = workspaceBasename(nextPath) || nextPath
+  const workspaces = index.workspaces.map((w) => (
+    w.id === id && w.kind === 'local' ? { ...w, path: nextPath, name } : w
+  ))
+  writeIndex({ ...index, workspaces })
+  return workspaces.find((w) => w.id === id)
+}
+
 export function setActiveWorkspace(id: string): WebWorkspaceIndex {
   const index = loadWorkspaceIndex()
   const next = id.trim()

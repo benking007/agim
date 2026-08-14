@@ -29,12 +29,13 @@
     "src/web/static-serve.ts",
     "src/web/viewer-api.ts",
     "src/web/viewer-render.ts",
+    "src/web/workspace-cwd-api.ts",
     "src/web/workspace-files-api.ts",
     "src/web/workspace-skills-api.ts",
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 124,
+  "count": 125,
   "endpoints": [
     {
       "method": "DELETE",
@@ -723,6 +724,12 @@
     {
       "method": "POST",
       "path": "/api/stt/whispercpp/model",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspace-resolve",
       "source": "exact",
       "authRequired": true
     },

@@ -429,6 +429,7 @@
       "cloudWorkspaceHint": "服务器工作目录",
       "newWorkspace": "新建工作区",
       "workspaceEmpty": "暂无会话",
+      "workspaceUnresolved": "服务器上找不到这个目录。Agent 只能访问 agim 所在机器上的文件夹。",
       "justNow": "刚刚",
       "connected": "已连接",
       "selectAgent": "选择 Agent",

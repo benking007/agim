@@ -205,6 +205,11 @@ export interface Session {
    *  `system.init.session_id`. Subsequent turns pass `--resume <id>`.
    *  Cleared by /new. */
   cursorSessionId?: string
+  /**
+   * Portal workspace directory for this web thread. Absolute path the
+   * agent should use as cwd. Omitted = default agent workspace.
+   */
+  workspacePath?: string
   /** Plan mode flag — toggled by /plan on / /plan off. When true:
    *    • claude-code adapter spawns with `--permission-mode plan` and bypasses
    *      the IM approval bus (plan mode is read-only, no mutations to gate).
@@ -489,6 +494,8 @@ export interface AgentSendOpts {
   platform?: string
   userId?: string
   channelId?: string
+  /** Portal / web workspace directory. Beats the IM default cwd. */
+  workspacePath?: string
   /**
    * Session-scoped compression rate overlay for Agim Agent context budget.
    * `auto` / omitted → env + window defaults; otherwise replaces reserve/keep.

@@ -432,4 +432,8 @@ export const api = {
   writeWorkspaceFile: (query: { agent: string; path: string }, body: WriteWorkspaceFileBody) =>
     client.put<WriteWorkspaceFileResponse>('/api/workspace-files', { query, body }),
 
+  /** POST /api/workspace-resolve — map a picker name/path to a host directory. */
+  resolveWorkspacePath: (body: { path: string }) =>
+    client.post<{ ok: boolean; path: string | null; name?: string }>('/api/workspace-resolve', { body }),
+
 } as const

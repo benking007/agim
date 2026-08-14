@@ -12,7 +12,8 @@
 
 /** Client → Server */
 export type ChatOutgoing =
-  | { type: 'message'; text: string; agent?: string }
+  | { type: 'message'; text: string; agent?: string; workspacePath?: string }
+  | { type: 'set-workspace'; workspacePath?: string }
   | { type: 'switch-agent'; agent: string }
   | { type: 'get-agents' }
   | { type: 'get-history'; threadId?: string }
@@ -116,6 +117,7 @@ export type ChatIncoming =
    * SPA re-fetches GET /api/loop (keeps DTO lang on the client).
    */
   | { type: 'loop-changed'; threadId: string }
+  | { type: 'workspace'; ok: boolean; path: string | null; threadId?: string }
 
 /** Run lifecycle events emitted around each web chat request.
  *  These are additive (old servers may not send them) and let the

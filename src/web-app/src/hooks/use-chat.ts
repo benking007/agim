@@ -42,7 +42,9 @@ import {
 import {
   CLOUD_WORKSPACE_ID,
   activeWorkspacePath,
+  addLocalWorkspace,
   archiveLocalWorkspace,
+  listWorkspaces,
   loadActiveWorkspaceId,
   setActiveWorkspace,
 } from '@/lib/web-workspaces'
@@ -350,6 +352,38 @@ export function useChat(): UseChat {
     syncWorkspace(activeWorkspacePath())
   }
 
+  function startSessionInWorkspace(workspaceId: string): void {
+    const current = findSession(threadIdRef.current)
+    const blank = !transcriptHasUserTurn(messagesRef.current)
+    if (blank && current) {
+      upsertSession({ id: current.id, workspaceId })
+      syncWorkspace(activeWorkspacePath())
+      return
+    }
+    const id = mintThreadId()
+    upsertSession({
+      id,
+      updatedAt: Date.now(),
+      agent: state.agent,
+      workspaceId,
+    })
+    activateThread(id)
+    syncWorkspace(activeWorkspacePath())
+  }
+
+  /** New named folder only — re-picking an existing path does not mint. */
+  function createWorkspace(dir: { name: string; path: string }): void {
+    const path = dir.path.trim()
+    const existed = listWorkspaces().some((w) => w.kind === 'local' && w.path === path)
+    const ws = addLocalWorkspace(dir)
+    if (ws.kind !== 'local') {
+      syncWorkspace('')
+      return
+    }
+    if (!existed) startSessionInWorkspace(ws.id)
+    else syncWorkspace(ws.path || ws.name)
+  }
+
   function syncWorkspace(path?: string): void {
     wsRef.current.send({ type: 'set-workspace', workspacePath: path || '' })
   }
@@ -443,6 +477,7 @@ export function useChat(): UseChat {
     archiveSession,
     archiveWorkspace,
     syncWorkspace,
+    createWorkspace,
     sessions: sessionSnap.sessions,
     activeSessionId: sessionSnap.activeId,
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),

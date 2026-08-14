@@ -21,9 +21,7 @@ import { toast } from 'sonner'
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
-import { findSession, upsertSession } from '@/lib/web-sessions'
 import {
-  addLocalWorkspace,
   findWorkspace,
   setActiveWorkspace,
   toggleWorkspaceCollapsed,
@@ -108,7 +106,7 @@ export function AgentPortal(): JSX.Element {
 
   const {
     state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
-    newConversation, switchSession, archiveSession, archiveWorkspace, syncWorkspace, sessions, activeSessionId, clearError,
+    newConversation, switchSession, archiveSession, archiveWorkspace, syncWorkspace, createWorkspace, sessions, activeSessionId, clearError,
   } = useChat()
   const {
     workspaces,
@@ -620,11 +618,7 @@ export function AgentPortal(): JSX.Element {
         agentId={agentId}
         onOpenChange={setWorkspacePickerOpen}
         onPicked={(dir) => {
-          const ws = addLocalWorkspace(dir)
-          const sess = findSession(activeSessionId)
-          const blank = !state.messages.some((m) => m.role === 'user' && m.content.trim())
-          if (sess && blank) upsertSession({ id: sess.id, workspaceId: ws.id })
-          syncWorkspace(ws.kind === 'local' ? (ws.path || ws.name) : '')
+          createWorkspace(dir)
         }}
       />
       {/* Desktop rail — always visible ≥ lg */}

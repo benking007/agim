@@ -64,6 +64,7 @@ function renderChat(
     archiveSession: vi.fn(),
     archiveWorkspace: vi.fn(),
     syncWorkspace: vi.fn(),
+    createWorkspace: vi.fn(),
     sessions: [],
     activeSessionId: 'web-test',
     stop: vi.fn(),

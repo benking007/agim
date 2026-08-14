@@ -196,6 +196,8 @@ export interface UseChat {
   archiveWorkspace: (workspaceId: string) => void
   /** Bind this thread's agent cwd to a Portal workspace path (empty = cloud). */
   syncWorkspace: (path?: string) => void
+  /** Add a named host subdirectory and start a new session in it. */
+  createWorkspace: (dir: { name: string; path: string }) => void
   /** Newest-first index of this browser's web threads. */
   sessions: WebSessionEntry[]
   /** Active `web-*` id (same as `state.clientId` once bootstrapped). */

@@ -36,7 +36,7 @@ vi.mock('@/lib/api/ws', () => ({
 
 import { useChat } from './use-chat'
 import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
-import { addLocalWorkspace } from '@/lib/web-workspaces'
+import { addLocalWorkspace, listWorkspaces } from '@/lib/web-workspaces'
 import { writeCachedHistory } from '@/lib/web-history-cache'
 
 describe('useChat multi-session', () => {
@@ -195,5 +195,38 @@ describe('useChat multi-session', () => {
     expect(again.current.activeSessionId).toBe(tabId)
     expect(again.current.state.messages.some((m) => m.content === 'only in this tab')).toBe(true)
     unmount2()
+  })
+
+  it('createWorkspace mints a session under a newly added folder', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const previousId = result.current.activeSessionId
+    act(() => { result.current.send('stay on cloud') })
+    act(() => {
+      result.current.createWorkspace({ name: 'other-proj', path: '/tmp/other-proj' })
+    })
+    const nextId = result.current.activeSessionId
+    expect(nextId).not.toBe(previousId)
+    expect(findSession(nextId)?.workspaceId).not.toBe('cloud')
+    expect(findSession(previousId)?.workspaceId).toBe('cloud')
+    expect(result.current.state.messages).toEqual([])
+    expect(listWorkspaces().some((w) => w.path === '/tmp/other-proj')).toBe(true)
+    expect(mocks.sent.some((m) => (
+      m.type === 'set-workspace' && m.workspacePath === '/tmp/other-proj'
+    ))).toBe(true)
+    unmount()
+  })
+
+  it('createWorkspace does not mint again when the folder already exists', () => {
+    addLocalWorkspace({ name: 'other-proj', path: '/tmp/other-proj' })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('already here') })
+    const previousId = result.current.activeSessionId
+    const before = result.current.sessions.length
+    act(() => {
+      result.current.createWorkspace({ name: 'other-proj', path: '/tmp/other-proj' })
+    })
+    expect(result.current.activeSessionId).toBe(previousId)
+    expect(result.current.sessions).toHaveLength(before)
+    unmount()
   })
 })

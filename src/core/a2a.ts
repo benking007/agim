@@ -66,6 +66,8 @@ import {
 } from './a2a-notify.js'
 import { isAgimAgentId } from './naming-migrate.js'
 import { isSameAgent, parseCallAgentTarget, resolveSubtreeMaxDepth } from './subagent.js'
+import { lastToolFromChildStep, reflectsFromChildStep } from './subagent-inner-activity.js'
+import { isStepReflectEnabled } from './llm/step-reflect.js'
 
 const log = rootLogger.child({ component: 'a2a' })
 
@@ -566,6 +568,16 @@ export async function callAgentByName(
     jobId,
   })
 
+  let inheritStepReflect = opts.stepReflect === true
+  if (!inheritStepReflect) {
+    try {
+      const { sessionManager } = await import('./session.js')
+      inheritStepReflect = isStepReflectEnabled(
+        await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId),
+      )
+    } catch { /* session lookup is best-effort */ }
+  }
+
   let result = ''
   let outcome: 'completed' | 'failed' | 'timeout' | 'cancelled' = 'completed'
   let errMsg = ''
@@ -598,18 +610,22 @@ export async function callAgentByName(
       // a write task to claude-code and the child would launch with full
       // write access, bypassing the user's intent.
       ...(opts.planMode ? { planMode: true } : {}),
-      ...(opts.stepReflect ? { stepReflect: true } : {}),
+      ...(inheritStepReflect ? { stepReflect: true } : {}),
+      parentActivityStepId: activityStepId,
       onToolActivity: (step) => {
-        // Child tool rows stay off the parent accordion. Only forward
-        // Step Reflect beats onto this Subagent card.
-        if (!step.reflects?.length) return
+        // Child tool rows stay off the parent accordion. Fold thinking
+        // and the latest child tool onto this Subagent card instead.
+        const reflects = reflectsFromChildStep(step)
+        const lastTool = lastToolFromChildStep(step)
+        if (!reflects?.length && !lastTool) return
         emitAgentActivity(opts, ctx, {
           id: activityStepId,
           kind: 'agent',
           label: activityLabel,
           status: 'running',
           startedAt: activityStartedAt,
-          reflects: step.reflects,
+          ...(reflects?.length ? { reflects } : {}),
+          ...(lastTool ? { lastTool } : {}),
         })
       },
       ...(typeof maxDepth === 'number' ? { a2aMaxDepth: maxDepth } : {}),

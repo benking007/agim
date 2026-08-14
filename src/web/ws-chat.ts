@@ -382,6 +382,7 @@ export async function handleClientMessage(
               ...(step.todoItems ? { todoItems: step.todoItems } : {}),
               ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
               ...(step.reflects ? { reflects: step.reflects } : {}),
+              ...(step.lastTool ? { lastTool: step.lastTool } : {}),
             })
             if (!applied) return
             const snap = getActiveRun(sessionThreadId)

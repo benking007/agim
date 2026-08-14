@@ -302,6 +302,26 @@ describe('ChatSubagentCard', () => {
     expect(screen.queryByTestId('step-reflect-slot')).toBeNull()
   })
 
+  it('shows a child tool on the slot instead of Thinking…', () => {
+    render(<ChatSubagentCard
+      stepReflectEnabled
+      activity={activity({
+        steps: [{
+          id: 'a2a-11',
+          kind: 'agent',
+          label: 'agim:deepseek-v4-pro',
+          status: 'running',
+          startedAt: 1,
+          jobId: 11,
+          lastTool: { label: 'agim_web_search', status: 'running', at: 2 },
+        }],
+      })}
+    />)
+    const slot = screen.getByTestId('step-reflect-slot')
+    expect(slot.textContent).toContain('web_search')
+    expect(slot.textContent).not.toMatch(/Thinking|思考中/)
+  })
+
   it('keeps the last reflect after the row completes', async () => {
     const user = userEvent.setup()
     render(<ChatSubagentCard

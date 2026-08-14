@@ -176,6 +176,11 @@ export interface ActivityStepEvent {
     /** Subagent / A2A inline job id when known. */
     jobId?: number
     reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
+    lastTool?: {
+      label: string
+      status: 'pending' | 'running' | 'success' | 'error' | 'denied'
+      at: number
+    }
   }
 }
 

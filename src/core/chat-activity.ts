@@ -22,6 +22,7 @@ export interface ChatActivityStep {
   /** Subagent / A2A inline job id when known. */
   jobId?: number
   reflects?: ToolActivityStep['reflects']
+  lastTool?: ToolActivityStep['lastTool']
 }
 
 export interface ChatActivity {
@@ -61,6 +62,7 @@ export function mergeActivityStep(
       todoItems: step.todoItems ?? prev.todoItems,
       jobId: step.jobId ?? prev.jobId,
       reflects: mergeStepReflects(prev.reflects, step.reflects) ?? prev.reflects,
+      lastTool: step.lastTool ?? prev.lastTool,
     }
   } else {
     steps.push(step)
@@ -88,6 +90,7 @@ export function mergeToolActivityStep(
     todoItems: step.todoItems,
     ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
     ...(step.reflects ? { reflects: step.reflects } : {}),
+    ...(step.lastTool ? { lastTool: step.lastTool } : {}),
   })
 }
 

@@ -23,6 +23,7 @@ import {
   resolveSubagentJobId,
 } from '@/lib/activity-subagent'
 import { isAgimFamilyLabel } from '@/lib/step-reflect'
+import { formatSubagentInnerSummary } from '@/lib/subagent-inner-summary'
 import { cn } from '@/lib/utils'
 import { SubagentDetailDialog } from './subagent-detail-dialog'
 
@@ -130,7 +131,8 @@ function StepReflectSlot({
   const live = isSubagentLive(step)
   const family = isAgimFamilyLabel(step.label)
   const items = (step.reflects ?? []).slice(-3)
-  const show = enabled && family && (live || items.length > 0)
+  const inner = formatSubagentInnerSummary(step)
+  const show = enabled && family && (live || items.length > 0 || !!inner)
   const [idx, setIdx] = useState(0)
   const [hover, setHover] = useState(false)
   const [fade, setFade] = useState(true)
@@ -181,8 +183,10 @@ function StepReflectSlot({
             >
               {stanceLabel(current.stance, t)}
             </span>
-            <span className="min-w-0 truncate">{current.next}</span>
+            <span className="min-w-0 truncate">{inner || current.next}</span>
           </>
+        ) : inner ? (
+          <span className="min-w-0 truncate">{inner}</span>
         ) : (
           <span className="truncate">
             {t('chat.portal.stepReflectWaiting', { defaultValue: 'Thinking…' })}

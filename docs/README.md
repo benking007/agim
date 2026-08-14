@@ -25,6 +25,7 @@
 - [`architecture/agent-profiles.md`](./architecture/agent-profiles.md)：**现行设计** — 非 Agim CLI 派工能力画像 + §2.4 任务派发速查（Settings→LLM 下拉；`llmRoles.finance`/`cheap`）
 - [`architecture/focus.md`](./architecture/focus.md)：**现行设计** — Focus：聚焦注入 / on / off（废弃 `/goal`）
 - [`architecture/loop-engineering.md`](./architecture/loop-engineering.md)：**现行设计** — Loop Engineering L3（对焦→派工→验收；父侧 `ask_user`；结案浮窗；门禁仅 depth=0；Portal 底栏 docks；Tasks Loop 审计）
+- [`architecture/step-reflect.md`](./architecture/step-reflect.md)：**设计草案** — Step Reflect / 步思（L2：结果→短反思→再行动；≠ Loop REFLECT）
 - [`architecture/goal-residue.md`](./architecture/goal-residue.md)：Goal → Focus/Loop 残留盘点（UI/工具链已退役）
 - [`architecture/retirement-candidates.md`](./architecture/retirement-candidates.md)：退役清单（已落地 Goal/Hot/ACP + 下一波候选）
 - [`architecture/orchestration-roadmap.md`](./architecture/orchestration-roadmap.md)：**现行计划** — Subagent → 并行 → Loop（A/B/C：R1–R5+门禁与 B5 CLI 父派工已齐，R6 暂缓；派工见 agent-profiles）

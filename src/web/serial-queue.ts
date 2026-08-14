@@ -1,6 +1,6 @@
 // serial-queue — lightweight FIFO async queue for WebSocket inbound frames.
 // Prevents concurrent handling of chat messages from the same connection
-// while allowing bypass frames (approval-action, stop) to run immediately.
+// while allowing bypass frames (approval-action, stop, steer) to run immediately.
 
 export function createSerialQueue(): (fn: () => Promise<void>) => void {
   let queue: Promise<void> = Promise.resolve()

@@ -100,6 +100,8 @@ export type ChatAction =
   | { kind: 'AGENTS'; agents: string[] }
   | { kind: 'AGENT_SWITCHED'; agent: string; preferredWorkerAgent?: string }
   | { kind: 'SEND_USER'; message: ChatMessage; placeholder: ChatMessage }
+  /** Insert a user bubble before the streaming assistant (mid-turn steer). */
+  | { kind: 'APPEND_USER'; message: ChatMessage }
   | { kind: 'CHUNK'; replyId: string; text: string }
   | { kind: 'DONE'; replyId: string; finalText: string; runId?: string; messageId?: string }
   | { kind: 'ERROR'; message: string }
@@ -608,6 +610,18 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         currentReplyId: a.placeholder.id,
         error: null,
       }
+    case 'APPEND_USER': {
+      let idx = findActivityMessageIndex(s.messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      if (idx < 0) idx = findRunningActivityIndex(s.messages)
+      if (idx < 0) idx = lastAssistantIndex(s.messages)
+      const messages = idx >= 0
+        ? [...s.messages.slice(0, idx), a.message, ...s.messages.slice(idx)]
+        : [...s.messages, a.message]
+      return { ...s, messages, error: null }
+    }
     case 'CHUNK': {
       // Append text to the current streaming reply.
       const idx = s.messages.findIndex((m) => m.id === a.replyId)

@@ -23,6 +23,8 @@ export interface ChatComposerProps {
   disabled?: boolean
   /** Show spinner on the send button when empty (streaming); does not block send. */
   busy?: boolean
+  /** When true, Enter / Send while busy still calls onSubmit (queue a supplement). */
+  allowBusySubmit?: boolean
   /** When true, Enter inserts a newline; Send button submits. */
   enterNewline?: boolean
   placeholder?: string
@@ -47,6 +49,7 @@ export function ChatComposer({
   onSubmit,
   disabled = false,
   busy = false,
+  allowBusySubmit = false,
   enterNewline = false,
   placeholder,
   leading,
@@ -77,7 +80,7 @@ export function ChatComposer({
     e?.preventDefault()
     // Busy blocks a second send while streaming so WS chunks stay bound
     // to the current reply (runId / currentReplyId stay aligned).
-    if (disabled || busy || !value.trim()) return
+    if (disabled || (!allowBusySubmit && busy) || !value.trim()) return
     onSubmit()
     requestAnimationFrame(() => inputRef.current?.focus())
   }
@@ -93,7 +96,7 @@ export function ChatComposer({
     // Ctrl/⌘/Shift+Enter fall through → textarea inserts a newline.
   }
 
-  const canSend = !!value.trim() && !disabled && !busy
+  const canSend = !!value.trim() && !disabled && (!busy || allowBusySubmit)
 
   return (
     <form

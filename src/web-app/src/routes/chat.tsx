@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { bubbleGroupFlags } from '@/components/chat/bubble-group'
 import { ChatComposer } from '@/components/chat/chat-composer'
+import { PortalSteerQueue, type PendingSendItem } from '@/components/m-portal/portal-steer-queue'
 import { ComposerStatusBar } from '@/components/chat/composer-status-bar'
 import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
@@ -75,9 +76,11 @@ const STATUS_STYLES: Record<string, string> = {
 export default function ChatRoute(): JSX.Element {
   const { t } = useTranslation()
   const {
-    state, send, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
+    state, send, steer, stopSubagent, switchAgent, approvalClick, choiceSubmit, newConversation, clearError,
   } = useChat()
   const [input, setInput] = useState('')
+  const [pendingSends, setPendingSends] = useState<PendingSendItem[]>([])
+  const [queueThreadId, setQueueThreadId] = useState(state.clientId)
   const [nativeSetupDialogOpen, setNativeSetupDialogOpen] = useState(false)
   const [nativeSetupReason, setNativeSetupReason] = useState('')
   const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
@@ -151,6 +154,21 @@ export default function ChatRoute(): JSX.Element {
     clearError()
   }, [state.error, clearError])
 
+  const busy = state.currentReplyId != null || state.activeRunId != null
+  const canSteerLive = busy && (state.agent === 'agim' || state.agent === 'native')
+  if (state.clientId !== queueThreadId) {
+    setQueueThreadId(state.clientId)
+    setPendingSends([])
+  }
+
+  useEffect(() => {
+    if (busy) return
+    const ready = pendingSends.filter((item) => item.flushAfter)
+    if (ready.length === 0) return
+    setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
+    for (const item of ready) send(item.text)
+  }, [busy, pendingSends, send])
+
   function onSubmit(): void {
     const v = input.trim()
     if (!v) return
@@ -159,8 +177,37 @@ export default function ChatRoute(): JSX.Element {
       return
     }
     stickToBottom()
-    send(v)
     setInput('')
+    if (busy) {
+      setPendingSends((cur) => [
+        ...cur,
+        { id: `q-${Date.now()}-${cur.length}`, text: v },
+      ])
+      return
+    }
+    send(v)
+  }
+
+  function dismissPending(id: string): void {
+    setPendingSends((cur) => cur.filter((item) => item.id !== id))
+  }
+
+  function flushPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item || item.flushAfter) return
+    if (canSteerLive) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      steer(item.text)
+      return
+    }
+    if (busy) {
+      setPendingSends((cur) => cur.map((row) => (
+        row.id === id ? { ...row, flushAfter: true } : row
+      )))
+      return
+    }
+    setPendingSends((cur) => cur.filter((row) => row.id !== id))
+    send(item.text)
   }
 
   return (
@@ -303,7 +350,16 @@ export default function ChatRoute(): JSX.Element {
         onChange={setInput}
         onSubmit={onSubmit}
         disabled={state.status !== 'open'}
-        busy={!!state.currentReplyId}
+        busy={busy}
+        allowBusySubmit
+        prepend={(
+          <PortalSteerQueue
+            dark={false}
+            items={pendingSends}
+            onSend={flushPending}
+            onDismiss={dismissPending}
+          />
+        )}
         enterNewline={enterNewline}
         keyboardInset={keyboardInset}
         inputRef={inputRef}

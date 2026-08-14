@@ -72,6 +72,7 @@ import {
   widthDemoMessages,
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
+import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
 import { PortalPet } from './portal-pet'
 import {
   skillMarker,
@@ -105,7 +106,7 @@ export function AgentPortal(): JSX.Element {
   }
 
   const {
-    state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
+    state, send, steer, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
     newConversation, switchSession, sessions, activeSessionId, clearError,
   } = useChat()
   const {
@@ -169,6 +170,8 @@ export function AgentPortal(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const [exploreCategory, setExploreCategory] = useState<ExploreCategory>('All')
   const [inputMessage, setInputMessage] = useState('')
+  const [pendingSends, setPendingSends] = useState<PendingSendItem[]>([])
+  const [queueThreadId, setQueueThreadId] = useState(state.clientId)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [uploading, setUploading] = useState(false)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
@@ -247,6 +250,19 @@ export function AgentPortal(): JSX.Element {
   // Fallback only when the placeholder message has not landed yet.
   const streamingFallback = isTyping && !currentReplyInList
   const canStop = isTyping || state.activeRunId != null
+  const canSteerLive = canStop && (agentId === 'agim' || agentId === 'native')
+  if (state.clientId !== queueThreadId) {
+    setQueueThreadId(state.clientId)
+    setPendingSends([])
+  }
+
+  useEffect(() => {
+    if (canStop) return
+    const ready = pendingSends.filter((item) => item.flushAfter)
+    if (ready.length === 0) return
+    setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
+    for (const item of ready) send(item.text)
+  }, [canStop, pendingSends, send])
 
   const portalThreadId = state.clientId
   // Include WS status + activeRunId so reconnect / new run re-polls Loop
@@ -335,6 +351,13 @@ export function AgentPortal(): JSX.Element {
       setSlashOpen(false)
       setAtOpen(false)
       stickToBottom()
+      if (canStop) {
+        setPendingSends((cur) => [
+          ...cur,
+          { id: `q-${Date.now()}-${cur.length}`, text: body },
+        ])
+        return
+      }
       send(body)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('chat.portal.attach.uploadFailed', {
@@ -343,6 +366,28 @@ export function AgentPortal(): JSX.Element {
     } finally {
       setUploading(false)
     }
+  }
+
+  function dismissPending(id: string): void {
+    setPendingSends((cur) => cur.filter((item) => item.id !== id))
+  }
+
+  function flushPending(id: string): void {
+    const item = pendingSends.find((row) => row.id === id)
+    if (!item || item.flushAfter) return
+    if (canSteerLive) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      steer(item.text)
+      return
+    }
+    if (canStop) {
+      setPendingSends((cur) => cur.map((row) => (
+        row.id === id ? { ...row, flushAfter: true } : row
+      )))
+      return
+    }
+    setPendingSends((cur) => cur.filter((row) => row.id !== id))
+    send(item.text)
   }
 
   const handleTranscribed = useCallback((transcribedText: string) => {
@@ -740,16 +785,24 @@ export function AgentPortal(): JSX.Element {
                   }}
                   className="absolute bottom-[calc(100%-0.55rem)] right-1 z-[5]"
                 />
-                <AttachmentStrip
-                  dark={dark}
-                  attachments={attachments}
-                  onRemove={(id) => {
-                    const target = attachments.find((a) => a.id === id)
-                    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
-                    setAttachments(attachments.filter((a) => a.id !== id))
-                  }}
-                  className="absolute bottom-full left-0 z-20 mb-1.5 max-w-[calc(100%-3.5rem)]"
-                />
+                <div className="absolute bottom-full left-0 z-20 mb-1.5 w-full max-w-[calc(100%-3.5rem)] space-y-1">
+                  <PortalSteerQueue
+                    dark={dark}
+                    items={pendingSends}
+                    onSend={flushPending}
+                    onDismiss={dismissPending}
+                  />
+                  <AttachmentStrip
+                    dark={dark}
+                    attachments={attachments}
+                    onRemove={(id) => {
+                      const target = attachments.find((a) => a.id === id)
+                      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+                      setAttachments(attachments.filter((a) => a.id !== id))
+                    }}
+                    className=""
+                  />
+                </div>
                 <form
                   ref={composerFormRef}
                   onSubmit={(e) => { void onSend(e) }}
@@ -822,18 +875,34 @@ export function AgentPortal(): JSX.Element {
                         <ArrowUp className="h-3.5 w-3.5" />
                       </button>
                     ) : canStop ? (
-                      <button
-                        type="button"
-                        onClick={() => stop()}
-                        className={cn(
-                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
-                          dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
-                        )}
-                        title={t('chat.portal.stop')}
-                        aria-label={t('chat.portal.stop')}
-                      >
-                        <Square className="h-3 w-3 fill-current" />
-                      </button>
+                      <>
+                        {(inputMessage.trim() || attachments.length > 0) ? (
+                          <button
+                            type="submit"
+                            disabled={uploading}
+                            className={cn(
+                              'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all disabled:opacity-50',
+                              dark ? 'bg-teal-400 text-zinc-950 hover:bg-teal-300' : 'bg-teal-600 text-white hover:bg-teal-700',
+                            )}
+                            title={t('chat.portal.enqueue', { defaultValue: '加入队列' })}
+                            aria-label={t('chat.portal.enqueue', { defaultValue: '加入队列' })}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => stop()}
+                          className={cn(
+                            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md transition-all',
+                            dark ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-zinc-900 text-zinc-100 hover:bg-black',
+                          )}
+                          title={t('chat.portal.stop')}
+                          aria-label={t('chat.portal.stop')}
+                        >
+                          <Square className="h-3 w-3 fill-current" />
+                        </button>
+                      </>
                     ) : (
                       <button
                         type="button"

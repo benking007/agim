@@ -236,6 +236,28 @@ export function useChat(): UseChat {
     })
   }
 
+  function steer(text: string): void {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const userId = mkId('u')
+    dispatch({
+      kind: 'APPEND_USER',
+      message: { id: userId, role: 'user', content: trimmed, timestamp: Date.now() },
+    })
+    const ok = wsRef.current.send({ type: 'steer', text: trimmed })
+    if (!ok) {
+      dispatch({
+        kind: 'ERROR',
+        message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
+      })
+    }
+    upsertSession({
+      id: threadIdRef.current,
+      updatedAt: Date.now(),
+      agent: state.agent,
+    })
+  }
+
   function switchAgent(name: string): void {
     wsRef.current.send({ type: 'switch-agent', agent: name })
   }
@@ -366,6 +388,7 @@ export function useChat(): UseChat {
   return {
     state,
     send,
+    steer,
     stop,
     stopSubagent,
     switchAgent,

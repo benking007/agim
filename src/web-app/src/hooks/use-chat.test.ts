@@ -195,6 +195,28 @@ describe('chatReducer', () => {
     expect(s.messages.at(-1)?.activity?.steps).toHaveLength(1)
   })
 
+  it('APPEND_USER inserts before the streaming assistant and keeps currentReplyId', () => {
+    const running: ChatMessage = {
+      ...asstMsg('p-1', 'partial…'),
+      activity: {
+        runId: 'run-1',
+        status: 'running',
+        startedAt: 1,
+        steps: [],
+      },
+    }
+    const base = reduce(
+      { ...initialChatState, currentReplyId: 'p-1', activeRunId: 'run-1' },
+      { kind: 'SEND_USER', message: userMsg('u-1', 'hi'), placeholder: running },
+    )
+    const extra = userMsg('u-2', 'also run tests')
+    const s = reduce(base, { kind: 'APPEND_USER', message: extra })
+    expect(s.messages.map((m) => m.id)).toEqual(['u-1', 'u-2', 'p-1'])
+    expect(s.currentReplyId).toBe('p-1')
+    expect(s.activeRunId).toBe('run-1')
+    expect(s.messages[1]?.content).toBe('also run tests')
+  })
+
   it('SEND_USER appends user message + placeholder + sets currentReplyId + clears error', () => {
     const u = userMsg('u-1', 'hi')
     const p = asstMsg('p-1')

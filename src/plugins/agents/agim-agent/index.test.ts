@@ -16,6 +16,7 @@ import {
   clearTodoForThread,
 } from '../../../core/llm/todo-dispatcher.js'
 import { composeDeliveredAssistantText, type NativeModelBinding, NativeAgentAdapter } from './index.js'
+import { _resetTurnSteer, dispatchTurnSteer } from '../../../core/turn-steer.js'
 
 const regs: Array<{ unregister(): void }> = []
 afterEach(() => {
@@ -74,6 +75,7 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
   afterEach(() => {
     if (prevTodoGate === undefined) delete process.env.AGIM_TODO_GATE
     else process.env.AGIM_TODO_GATE = prevTodoGate
+    _resetTurnSteer()
   })
 
   it('yields final assistant text', async () => {
@@ -84,6 +86,45 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
       resolveModel: async () => bindingFromFaux(reg),
     })
     expect(await collect(adapter.sendPrompt('s1', 'hi'))).toBe('hi from pi engine')
+  })
+
+  it('absorbs a mid-turn steer before the next provider hop', async () => {
+    const sessionId = 'steer-mid-turn'
+    let secondHop = ''
+    const reg = faux()
+    let releaseTool!: () => void
+    const held = new Promise<void>((resolve) => { releaseTool = resolve })
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('hold', {}, { id: 'h1' }), { stopReason: 'toolUse' }),
+      (ctx) => {
+        secondHop = JSON.stringify(ctx.messages.filter((m) => m.role === 'user'))
+        return fauxAssistantMessage('adjusted after supplement')
+      },
+    ])
+    const tool: ToolDef = {
+      name: 'hold',
+      description: 'hold until released',
+      parameters: { type: 'object', properties: {}, required: [] },
+    }
+    const dispatch: ToolDispatcher = async () => {
+      const mode = await dispatchTurnSteer(`agim:${sessionId}`, 'also run the tests')
+      expect(mode).toBe('live')
+      await held
+      return { text: 'held', isError: false }
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-steer-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools: [tool], dispatch }),
+    })
+    const gen = adapter.sendPrompt(sessionId, 'do the work')
+    const outP = collect(gen)
+    await new Promise((r) => setTimeout(r, 30))
+    releaseTool()
+    const out = await outP
+    expect(out).toContain('adjusted after supplement')
+    expect(secondHop).toContain('also run the tests')
+    expect(secondHop).toContain('本轮补充')
   })
 
   it('records threadId ↔ native JSONL session join without merging transcripts', async () => {

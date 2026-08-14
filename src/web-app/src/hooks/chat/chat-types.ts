@@ -167,6 +167,8 @@ export interface ChatState {
 export interface UseChat {
   state: ChatState
   send: (text: string) => void
+  /** Inject a mid-turn supplement into the live Agim run (no new placeholder). */
+  steer: (text: string) => void
   /** Abort the in-flight web run (composer Stop button). */
   stop: () => void
   /** Cancel one live Subagent/A2A job; parent turn continues with partial. */

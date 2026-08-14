@@ -786,6 +786,17 @@ export async function startWebServer(options: {
         ac.abort()
         return
       }
+      if (msgType === 'steer') {
+        // Same class as stop: the chat handler is blocked on the live
+        // turn, so a queued steer would only land after the agent
+        // already finished. Inject while the harness is still in `turn`.
+        void handleClientMessage(
+          client,
+          msg as Parameters<typeof handleClientMessage>[1],
+          getDefaultAgent(options.defaultAgent),
+        )
+        return
+      }
       if (msgType === 'stop-subagent') {
         // Per-Subagent Stop must bypass the serial queue for the same
         // reason as parent Stop — otherwise cancel waits until the parent

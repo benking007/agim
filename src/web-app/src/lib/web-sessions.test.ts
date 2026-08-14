@@ -7,6 +7,8 @@ import {
   THREAD_ID_KEY,
   MAX_SESSIONS,
   adoptThreadId,
+  archiveSession,
+  archiveSessionsForWorkspace,
   findSession,
   isWebThreadId,
   listSessions,
@@ -110,6 +112,37 @@ describe('web-sessions', () => {
     const id = mintThreadId()
     upsertSession({ id, title: 'in ceshi' })
     expect(findSession(id)?.workspaceId).toBe(ws.id)
+  })
+
+  it('hides archived sessions from the rail list', () => {
+    const first = loadIndex().activeId
+    upsertSession({ id: first, title: 'keep me', updatedAt: 2 })
+    const second = mintThreadId()
+    upsertSession({ id: second, title: 'archive me', updatedAt: 1, workspaceId: 'cloud' })
+    archiveSession(second)
+    expect(listSessions().map((s) => s.id)).toEqual([first])
+    expect(findSession(second)?.archivedAt).toBeGreaterThan(0)
+    expect(findSession(second)?.title).toBe('archive me')
+  })
+
+  it('mints a successor when the last visible session is archived', () => {
+    const only = loadIndex().activeId
+    archiveSession(only)
+    const listed = listSessions()
+    expect(listed).toHaveLength(1)
+    expect(listed[0]?.id).not.toBe(only)
+    expect(loadIndex().activeId).toBe(listed[0]?.id)
+    expect(findSession(only)?.archivedAt).toBeGreaterThan(0)
+  })
+
+  it('archives every session in a workspace', () => {
+    const cloud = loadIndex().activeId
+    upsertSession({ id: cloud, title: 'cloud', workspaceId: 'cloud' })
+    const local = mintThreadId()
+    upsertSession({ id: local, title: 'local', workspaceId: 'ws-local1' })
+    archiveSessionsForWorkspace('ws-local1')
+    expect(listSessions().map((s) => s.id)).toEqual([cloud])
+    expect(findSession(local)?.archivedAt).toBeGreaterThan(0)
   })
 
   it('keeps this tab on its thread when another tab changes the shared activeId', () => {

@@ -29,6 +29,8 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
   const onNewWorkspace = vi.fn()
   const onSelectWorkspace = vi.fn()
   const onToggleWorkspace = vi.fn()
+  const onArchiveSession = vi.fn()
+  const onArchiveWorkspace = vi.fn()
   render(
     <PortalSidePanel
       dark={false}
@@ -53,10 +55,12 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       onToggleWorkspace={onToggleWorkspace}
       onSelectWorkspace={onSelectWorkspace}
       onNewWorkspace={onNewWorkspace}
+      onArchiveSession={onArchiveSession}
+      onArchiveWorkspace={onArchiveWorkspace}
       {...over}
     />,
   )
-  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace }
+  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace, onArchiveSession, onArchiveWorkspace }
 }
 
 describe('PortalSidePanel conversations', () => {
@@ -103,5 +107,31 @@ describe('PortalSidePanel conversations', () => {
 
     await user.click(screen.getByRole('button', { name: 'New workspace' }))
     expect(onNewWorkspace).toHaveBeenCalled()
+  })
+
+  it('archives a session from the row button without switching', async () => {
+    const user = userEvent.setup()
+    const { onArchiveSession, onSwitchSession } = renderPanel()
+    const buttons = screen.getAllByRole('button', { name: 'Archive conversation' })
+    expect(buttons).toHaveLength(2)
+    const older = buttons[1]
+    expect(older).toBeTruthy()
+    await user.click(older)
+    expect(onArchiveSession).toHaveBeenCalledWith('web-bbbb2222')
+    expect(onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('archives a named workspace but not the cloud root', async () => {
+    const user = userEvent.setup()
+    const { onArchiveWorkspace, onSelectWorkspace } = renderPanel({
+      workspaces: [
+        cloudWorkspace,
+        { id: 'ws-local1', kind: 'local', name: 'proj', path: '/tmp/proj', createdAt: 2 },
+      ],
+    })
+    expect(screen.getByRole('button', { name: 'Archive workspace' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Archive workspace' }))
+    expect(onArchiveWorkspace).toHaveBeenCalledWith('ws-local1')
+    expect(onSelectWorkspace).not.toHaveBeenCalled()
   })
 })

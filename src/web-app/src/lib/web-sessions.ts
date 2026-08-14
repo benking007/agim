@@ -29,6 +29,8 @@ export interface WebSessionEntry {
   agent?: string
   /** Portal workspace this thread belongs to. Missing → cloud. */
   workspaceId?: string
+  /** Hidden from the Portal rail when set. Transcript stays on disk. */
+  archivedAt?: number
 }
 
 export interface WebSessionIndex {
@@ -122,12 +124,16 @@ function normalizeEntry(raw: unknown): WebSessionEntry | null {
   const workspaceId = typeof rec.workspaceId === 'string' && rec.workspaceId.trim()
     ? rec.workspaceId.trim()
     : CLOUD_WORKSPACE_ID
+  const archivedAt = typeof rec.archivedAt === 'number' && Number.isFinite(rec.archivedAt) && rec.archivedAt > 0
+    ? rec.archivedAt
+    : undefined
   return {
     id: rec.id,
     updatedAt,
     workspaceId,
     ...(title ? { title } : {}),
     ...(agent ? { agent } : {}),
+    ...(archivedAt ? { archivedAt } : {}),
   }
 }
 
@@ -198,8 +204,14 @@ export function sessionWorkspaceId(entry: WebSessionEntry): string {
   return entry.workspaceId?.trim() || CLOUD_WORKSPACE_ID
 }
 
+export function isSessionArchived(entry: WebSessionEntry): boolean {
+  return typeof entry.archivedAt === 'number' && entry.archivedAt > 0
+}
+
 export function listSessions(workspaceId?: string): WebSessionEntry[] {
-  const listed = [...loadIndex().sessions].sort((a, b) => b.updatedAt - a.updatedAt)
+  const listed = [...loadIndex().sessions]
+    .filter((s) => !isSessionArchived(s))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
   if (!workspaceId) return listed
   return listed.filter((s) => sessionWorkspaceId(s) === workspaceId)
 }
@@ -231,6 +243,7 @@ export function upsertSession(patch: {
     workspaceId,
     title: patch.title?.trim() || existing?.title,
     agent: patch.agent?.trim() || existing?.agent,
+    ...(existing?.archivedAt ? { archivedAt: existing.archivedAt } : {}),
   }
   if (!nextEntry.title) delete nextEntry.title
   if (!nextEntry.agent) delete nextEntry.agent
@@ -285,6 +298,80 @@ export function adoptThreadId(next: string, previousId?: string): WebSessionInde
     activeId: id,
     sessions: capSessions(sessions, id),
   })
+}
+
+function pickVisibleSuccessor(
+  sessions: WebSessionEntry[],
+  archived: WebSessionEntry,
+): WebSessionEntry | undefined {
+  const visible = sessions.filter((s) => !isSessionArchived(s))
+  return visible.find((s) => sessionWorkspaceId(s) === sessionWorkspaceId(archived))
+    ?? visible[0]
+}
+
+function ensureActiveVisible(index: WebSessionIndex, fallbackWorkspaceId: string): WebSessionIndex {
+  const tabId = readTabThreadId() || index.activeId
+  const tab = index.sessions.find((s) => s.id === tabId)
+  const active = index.sessions.find((s) => s.id === index.activeId)
+  if (tab && !isSessionArchived(tab) && active && !isSessionArchived(active)) return index
+
+  let sessions = index.sessions
+  const successor = pickVisibleSuccessor(sessions, tab ?? active ?? {
+    id: index.activeId,
+    updatedAt: Date.now(),
+    workspaceId: fallbackWorkspaceId,
+  })
+  let activeId = successor?.id
+  if (!activeId) {
+    const fresh = mintThreadId()
+    sessions = [{
+      id: fresh,
+      updatedAt: Date.now(),
+      workspaceId: fallbackWorkspaceId,
+    }, ...sessions]
+    activeId = fresh
+  }
+  persistTabThreadId(activeId)
+  return writeIndex({
+    activeId,
+    sessions: capSessions(sessions, activeId),
+  })
+}
+
+/** Hide a thread from the Portal rail. Server transcript is unchanged. */
+export function archiveSession(id: string): WebSessionIndex {
+  const next = id.trim()
+  if (!isWebThreadId(next)) return loadIndex()
+  const index = loadIndex()
+  const target = index.sessions.find((s) => s.id === next)
+  if (!target || isSessionArchived(target)) return index
+  const sessions = index.sessions.map((s) => (
+    s.id === next ? { ...s, archivedAt: Date.now() } : s
+  ))
+  const written = writeIndex({
+    activeId: index.activeId,
+    sessions: capSessions(sessions, index.activeId),
+  })
+  return ensureActiveVisible(written, sessionWorkspaceId(target))
+}
+
+/** Hide every visible thread that belongs to a Portal workspace. */
+export function archiveSessionsForWorkspace(workspaceId: string): WebSessionIndex {
+  const id = workspaceId.trim() || CLOUD_WORKSPACE_ID
+  const index = loadIndex()
+  const now = Date.now()
+  let changed = false
+  const sessions = index.sessions.map((s) => {
+    if (sessionWorkspaceId(s) !== id || isSessionArchived(s)) return s
+    changed = true
+    return { ...s, archivedAt: now }
+  })
+  if (!changed) return index
+  const written = writeIndex({
+    activeId: index.activeId,
+    sessions: capSessions(sessions, index.activeId),
+  })
+  return ensureActiveVisible(written, CLOUD_WORKSPACE_ID)
 }
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Compass, Menu, Moon, Sun } from 'lucide-react'
+import { ChevronDown, Menu, Moon, Sun } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { displayAgentName } from './agent-visuals'
@@ -21,7 +21,6 @@ interface PortalHeaderProps {
   onToggleModelDropdown: () => void
   onCloseModelDropdown: () => void
   onSelectAgent: (id: string) => void
-  onOpenExplore: () => void
   onOpenSidebar: () => void
   onToggleTheme: () => void
 }
@@ -34,7 +33,6 @@ export function PortalHeader({
   onToggleModelDropdown,
   onCloseModelDropdown,
   onSelectAgent,
-  onOpenExplore,
   onOpenSidebar,
   onToggleTheme,
 }: PortalHeaderProps): JSX.Element {
@@ -105,16 +103,6 @@ export function PortalHeader({
                     </button>
                   )
                 })}
-              </div>
-              <div className={cn('mt-2 border-t px-2 pt-1.5', dark ? 'border-zinc-800' : 'border-zinc-200')}>
-                <button
-                  type="button"
-                  onClick={onOpenExplore}
-                  className="flex w-full items-center gap-1.5 text-[10px] font-semibold text-zinc-400 hover:text-teal-400"
-                >
-                  <Compass className="h-3.5 w-3.5" />
-                  {t('chat.portal.discoverMore')}
-                </button>
               </div>
             </div>
           </>

@@ -17,6 +17,7 @@ import {
   setActiveId,
   upsertSession,
 } from './web-sessions'
+import { addLocalWorkspace } from './web-workspaces'
 
 describe('web-sessions', () => {
   beforeEach(() => {
@@ -94,6 +95,21 @@ describe('web-sessions', () => {
     expect(sessionTitleFromText('  hello\nworld  ')).toBe('hello world')
     expect(sessionTitleFromText('a'.repeat(50)).endsWith('…')).toBe(true)
     expect(sessionTitleFromText('   ')).toBe('')
+  })
+
+  it('preserves updatedAt when the patch omits it', () => {
+    const { activeId } = loadIndex()
+    upsertSession({ id: activeId, title: 'Old chat', updatedAt: 1_700_000_000_000 })
+    upsertSession({ id: activeId, title: 'Old chat retitled' })
+    expect(findSession(activeId)?.updatedAt).toBe(1_700_000_000_000)
+    expect(findSession(activeId)?.title).toBe('Old chat retitled')
+  })
+
+  it('assigns new sessions to the active workspace', () => {
+    const ws = addLocalWorkspace({ name: 'ceshi', path: '/tmp/ceshi' })
+    const id = mintThreadId()
+    upsertSession({ id, title: 'in ceshi' })
+    expect(findSession(id)?.workspaceId).toBe(ws.id)
   })
 
   it('keeps this tab on its thread when another tab changes the shared activeId', () => {

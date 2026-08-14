@@ -19,7 +19,10 @@ import { ArrowUp, Mic, Square } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useChat } from '@/hooks/use-chat'
+import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
 import { useChatFollowBottom } from '@/hooks/use-chat-scroll'
+import { findSession, upsertSession } from '@/lib/web-sessions'
+import { addLocalWorkspace, setActiveWorkspace, toggleWorkspaceCollapsed } from '@/lib/web-workspaces'
 import { useComposerEnterNewline } from '@/hooks/use-composer-enter-newline'
 import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
 import { shouldSubmitOnEnterKey } from '@/lib/composer-enter'
@@ -105,6 +108,11 @@ export function AgentPortal(): JSX.Element {
     state, send, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
     newConversation, switchSession, sessions, activeSessionId, clearError,
   } = useChat()
+  const {
+    workspaces,
+    activeId: activeWorkspaceId,
+    collapsed: collapsedWorkspaces,
+  } = useWebWorkspaces()
   useIosViewportZoomReset()
   const { style: viewportStyle } = usePortalViewportFrame()
   const [activeTab, setActiveTab] = useState<Tab>('chat')
@@ -589,6 +597,17 @@ export function AgentPortal(): JSX.Element {
       switchSession(threadId)
       setActiveTab('chat')
       setSidebarOpen(false)
+    },
+    workspaces,
+    activeWorkspaceId,
+    collapsedWorkspaces,
+    onToggleWorkspace: toggleWorkspaceCollapsed,
+    onSelectWorkspace: setActiveWorkspace,
+    onWorkspaceCreated: (dir: { name: string; path: string }) => {
+      const ws = addLocalWorkspace(dir)
+      const sess = findSession(activeSessionId)
+      const blank = !state.messages.some((m) => m.role === 'user' && m.content.trim())
+      if (sess && blank) upsertSession({ id: sess.id, workspaceId: ws.id })
     },
   } as const
 

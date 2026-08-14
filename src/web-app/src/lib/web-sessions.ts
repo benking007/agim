@@ -14,6 +14,8 @@
  * First load migrates a lone thread id into the index.
  */
 
+import { CLOUD_WORKSPACE_ID, loadActiveWorkspaceId } from './web-workspaces'
+
 export const WEB_THREAD_RE = /^web-[A-Za-z0-9_-]{4,64}$/
 export const THREAD_ID_KEY = 'agim-web-thread-id'
 export const TAB_THREAD_KEY = 'agim-web-tab-thread'
@@ -25,6 +27,8 @@ export interface WebSessionEntry {
   title?: string
   updatedAt: number
   agent?: string
+  /** Portal workspace this thread belongs to. Missing → cloud. */
+  workspaceId?: string
 }
 
 export interface WebSessionIndex {
@@ -115,7 +119,16 @@ function normalizeEntry(raw: unknown): WebSessionEntry | null {
     : Date.now()
   const title = typeof rec.title === 'string' && rec.title.trim() ? rec.title.trim() : undefined
   const agent = typeof rec.agent === 'string' && rec.agent.trim() ? rec.agent.trim() : undefined
-  return { id: rec.id, updatedAt, ...(title ? { title } : {}), ...(agent ? { agent } : {}) }
+  const workspaceId = typeof rec.workspaceId === 'string' && rec.workspaceId.trim()
+    ? rec.workspaceId.trim()
+    : CLOUD_WORKSPACE_ID
+  return {
+    id: rec.id,
+    updatedAt,
+    workspaceId,
+    ...(title ? { title } : {}),
+    ...(agent ? { agent } : {}),
+  }
 }
 
 function parseIndex(raw: string): WebSessionIndex | null {
@@ -135,7 +148,11 @@ function parseIndex(raw: string): WebSessionIndex | null {
     }
     if (sessions.length === 0) return null
     if (!sessions.some((s) => s.id === rec.activeId)) {
-      sessions.unshift({ id: rec.activeId, updatedAt: Date.now() })
+      sessions.unshift({
+        id: rec.activeId,
+        updatedAt: Date.now(),
+        workspaceId: CLOUD_WORKSPACE_ID,
+      })
     }
     return { activeId: rec.activeId, sessions: capSessions(sessions, rec.activeId) }
   } catch {
@@ -149,7 +166,7 @@ function migrateFromLegacyThreadId(): WebSessionIndex | null {
     if (existing && isWebThreadId(existing)) {
       return {
         activeId: existing,
-        sessions: [{ id: existing, updatedAt: Date.now() }],
+        sessions: [{ id: existing, updatedAt: Date.now(), workspaceId: CLOUD_WORKSPACE_ID }],
       }
     }
   } catch { /* private mode */ }
@@ -173,27 +190,45 @@ export function loadIndex(): WebSessionIndex {
   const fresh = mintThreadId()
   return writeIndex({
     activeId: fresh,
-    sessions: [{ id: fresh, updatedAt: Date.now() }],
+    sessions: [{ id: fresh, updatedAt: Date.now(), workspaceId: CLOUD_WORKSPACE_ID }],
   })
 }
 
-export function listSessions(): WebSessionEntry[] {
-  return [...loadIndex().sessions].sort((a, b) => b.updatedAt - a.updatedAt)
+export function sessionWorkspaceId(entry: WebSessionEntry): string {
+  return entry.workspaceId?.trim() || CLOUD_WORKSPACE_ID
+}
+
+export function listSessions(workspaceId?: string): WebSessionEntry[] {
+  const listed = [...loadIndex().sessions].sort((a, b) => b.updatedAt - a.updatedAt)
+  if (!workspaceId) return listed
+  return listed.filter((s) => sessionWorkspaceId(s) === workspaceId)
 }
 
 export function findSession(id: string): WebSessionEntry | undefined {
   return loadIndex().sessions.find((s) => s.id === id)
 }
 
-export function upsertSession(patch: { id: string; title?: string; updatedAt?: number; agent?: string }): WebSessionIndex {
+export function upsertSession(patch: {
+  id: string
+  title?: string
+  updatedAt?: number
+  agent?: string
+  workspaceId?: string
+}): WebSessionIndex {
   const id = patch.id.trim()
   if (!isWebThreadId(id)) return loadIndex()
   const index = loadIndex()
-  const now = patch.updatedAt ?? Date.now()
   const existing = index.sessions.find((s) => s.id === id)
+  const updatedAt = typeof patch.updatedAt === 'number' && Number.isFinite(patch.updatedAt)
+    ? patch.updatedAt
+    : (existing?.updatedAt ?? Date.now())
+  const workspaceId = patch.workspaceId?.trim()
+    || existing?.workspaceId
+    || loadActiveWorkspaceId()
   const nextEntry: WebSessionEntry = {
     id,
-    updatedAt: now,
+    updatedAt,
+    workspaceId,
     title: patch.title?.trim() || existing?.title,
     agent: patch.agent?.trim() || existing?.agent,
   }
@@ -215,7 +250,11 @@ export function setActiveId(id: string): WebSessionIndex {
   const index = loadIndex()
   let sessions = index.sessions
   if (!sessions.some((s) => s.id === next)) {
-    sessions = [{ id: next, updatedAt: Date.now() }, ...sessions]
+    sessions = [{
+      id: next,
+      updatedAt: Date.now(),
+      workspaceId: loadActiveWorkspaceId(),
+    }, ...sessions]
   }
   return writeIndex({
     activeId: next,
@@ -238,7 +277,7 @@ export function adoptThreadId(next: string, previousId?: string): WebSessionInde
   const existing = sessions.find((s) => s.id === id)
   const entry: WebSessionEntry = existing
     ? { ...existing, updatedAt: Date.now() }
-    : { id, updatedAt: Date.now() }
+    : { id, updatedAt: Date.now(), workspaceId: loadActiveWorkspaceId() }
   sessions = existing
     ? sessions.map((s) => (s.id === id ? entry : s))
     : [entry, ...sessions]

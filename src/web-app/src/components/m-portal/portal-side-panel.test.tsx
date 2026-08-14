@@ -16,9 +16,19 @@ const visual = {
   tagline: 'Agim native agent',
 }
 
+const cloudWorkspace = {
+  id: 'cloud',
+  kind: 'cloud' as const,
+  name: 'cloud',
+  createdAt: 0,
+}
+
 function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) {
   const onSwitchSession = vi.fn()
   const onNew = vi.fn()
+  const onWorkspaceCreated = vi.fn()
+  const onSelectWorkspace = vi.fn()
+  const onToggleWorkspace = vi.fn()
   render(
     <PortalSidePanel
       dark={false}
@@ -35,23 +45,30 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       onNew={onNew}
       onToggleLang={() => {}}
       sessions={[
-        { id: 'web-aaaa1111', title: 'First chat', updatedAt: Date.now() },
-        { id: 'web-bbbb2222', title: 'Older chat', updatedAt: Date.now() - 60_000 },
+        { id: 'web-aaaa1111', title: 'First chat', updatedAt: Date.now(), workspaceId: 'cloud' },
+        { id: 'web-bbbb2222', title: 'Older chat', updatedAt: Date.now() - 60_000, workspaceId: 'cloud' },
       ]}
       activeSessionId="web-aaaa1111"
       onSwitchSession={onSwitchSession}
+      workspaces={[cloudWorkspace]}
+      activeWorkspaceId="cloud"
+      collapsedWorkspaces={{}}
+      onToggleWorkspace={onToggleWorkspace}
+      onSelectWorkspace={onSelectWorkspace}
+      onWorkspaceCreated={onWorkspaceCreated}
       {...over}
     />,
   )
-  return { onSwitchSession, onNew }
+  return { onSwitchSession, onNew, onWorkspaceCreated, onSelectWorkspace, onToggleWorkspace }
 }
 
 describe('PortalSidePanel conversations', () => {
-  it('lists saved sessions and click calls onSwitchSession', async () => {
+  it('lists saved sessions under the cloud workspace and click calls onSwitchSession', async () => {
     const user = userEvent.setup()
     const { onSwitchSession } = renderPanel()
 
-    expect(screen.getByText('Conversations')).toBeInTheDocument()
+    expect(screen.getByText('Workspaces')).toBeInTheDocument()
+    expect(screen.getByText('Cloud')).toBeInTheDocument()
     expect(screen.getByText('First chat')).toBeInTheDocument()
     expect(screen.getByText('Older chat')).toBeInTheDocument()
 
@@ -65,5 +82,29 @@ describe('PortalSidePanel conversations', () => {
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
     expect(onNew).toHaveBeenCalled()
     expect(onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('nests sessions under their workspace and can create a local workspace via path form', async () => {
+    const user = userEvent.setup()
+    const { onWorkspaceCreated } = renderPanel({
+      workspaces: [
+        cloudWorkspace,
+        { id: 'ws-local1', kind: 'local', name: 'agim', path: '/Users/a/Work/agim', createdAt: 2 },
+      ],
+      sessions: [
+        { id: 'web-aaaa1111', title: 'Cloud chat', updatedAt: Date.now() - 3_600_000, workspaceId: 'cloud' },
+        { id: 'web-cccc3333', title: 'Local review', updatedAt: Date.now() - 3_600_000, workspaceId: 'ws-local1' },
+      ],
+    })
+
+    expect(screen.getByText('Cloud chat')).toBeInTheDocument()
+    expect(screen.getByText('Local review')).toBeInTheDocument()
+    expect(screen.getByText('agim')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(screen.getByText('Select workspace directory')).toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('/path/to/project'), '/tmp/ceshi')
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    expect(onWorkspaceCreated).toHaveBeenCalledWith({ name: 'ceshi', path: '/tmp/ceshi' })
   })
 })

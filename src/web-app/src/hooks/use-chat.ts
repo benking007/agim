@@ -36,6 +36,7 @@ import {
   upsertSession,
   type WebSessionEntry,
 } from '@/lib/web-sessions'
+import { CLOUD_WORKSPACE_ID, loadActiveWorkspaceId, setActiveWorkspace } from '@/lib/web-workspaces'
 import {
   cachedHistoryToAction,
   hydrateInitialChatState,
@@ -324,13 +325,19 @@ export function useChat(): UseChat {
     // Already on a blank session — don't mint another empty thread.
     if (!transcriptHasUserTurn(messagesRef.current)) return
     const id = mintThreadId()
-    upsertSession({ id, updatedAt: Date.now(), agent: state.agent })
+    upsertSession({
+      id,
+      updatedAt: Date.now(),
+      agent: state.agent,
+      workspaceId: loadActiveWorkspaceId(),
+    })
     activateThread(id)
   }
 
   function switchSession(threadId: string): void {
     const id = threadId.trim()
     if (!isWebThreadId(id) || id === threadIdRef.current) return
+    setActiveWorkspace(findSession(id)?.workspaceId || CLOUD_WORKSPACE_ID)
     activateThread(id)
   }
 

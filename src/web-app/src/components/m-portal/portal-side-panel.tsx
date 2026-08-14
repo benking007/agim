@@ -4,14 +4,18 @@
  * focused on wiring and layout.
  */
 
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
-  Compass, Languages, MessageSquare, Plus, Sparkles, User, X,
+  ChevronDown, ChevronRight, Cloud, Compass, Folder, FolderPlus,
+  Languages, MessageSquare, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import type { WebSessionEntry } from '@/lib/web-sessions'
+import { pickWorkspaceDirectory } from '@/lib/pick-workspace-dir'
+import { sessionWorkspaceId, type WebSessionEntry } from '@/lib/web-sessions'
+import { workspaceBasename, type WebWorkspace } from '@/lib/web-workspaces'
 import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
 
@@ -34,13 +38,42 @@ export function PortalSidePanel(props: {
   sessions: WebSessionEntry[]
   activeSessionId: string
   onSwitchSession: (threadId: string) => void
+  workspaces: WebWorkspace[]
+  activeWorkspaceId: string
+  collapsedWorkspaces: Record<string, boolean>
+  onToggleWorkspace: (id: string) => void
+  onSelectWorkspace: (id: string) => void
+  onWorkspaceCreated: (dir: { name: string; path: string }) => void
 }): JSX.Element {
   const { t } = useTranslation()
   const {
     dark, agentId, visual, AgentIcon, activeTab, status, lang, showClose,
     onClose, onChat, onExplore, onNew, onToggleLang,
     sessions, activeSessionId, onSwitchSession,
+    workspaces, activeWorkspaceId, collapsedWorkspaces,
+    onToggleWorkspace, onSelectWorkspace, onWorkspaceCreated,
   } = props
+  const [pathFormOpen, setPathFormOpen] = useState(false)
+  const [pathDraft, setPathDraft] = useState('')
+
+  async function handleNewWorkspace(): Promise<void> {
+    const result = await pickWorkspaceDirectory()
+    if (result.status === 'picked') {
+      onWorkspaceCreated(result.dir)
+      return
+    }
+    if (result.status === 'unsupported') setPathFormOpen(true)
+  }
+
+  function submitPathForm(): void {
+    const path = pathDraft.trim()
+    const name = workspaceBasename(path)
+    if (!name) return
+    onWorkspaceCreated({ name, path })
+    setPathDraft('')
+    setPathFormOpen(false)
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 space-y-6">
@@ -105,42 +138,127 @@ export function PortalSidePanel(props: {
       </div>
 
       <div className="mt-6 flex min-h-0 flex-1 flex-col">
-        <p className="mb-2 shrink-0 text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-          {t('chat.portal.conversations')}
-        </p>
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label={t('chat.portal.conversations')}>
-          {sessions.length === 0 ? (
-            <p className="px-2.5 py-2 text-[11px] text-zinc-400">
-              {t('chat.portal.conversationsEmpty')}
-            </p>
-          ) : sessions.map((session) => {
-            const active = session.id === activeSessionId
-            const title = session.title?.trim() || t('chat.portal.untitledConversation')
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+            {t('chat.portal.workspaces')}
+          </p>
+          <button
+            type="button"
+            onClick={() => { void handleNewWorkspace() }}
+            title={t('chat.portal.newWorkspace')}
+            aria-label={t('chat.portal.newWorkspace')}
+            className={cn(
+              'rounded-md p-1 transition',
+              dark ? 'text-zinc-400 hover:bg-zinc-800 hover:text-teal-400' : 'text-zinc-500 hover:bg-zinc-100 hover:text-teal-600',
+            )}
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {pathFormOpen && (
+          <WorkspacePathForm
+            dark={dark}
+            pathDraft={pathDraft}
+            onPathDraft={setPathDraft}
+            onCancel={() => { setPathFormOpen(false); setPathDraft('') }}
+            onSubmit={submitPathForm}
+          />
+        )}
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
+          {workspaces.map((workspace) => {
+            const collapsed = !!collapsedWorkspaces[workspace.id]
+            const childSessions = sessions.filter((s) => sessionWorkspaceId(s) === workspace.id)
+            const selected = workspace.id === activeWorkspaceId
+            const label = workspace.kind === 'cloud'
+              ? t('chat.portal.cloudWorkspace')
+              : workspace.name
+            const hint = workspace.kind === 'cloud'
+              ? t('chat.portal.cloudWorkspaceHint')
+              : (workspace.path && workspace.path !== workspace.name ? workspace.path : undefined)
             return (
-              <button
-                key={session.id}
-                type="button"
-                onClick={() => onSwitchSession(session.id)}
-                title={title}
-                aria-current={active ? 'true' : undefined}
-                className={cn(
-                  'flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left transition-all',
-                  active
-                    ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
-                    : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
+              <div key={workspace.id} className="space-y-0.5">
+                <div
+                  className={cn(
+                    'flex w-full items-center gap-0.5 rounded-xl px-1 py-1 transition-all',
+                    selected
+                      ? (dark ? 'bg-zinc-800/80 text-teal-400' : 'bg-zinc-100 text-teal-600')
+                      : (dark ? 'text-zinc-400' : 'text-zinc-600'),
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onToggleWorkspace(workspace.id)}
+                    aria-expanded={!collapsed}
+                    aria-label={label}
+                    className={cn(
+                      'rounded-md p-1',
+                      dark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-50',
+                    )}
+                  >
+                    {collapsed
+                      ? <ChevronRight className="h-3 w-3 shrink-0" />
+                      : <ChevronDown className="h-3 w-3 shrink-0" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectWorkspace(workspace.id)}
+                    title={hint || label}
+                    aria-current={selected ? 'true' : undefined}
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-0.5 text-left',
+                      dark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-50',
+                    )}
+                  >
+                    {workspace.kind === 'cloud'
+                      ? <Cloud className="h-3.5 w-3.5 shrink-0" />
+                      : <Folder className="h-3.5 w-3.5 shrink-0" />}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold">{label}</span>
+                      {hint && (
+                        <span className="block truncate text-[10px] font-medium text-zinc-400">{hint}</span>
+                      )}
+                    </span>
+                  </button>
+                </div>
+                {!collapsed && (
+                  <div className="space-y-0.5 pl-3">
+                    {childSessions.length === 0 ? (
+                      <p className="px-2.5 py-1.5 text-[11px] text-zinc-400">
+                        {t('chat.portal.workspaceEmpty')}
+                      </p>
+                    ) : childSessions.map((session) => {
+                      const active = session.id === activeSessionId
+                      const title = session.title?.trim() || t('chat.portal.untitledConversation')
+                      return (
+                        <button
+                          key={session.id}
+                          type="button"
+                          onClick={() => onSwitchSession(session.id)}
+                          title={title}
+                          aria-current={active ? 'true' : undefined}
+                          className={cn(
+                            'flex w-full items-start gap-2.5 rounded-xl p-2.5 text-left transition-all',
+                            active
+                              ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
+                              : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
+                          )}
+                        >
+                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-semibold">{title}</span>
+                            <span className={cn(
+                              'mt-0.5 block truncate text-[10px] font-medium',
+                              active ? 'text-teal-500/80' : 'text-zinc-400',
+                            )}>
+                              {formatSessionAge(session.updatedAt, lang, t('chat.portal.justNow'))}
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
-              >
-                <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold">{title}</span>
-                  <span className={cn(
-                    'mt-0.5 block truncate text-[10px] font-medium',
-                    active ? 'text-teal-500/80' : 'text-zinc-400',
-                  )}>
-                    {formatSessionAge(session.updatedAt, lang, t('chat.portal.justNow'))}
-                  </span>
-                </span>
-              </button>
+              </div>
             )
           })}
         </nav>
@@ -178,6 +296,60 @@ export function PortalSidePanel(props: {
         </div>
       </div>
     </div>
+  )
+}
+
+function WorkspacePathForm(props: {
+  dark: boolean
+  pathDraft: string
+  onPathDraft: (value: string) => void
+  onCancel: () => void
+  onSubmit: () => void
+}): JSX.Element {
+  const { t } = useTranslation()
+  const { dark, pathDraft, onPathDraft, onCancel, onSubmit } = props
+  return (
+    <form
+      className={cn(
+        'mb-2 shrink-0 space-y-2 rounded-xl border p-2.5',
+        dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
+      )}
+      onSubmit={(e) => { e.preventDefault(); onSubmit() }}
+    >
+      <p className={cn('text-[11px] font-semibold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
+        {t('chat.portal.workspacePathTitle')}
+      </p>
+      <p className="text-[10px] text-zinc-400">{t('chat.portal.workspacePathHint')}</p>
+      <input
+        value={pathDraft}
+        onChange={(e) => onPathDraft(e.target.value)}
+        placeholder={t('chat.portal.workspacePathPlaceholder')}
+        className={cn(
+          'w-full rounded-lg border px-2 py-1.5 text-[11px] outline-none',
+          dark
+            ? 'border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-600 focus:border-teal-600'
+            : 'border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400 focus:border-teal-500',
+        )}
+      />
+      <div className="flex justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          className={cn(
+            'rounded-lg px-2 py-1 text-[11px] font-semibold',
+            dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100',
+          )}
+        >
+          {t('chat.portal.workspacePathCancel')}
+        </button>
+        <button
+          type="submit"
+          className="rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-500"
+        >
+          {t('chat.portal.workspacePathSelect')}
+        </button>
+      </div>
+    </form>
   )
 }
 

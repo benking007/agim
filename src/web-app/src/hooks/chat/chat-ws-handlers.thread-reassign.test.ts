@@ -97,6 +97,57 @@ describe('thread-reassigned', () => {
     expect(sessions.find((s) => s.id === 'web-titlethread2x')?.title).toBe('Original prompt')
   })
 
+  it('HISTORY does not refresh updatedAt on switch when the server omits it', () => {
+    const threadIdRef = { current: 'web-oldstampxxxx' }
+    upsertSession({ id: threadIdRef.current, title: 'Kept title', updatedAt: 1_700_000_000_000 })
+    const onIncoming = makeOnIncoming(
+      () => {},
+      { current: null },
+      () => {},
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({
+      type: 'history',
+      agent: 'agim',
+      historyComplete: true,
+      messages: [
+        { id: 'u1', role: 'user', content: 'Kept title', timestamp: new Date().toISOString() },
+      ],
+    })
+    const sessions = JSON.parse(localStorage.getItem('agim-web-sessions') ?? '{}').sessions as Array<{
+      id: string
+      updatedAt: number
+    }>
+    expect(sessions.find((s) => s.id === 'web-oldstampxxxx')?.updatedAt).toBe(1_700_000_000_000)
+  })
+
+  it('HISTORY uses the server updatedAt when present', () => {
+    const threadIdRef = { current: 'web-serverstampx' }
+    upsertSession({ id: threadIdRef.current, title: 'Older', updatedAt: 10 })
+    const onIncoming = makeOnIncoming(
+      () => {},
+      { current: null },
+      () => {},
+      () => {},
+      { threadIdRef },
+    )
+    onIncoming({
+      type: 'history',
+      agent: 'agim',
+      updatedAt: 1_700_000_111_000,
+      historyComplete: true,
+      messages: [
+        { id: 'u1', role: 'user', content: 'Older', timestamp: new Date().toISOString() },
+      ],
+    })
+    const sessions = JSON.parse(localStorage.getItem('agim-web-sessions') ?? '{}').sessions as Array<{
+      id: string
+      updatedAt: number
+    }>
+    expect(sessions.find((s) => s.id === 'web-serverstampx')?.updatedAt).toBe(1_700_000_111_000)
+  })
+
   it('incomplete HISTORY without sessionTitle does not retitle from the tail', () => {
     const threadIdRef = { current: 'web-titlethread3x' }
     localStorage.setItem('agim-web-thread-id', threadIdRef.current)

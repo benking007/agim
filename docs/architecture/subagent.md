@@ -2,7 +2,7 @@
 
 > 状态：**现行设计（living）** · 2026-07-27  
 > 实施阶段见 [`orchestration-roadmap.md`](./orchestration-roadmap.md)（Phase A/B 已齐；C=Focus+Loop R1–R5+门禁已齐）。  
-> 关联：[`../naming.md`](../naming.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`agent-profiles.md`](./agent-profiles.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md)
+> 关联：[`../naming.md`](../naming.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`agent-profiles.md`](./agent-profiles.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../llm-backends.md`](../llm-backends.md) · [`step-reflect.md`](./step-reflect.md)（L2 步思；子代理行内轮播）
 
 本文钉死 **Subagent 是什么 / 不是什么**，以及它与 **A2A、多 Agent、sticky 切换** 的关系。  
 落地偏差见 §10「落地差异」。
@@ -280,6 +280,7 @@
 | **Plan 叠放** | Todo/Plan 在 Subagent 卡片**上方**；`activityFollowSignal` 驱动中途刷新（不只看 `steps.length`） |
 | **Stop** | 运行中卡片右侧 Stop → WS `{ type: 'stop-subagent', jobId }` → `cancelJob`；保留 partial，格式化为 `formatSubagentStoppedResult`，以 **`ok: true, cancelled: true`** 交回父 turn，父继续 summarize / 推进。**仅当 step 已绑定 `jobId`（或 id=`a2a-<n>`）时显示** |
 | **Pending → jobId** | `tool_call` 先画 `${toolCallId}#i` pending 卡（尚无 Stop）；A2A 用同一 `activityStepId` 就地升级为 running+`jobId`。若 `call_agents` / `call_agent` 在派工前被拒（turn cap、ALIGNING、校验、policy deny），**必须**把这些 pending 卡标成 error/denied，否则会出现「多出一排无 Stop 的 Waiting」幽灵行 |
+| **一步一想（拟）** | 同族 Agim 工人的步思挂在该行上，**固定 1 行轮播**，不往主 activity 插 `reflect` 行。防抖与字段见 [`step-reflect.md`](./step-reflect.md) §6.5。CLI 工人不编造步思 |
 
 ---
 
@@ -349,6 +350,7 @@
 | 2026-07-27 | **派工能力画像**：非 Agim CLI specialty catalog；Settings 可维护；system 全文 + `call_agent(s)` 短提示 | #272 |
 | 2026-07-28 | **任务派发速查**：Settings→LLM 下拉配置编码/金融/采集 → `dispatchRoutes` + `llmRoles.finance`/`cheap`；注入 system；不硬编码 deepseek | #278 |
 | 2026-07-28 | **能力维度 caps**：CLI + Agim backend 共用 `coding/finance/zhWriting/reasoning/dataCheck`；catalog 带 `caps=`；Settings→Agents 可编辑 | #277 |
+| 2026-08-14 | **一步一想（拟）**：同族工人步思在卡片行内 1 行轮播；SSOT [`step-reflect.md`](./step-reflect.md) §6.5 | — |
 
 ### 落地差异（相对 §4.3）
 

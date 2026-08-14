@@ -266,9 +266,9 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | 节奏 | 内容 | 状态 |
 |---|---|---|
 | R0 | 设计 SSOT + naming / L3 图 / 本文交叉链 | **本批** |
-| R1 | Composer「一步一想」开关（默认 off）+ 软提示 + activity `reflect`（无硬门）；只读拍跳过；子代理不冒泡 | 未开刀 |
-| R2 | `agim_reflect` + 变更类门禁 | 未开刀 |
-| R3 | 可选 cheap 拆分 / Trajectory 分组 | 未开刀 |
+| R1 | Composer「一步一想」开关（默认 off）+ 软提示 + 父 activity `reflect`；Subagent **行内 1 行轮播**（防抖动）；只读拍跳过 | 未开刀 |
+| R2 | `agim_reflect` + 变更类门禁；同族工人反思挂 `kind:agent.reflects` | 未开刀 |
+| R3 | 可选 cheap 拆分 / Trajectory 分组；CLI 工人不做假步思 | 未开刀 |
 
 勾选与开放决策以 `step-reflect.md` 为准；实现 PR 须回写该文 §7 / §12，不必假装这是编排 Phase D。
 

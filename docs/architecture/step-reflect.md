@@ -113,7 +113,7 @@ assistant ──► tool A ┐
 | 即将收尾：模型本请求不再调变更类工具 | 终局回复即可 |
 | 本轮到目前只有 1 次工具且随即终局 | 单工具问答不插卡片 |
 | sticky CLI / 非 Agim 父进程 | 无进程内 hook |
-| 子代理内部（默认） | 避免父线程被工人反思刷屏；R3 再议 |
+| 子代理内部 | **不**在主 activity 再插 `reflect` 行；同族工人的步思只在 Subagent **行内**轮播（§6.5） |
 
 用户 **Steer** 插入本轮时：视为人类改道，**清掉**「待反思」标记，不要求先补一条反思再消化 Steer。
 
@@ -270,7 +270,43 @@ Critic 与 Step Reflect 若同一拍都该跑：**先落反思标记 / 注入步
 
 - 不做独立 Trajectory 时间轴页（R3 再说）  
 - 不把反思做成可编辑的用户表单（要改口走 Steer）  
-- 不抬 SPA entry / chunk 预算；卡片进现有 accordion
+- 不抬 SPA entry / chunk 预算；卡片进现有 accordion  
+- **不**把工人步思做成主对话里多出来的 `reflect` 行（那会刷屏、撑高整列）
+
+### 6.5 子代理卡片：行内轮播（已拍板）
+
+父 Agent 派工人时，工人的「一步一想」**露在现有 Subagent 行上**，不另开一行、不另开一张卡。
+
+只对 **同族 Agim 工人**（走 `agim-agent` L2、能发 `agim_reflect` / 围栏）有数据。Codex / Claude 等 CLI 工人没有进程内步思，**不要编造**「一步一想」；继续用现在的 preview / 状态行。
+
+挂在现有 `kind: 'agent'` step 上（与 `todoItems` 同级），例如 `reflects?: Array<{ stance, next, at }>`。同一 `step.id` 上追加，**禁止**再 emit 一条 `kind: 'reflect'` 进父 activity。
+
+```text
+┌ Subagents · 1 waiting                         in progress
+│  ⟳  → agim · flash          SUBAGENT   12.3s   [Stop]
+│     调研 auth 中间件是否已有 gate          ← 现有 preview（任务摘要，不动）
+│     💭 改道 · 下一拍补 evaluateStepReflectGate ← 固定 1 行轮播
+│     Waiting · View prompt & result
+```
+
+**防抖动（硬约束，实现时当验收）**
+
+现有 preview 已会换行（最长约 280 字），步思**不得**再往那段里塞，否则每拍改高度。
+
+| 约束 | 做法 |
+|------|------|
+| 高度锁死 | 轮播槽 **永远 1 行**：`h-5`（20px）+ `truncate` + `whitespace-nowrap`。禁止换行、禁止 markdown |
+| 先占位 | 父开关 on 且该行 live 且工人是同族 Agim：槽 **一开始就占着**（空或「一步一想…」），等第一拍到来再换字。禁止「第一拍才插入一行」把卡片顶高 |
+| 只换字、不改盒 | 新拍用 opacity crossfade（≤200ms）。禁止 height / padding 动画，禁止增删 DOM 行 |
+| 文案极短 | 卡上只显示 `stance` 徽章（继续 / 改道 / 收束）+ `next`，合计按 CSS 截断；`observed` / `risk` **不上卡** |
+| 缓冲上限 | 客户端只留 **最近 3 条**；每条展示约 3.5s，hover 暂停。第 4 条丢掉最旧的，不增加高度 |
+| 结束 | 停轮播，**保留最后一条**（槽还在，高度不变）。不要在完成瞬间拆掉槽（那会往上收一截） |
+| 全文 | 点行打开现有详情 sheet，在内部滚动区列最近 3–5 条；不撑主列表 |
+
+父开关 off：不占槽、工人也不跑步思节拍。  
+父开关 on：同族工人跟父会话跑同一套 R1 软提示 / R2 门禁，但可见出口只有这行轮播。
+
+R1 就可以做槽 + 假数据 demo（`?demo=step-reflect` 给一条 live Subagent 行轮播）。真数据随同族工人能发出反思再接。
 
 ---
 
@@ -279,9 +315,9 @@ Critic 与 Step Reflect 若同一拍都该跑：**先落反思标记 / 注入步
 | 节奏 | 内容 | 运行时 |
 |------|------|--------|
 | **R0** | 本文 + naming / L3 图 / roadmap 交叉链 | 无 |
-| **R1** | Composer「一步一想」开关（默认 off）+ `/step-reflect` + ephemeral steer 提示 + `kind: 'reflect'` 渲染 + demo | 软；无硬门 |
-| **R2** | `agim_reflect` + `evaluateStepReflectGate`（变更类）+ 去围栏解析 | 硬门仅挡非豁免工具 |
-| **R3** | 可选 cheap 拆分；子代理是否冒泡；Trajectory 分组回放 | 默认关 |
+| **R1** | Composer「一步一想」开关（默认 off）+ `/step-reflect` + 父 activity `reflect` 卡 + **Subagent 行内固定 1 行轮播** + demo | 软；无硬门 |
+| **R2** | `agim_reflect` + `evaluateStepReflectGate`（变更类）+ 去围栏解析；同族工人反思挂到 `kind:agent`.`reflects` | 硬门仅挡非豁免工具 |
+| **R3** | 可选 cheap 拆分；CLI 工人是否用别的摘要冒充过程（默认仍不做假步思）；Trajectory 分组回放 | 默认关 |
 
 R1 验收（拍板后才开刀）：
 
@@ -303,6 +339,7 @@ R2 额外：无 `agim_reflect` 时写文件被拒，原因含 `step-reflect`；�
 | 延迟翻倍 | R1/R2 同模型 in-band，不另开请求；R3 split 默认关 |
 | 模型把 CoT 当反思 | 字段上限 + stance enum；UI 截断；R2 走工具 schema |
 | 每步都卡，用户嫌烦 | 默认 off；只读拍跳过；单工具终局跳过 |
+| 子代理卡随反思抖动 | 固定 1 行槽、先占位、只换字；`observed` 不上卡；见 §6.5 |
 | 与 critic 抢 ephemeralSteer | 约定拼接顺序（§5.5），单测锁 |
 | CLI 用户以为开了 | 芯片隐藏 + 文档写明仅 Agim |
 | 文档/实现双源 | 概念以本文为准；勾选进 roadmap「相关 L2」 |
@@ -316,14 +353,15 @@ R2 额外：无 `agim_reflect` 时写文件被拒，原因含 `step-reflect`；�
 | 1 | 默认开不开 | **默认 off**。Chat 输入框下方给「一步一想」开关（仅 Agim；当前会话） |
 | 2 | 纯只读拍 | **跳过**。只读探测不插卡、不挡下一拍；写出/执行/`call_agent(s)` 才进入待反思 |
 | 3 | 第一版做不做界面开关 | **做。** 原先问的「芯片」= 状态栏那颗小开关（和「思考开」一排）。已由 #1 拍板，R1 就做，不拖到 R2 |
-| 4 | 子代理要不要也出步思 | **R1–R2 不出。** 见下 |
+| 4 | 子代理要不要也出步思 | **要，但只在 Subagent 卡片上行内轮播。** 见下 |
 
-**#4 在说什么（大白话）**
+**#4（已改）**
 
-父 Agent 可以派工人（`call_agent` / Codex 等）。工人自己也会读文件、改代码。  
-「冒泡」= 把**工人内部**每一拍的「一步一想」也刷到你正在看的这条对话里。
+父 Agent 派工人时，工人的步思**不要**在主对话里再插一串「一步一想」卡片（会刷屏、整列乱跳）。
 
-R1–R2 **不冒泡**：你只看到**主 Agent**自己的步思；工人仍是现在的 Subagent 卡片（开始/结束），不在主对话里再插一串反思。否则一条对话会被工人刷屏。若以后要看工人怎么想，放到 R3 再议。
+改成：露在**现有那一行 Subagent 上**，固定 1 行轮播最近几句（`改道 · 下一拍…`），高度锁死，避免卡片抖动。全文进点开后的详情。
+
+只对同族 Agim 工人有真数据；CLI 工人不编造步思。细节与防抖约束见 §6.5。
 
 ---
 
@@ -343,8 +381,9 @@ R1–R2 **不冒泡**：你只看到**主 Agent**自己的步思；工人仍是�
 > **步思 = L2：结果 → 2–4 句可见反思 → 再行动。**  
 > **一次 assistant 的并行工具 = 一拍 act。**  
 > **≠ Loop，≠ Focus，≠ `/think`，≠ Steer。**  
-> **默认 off，Chat 状态栏开关；只读拍跳过；子代理不往主对话刷步思。**  
-> **R0 本文；R1 开关 + 软提示 + 卡片；R2 `agim_reflect` 硬门；R3 才考虑 cheap 拆分。**
+> **默认 off，Chat 状态栏开关；只读拍跳过。**  
+> **子代理：行内 1 行轮播，不往主对话插卡。**  
+> **R0 本文；R1 开关 + 父卡片 + 子代理轮播槽；R2 `agim_reflect` 硬门；R3 才考虑 cheap 拆分。**
 
 ---
 
@@ -354,3 +393,4 @@ R1–R2 **不冒泡**：你只看到**主 Agent**自己的步思；工人仍是�
 |------|------|
 | 2026-08-14 | R0 初稿：beat / 门禁 / UI / 与 todo·critic·steer·loop 对照 |
 | 2026-08-14 | 拍板：默认 off + Chat 开关；只读跳过；R1 做状态栏开关；子代理 R1–R2 不冒泡 |
+| 2026-08-14 | #4 改：子代理步思在卡片行内固定 1 行轮播（防抖动）；不往主 activity 插行 |

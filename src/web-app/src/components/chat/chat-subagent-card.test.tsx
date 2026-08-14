@@ -302,7 +302,8 @@ describe('ChatSubagentCard', () => {
     expect(screen.queryByTestId('step-reflect-slot')).toBeNull()
   })
 
-  it('keeps the last reflect after the row completes', () => {
+  it('keeps the last reflect after the row completes', async () => {
+    const user = userEvent.setup()
     render(<ChatSubagentCard
       stepReflectEnabled
       activity={activity({
@@ -319,6 +320,7 @@ describe('ChatSubagentCard', () => {
         }],
       })}
     />)
+    await user.click(screen.getByRole('button', { name: /Subagents · 1|子代理 · 1/ }))
     const slot = screen.getByTestId('step-reflect-slot')
     expect(slot.className).toMatch(/\bh-5\b/)
     expect(slot.textContent).toContain('Summarize the links')

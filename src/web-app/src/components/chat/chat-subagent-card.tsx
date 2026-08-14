@@ -156,10 +156,14 @@ function StepReflectSlot({
 
   return (
     <div
+      role="status"
+      aria-live="polite"
       className="h-5 overflow-hidden pl-5"
       data-testid="step-reflect-slot"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
     >
       <div
         className={cn(

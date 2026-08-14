@@ -201,14 +201,16 @@ export function PortalWorkspacePicker(props: {
               {t('chat.portal.workspacePickerBrowseLocal')}
             </Button>
           )}
-          <Button
-            type="button"
-            data-testid="workspace-picker-use-current"
-            disabled={busy || atRoot || !dir}
-            onClick={() => { void confirm(relPath) }}
-          >
-            {t('chat.portal.workspacePickerUse')}
-          </Button>
+          {!atRoot && (
+            <Button
+              type="button"
+              data-testid="workspace-picker-use-current"
+              disabled={busy || !dir}
+              onClick={() => { void confirm(relPath) }}
+            >
+              {t('chat.portal.workspacePickerUse')}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

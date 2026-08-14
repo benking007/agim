@@ -795,10 +795,17 @@ export async function handleClientMessage(
     case 'set-workspace': {
       const raw = typeof msg.workspacePath === 'string' ? msg.workspacePath : ''
       const resolved = resolvePortalWorkspacePath(raw, client.agent)
-      await sessionManager.getOrCreateSession('web', 'web', clientId, client.agent)
-      await sessionManager.patchSession('web', 'web', clientId, {
-        workspacePath: resolved || '',
-      })
+      // Prefer getExistingSession so a mere folder bind does not touch
+      // lastActivity (which would race get-history and paint "Just now").
+      let session = await sessionManager.getExistingSession('web', 'web', clientId)
+      if (!session) {
+        session = await sessionManager.getOrCreateSession('web', 'web', clientId, client.agent)
+      }
+      await sessionManager.patchSession(
+        'web', 'web', clientId,
+        { workspacePath: resolved || '' },
+        { touch: false },
+      )
       emit({
         type: 'workspace',
         ok: !raw.trim() || !!resolved,

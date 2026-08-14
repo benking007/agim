@@ -544,6 +544,7 @@ class SessionManager {
   async patchSession(
     platform: string, channelId: string, threadId: string,
     patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'stepReflect' | 'compactRate' | 'workspacePath'>>,
+    opts?: { touch?: boolean },
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -575,7 +576,10 @@ class SessionManager {
         if (patch.workspacePath.trim()) session.workspacePath = patch.workspacePath.trim()
         else delete session.workspacePath
       }
-      session.lastActivity = new Date()
+      // Metadata-only patches (Portal set-workspace) must not bump lastActivity —
+      // that stamp feeds historyUpdatedAt and was rewriting the rail age to
+      // "Just now" on every session click.
+      if (opts?.touch !== false) session.lastActivity = new Date()
       this.sessions.set(key, session)
       await this.saveSessionMeta(key, session)
       return session

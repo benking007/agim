@@ -263,4 +263,66 @@ describe('ChatSubagentCard', () => {
       expect(screen.getByText('PARENT_PROMPT_FOR_42')).toBeInTheDocument()
     })
   })
+
+  it('reserves a one-line step-reflect slot on live Agim rows when enabled', () => {
+    render(<ChatSubagentCard
+      stepReflectEnabled
+      activity={activity({
+        steps: [{
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'agim/cheap',
+          status: 'running',
+          startedAt: 1,
+          jobId: 9,
+          preview: 'Objective: search',
+        }],
+      })}
+    />)
+    const slot = screen.getByTestId('step-reflect-slot')
+    expect(slot.className).toMatch(/\bh-5\b/)
+    expect(slot.textContent).toMatch(/Step reflect|一步一想/)
+  })
+
+  it('does not show the slot on CLI workers', () => {
+    render(<ChatSubagentCard
+      stepReflectEnabled
+      activity={activity({
+        steps: [{
+          id: 'a2a-10',
+          kind: 'agent',
+          label: 'claude-code',
+          status: 'running',
+          startedAt: 1,
+          jobId: 10,
+          preview: 'CLI work',
+        }],
+      })}
+    />)
+    expect(screen.queryByTestId('step-reflect-slot')).toBeNull()
+  })
+
+  it('keeps the last reflect after the row completes', async () => {
+    const user = userEvent.setup()
+    render(<ChatSubagentCard
+      stepReflectEnabled
+      activity={activity({
+        status: 'success',
+        steps: [{
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'agim',
+          status: 'success',
+          startedAt: 1,
+          finishedAt: 2,
+          jobId: 9,
+          reflects: [{ stance: 'keep', next: 'Summarize the links', at: 2 }],
+        }],
+      })}
+    />)
+    await user.click(screen.getByRole('button', { name: /Subagents · 1|子代理 · 1/ }))
+    const slot = screen.getByTestId('step-reflect-slot')
+    expect(slot.className).toMatch(/\bh-5\b/)
+    expect(slot.textContent).toContain('Summarize the links')
+  })
 })

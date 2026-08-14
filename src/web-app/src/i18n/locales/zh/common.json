@@ -224,7 +224,7 @@
     "title": "出错了。",
     "description": "页面渲染过程中遇到了未预期的错误。可以尝试刷新或返回主页；若问题反复出现，请复制下方错误信息反馈。",
     "reload": "刷新",
-    "home":   "返回主页"
+    "home": "返回主页"
   },
   "chat": {
     "mobileTitle": "agim 对话",
@@ -300,6 +300,13 @@
     "activityRunningSubagents": "执行中 · {{count}} 个子代理",
     "activitySubagentBadge": "子代理",
     "activityAgentLabel": "→ {{agent}}",
+    "activityReflect": "一步一想",
+    "activityReflectNext": "一步一想 · {{next}}",
+    "activityReflectBadge": "步思",
+    "activityReflectKeep": "继续",
+    "activityReflectAdjust": "调整",
+    "activityReflectStop": "停下",
+    "subagentReflectHeading": "一步一想",
     "activityAgentRunning": "运行中",
     "activityAgentDone": "已完成",
     "activityAgentFailed": "失败",
@@ -351,6 +358,9 @@
       "thinkingEffort": "思考深度",
       "thinkingOnShort": "开",
       "thinkingOffShort": "关",
+      "stepReflectOn": "一步一想",
+      "stepReflectOff": "一步一想关",
+      "stepReflectHint": "写出 / 执行后先短反思再继续",
       "autoApproveOn": "替我审批",
       "autoApproveOff": "请求审批",
       "autoApproveSuppressed": "替我审批·未生效",
@@ -371,9 +381,9 @@
       "risks": "列出风险与回滚方案",
       "summary": "给我一版汇报摘要"
     },
-    "newConv":     "新对话",
+    "newConv": "新对话",
     "newConvHint": "开启新会话，历史对话保留在左侧列表",
-    "newConvToast":"已开启新对话",
+    "newConvToast": "已开启新对话",
     "switchAgentConfirm": "切换到「{{agent}}」？",
     "copy": "复制",
     "copied": "已复制",
@@ -385,20 +395,20 @@
     "share": "分享",
     "shareCopied": "已复制，可粘贴到微信 / 钉钉 / QQ",
     "shareFailed": "分享失败",
-    "approvalTitle":         "工具授权",
-    "approvalSubtitle":      "确认后再继续执行该工具调用",
-    "approvalPendingCount":  "{{count}} 项待确认",
-    "approvalAutoBadge":     "自动放行",
+    "approvalTitle": "工具授权",
+    "approvalSubtitle": "确认后再继续执行该工具调用",
+    "approvalPendingCount": "{{count}} 项待确认",
+    "approvalAutoBadge": "自动放行",
     "approvalExplicitBadge": "仅本次确认",
     "approvalNeedsConfirmBadge": "需确认",
-    "approvalAutoIn":        "{{count}} 秒后自动放行 — 点「拒绝」可中止。",
+    "approvalAutoIn": "{{count}} 秒后自动放行 — 点「拒绝」可中止。",
     "approvalAutoResolving": "正在自动放行…",
-    "approvalToolLabel":     "工具",
-    "approvalInputLabel":    "输入",
-    "approvalAllow":         "批准",
-    "approvalAuto":          "本类自动放行",
-    "approvalAutoTip":       "批准并对本会话内同类调用自动放行",
-    "approvalDeny":          "拒绝",
+    "approvalToolLabel": "工具",
+    "approvalInputLabel": "输入",
+    "approvalAllow": "批准",
+    "approvalAuto": "本类自动放行",
+    "approvalAutoTip": "批准并对本会话内同类调用自动放行",
+    "approvalDeny": "拒绝",
     "approvalSubmitting": "已发送，等待结果…",
     "askTitle": "请选择",
     "askSubtitle": "智能体需要你的回答才能继续",
@@ -408,11 +418,11 @@
     "askCustomPlaceholder": "自定义回答…",
     "askResolved": "已回答",
     "outcome": {
-      "allowed":        "已批准",
-      "allowedPinned":  "已批准 · 后续同类自动放行",
-      "denied":         "已拒绝",
-      "deniedRevoked":  "已拒绝（撤销自动放行）",
-      "expired":        "已超时"
+      "allowed": "已批准",
+      "allowedPinned": "已批准 · 后续同类自动放行",
+      "denied": "已拒绝",
+      "deniedRevoked": "已拒绝（撤销自动放行）",
+      "expired": "已超时"
     },
     "portal": {
       "brand": "AGIM Space",
@@ -495,22 +505,70 @@
         "empty": "没有匹配的技能或命令",
         "planOn": "Plan 模式已开启 — 点击关闭",
         "cmd": {
-          "plan": { "label": "Plan", "description": "生成实现计划" },
-          "memo": { "label": "备忘", "description": "保存一条 5W1H 备忘" },
-          "focus": { "label": "聚焦", "description": "设置注意力聚焦（开/关）" },
-          "loop": { "label": "Loop", "description": "对焦 → 派工 → 验收（/loop）" },
-          "subagent": { "label": "子代理", "description": "让 Agent 派出子代理完成任务" },
-          "remember": { "label": "提醒", "description": "设置提醒" },
-          "models": { "label": "模型", "description": "列出可用模型" },
-          "new": { "label": "新会话", "description": "开始新对话" },
-          "help": { "label": "帮助", "description": "显示命令帮助" },
-          "agents": { "label": "Agents", "description": "列出可用 Agent" },
-          "status": { "label": "状态", "description": "服务状态" },
-          "think": { "label": "思考", "description": "切换扩展思考" },
-          "skill": { "label": "技能", "description": "列出或查看技能" },
-          "sessions": { "label": "会话", "description": "最近会话" },
-          "stats": { "label": "统计", "description": "用量统计" },
-          "abort": { "label": "中止", "description": "中止当前运行" }
+          "plan": {
+            "label": "Plan",
+            "description": "生成实现计划"
+          },
+          "memo": {
+            "label": "备忘",
+            "description": "保存一条 5W1H 备忘"
+          },
+          "focus": {
+            "label": "聚焦",
+            "description": "设置注意力聚焦（开/关）"
+          },
+          "loop": {
+            "label": "Loop",
+            "description": "对焦 → 派工 → 验收（/loop）"
+          },
+          "subagent": {
+            "label": "子代理",
+            "description": "让 Agent 派出子代理完成任务"
+          },
+          "remember": {
+            "label": "提醒",
+            "description": "设置提醒"
+          },
+          "models": {
+            "label": "模型",
+            "description": "列出可用模型"
+          },
+          "new": {
+            "label": "新会话",
+            "description": "开始新对话"
+          },
+          "help": {
+            "label": "帮助",
+            "description": "显示命令帮助"
+          },
+          "agents": {
+            "label": "Agents",
+            "description": "列出可用 Agent"
+          },
+          "status": {
+            "label": "状态",
+            "description": "服务状态"
+          },
+          "think": {
+            "label": "思考",
+            "description": "切换扩展思考"
+          },
+          "skill": {
+            "label": "技能",
+            "description": "列出或查看技能"
+          },
+          "sessions": {
+            "label": "会话",
+            "description": "最近会话"
+          },
+          "stats": {
+            "label": "统计",
+            "description": "用量统计"
+          },
+          "abort": {
+            "label": "中止",
+            "description": "中止当前运行"
+          }
         }
       },
       "at": {
@@ -534,11 +592,26 @@
       "waitingAgent": "等待 {{agent}}",
       "waitingSteps": "等待工具活动…",
       "noSteps": "本轮没有工具记录。",
+      "stepReflectWaiting": "一步一想…",
       "pet": {
         "aria": "Agim 电子宠物",
-        "idle": ["点我玩～", "我在听", "随时待命"],
-        "running": ["加油中…", "忙着呢", "认真想"],
-        "tap": ["嗨！", "啵～", "♪", "我在这儿", "继续冲！"],
+        "idle": [
+          "点我玩～",
+          "我在听",
+          "随时待命"
+        ],
+        "running": [
+          "加油中…",
+          "忙着呢",
+          "认真想"
+        ],
+        "tap": [
+          "嗨！",
+          "啵～",
+          "♪",
+          "我在这儿",
+          "继续冲！"
+        ],
         "panelTitle": "进行中",
         "empty": "现在没有进行中的任务",
         "runLabel": "Agent 执行中",
@@ -565,7 +638,14 @@
       "feedbackFailed": "反馈保存失败",
       "feedbackTellWhy": "告诉它哪里不对",
       "feedbackPrefill": "刚才那条回答不够好，问题是：",
-      "language": "语言"
+      "language": "语言",
+      "collapseRail": "收起侧栏",
+      "expandRail": "展开侧栏",
+      "resizeRail": "拖动调整侧栏宽度",
+      "archiveSessionConfirmTitle": "归档这个会话？",
+      "archiveSessionConfirmDesc": "「{{title}}」将从侧栏列表中隐藏。服务端记录不会删除，只是不再显示在列表里。",
+      "archiveWorkspaceConfirmTitle": "归档这个工作目录？",
+      "archiveWorkspaceConfirmDesc": "「{{name}}」及其下的会话将从侧栏隐藏。服务器上的文件不会被删除。"
     }
   }
 }

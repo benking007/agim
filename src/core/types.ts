@@ -46,7 +46,7 @@ export interface PersistedChatActivity {
   error?: string
   steps: Array<{
     id: string
-    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent'
+    kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent' | 'reflect'
     label: string
     status: 'pending' | 'running' | 'success' | 'error' | 'denied'
     startedAt: number
@@ -54,6 +54,8 @@ export interface PersistedChatActivity {
     preview?: string
     /** Structured checklist when label is agim_todo_write (chat Todo UI). */
     todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
+    /** Step Reflect carousel on a Subagent (`kind: 'agent'`) row. */
+    reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
   }>
 }
 
@@ -86,6 +88,7 @@ export type ParsedMessage =
   | { type: 'sessions'; args: string }
   | { type: 'approval'; args: string }
   | { type: 'plan'; args: string }
+  | { type: 'step-reflect'; args: string }
   | { type: 'service'; action: 'restart' | 'stop' | 'status'; args: string }
   | { type: 'setup'; args: string }
   | { type: 'web'; args: string }
@@ -218,6 +221,9 @@ export interface Session {
    *      already stricter than the IM gate).
    *  Persists across turns and `/oc`↔`/cc` agent switches; cleared by /new. */
   planMode?: boolean
+  /** Step Reflect (步思) — toggled by /step-reflect on|off. Both true and
+   *  false persist so env=on can still be turned off per session. Cleared by /new. */
+  stepReflect?: boolean
 }
 
 export interface SessionUsage {
@@ -541,6 +547,12 @@ export interface AgentSendOpts {
    *  translates it to `--agent plan` (stdio) or `agent: 'plan'` in the HTTP
    *  body. Other adapters ignore this. See Session.planMode for lifecycle. */
   planMode?: boolean
+  /** Step Reflect (步思) — Agim Agent injects a soft [step-reflect] steer
+   *  after a mutating act. Other adapters ignore this. */
+  stepReflect?: boolean
+  /** Parent Subagent activity step id. Nested Agim workers attach reflects
+   *  here instead of inserting `kind: 'reflect'` into the parent accordion. */
+  parentActivityStepId?: string
   /** A2A-L1: the inline-jobs row id that's tracking THIS run. Adapters
    *  forward it into RunContext.parentJobId so that any
    *  mcp__agim__call_agent invocation from inside the run stamps the
@@ -585,7 +597,7 @@ export interface AgentSendOpts {
 export interface ToolActivityStep {
   id: string
   /** `agent` = A2A / call_agent / Subagent delegation. */
-  kind: 'tool' | 'skill' | 'status' | 'agent'
+  kind: 'tool' | 'skill' | 'status' | 'agent' | 'reflect'
   label: string
   status: 'pending' | 'running' | 'success' | 'error' | 'denied'
   /** Epoch ms */
@@ -596,6 +608,8 @@ export interface ToolActivityStep {
   todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
   /** Inline job id for Subagent / A2A steps (`a2a-${jobId}`). */
   jobId?: number
+  /** Step Reflect beats on a Subagent row (same-family Agim workers). */
+  reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
 }
 
 /**

@@ -45,6 +45,7 @@ export interface CachedHistory {
   agent?: string
   preferredWorkerAgent?: string
   planMode?: boolean
+  stepReflect?: boolean
   thinkVariant?: string
   sessionModel?: string
   compactRate?: string
@@ -56,6 +57,7 @@ export interface HistoryPersistSnap {
   agent?: string
   preferredWorkerAgent?: string
   planMode?: boolean
+  stepReflect?: boolean
   thinkVariant?: string
   sessionModel?: string
   compactRate?: string
@@ -217,6 +219,7 @@ export function readCachedHistory(threadId: string): CachedHistory | null {
       agent: typeof rec.agent === 'string' ? rec.agent : undefined,
       preferredWorkerAgent: typeof rec.preferredWorkerAgent === 'string' ? rec.preferredWorkerAgent : undefined,
       planMode: rec.planMode === true,
+      stepReflect: rec.stepReflect === true,
       thinkVariant: typeof rec.thinkVariant === 'string' ? rec.thinkVariant : undefined,
       sessionModel: typeof rec.sessionModel === 'string' ? rec.sessionModel : undefined,
       compactRate: typeof rec.compactRate === 'string' ? rec.compactRate : undefined,
@@ -242,6 +245,7 @@ export function writeCachedHistory(threadId: string, snap: HistoryPersistSnap): 
     agent: snap.agent || '',
     preferredWorkerAgent: snap.preferredWorkerAgent || '',
     planMode: !!snap.planMode,
+    stepReflect: !!snap.stepReflect,
     thinkVariant: snap.thinkVariant || 'auto',
     sessionModel: snap.sessionModel || '',
     compactRate: snap.compactRate || 'auto',
@@ -286,6 +290,7 @@ export function applyCachedHistory(init: ChatState, threadId: string): ChatState
     agent: cached.agent || init.agent,
     preferredWorkerAgent: cached.preferredWorkerAgent || init.preferredWorkerAgent,
     planMode: cached.planMode ?? init.planMode,
+    stepReflect: cached.stepReflect ?? init.stepReflect,
     thinkVariant: cached.thinkVariant || init.thinkVariant,
     sessionModel: cached.sessionModel || init.sessionModel,
     compactRate: cached.compactRate || init.compactRate,
@@ -299,6 +304,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
   agent: string
   preferredWorkerAgent: string
   planMode: boolean
+  stepReflect: boolean
   thinkVariant: string
   sessionModel: string
   compactRate: string
@@ -312,6 +318,7 @@ export function cachedHistoryToAction(cached: CachedHistory): {
     agent: cached.agent || '',
     preferredWorkerAgent: cached.preferredWorkerAgent || '',
     planMode: !!cached.planMode,
+    stepReflect: !!cached.stepReflect,
     thinkVariant: cached.thinkVariant || 'auto',
     sessionModel: cached.sessionModel || '',
     compactRate: cached.compactRate || 'auto',

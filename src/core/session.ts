@@ -167,6 +167,7 @@ function deserializeSession(value: unknown): Session | null {
     copilotSessionId: parsed.copilotSessionId,
     cursorSessionId: parsed.cursorSessionId,
     planMode: parsed.planMode,
+    stepReflect: typeof parsed.stepReflect === 'boolean' ? parsed.stepReflect : undefined,
     preferredWorkerAgent: typeof parsed.preferredWorkerAgent === 'string'
       ? parsed.preferredWorkerAgent
       : undefined,
@@ -407,6 +408,7 @@ class SessionManager {
         copilotSessionId: existing?.copilotSessionId,
         cursorSessionId: existing?.cursorSessionId,
         planMode: existing?.planMode,
+        stepReflect: existing?.stepReflect,
         compactRate: existing?.compactRate,
         ...(preferredWorkerAgent ? { preferredWorkerAgent } : {}),
       }
@@ -541,7 +543,8 @@ class SessionManager {
    */
   async patchSession(
     platform: string, channelId: string, threadId: string,
-    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'compactRate' | 'workspacePath'>>,
+    patch: Partial<Pick<Session, 'model' | 'variant' | 'agent' | 'planMode' | 'stepReflect' | 'compactRate' | 'workspacePath'>>,
+    opts?: { touch?: boolean },
   ): Promise<Session | undefined> {
     const key = `${platform}:${channelId}:${threadId}`
     return this.withLock(key, async () => {
@@ -557,6 +560,10 @@ class SessionManager {
         if (patch.planMode) session.planMode = true
         else delete session.planMode
       }
+      if (patch.stepReflect !== undefined) {
+        // Persist both true and false: env=on + user off must stick as false.
+        session.stepReflect = patch.stepReflect
+      }
       if (patch.compactRate !== undefined) {
         // auto / empty → drop field (global default); otherwise persist.
         if (patch.compactRate && patch.compactRate !== 'auto') {
@@ -569,7 +576,10 @@ class SessionManager {
         if (patch.workspacePath.trim()) session.workspacePath = patch.workspacePath.trim()
         else delete session.workspacePath
       }
-      session.lastActivity = new Date()
+      // Metadata-only patches (Portal set-workspace) must not bump lastActivity —
+      // that stamp feeds historyUpdatedAt and was rewriting the rail age to
+      // "Just now" on every session click.
+      if (opts?.touch !== false) session.lastActivity = new Date()
       this.sessions.set(key, session)
       await this.saveSessionMeta(key, session)
       return session
@@ -891,6 +901,7 @@ class SessionManager {
         // conversation always starts at "off" so users don't get a surprising
         // read-only run after /new.
         delete session.planMode
+        delete session.stepReflect
         // Compression rate is also per-conversation; /new returns to auto.
         delete session.compactRate
         // Preferred Loop worker is conversation-scoped.
@@ -1150,6 +1161,7 @@ class SessionManager {
         cursorSessionId: session.cursorSessionId,
         planMode: session.planMode,
         workspacePath: session.workspacePath,
+        ...(typeof session.stepReflect === 'boolean' ? { stepReflect: session.stepReflect } : {}),
         messageCount: session.messages.length,
       }
       await this.atomicWrite(filePath, JSON.stringify(meta, null, 2))

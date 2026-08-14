@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
   Archive, ChevronDown, ChevronRight, Cloud, Folder, FolderPlus,
-  Languages, MessageSquare, Plus, Sparkles, User, X,
+  Languages, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -25,6 +25,9 @@ export function PortalSidePanel(props: {
   status: string
   lang: Lang
   showClose: boolean
+  /** Desktop icon-only strip (lg+). Mobile drawer stays expanded. */
+  railCollapsed?: boolean
+  onToggleRailCollapsed?: () => void
   onClose: () => void
   onNew: () => void
   onToggleLang: () => void
@@ -43,6 +46,7 @@ export function PortalSidePanel(props: {
   const { t } = useTranslation()
   const {
     dark, agentId, visual, AgentIcon, status, lang, showClose,
+    railCollapsed = false, onToggleRailCollapsed,
     onClose, onNew, onToggleLang,
     sessions, activeSessionId, onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
@@ -50,23 +54,126 @@ export function PortalSidePanel(props: {
     onArchiveSession, onArchiveWorkspace,
   } = props
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-teal-500">
-            <Sparkles className="h-5 w-5" />
-            <span className="text-sm">{t('chat.portal.brand')}</span>
+  if (railCollapsed) {
+    return (
+      <div className="flex h-full min-h-0 flex-col items-center py-3" data-testid="portal-rail-collapsed">
+        <button
+          type="button"
+          title={t('chat.portal.brand')}
+          aria-label={t('chat.portal.brand')}
+          className="mb-2 text-teal-500"
+        >
+          <Sparkles className="h-5 w-5" />
+        </button>
+        {onToggleRailCollapsed && (
+          <IconRailButton
+            dark={dark}
+            label={t('chat.portal.expandRail')}
+            onClick={onToggleRailCollapsed}
+            icon={<PanelLeftOpen className="h-4 w-4" />}
+          />
+        )}
+        <div className={cn('mb-3 mt-2 rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)} title={displayAgentName(agentId)}>
+          <AgentIcon className="h-4 w-4" />
+        </div>
+        <IconRailButton
+          dark={dark}
+          label={t('chat.portal.newConversation')}
+          onClick={onNew}
+          icon={<Plus className="h-4 w-4" />}
+        />
+        <IconRailButton
+          dark={dark}
+          label={t('chat.portal.newWorkspace')}
+          onClick={onNewWorkspace}
+          icon={<FolderPlus className="h-4 w-4" />}
+        />
+        <div className="my-2 h-px w-8 bg-zinc-700/40" />
+        <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
+          {workspaces.map((workspace) => {
+            const selected = workspace.id === activeWorkspaceId
+            const label = workspace.kind === 'cloud'
+              ? t('chat.portal.cloudWorkspace')
+              : workspace.name
+            return (
+              <IconRailButton
+                key={workspace.id}
+                dark={dark}
+                active={selected}
+                label={label}
+                onClick={() => onSelectWorkspace(workspace.id)}
+                icon={workspace.kind === 'cloud'
+                  ? <Cloud className="h-4 w-4" />
+                  : <Folder className="h-4 w-4" />}
+              />
+            )
+          })}
+          {sessions.slice(0, 8).map((session) => {
+            const active = session.id === activeSessionId
+            const title = session.title?.trim() || t('chat.portal.untitledConversation')
+            return (
+              <IconRailButton
+                key={session.id}
+                dark={dark}
+                active={active}
+                label={title}
+                onClick={() => onSwitchSession(session.id)}
+                icon={<MessageSquare className="h-4 w-4" />}
+              />
+            )
+          })}
+        </nav>
+        <div className="mt-auto flex flex-col items-center gap-1 pt-2">
+          <IconRailButton
+            dark={dark}
+            label={t('chat.portal.language')}
+            onClick={onToggleLang}
+            icon={<Languages className="h-4 w-4" />}
+          />
+          <div
+            className={cn(
+              'mt-1 flex h-8 w-8 items-center justify-center rounded-full',
+              dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
+            )}
+            title={status === 'open' ? t('chat.portal.connected') : status}
+          >
+            <User className="h-4 w-4" />
           </div>
-          {showClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="portal-rail-expanded">
+      <div className="shrink-0 space-y-6">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 font-bold text-teal-500">
+            <Sparkles className="h-5 w-5 shrink-0" />
+            <span className="truncate text-sm">{t('chat.portal.brand')}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onToggleRailCollapsed && (
+              <button
+                type="button"
+                onClick={onToggleRailCollapsed}
+                title={t('chat.portal.collapseRail')}
+                aria-label={t('chat.portal.collapseRail')}
+                className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            )}
+            {showClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className={cn('rounded-full p-1.5 transition', dark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -294,7 +401,10 @@ function ArchiveRowButton(props: {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
       title={label}
       aria-label={label}
       className={cn(
@@ -303,6 +413,33 @@ function ArchiveRowButton(props: {
       )}
     >
       <Archive className="h-3 w-3" />
+    </button>
+  )
+}
+
+function IconRailButton(props: {
+  dark: boolean
+  label: string
+  icon: React.ReactNode
+  onClick: () => void
+  active?: boolean
+}): JSX.Element {
+  const { dark, label, icon, onClick, active } = props
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-current={active ? 'true' : undefined}
+      className={cn(
+        'flex h-9 w-9 items-center justify-center rounded-xl transition',
+        active
+          ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
+          : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
+      )}
+    >
+      {icon}
     </button>
   )
 }

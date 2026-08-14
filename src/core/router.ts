@@ -46,6 +46,8 @@ import { buildPortalWorkspaceHint, defaultAgentCwd, resolveAgentCwd } from './ag
 import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
+import { handleStepReflectCommand } from './commands/step-reflect.js'
+import { isStepReflectEnabled } from './llm/step-reflect.js'
 import { handleWebCommand } from './commands/web.js'
 import { logInvocation } from './audit-log.js'
 import { circuitBreaker } from './circuit-breaker.js'
@@ -280,6 +282,9 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'sessions') return { type: 'sessions', args: rest }
   if (cmd === 'approval' || cmd === 'auto') return { type: 'approval', args: rest }
   if (cmd === 'plan') return { type: 'plan', args: rest }
+  if (cmd === 'step-reflect' || cmd === '步思' || cmd === '一步一想') {
+    return { type: 'step-reflect', args: rest }
+  }
   // /web — print the web console URL (Viewer's public base URL or cloudflared tunnel).
   if (cmd === 'web' || cmd === 'console' || cmd === 'url') return { type: 'web', args: rest }
   // Convenience aliases that map to /plan on|off without typing the subcommand.
@@ -417,6 +422,10 @@ export async function routeMessage(
 
     case 'plan': {
       return handlePlanCommand(parsed.args, ctx)
+    }
+
+    case 'step-reflect': {
+      return handleStepReflectCommand(parsed.args, ctx)
     }
 
     case 'web': {
@@ -886,6 +895,9 @@ export async function callAgentWithHistory(
     onCostMetadata,
     onOutcome,
     planMode: effectivePlanMode || undefined,
+    ...(isStepReflectEnabled(
+      await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId),
+    ) ? { stepReflect: true } : {}),
     // A2A-L1: forward the caller's tracking id + call depth so the
     // adapter can stamp RunContext (consumed by bus.handleA2A).
     parentJobId: ctx.parentJobId,

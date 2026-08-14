@@ -142,7 +142,7 @@ describe('history-payload', () => {
     expect(prepend.at(-1)?.remaining).toBe(0)
   })
 
-  it('historyUpdatedAt is max(lastActivity, last message time)', () => {
+  it('historyUpdatedAt prefers last message time over lastActivity touches', () => {
     expect(historyUpdatedAt({
       lastActivity: new Date(1_000),
       messages: [
@@ -150,10 +150,11 @@ describe('history-payload', () => {
         msg({ role: 'assistant', content: 'b', timestamp: new Date(2_500) }),
       ],
     })).toBe(2_500)
+    // set-workspace / getOrCreate may bump lastActivity; rail age stays on the message.
     expect(historyUpdatedAt({
       lastActivity: 9_000,
       messages: [msg({ role: 'user', content: 'a', timestamp: new Date(100) })],
-    })).toBe(9_000)
+    })).toBe(100)
     expect(historyUpdatedAt({ lastActivity: '1970-01-01T00:00:03.000Z', messages: [] })).toBe(3_000)
   })
 })

@@ -288,6 +288,33 @@ export function SubagentDetailDialog({
                 <p className="text-xs text-danger">{error}</p>
               )}
             </section>
+            {step?.reflects && step.reflects.length > 0 && (
+              <section className="space-y-1.5">
+                <h3 className={cn(
+                  'text-[11px] font-semibold uppercase tracking-wide',
+                  dark ? 'text-zinc-500' : 'text-text-muted',
+                )}
+                >
+                  {t('chat.subagentReflectHeading', { defaultValue: 'Step reflect' })}
+                </h3>
+                <ul className="space-y-1">
+                  {step.reflects.map((rec) => (
+                    <li
+                      key={`${rec.at}-${rec.next}`}
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-sm leading-relaxed',
+                        dark ? 'bg-zinc-900 text-zinc-200' : 'bg-surface-2 text-text',
+                      )}
+                    >
+                      <span className="mr-1.5 text-[10px] uppercase tracking-wide text-teal-600">
+                        {rec.stance}
+                      </span>
+                      {rec.next}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

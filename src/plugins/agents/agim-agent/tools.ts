@@ -38,6 +38,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     // plan-mode parent can't delegate a write task at full access (mirrors the
     // v1.2.154 approval-bus fix on the legacy path).
     callerPlanMode: (planThreadKey ? effectivePlanModeOn(planThreadKey) : false) || o.planMode === true,
+    ...(o.stepReflect ? { callerStepReflect: true } : {}),
     ...(o.onToolActivity ? { onToolActivity: o.onToolActivity } : {}),
   }
 

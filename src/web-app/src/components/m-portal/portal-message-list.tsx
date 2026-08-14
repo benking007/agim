@@ -25,6 +25,7 @@ interface PortalMessageListProps {
   listRef: RefObject<HTMLDivElement>
   onFillComposer: (text: string) => void
   onStopSubagent?: (jobId: number) => boolean | undefined
+  stepReflectEnabled?: boolean
   emptySlot?: React.ReactNode
 }
 
@@ -47,6 +48,7 @@ export const PortalMessageList = memo(function PortalMessageList({
   listRef,
   onFillComposer,
   onStopSubagent,
+  stepReflectEnabled = false,
   emptySlot,
 }: PortalMessageListProps): JSX.Element {
   const { t } = useTranslation()
@@ -112,6 +114,7 @@ export const PortalMessageList = memo(function PortalMessageList({
                           activity={msg.activity}
                           streaming={isCurrent && (!msg.activity || msg.activity.status === 'running')}
                           onStopSubagent={onStopSubagent}
+                          stepReflectEnabled={stepReflectEnabled}
                         />
                       )
                     }
@@ -165,6 +168,7 @@ export const PortalMessageList = memo(function PortalMessageList({
               agentColor={agentColor}
               AgentIcon={AgentIcon}
               streaming
+              stepReflectEnabled={stepReflectEnabled}
             />
           </div>
         )}

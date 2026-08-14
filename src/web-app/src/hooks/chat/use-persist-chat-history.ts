@@ -13,6 +13,7 @@ export function historyPersistSnap(state: ChatState, messages: ChatMessage[]): H
     agent: state.agent,
     preferredWorkerAgent: state.preferredWorkerAgent,
     planMode: state.planMode,
+    stepReflect: state.stepReflect,
     thinkVariant: state.thinkVariant,
     sessionModel: state.sessionModel,
     compactRate: state.compactRate,

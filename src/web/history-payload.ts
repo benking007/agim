@@ -147,20 +147,26 @@ function toEpochMs(value: Date | number | string | undefined): number {
 }
 
 /**
- * Cloud transcript revision: max(session lastActivity, last message time).
- * SPA stores this on the localStorage snapshot and compares on the next
- * `history` frame to decide whether the cache is stale.
+ * Cloud transcript revision for the SPA rail + cache stamp.
+ *
+ * Prefer the newest message timestamp when the transcript has turns —
+ * `lastActivity` is also bumped by metadata patches (set-workspace) and
+ * getOrCreate touches, which must not rewrite the rail age to "Just now"
+ * when the user merely switches sessions.
+ *
+ * Empty threads still fall back to lastActivity.
  */
 export function historyUpdatedAt(input: {
   lastActivity?: Date | number | string
   messages: Array<{ timestamp?: Date | number | string }>
 }): number {
-  let t = toEpochMs(input.lastActivity)
+  let msgMax = 0
   for (let i = input.messages.length - 1; i >= 0; i--) {
     const ms = toEpochMs(input.messages[i]?.timestamp)
-    if (ms > t) t = ms
+    if (ms > msgMax) msgMax = ms
   }
-  return t
+  if (msgMax > 0) return msgMax
+  return toEpochMs(input.lastActivity)
 }
 
 export function buildHistoryWireFrames(

@@ -52,7 +52,7 @@ export interface ChatMessage {
 /** One step inside a ChatActivity accordion (tool / approval / ask). */
 export interface ChatActivityStep {
   id: string
-  kind: 'tool' | 'approval' | 'ask' | 'skill' | 'status' | 'agent'
+  kind: 'tool' | 'approval' | 'ask' | 'skill' | 'status' | 'agent' | 'reflect'
   label: string
   status: 'pending' | 'running' | 'success' | 'error' | 'denied'
   startedAt: number
@@ -62,6 +62,8 @@ export interface ChatActivityStep {
   todoItems?: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }>
   /** Subagent / A2A inline job id when known. */
   jobId?: number
+  /** Step Reflect carousel on a same-family Agim Subagent row. */
+  reflects?: Array<{ stance: 'keep' | 'adjust' | 'stop'; next: string; at: number }>
 }
 
 /** Cursor-style "Worked ›" block bound to an assistant reply. */
@@ -147,6 +149,10 @@ export interface ChatState {
   error: string | null
   /** Live session plan-mode flag (from history / plan-mode events). */
   planMode: boolean
+  /** Live session Step Reflect flag (from history / step-reflect-mode). */
+  stepReflect: boolean
+  /** Ops kill switch AGIM_STEP_REFLECT=disabled — hide the composer chip. */
+  stepReflectDisabled: boolean
   /** Live session /think variant (from history / think-mode events). */
   thinkVariant: string
   /** Live session `/model` backend name (empty = native-chat role default). */

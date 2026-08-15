@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **First-run setup wizard**: bare `agim` on a fresh install skips the CLI
+  menu and starts the service, then opens `http://localhost:3000/setup`.
+  The browser wizard picks a model, saves one API key, pings it, and
+  continues into chat. Skip writes `setupSkipped` and restores the normal
+  CLI menu. Machines that already have a CLI agent keep the previous
+  `agim go` path. `GET /api/onboarding/status` and `POST /api/onboarding/skip`
+  share the same readiness decision as the CLI.
+
 ### Fixed
 
 - **2026-08-15 CR (availability / usability / stability)**: heartbeat ticks

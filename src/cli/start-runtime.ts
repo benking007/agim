@@ -762,7 +762,17 @@ export async function runStartForeground(): Promise<void> {
     const bootLang = resolveCliLang()
     console.log(`\n✅ ${cliT(bootLang, 'start.ready')}`)
     if (ctx.webServer) {
-      console.log(`   ${cliT(bootLang, 'start.web_console', { url: `http://localhost:${ctx.webServer.port}` })}`)
+      const webUrl = `http://localhost:${ctx.webServer.port}`
+      console.log(`   ${cliT(bootLang, 'start.web_console', { url: webUrl })}`)
+      try {
+        const { checkAgentAvailability } = await import('../core/onboarding.js')
+        const { loadOnboardingStatus } = await import('../core/onboarding-status.js')
+        const { available } = await checkAgentAvailability()
+        const status = await loadOnboardingStatus({ availableAgents: available })
+        if (status.firstRun) {
+          console.log(`   ${cliT(bootLang, 'start.first_run_setup', { url: `${webUrl}/setup` })}`)
+        }
+      } catch { /* best-effort */ }
     }
     console.log(cliT(bootLang, 'start.press_ctrl_c'))
   }

@@ -8,7 +8,7 @@
 
 ## 入门
 
-- [`../README.md`](../README.md) / [`../README.zh-CN.md`](../README.zh-CN.md)：项目概览与快速开始（`agim go`）
+- [`../README.md`](../README.md) / [`../README.zh-CN.md`](../README.zh-CN.md)：项目概览与快速开始（首次运行 `agim` 打开 `/setup` 向导）
 - [`agents.md`](./agents.md)：支持的 Agent 后端、安装入口、模型切换与工具能力
 - [`deployment.md`](./deployment.md)：部署与上线清单
 - [`naming.md`](./naming.md)：命名术语表（Agim Agent / `agim` / A2A / tenants）

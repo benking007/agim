@@ -42,7 +42,7 @@ Living list of leftover debt. See also [`naming.md`](./naming.md).
 | `AGIM_ENABLE_GLOBAL_IM` | Compliance gate |
 | `config.agents: []` = allow-all | Back-compat |
 | Session legacy single-file JSON | Back-compat loader |
-| `/setup`, `/schedule`, `?token=` | Soft deprecation |
+| IM `/setup`, `/schedule`, `?token=` | Soft deprecation (IM command; SPA `/setup` is the first-run wizard) |
 | `autonomous-loops` skill shim | Until advertised v1.8 window |
 | SQLite table `native_todos` | On-disk schema; unrelated to tool rename |
 

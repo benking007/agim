@@ -31,8 +31,15 @@ function localWebUrl(web: { bind: string; port: number }): string {
   return `http://${bind}:${web.port}`
 }
 
-function webConsoleUrl(web: { bind: string; port: number }, opts: { welcome?: boolean } = {}): string {
+function webConsoleUrl(
+  web: { bind: string; port: number },
+  opts: { welcome?: boolean; path?: string } = {},
+): string {
   const base = localWebUrl(web)
+  if (opts.path) {
+    const path = opts.path.startsWith('/') ? opts.path : `/${opts.path}`
+    return `${base}${path}`
+  }
   return opts.welcome ? `${base}/?welcome=1` : base
 }
 
@@ -68,7 +75,7 @@ function printBrowserOpenResult(lang: Lang, ok: boolean, url: string): void {
 function printWebConsoleLine(
   lang: Lang,
   web: { bind: string; port: number },
-  opts: { welcome?: boolean } = {},
+  opts: { welcome?: boolean; path?: string } = {},
 ): void {
   console.log(text(lang, '   Web 控制台：', '   Web console:') + webConsoleUrl(web, opts))
 }
@@ -183,7 +190,7 @@ async function waitForBackgroundReady(
 
 async function startBackgroundDaemon(
   lang: Lang,
-  opts: { showAccessHint?: boolean; welcome?: boolean } = {},
+  opts: { showAccessHint?: boolean; welcome?: boolean; path?: string } = {},
 ): Promise<boolean> {
   console.log(t(lang, 'svc.start.starting_bg'))
   const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -195,7 +202,7 @@ async function startBackgroundDaemon(
     console.log(t(lang, 'svc.start.bg_ready', { pid, log: LOG_FILE }))
     if (opts.showAccessHint !== false) {
       console.log(t(lang, 'svc.start.bg_hint'))
-      await printWebAccessHint(lang, { welcome: opts.welcome })
+      await printWebAccessHint(lang, { welcome: opts.welcome, path: opts.path })
     }
     return true
   }
@@ -746,15 +753,25 @@ export async function cmdUninstall(): Promise<void> {
 
 export async function offerServiceStart(
   lang: Lang,
-  opts: { welcome?: boolean } = {},
+  opts: { welcome?: boolean; path?: string; open?: boolean; assumeYes?: boolean } = {},
 ): Promise<void> {
   const { yesNo, UserAbortError } = await import('./prompts.js')
+  const urlOpts = { welcome: opts.welcome, path: opts.path }
   const st = detectService()
+
+  const printAndMaybeOpen = async (showUrl = true): Promise<void> => {
+    await printWebAccessHint(lang, { showUrl, ...urlOpts })
+    if (!opts.open) return
+    const web = readWebEndpoint() ?? { bind: '127.0.0.1', port: DEFAULT_WEB_PORT }
+    const url = webConsoleUrl(web, urlOpts)
+    printBrowserOpenResult(lang, openBrowserUrl(url), url)
+  }
+
   try {
     if (st.mode === 'none') {
       console.log()
       console.log(t(lang, 'svc.offer.not_running_title'))
-      const wantStart = await yesNo({
+      const wantStart = opts.assumeYes || await yesNo({
         message: t(lang, 'svc.offer.not_running_q'),
         default: true,
       })
@@ -772,9 +789,9 @@ export async function offerServiceStart(
         console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
         const web = readWebEndpoint()
         if (web) {
-          printWebConsoleLine(lang, web, { welcome: opts.welcome })
+          printWebConsoleLine(lang, web, urlOpts)
         }
-        await printWebAccessHint(lang, { showUrl: false, welcome: opts.welcome })
+        await printAndMaybeOpen(false)
       } else {
         printStartupCheckLog(lang)
       }
@@ -785,7 +802,12 @@ export async function offerServiceStart(
       console.log()
       console.log(t(lang, 'svc.offer.running_title', { mode: 'foreground', pid: st.pid ?? '?' }))
       console.log(t(lang, 'svc.offer.foreground_hint'))
-      await printWebAccessHint(lang, { welcome: opts.welcome })
+      await printAndMaybeOpen()
+      return
+    }
+
+    if (opts.assumeYes) {
+      await printAndMaybeOpen()
       return
     }
 
@@ -799,7 +821,7 @@ export async function offerServiceStart(
     })
     if (!wantRestart) {
       console.log(t(lang, 'svc.offer.restart_skipped'))
-      await printWebAccessHint(lang, { welcome: opts.welcome })
+      await printAndMaybeOpen()
       return
     }
 
@@ -809,7 +831,7 @@ export async function offerServiceStart(
         try {
           execSync(`systemctl restart ${unit.name}`, { stdio: 'inherit' })
           console.log(t(lang, 'svc.offer.systemd_restarted'))
-          await printWebAccessHint(lang, { welcome: opts.welcome })
+          await printAndMaybeOpen()
         } catch (err) {
           console.warn(`⚠️ ${err instanceof Error ? err.message : String(err)}`)
           console.log(`   sudo systemctl restart ${unit.name}`)
@@ -829,9 +851,9 @@ export async function offerServiceStart(
       console.log(t(lang, 'svc.offer.bg_started', { pid, log: LOG_FILE }))
       const web = readWebEndpoint()
       if (web) {
-        printWebConsoleLine(lang, web, { welcome: opts.welcome })
+        printWebConsoleLine(lang, web, urlOpts)
       }
-      await printWebAccessHint(lang, { showUrl: false, welcome: opts.welcome })
+      await printAndMaybeOpen(false)
     } else {
       printStartupCheckLog(lang)
     }
@@ -846,13 +868,16 @@ export async function offerServiceStart(
 
 export async function printWebAccessHint(
   lang: Lang,
-  opts: { showUrl?: boolean; welcome?: boolean } = {},
+  opts: { showUrl?: boolean; welcome?: boolean; path?: string } = {},
 ): Promise<void> {
   const web = readWebEndpoint() ?? { bind: '127.0.0.1', port: 3000 }
   const baseUrl = localWebUrl(web)
   console.log()
   if (opts.showUrl !== false) {
-    console.log(text(lang, 'Web 控制台：', 'Web console:') + webConsoleUrl(web, { welcome: opts.welcome }))
+    console.log(text(lang, 'Web 控制台：', 'Web console:') + webConsoleUrl(web, {
+      welcome: opts.welcome,
+      path: opts.path,
+    }))
   }
   try {
     const {

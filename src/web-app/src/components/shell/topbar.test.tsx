@@ -33,16 +33,24 @@ describe('Topbar', () => {
 
   it('renders only the mounted nav links', () => {
     renderAt('/')
+    const nav = screen.getByRole('navigation', { name: 'Agim' })
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Agent Files' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard"]')).toBeNull()
     expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Reminders' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Memos' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Observability' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a brand-adjacent Home link back to the dashboard', () => {
+    renderAt('/')
+    const home = screen.getByRole('link', { name: 'Home' })
+    expect(home).toHaveAttribute('href', '/dashboard')
+    expect(home).toHaveAttribute('title', 'Home workbench')
   })
 
   it('marks the active route with the accent style', () => {

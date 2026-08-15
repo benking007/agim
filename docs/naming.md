@@ -39,6 +39,7 @@ is a supported web-console-only shape; Telegram/Discord stay gated behind
 | **Focus** | Per-thread attention anchor: auto-inject when **on**, stop inject when **off**, optional clear | `/focus`; SSOT [`architecture/focus.md`](./architecture/focus.md) |
 | **Loop / Loop Engineering**（Phase C；历史名 Long-engineering） | **L3 自动调度层**：目标 → 拆解 → 调度 Subagent → 验收 →（未达）反思再来 → 退出。≠ L2 Agent Loop（单代理 tool while）。**父编排仅 Agim Agent**；Codex 等 sticky CLI 可作 preferred worker / Subagent（`preferredWorkerAgent`），也可 sticky 派工，但**不**跑 `/loop`（无 `loop_verdict`）。用户面桶名：**待对焦 / 待派工 / 待验收**（不用「卡在…」）；「独立验收」= cheap evaluator，≠ `loop_verdict` 次数 | `/loop`; Portal 底栏 docks; Tasks Loop 审计; `AGIM_LOOP_*`; SSOT [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §1.1 · §6 · [`cli-subagent-dispatch.md`](./architecture/cli-subagent-dispatch.md) |
 | **Agent Loop（L2）** | Single-agent Observe→Think→Tools→Results while not done | pi-agent / native tool loop — **not** `/loop` |
+| **Step Reflect**（步思 / 一步一想） | **L2 cadence**：每次 act（同一次 assistant 的工具结果）之后、再行动之前，露出 2–4 句短反思。≠ Loop REFLECT、≠ `/think`、≠ Steer、≠ todo-gate | `/step-reflect`; Composer「一步一想」; `AGIM_STEP_REFLECT`; `agim_reflect`（R2）; SSOT [`architecture/step-reflect.md`](./architecture/step-reflect.md) |
 | **≠ Claude Code `/loop`** | Claude 博客里的 `/loop` 是**定时再跑 prompt**（time-based）；Agim `/loop` ≈ 他们的 **`/goal` 级使命闭环**。定时触发属 Heartbeat/R6，不占用 `/loop` | 见 [`architecture/loop-engineering.md`](./architecture/loop-engineering.md) §对照 |
 | **goal**（retired） | Former sustained-objective slash/tools — product surface removed; storage reused by Focus | see [`architecture/goal-residue.md`](./architecture/goal-residue.md) |
 | **goal-critic**（on-track critic） | In-process cheap check that tools still serve the **current-turn ask**. Focus may enable it (`goal-only`) but is **background only** — must not hard-pull back to Focus. **Not** Loop | `AGIM_NATIVE_CRITIC_*` |
@@ -66,6 +67,7 @@ qualifier (files vs access rules).
 |---------|---------------|---------------------------|
 | Approval timeout policy (`allow` \| `deny`) | `AGIM_APPROVAL_ON_TIMEOUT` | `AGIM_TIMEOUT_DEFAULT` |
 | Plan mode process default | `AGIM_PLAN_MODE` = `on` \| `off` \| `disabled` | `AGIM_NATIVE_PLAN_MODE` (truthy → on), `AGIM_DISABLE_PLAN_MODE=1` (→ disabled) |
+| Step Reflect (L2 cadence) | `AGIM_STEP_REFLECT` = `on` \| `off` \| `disabled` | — (do not add `AGIM_NATIVE_STEP_REFLECT`) |
 | Agim Agent behavioral knobs | `AGIM_NATIVE_*` (historical prefix) | Future: `AGIM_AGENT_*` with aliases — not renamed in this pass |
 
 Boolean truthiness still varies by family (`on`/`off`, `1`/`0`). New knobs

@@ -43,6 +43,7 @@
 |------|------|
 | 模型 | 切换当前 preset 下 backend / 打开 LLM 配置 |
 | 思考开 · low/high/max | `/think …`（会话级） |
+| **一步一想**（拟 · R1） | `/step-reflect on\|off`（仅 Agim；L2 节拍，见 [step-reflect](./architecture/step-reflect.md)） |
 | **替我审批 / 请求审批** | 主 Agent 工具审批模式（见下） |
 | 上下文环 | 用量估算 / 压缩率 |
 

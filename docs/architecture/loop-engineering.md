@@ -2,7 +2,7 @@
 
 > **状态**：现行设计 SSOT（R1–R5 + 派工/验收硬门禁已落地）· 2026-07-27  
 > **用户面**：`/loop` · Portal `/m/chat` 底栏 docks · Tasks **Loop 审计**  
-> **关联**：[Focus](./focus.md) · [Subagent](./subagent.md) · [派工画像](./agent-profiles.md) · [CLI 派工](./cli-subagent-dispatch.md) · [Portal 输入框](../portal-composer.md) · [命名](../naming.md) · [残留盘点](./goal-residue.md) · [编排路线图](./orchestration-roadmap.md)
+> **关联**：[Focus](./focus.md) · [Subagent](./subagent.md) · [派工画像](./agent-profiles.md) · [CLI 派工](./cli-subagent-dispatch.md) · [Portal 输入框](../portal-composer.md) · [命名](../naming.md) · [残留盘点](./goal-residue.md) · [编排路线图](./orchestration-roadmap.md) · [Step Reflect（L2 步思）](./step-reflect.md)
 
 ---
 
@@ -26,6 +26,7 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 │  L2  Agent Loop（智能体循环层）                           │
 │   while not done: Observe → Think → Tools → Results      │
 │   = Agim Agent / Claude / … 单代理内部跑法（已有）         │
+│   可选节拍：Step Reflect（结果 → 短反思 → 再行动）         │
 ├─────────────────────────────────────────────────────────┤
 │  L1  LLM API（大模型调用层）                              │
 │   模型选择 · token · 参数 · 流式输出                      │
@@ -35,10 +36,11 @@ Loop Engineering = **自动发现/承接任务 → 自动调度 Agent（可含�
 | 层 | 在 Agim 里是什么 | 不是什么 |
 |----|------------------|----------|
 | **L1** | `llmBackends` / provider / streaming | Loop |
-| **L2** | 单 Agent 的 tool loop（pi-agent / dispatcher） | Loop Engineering |
+| **L2** | 单 Agent 的 tool loop（pi-agent / dispatcher）；可选 [Step Reflect](./step-reflect.md)（结果→短反思→再行动） | Loop Engineering |
 | **L3** | **`/loop`：调度 + 验收闭环** | 再写一个「更大的 L2」 |
 
-**Focus** 仍是注意力锚点（注入 / on / off），给 L3 提供「本轮使命文案」；**完成判定、拆解、派子代理、验收**属于 Loop，不塞回 Focus。
+**Focus** 仍是注意力锚点（注入 / on / off），给 L3 提供「本轮使命文案」；**完成判定、拆解、派子代理、验收**属于 Loop，不塞回 Focus。  
+L2 里「每步工具之后的短反思」是 [Step Reflect](./step-reflect.md)，**不要**复用 Loop 的 REFLECT 相位名或 `/loop` 状态机。
 
 ### 1.1 父编排 Agent（硬门禁）
 
@@ -594,3 +596,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-27 | **文档**：交叉 [`agent-profiles.md`](./agent-profiles.md)；CLI sticky 可派工、不可当 Loop 父 → [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |
 | 2026-08-02 | **Subagent 终态立刻同步 dock**：`notifyLoopJobTerminal`→`loop-changed`；多子代理时仍按本轮 live 守候（单个完成 ≠ 验收）；SPA 不误标带 `jobId` 的 agent 卡 |
 | 2026-08-02 | **休眠唤醒空闲验收收割**：`maybeReapIdleLoopVerify`（父轮 idle + live=0 → `verify_skipped`）；`GET /api/loop` / 子代理终态 / 父轮 finally；HISTORY 清除已结束的 stuck Running |
+| 2026-08-14 | **交叉 Step Reflect**：§1 L2 行注明可选步思；概念 SSOT [`step-reflect.md`](./step-reflect.md)（≠ Loop REFLECT） |

@@ -287,7 +287,8 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 - [`agent-profiles.md`](./agent-profiles.md)：**派工能力画像**（非 Agim CLI specialty；Settings；system catalog）
 - [`focus.md`](./focus.md)：**Focus 概念 SSOT**（注意力锚点；废弃 goal）
 - [`loop-engineering.md`](./loop-engineering.md)：**Loop 概念 SSOT**（L3：对焦→派工→验收；父编排者 = Agim；R1–R5+门禁）
-- [`orchestration-roadmap.md`](./orchestration-roadmap.md)：分阶段实施（A/B/C 已齐；B5 CLI 父派工；R6 暂缓）
+- [`step-reflect.md`](./step-reflect.md)：**Step Reflect 概念 SSOT**（L2 节拍：结果→短反思→再行动；R0 文档先行）
+- [`orchestration-roadmap.md`](./orchestration-roadmap.md)：分阶段实施（A/B/C 已齐；B5 CLI 父派工；R6 暂缓；L2 步思见 step-reflect）
 
 在现有 job 树 / activity-WS / Focus+Loop 之上加薄编排；跨 adapter 仍走 `callAgentByName`，选型参考 specialty catalog。
 
@@ -296,7 +297,7 @@ CLI agent 与 Agim Agent（`agim`）是**并列后端**，不是两套系统。�
 1. [`../../README.md`](../../README.md) / [`../../README.zh-CN.md`](../../README.zh-CN.md)  
 2. [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md)  
 3. 本文（模块地图与数据流）  
-4. [`subagent.md`](./subagent.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`agent-profiles.md`](./agent-profiles.md) · [`loop-engineering.md`](./loop-engineering.md) · [`orchestration-roadmap.md`](./orchestration-roadmap.md)（若做 Subagent / Loop）  
+4. [`subagent.md`](./subagent.md) · [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) · [`agent-profiles.md`](./agent-profiles.md) · [`loop-engineering.md`](./loop-engineering.md) · [`step-reflect.md`](./step-reflect.md) · [`orchestration-roadmap.md`](./orchestration-roadmap.md)（若做 Subagent / Loop / L2 步思）  
 5. [`../endpoint-contracts.md`](../endpoint-contracts.md)  
 6. [`../security-hardening.md`](../security-hardening.md)  
 7. [`../llm-backends.md`](../llm-backends.md) · [`../runbook.md`](../runbook.md) · [`../adr/`](../adr/)  

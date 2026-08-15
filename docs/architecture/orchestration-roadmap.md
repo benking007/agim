@@ -2,7 +2,7 @@
 
 > 状态：**现行计划（living）** · 2026-07-27  
 > 立场：在现有桥接架构上**加薄编排层**，不推倒重来。  
-> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)（CLI 父派工）· [`agent-profiles.md`](./agent-profiles.md)（派工画像）· [`focus.md`](./focus.md)（Focus）· [`loop-engineering.md`](./loop-engineering.md)（Loop / Phase C）  
+> **概念 SSOT**：[`subagent.md`](./subagent.md)（Subagent）· [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)（CLI 父派工）· [`agent-profiles.md`](./agent-profiles.md)（派工画像）· [`focus.md`](./focus.md)（Focus）· [`loop-engineering.md`](./loop-engineering.md)（Loop / Phase C）· [`step-reflect.md`](./step-reflect.md)（L2 步思，非编排）  
 > 关联：[`current.md`](./current.md) · [`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../goals.md`](../goals.md)（deprecated）· [`../session-model.md`](../session-model.md)
 
 本文是**实施计划**与阶段勾选；概念以各 SSOT 为准。  
@@ -258,6 +258,22 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 
 ---
 
+### Related — L2 Step Reflect（不是 Phase C / 不是 Loop）
+
+> **概念 SSOT**：[`step-reflect.md`](./step-reflect.md)。  
+> 这是单代理 tool loop 的**节拍策略**（结果 → 短反思 → 再行动），不是 L3 调度，不进 `/loop` 状态机。
+
+| 节奏 | 内容 | 状态 |
+|---|---|---|
+| R0 | 设计 SSOT + naming / L3 图 / 本文交叉链 | **本批** |
+| R1 | Composer「一步一想」开关（默认 off）+ 软提示 + 父 activity `reflect`；Subagent **行内 1 行轮播**（防抖动）；只读拍跳过 | 未开刀 |
+| R2 | `agim_reflect` + 变更类门禁；同族工人反思挂 `kind:agent.reflects` | 未开刀 |
+| R3 | 可选 cheap 拆分 / Trajectory 分组；CLI 工人不做假步思 | 未开刀 |
+
+勾选与开放决策以 `step-reflect.md` 为准；实现 PR 须回写该文 §7 / §12，不必假装这是编排 Phase D。
+
+---
+
 ## 5. 实施顺序与 PR 策略
 
 ```text
@@ -300,7 +316,8 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | approval-bus 在并行下变厚 / 竞态 | Phase B 先隔离 runId；必要时先 peel `approval-bus`（见 tech-debt）再开并行默认 |
 | 费用与超时叠加 | hard cap + 单子超时 + 父级 ceiling；UI 显示累计 |
 | 观察者与执行者抢写 | 观察者默认只读工具集（planMode 或 tool allowlist） |
-| 文档/实现双源 | Subagent→`subagent.md`；Focus→`focus.md`；Loop→`loop-engineering.md`；计划勾选以本文为准 |
+| 文档/实现双源 | Subagent→`subagent.md`；Focus→`focus.md`；Loop→`loop-engineering.md`；L2 步思→`step-reflect.md`；计划勾选以本文为准 |
+| 把步思做成第二个 Loop | 禁止复用 `/loop` / REFLECT 相位；粒度锁在 L2 beat |
 | 同族自调用变递归炸弹 | 无 role/backend/isolate 差异仍拒绝；深度与每 turn cap 保留 |
 | Loop R1 用尽 turn cap 后 R2 死锁 | `continue\|revise` 重置 cap；新一轮 `planning`+0 派工首派再清；错误文案禁止误导父侧自研 |
 
@@ -329,6 +346,7 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 | 2026-07-27 | 派工画像 | #272 | `agent-profiles`；Settings；system catalog + tool 短提示 |
 | 2026-07-28 | 任务派发速查 | #278 | Settings→LLM 下拉；`dispatchRoutes` + `llmRoles.finance`/`cheap`；注入 system |
 | 2026-07-28 | 能力维度 caps | #277 | CLI+backend 五维评分；prompt `caps=`；Settings→Agents 双矩阵 |
+| 2026-08-14 | L2 步思 R0 | （本 PR） | `step-reflect.md`；naming / L3 图交叉链；无运行时 |
 
 ---
 

@@ -159,6 +159,8 @@ describe('loop verify gate', () => {
   it('steer + follow-up copy mention loop_verdict and mid-review ask_user', () => {
     expect(loopVerifySteerText()).toContain('loop_verdict')
     expect(loopVerifySteerText()).toContain('ask_user')
+    expect(loopVerifySteerText()).toContain('parent verifier')
+    expect(loopVerifySteerText()).toContain('确认结束')
     expect(loopVerifyFollowUpPrompt()).toContain('loop_verdict')
     expect(loopVerifyFollowUpPrompt()).toContain('ask_user')
   })

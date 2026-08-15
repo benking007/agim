@@ -560,10 +560,13 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__loop_verdict',
       description:
-        'Loop VERIFY/REFLECT verdict (not during ALIGNING). continue/revise require ≥1 '
-        + 'call_agent(s) this round (R3) AND structured verification (R4): met=false, '
-        + 'summary, nextDirection (gaps recommended). met=true must use decision=stop '
-        + '(independent cheap evaluator may veto; AGIM_LOOP_EVALUATOR=auto|on|off). '
+        'Parent VERIFY after Subagents finish: recommend continue vs end; that '
+        + 'recommendation is met. continue/revise require ≥1 call_agent(s) this '
+        + 'round (R3) AND structured verification (R4): met=false, summary, '
+        + 'nextDirection (gaps recommended). met=true must use decision=stop — '
+        + 'opens the Portal confirm dock (确认结束 / 继续下一轮; then 落报告). '
+        + 'Do not skip this tool or dump the full report in chat. Independent '
+        + 'cheap evaluator may veto met=true (AGIM_LOOP_EVALUATOR=auto|on|off). '
         + 'stop without met abandons. Exit truncates on maxRounds/maxWallMs.',
       parameters: {
         type: 'object',

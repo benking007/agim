@@ -64,23 +64,27 @@ export function isLoopVerdictToolName(toolName: string): boolean {
 export function loopVerifySteerText(): string {
   return [
     '[loop steer — VERIFY required]',
-    'This Loop round already dispatched Subagents (派工≥1) but has NOT called',
-    'mcp__agim__loop_verdict yet. Do NOT write a final user-facing report now.',
+    'You are the parent verifier. This round already dispatched Subagents',
+    '(派工≥1) but has NOT called mcp__agim__loop_verdict yet.',
+    'Do NOT write a final user-facing report now — that skips the confirm dock.',
     'If results are uncertain, conflicting, or data looks anomalous: call',
     'mcp__agim__ask_user first; after the user replies, then call loop_verdict.',
-    'Otherwise call mcp__agim__loop_verdict with: decision, met (boolean), summary,',
-    'and if unmet: gaps[] + nextDirection. met=true → decision=stop.',
-    'met=false → decision=continue|revise. User can /loop stop.',
+    'Otherwise call mcp__agim__loop_verdict: recommend continue vs end;',
+    'that recommendation is met. met=true → decision=stop → Portal asks the',
+    'user 确认结束 (then 落报告) or 继续下一轮. met=false → continue|revise',
+    '+ nextDirection. User can /loop stop.',
     '[/loop steer]',
   ].join('\n')
 }
 
 export function loopVerifyFollowUpPrompt(): string {
   return (
-    'Loop 验收未完成：若结论不确定 / 有疑问 / 数据异常，先用 mcp__agim__ask_user '
-    + '向用户提问，等回复后再调用 mcp__agim__loop_verdict；'
-    + '否则立刻调用 loop_verdict，对照目标给出 met / summary（未达标则 gaps + nextDirection）。'
-    + '不要再写长文报告；验收工具成功后再结束。'
+    'Loop 验收未完成：你是主 Agent，必须对照目标给出是否继续下一轮的建议，'
+    + '并用 mcp__agim__loop_verdict 写入 met。'
+    + '若结论不确定 / 有疑问 / 数据异常，先用 mcp__agim__ask_user 提问，等回复后再验收；'
+    + '否则立刻调用 loop_verdict（met=true → stop，弹出确认结束/落报告浮窗；'
+    + 'met=false → continue|revise + nextDirection）。'
+    + '不要把工具错误当成「直接交付本轮成果」；不要再写长文报告。'
   )
 }
 
@@ -200,10 +204,10 @@ export function maybeReapIdleLoopVerify(
   }
 
   // Parent may be between hops (or marked under a different channelId)
-  // while still required to call loop_verdict and continue. Ending here
-  // as verify_skipped is what surfaces as loop_verdict → no_active_loop
-  // on a hard N-round Loop. Only force-end when this is already the last
-  // round (or auto-verify above already produced a verdict).
+  // while still required to call loop_verdict. Ending here as
+  // verify_skipped is what surfaces as no_active_loop and skips the
+  // confirm / 落报告 docks. Only force-end on the last round (or when
+  // auto-verify above already produced a verdict).
   if (active.round < active.maxRounds) {
     log.debug({
       event: 'loop.reap_deferred_rounds_remain',

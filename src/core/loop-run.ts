@@ -1205,9 +1205,9 @@ export function maybeEnforceLoopExit(
  * Also defers while Subagents are still live.
  *
  * Mid-window (round < maxRounds) stays alive: ending here is what surfaces
- * as loop_verdict → no_active_loop and blocks a hard N-round Loop (e.g.
- * 「分析 2 轮结束」) from reaching the next round. Last-round idle still
- * ends as `limit`. Pass `ignoreRemainingRounds` only to simulate a
+ * as loop_verdict → no_active_loop, so the parent never finishes VERIFY
+ * and the Portal confirm / 落报告 docks never appear. Last-round idle
+ * still ends as `limit`. Pass `ignoreRemainingRounds` only to simulate a
  * premature reap in tests.
  */
 export function forceLoopExitSkippedVerify(
@@ -1326,20 +1326,15 @@ export function parseExitConstraints(exitDescription: string): {
     }
   }
 
-  // Ceiling phrases. A sole 「N 轮结束」/「分析 N 轮结束」(no 或/or
-  // alternative) is a hard window — min = max = N. 「验收通过或 5 轮结束」
-  // stays ceiling-only so early met=true is still allowed.
-  const exactEndHit = text.match(/(\d+)\s*轮\s*结束/)
-  const hasAltExit = /(?:或|或者|\bor\b)/i.test(text)
+  // Ceiling only. 「分析 2 轮结束」/「验收通过或 5 轮结束」set maxRounds
+  // so the parent can still met=true on an earlier round and open the
+  // user confirm dock. Hard floors stay explicit: 至少 / 做满 / 重复.
   const maxHit =
     text.match(/最多\s*(\d+)\s*轮/)
-    || exactEndHit
+    || text.match(/(\d+)\s*轮\s*结束/)
     || text.match(/(\d+)\s*rounds?/i)
   if (maxHit && maxRounds == null) {
     maxRounds = clampRounds(Number.parseInt(maxHit[1]!, 10))
-  }
-  if (exactEndHit && !hasAltExit && minRounds == null && maxRounds != null) {
-    minRounds = maxRounds
   }
 
   if (minRounds != null && maxRounds != null && minRounds > maxRounds) {
@@ -2359,16 +2354,22 @@ export function buildLoopSnippet(
     )
   } else {
     lines.push(
-      'VERIFY (R4): call loop_verdict with structured fields against Objective'
+      'VERIFY (R4): YOU are the parent verifier. Synthesize Subagent results, '
+        + 'then recommend whether to continue another round or end. That '
+        + 'recommendation IS met — you MUST call loop_verdict; skipping it '
+        + '(or treating a tool error as "just deliver this round") skips the '
+        + 'user confirm dock and the 落报告 offer. '
+        + 'Compare against Objective'
         + (view.acceptance ? '/Acceptance' : '')
         + ': met (boolean), summary, and if unmet: gaps[] + nextDirection. '
         + 'MID-REVIEW HITL: if conclusion is uncertain, you have a question, or '
         + 'data looks anomalous — call mcp__agim__ask_user first; after the user '
         + 'replies, continue with loop_verdict. '
         + 'HARD GATE: before verdict, parent ONLY waits / ask_user (no research/dispatch). '
-        + 'After loop_verdict succeeds you may summarize or do follow-up research. '
         + 'HARD: only after ALL Subagents for this round have finished. '
-        + 'met=true → decision=stop → Portal user confirm (end|continue)'
+        + 'met=true → decision=stop → Portal dock asks the user 确认结束 '
+        + '(then 落报告) or 继续下一轮. Do NOT dump the full report in chat; '
+        + 'the dock owns the conclusion'
         + (view.minRounds ? `; requires round≥${view.minRounds}` : '')
         + '. '
         + 'met=false → decision=continue|revise (reflect → next round dispatch). '

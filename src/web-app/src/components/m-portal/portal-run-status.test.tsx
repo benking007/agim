@@ -60,6 +60,9 @@ describe('PortalRunStatus', () => {
       />,
     )
     const line = screen.getByTestId('portal-run-collapsed-line')
+    expect(line.className).toMatch(/agim-shimmer/)
+    expect(line.className).toMatch(/text-zinc-400/)
+    expect(line.className).not.toMatch(/animate-pulse/)
     expect(line.textContent).toMatch(/先确认港股代码/)
     expect(line.textContent).toMatch(/web_search/)
     expect(screen.queryByTestId('activity-icon-reflect')).toBeNull()

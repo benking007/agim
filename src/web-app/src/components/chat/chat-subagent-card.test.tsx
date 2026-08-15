@@ -282,6 +282,58 @@ describe('ChatSubagentCard', () => {
     const slot = screen.getByTestId('step-reflect-slot')
     expect(slot.className).toMatch(/\bh-5\b/)
     expect(slot.textContent).toMatch(/Thinking|思考中|Execution|执行过程|Step reflect|一步一想/)
+    expect(screen.getByTestId('step-reflect-line').className).toMatch(/agim-shimmer/)
+    expect(slot.innerHTML).not.toMatch(/opacity-0|transition-opacity|animate-pulse/)
+  })
+
+  it('shimmers live inner think + Waiting for subagent instead of fading', () => {
+    render(<ChatSubagentCard
+      stepReflectEnabled
+      activity={activity({
+        steps: [{
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'agim/cheap',
+          status: 'running',
+          startedAt: 1,
+          jobId: 9,
+          preview: 'Objective: search',
+          reflects: [{ stance: 'keep', next: 'Summarize which links', at: 2 }],
+        }],
+      })}
+    />)
+    const line = screen.getByTestId('step-reflect-line')
+    expect(line.className).toMatch(/agim-shimmer/)
+    expect(line.className).not.toMatch(/animate-pulse|opacity-0/)
+    expect(line.textContent).toContain('Summarize which links')
+    const status = screen.getByTestId('subagent-live-status')
+    expect(status.className).toMatch(/agim-shimmer-accent/)
+    expect(status.textContent).toMatch(/Waiting for subagent|等待子代理/)
+  })
+
+  it('does not shimmer completed inner status', async () => {
+    const user = userEvent.setup()
+    render(<ChatSubagentCard
+      stepReflectEnabled
+      activity={activity({
+        status: 'success',
+        steps: [{
+          id: 'a2a-9',
+          kind: 'agent',
+          label: 'agim',
+          status: 'success',
+          startedAt: 1,
+          finishedAt: 2,
+          jobId: 9,
+          reflects: [{ stance: 'keep', next: 'Summarize the links', at: 2 }],
+        }],
+      })}
+    />)
+    await user.click(screen.getByRole('button', { name: /Subagents · 1|子代理 · 1/ }))
+    const line = screen.getByTestId('step-reflect-line')
+    expect(line.className).not.toMatch(/agim-shimmer/)
+    expect(line.textContent).toContain('Summarize the links')
+    expect(screen.getByTestId('subagent-live-status').className).not.toMatch(/agim-shimmer/)
   })
 
   it('does not show the slot on CLI workers', () => {

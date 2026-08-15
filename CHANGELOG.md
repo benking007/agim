@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Running status line** uses a highlight sweep (`text-shimmer`) instead
+  of an opacity pulse, matching the Cursor “Planning next moves” look.
 - **Execution history reflect rows** keep the thinking line and preview;
   only the `一步一想` / `执行过程 ·` prefix and badge are gone. The
   bordered parent card between Plan and Subagents stays removed.

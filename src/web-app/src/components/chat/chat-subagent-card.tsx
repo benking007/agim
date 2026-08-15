@@ -135,7 +135,6 @@ function StepReflectSlot({
   const show = enabled && family && (live || items.length > 0 || !!inner)
   const [idx, setIdx] = useState(0)
   const [hover, setHover] = useState(false)
-  const [fade, setFade] = useState(true)
 
   useEffect(() => {
     if (idx >= items.length && items.length > 0) setIdx(items.length - 1)
@@ -144,17 +143,14 @@ function StepReflectSlot({
   useEffect(() => {
     if (!show || hover || items.length < 2) return
     const id = window.setInterval(() => {
-      setFade(false)
-      window.setTimeout(() => {
-        setIdx((i) => (i + 1) % Math.max(1, items.length))
-        setFade(true)
-      }, 160)
+      setIdx((i) => (i + 1) % Math.max(1, items.length))
     }, 3500)
     return () => window.clearInterval(id)
   }, [show, hover, items.length])
 
   if (!show) return null
   const current = items[Math.min(idx, Math.max(0, items.length - 1))]
+  const line = inner || current?.next || t('chat.portal.stepReflectWaiting', { defaultValue: 'Thinking…' })
 
   return (
     <div
@@ -169,29 +165,25 @@ function StepReflectSlot({
     >
       <div
         className={cn(
-          'flex h-5 items-center gap-1.5 truncate whitespace-nowrap text-[11px] leading-5 transition-opacity duration-200',
-          fade ? 'opacity-100' : 'opacity-0',
+          'flex h-5 items-center gap-1.5 truncate whitespace-nowrap text-[11px] leading-5',
           dark ? 'text-zinc-400' : 'text-text-muted',
         )}
       >
         {current ? (
-          <>
-            <span className={cn(
-              'shrink-0 rounded px-1 text-[10px] uppercase tracking-wide',
-              dark ? 'bg-zinc-800 text-teal-300' : 'bg-surface-2 text-teal-700',
-            )}
-            >
-              {stanceLabel(current.stance, t)}
-            </span>
-            <span className="min-w-0 truncate">{inner || current.next}</span>
-          </>
-        ) : inner ? (
-          <span className="min-w-0 truncate">{inner}</span>
-        ) : (
-          <span className="truncate">
-            {t('chat.portal.stepReflectWaiting', { defaultValue: 'Thinking…' })}
+          <span className={cn(
+            'shrink-0 rounded px-1 text-[10px] uppercase tracking-wide',
+            dark ? 'bg-zinc-800 text-teal-300' : 'bg-surface-2 text-teal-700',
+          )}
+          >
+            {stanceLabel(current.stance, t)}
           </span>
-        )}
+        ) : null}
+        <span
+          data-testid="step-reflect-line"
+          className={cn('min-w-0 truncate', live && 'agim-shimmer')}
+        >
+          {line}
+        </span>
       </div>
     </div>
   )
@@ -281,11 +273,16 @@ function SubagentRow({
         <p className={cn(
           'pl-5 text-[11px] leading-snug',
           live
-            ? (dark ? 'text-teal-400/90' : 'text-teal-700')
+            ? (dark ? 'text-teal-300' : 'text-teal-700')
             : (dark ? 'text-zinc-600' : 'text-text-muted'),
         )}
         >
-          {statusLabel(step, t)}
+          <span
+            data-testid="subagent-live-status"
+            className={live ? 'agim-shimmer-accent' : undefined}
+          >
+            {statusLabel(step, t)}
+          </span>
           <span className="ml-1.5 opacity-70">
             · {t('chat.subagentOpenHint', { defaultValue: 'View prompt & result' })}
           </span>

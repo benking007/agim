@@ -6,7 +6,7 @@
 > 关联：[`current.md`](./current.md) · [`../naming.md`](../naming.md) · [`../architecture-bridge-and-agim-agent.md`](../architecture-bridge-and-agim-agent.md) · [`../goals.md`](../goals.md)（deprecated）· [`../session-model.md`](../session-model.md)
 
 本文是**实施计划**与阶段勾选；概念以各 SSOT 为准。  
-**Phase A / B（含 B5 CLI 父 `call_agents`）/ C（R1–R5 + 门禁）已落地；R6（Heartbeat 触发 Loop）暂缓。Loop 父 = Agim only。**
+**Phase A / B（含 B5 CLI 父 `call_agents`）/ C（R1–R5 + 门禁）已落地；R6 为 `/cron` `loop:` 最小刀（Heartbeat 绑模板另开）。Loop 父 = Agim only。**
 
 ---
 
@@ -58,7 +58,7 @@
 3. ~~多 Subagent UI 不足~~ → **A2**。  
 4. ~~拆解指引弱~~ → **A3** + **agent-profiles**（跨 CLI fit）。  
 5. ~~同 turn 并行未开~~ → **B** `call_agents`。  
-6. ~~Focus / Loop 未建~~ → **C** R1–R5 + 门禁；**R6** 仍暂缓。
+6. ~~Focus / Loop 未建~~ → **C** R1–R5 + 门禁；**R6** `/cron` `loop:` 最小刀。
 
 ---
 
@@ -248,9 +248,9 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 | + | Claude 文吸收 A/B/C：对照表、cheap 独立验收、Loop 用量 — **已落地** |
 | 加固 | 派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` 超时修复 — **已落地**（#238–#243） |
 | 派工画像 | 非 Agim CLI specialty catalog → Agim system + `call_agent(s)` 短提示 — **已落地**（#272） |
-| R6 | 可选触发器（仅 start，仍走对焦）— **暂缓** |
+| R6 | 可选触发器（仅 start / 续跑，仍走对焦）— **`/cron` `loop:` 最小刀** |
 
-**R1–R5 + A/B/C + 加固 + 派工画像后暂停；R6 另开刀。** 细节 SSOT：[`loop-engineering.md`](./loop-engineering.md) §6–§7 · [`agent-profiles.md`](./agent-profiles.md)。
+**R1–R5 + A/B/C + 加固 + 派工画像已齐；R6 为 `/cron` `loop:` 最小刀。** 细节 SSOT：[`loop-engineering.md`](./loop-engineering.md) §6–§7 · [`agent-profiles.md`](./agent-profiles.md)。
 
 #### 非本阶段
 
@@ -335,5 +335,5 @@ Phase C  Focus + Loop        ──►  概念文先行 → 拍板开放项 → 
 ## 9. TL;DR
 
 > **Subagent 先于「多 Agent」：同族 pro/flash 与跨 adapter 都是子工人；A2A 是跨 adapter 的管子。**  
-> **A / B（含 CLI 父 `call_agents`）/ C（R1–R5+门禁）已齐；Loop 父仅 Agim；跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；任务类型默认派工靠「任务派发速查」（#278）；R6 暂缓。**  
+> **A / B（含 CLI 父 `call_agents`）/ C（R1–R5+门禁）已齐；Loop 父仅 Agim；跨 CLI 选型靠 [`agent-profiles`](./agent-profiles.md)；任务类型默认派工靠「任务派发速查」（#278）；R6 为 `/cron` `loop:` 最小刀。**  
 > 拆解靠 brief/启发式 + 硬预算 + specialty catalog，不靠第二套中台。详见 [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md)。

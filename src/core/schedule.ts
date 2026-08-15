@@ -267,6 +267,75 @@ function dueSchedules(d: Database.Database, now: Date): Schedule[] {
   ).all(now.toISOString()) as Schedule[]
 }
 
+/** POST the schedule webhook after a Job Board run (plain job or Loop wake). */
+async function notifyScheduleWebhook(
+  s: Schedule,
+  jobId: number,
+  logger: Logger,
+): Promise<void> {
+  if (!s.notify_url) return
+  // Defense in depth: re-validate at fire time in case the row was edited
+  // out-of-band (manual SQL, future v0.x importer) — never trust DB content
+  // as an authorization bypass for the SSRF gate.
+  const v = validateWebhookUrl(s.notify_url)
+  if (!v.ok) {
+    logger.warn({ scheduleId: s.id, reason: v.reason, event: 'schedule.notify.rejected' },
+      'Schedule notify webhook rejected by URL validator')
+    return
+  }
+  // At-fetch-time SSRF guard. validateWebhookUrl is lexical: it only sees
+  // the host string, so a HOSTNAME that resolves to private space (DNS
+  // rebinding, split-horizon, or an attacker domain whose A-record points
+  // at 169.254.169.254 / 10.x / 127.x) passes it. Resolve the host via DNS
+  // here — right before the fetch — and reject private/loopback/link-local
+  // targets. This is the "at-fetch-time guard" the validateWebhookUrl
+  // comment flagged as tracked separately.
+  const dnsCheck = await assertWebhookHostPublic(v.url.hostname)
+  if (!dnsCheck.ok) {
+    logger.warn({ scheduleId: s.id, reason: dnsCheck.reason, host: v.url.hostname, event: 'schedule.notify.rejected_dns' },
+      'Schedule notify webhook rejected by DNS-resolved address check')
+    return
+  }
+  try {
+    const job = (await import('./job-board.js')).getJob(jobId)
+    if (!job) return
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), NOTIFY_TIMEOUT_MS)
+    try {
+      const resp = await fetch(v.url.toString(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          scheduleId: s.id,
+          jobId,
+          status: job.status,
+          result: job.result,
+          error: job.error,
+        }),
+        signal: ctrl.signal,
+        // Drop redirects so a 30x can't pivot us back to a private host.
+        redirect: 'manual',
+      })
+      // Drain (capped) so the connection can be reused / closed cleanly.
+      if (resp.body) {
+        let read = 0
+        const reader = resp.body.getReader()
+        while (read < NOTIFY_MAX_RESPONSE_BYTES) {
+          const { done, value } = await reader.read()
+          if (done) break
+          read += value?.byteLength ?? 0
+        }
+        await reader.cancel().catch(() => {})
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch (err) {
+    logger.warn({ scheduleId: s.id, err: err instanceof Error ? err.message : String(err) },
+      'Schedule notify webhook failed')
+  }
+}
+
 /**
  * Execute a single scheduled run: create a Job, kick it off through Job
  * Board (which honors the concurrency cap), bump next_run.
@@ -307,22 +376,11 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     return
   }
 
-  const agent = registry.findAgent(s.agent)
-  if (!agent) {
-    // next_run was already advanced by the claim above, so a schedule pointing
-    // at an unregistered agent no longer busy-loops every tick — it retries at
-    // the next occurrence (the agent may register later).
-    logger.warn({ scheduleId: s.id, agent: s.agent }, 'Schedule agent not registered, skipping this run')
-    return
-  }
-
   // R6 minimal cut — scheduled Loop wake-ups. A prompt starting with `loop:`
-  // creates/starts a Loop on the schedule's thread instead of a plain job.
-  // The mission text after the prefix carries objective + exit conditions
-  // (parseLoopStartText format). No job row is created; the Loop run file is
-  // the persisted state.
-  // Dynamic import keeps schedule.ts free of a static edge to router.ts
-  // (loop-scheduler → router), avoiding a heavy load-time coupling.
+  // starts/resumes a Loop on a dedicated cron thread instead of a plain
+  // tool-less job. Still goes through Job Board (concurrency cap, result
+  // row, optional notify_url). Dynamic import keeps schedule.ts free of a
+  // static edge to router.ts (loop-scheduler → router).
   const { isLoopSchedulePrompt, wakeLoopForThread, loopMissionText } = await import('./loop-scheduler.js')
   if (isLoopSchedulePrompt(s.prompt)) {
     const missionText = loopMissionText(s.prompt)
@@ -330,31 +388,39 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
       logger.warn({ scheduleId: s.id }, 'loop: schedule has empty mission text; skipping this run')
       return
     }
-    const threadId = s.workspace_id
-      ? `${s.workspace_id}:${s.name}`
-      : `cron:${s.id}`
-    logger.info({ scheduleId: s.id, name: s.name, threadId }, 'Scheduled Loop wake-up fired')
-    const result = await wakeLoopForThread({
-      platform: 'web',
-      channelId: s.workspace_id || `cron:${s.id}`,
-      threadId,
-      userId: s.creator_id || 'scheduler',
-      missionText,
-    }).catch((err) => {
-      logger.error({
-        scheduleId: s.id,
-        err: err instanceof Error ? err.message : String(err),
-        event: 'schedule.loop_wake_failed',
-      }, 'scheduled Loop wake-up threw')
-      return { ok: false, error: String(err) } as const
+    // Dedicated thread so a cron tick does not steal the user's current
+    // Focus / sticky agent. Portal lists Loops by file; IM chat is not
+    // the delivery surface (use notify_url).
+    const threadId = `cron:${s.id}`
+    const channelId = s.workspace_id || `cron:${s.id}`
+    const jobId = createJob('agim', s.prompt, {
+      creatorId: s.creator_id,
+      workspaceId: s.workspace_id,
     })
-    if (!result.ok) {
-      logger.warn({ scheduleId: s.id, reason: result.error, event: 'schedule.loop_wake_skipped' },
-        'scheduled Loop wake-up did not start')
-    } else if (result.skipped) {
-      logger.info({ scheduleId: s.id, event: 'schedule.loop_already_active' },
-        'Loop already active on scheduled thread; wake-up skipped')
-    }
+    logger.info({ scheduleId: s.id, name: s.name, threadId, jobId }, 'Scheduled Loop wake-up fired')
+    void runJob(jobId, async function* (_job, _jobLogger, signal) {
+      const result = await wakeLoopForThread({
+        platform: 'cron',
+        channelId,
+        threadId,
+        userId: s.creator_id || 'scheduler',
+        missionText,
+        signal,
+      })
+      if (!result.ok) throw new Error(result.error)
+      const verb = result.skipped ? 'skipped' : result.resumed ? 'resumed' : 'started'
+      yield `${verb} loop ${result.run.id.slice(0, 8)} status=${result.run.status}`
+    }, logger).then(() => notifyScheduleWebhook(s, jobId, logger))
+      .catch(() => { /* runJob already logged */ })
+    return
+  }
+
+  const agent = registry.findAgent(s.agent)
+  if (!agent) {
+    // next_run was already advanced by the claim above, so a schedule pointing
+    // at an unregistered agent no longer busy-loops every tick — it retries at
+    // the next occurrence (the agent may register later).
+    logger.warn({ scheduleId: s.id, agent: s.agent }, 'Schedule agent not registered, skipping this run')
     return
   }
 
@@ -388,69 +454,8 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
       throw new Error(outcome.error ?? outcome.status)
     }
-  }, logger).then(async () => {
-    if (!s.notify_url) return
-    // Defense in depth: re-validate at fire time in case the row was edited
-    // out-of-band (manual SQL, future v0.x importer) — never trust DB content
-    // as an authorization bypass for the SSRF gate.
-    const v = validateWebhookUrl(s.notify_url)
-    if (!v.ok) {
-      logger.warn({ scheduleId: s.id, reason: v.reason, event: 'schedule.notify.rejected' },
-        'Schedule notify webhook rejected by URL validator')
-      return
-    }
-    // At-fetch-time SSRF guard. validateWebhookUrl is lexical: it only sees
-    // the host string, so a HOSTNAME that resolves to private space (DNS
-    // rebinding, split-horizon, or an attacker domain whose A-record points
-    // at 169.254.169.254 / 10.x / 127.x) passes it. Resolve the host via DNS
-    // here — right before the fetch — and reject private/loopback/link-local
-    // targets. This is the "at-fetch-time guard" the validateWebhookUrl
-    // comment flagged as tracked separately.
-    const dnsCheck = await assertWebhookHostPublic(v.url.hostname)
-    if (!dnsCheck.ok) {
-      logger.warn({ scheduleId: s.id, reason: dnsCheck.reason, host: v.url.hostname, event: 'schedule.notify.rejected_dns' },
-        'Schedule notify webhook rejected by DNS-resolved address check')
-      return
-    }
-    try {
-      const job = (await import('./job-board.js')).getJob(jobId)
-      if (!job) return
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), NOTIFY_TIMEOUT_MS)
-      try {
-        const resp = await fetch(v.url.toString(), {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            scheduleId: s.id,
-            jobId,
-            status: job.status,
-            result: job.result,
-            error: job.error,
-          }),
-          signal: ctrl.signal,
-          // Drop redirects so a 30x can't pivot us back to a private host.
-          redirect: 'manual',
-        })
-        // Drain (capped) so the connection can be reused / closed cleanly.
-        if (resp.body) {
-          let read = 0
-          const reader = resp.body.getReader()
-          while (read < NOTIFY_MAX_RESPONSE_BYTES) {
-            const { done, value } = await reader.read()
-            if (done) break
-            read += value?.byteLength ?? 0
-          }
-          await reader.cancel().catch(() => {})
-        }
-      } finally {
-        clearTimeout(timer)
-      }
-    } catch (err) {
-      logger.warn({ scheduleId: s.id, err: err instanceof Error ? err.message : String(err) },
-        'Schedule notify webhook failed')
-    }
-  }).catch(() => { /* runJob already logged */ })
+  }, logger).then(() => notifyScheduleWebhook(s, jobId, logger))
+    .catch(() => { /* runJob already logged */ })
 }
 
 /** Run one tick — exposed for tests so they don't have to wait for setInterval. */

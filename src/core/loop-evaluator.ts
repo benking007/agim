@@ -3,6 +3,7 @@
 // Knob: AGIM_LOOP_EVALUATOR=auto|on|off (default auto = try when cheap bound).
 
 import { callAgentByName } from './a2a.js'
+import { getJob } from './job-board.js'
 import { logger as rootLogger } from './logger.js'
 import { getMissionView, noteLoopEvaluator, type LoopRun } from './loop-run.js'
 import type { RouteContext } from './router.js'
@@ -218,21 +219,24 @@ function parseVerdictJson(text: string): AutoVerdict | null {
 }
 
 /** Format the current round's Subagent results for the reviewer prompt. */
-function formatRoundEvidence(run: LoopRun): string {
+export function formatLoopRoundEvidence(run: LoopRun): string {
   const ids = Array.isArray(run.roundJobIds) ? run.roundJobIds : []
   if (ids.length === 0) return '(no Subagent results recorded)'
-  try {
-    // Dynamic import keeps the static graph light; job-board is SQLite-backed
-    // and may be unavailable (bun) — degrade to a line per job id.
-    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-    const lines: string[] = []
-    for (const id of ids.slice(-12)) {
+  const lines: string[] = []
+  for (const id of ids.slice(-12)) {
+    try {
+      const job = getJob(id)
+      if (!job) {
+        lines.push(`- subagent job #${id}: (not found)`)
+        continue
+      }
+      const body = (job.result || job.error || '').trim().replace(/\s+/g, ' ').slice(0, 800)
+      lines.push(`- subagent job #${id} [${job.status}] ${job.agent}: ${body || '(empty)'}`)
+    } catch {
       lines.push(`- subagent job #${id}`)
     }
-    return lines.join('\n')
-  } catch {
-    return `(subagent jobs: ${ids.join(', ')})`
   }
+  return lines.join('\n')
 }
 
 /**
@@ -273,7 +277,7 @@ export async function autoVerifyLoopRound(input: {
     `Round: ${run.round}/${run.maxRounds}`,
     '',
     'Subagent results this round:',
-    formatRoundEvidence(run),
+    formatLoopRoundEvidence(run),
     '',
     'met=true only when the evidence plausibly satisfies the Objective and Exit.',
     'met=false requires gaps[] and a concrete nextDirection for the next round.',

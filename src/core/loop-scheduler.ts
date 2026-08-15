@@ -18,10 +18,15 @@
 //
 //   loop: 修好登录超时；退出条件为验收通过或最多5轮
 //
-// Headless (unattended) mode: when AGIM_LOOP_HEADLESS=1 (or the mission text
-// contains "无人值守"), a met=true verdict ends the Loop immediately instead
-// of parking it in pending_user_confirm for a human. Explicit opt-in only —
-// the interactive HITL default is preserved.
+// R6 contract (loop-engineering.md): the trigger only starts (or resumes)
+// a turn. It does NOT call confirmLoopMission. Incomplete mission text
+// fails the fire and rolls back so a hidden cron thread cannot wedge
+// forever in ALIGNING. Both hard fields in the cron prompt let startLoop
+// enter planning on its own (same as `/loop start` with a complete line).
+//
+// Headless (unattended) mode is opt-in per mission: the text must contain
+// 无人值守 / headless. AGIM_LOOP_HEADLESS=1 only applies to scheduled
+// runs (source=scheduled), never to interactive chat Loops.
 
 import { randomUUID } from 'node:crypto'
 import { registry } from './registry.js'
@@ -29,13 +34,12 @@ import { sessionManager } from './session.js'
 import { createLogger } from './logger.js'
 import { canParentLoop } from './loop-parent-agent.js'
 import { isAgentAvailableCached } from './onboarding.js'
+import { isLoopParentTurnActive } from './loop-parent-turn.js'
 import {
   startLoop,
-  confirmLoopMission,
   getActiveLoop,
-  setLoopObjective,
-  setLoopExit,
-  parseLoopStartText,
+  stopLoop,
+  missionMentionsHeadless,
   type LoopRun,
 } from './loop-run.js'
 import { callAgentWithHistory } from './router.js'
@@ -46,6 +50,9 @@ const log: Logger = createLogger({ component: 'loop-scheduler' })
 
 /** Prefix that marks a schedule prompt as a Loop wake-up (schedule.ts). */
 export const LOOP_PROMPT_PREFIX = 'loop:'
+
+/** Default cap on one scheduled parent turn (override via AGIM_LOOP_WAKE_TIMEOUT_MS). */
+const DEFAULT_WAKE_TIMEOUT_MS = 10 * 60 * 1000
 
 /**
  * True when a schedule prompt should wake a Loop instead of running a plain
@@ -62,15 +69,14 @@ export function loopMissionText(prompt: string): string {
   const m = /^loop\s*[：:]\s*/i.exec(trimmed)
   return m ? trimmed.slice(m[0].length).trim() : ''
 }
+
 /**
- * Headless opt-in: AGIM_LOOP_HEADLESS=1, or the mission text explicitly says
- * 无人值守 / headless. When on, met=true verdicts auto-end the Loop instead
- * of parking in pending_user_confirm.
+ * Keyword-only headless probe for cron text (no process-global env).
+ * Env AGIM_LOOP_HEADLESS is applied later on the persisted run when
+ * `source === 'scheduled'` — see `isLoopHeadless` in loop-run.ts.
  */
 export function isHeadlessLoop(missionText: string): boolean {
-  const env = (process.env.AGIM_LOOP_HEADLESS ?? '').trim().toLowerCase()
-  if (env === '1' || env === 'on' || env === 'true') return true
-  return /无人值守|headless/i.test(missionText)
+  return missionMentionsHeadless(missionText)
 }
 
 export interface WakeLoopInput {
@@ -81,107 +87,144 @@ export interface WakeLoopInput {
   userId: string
   /** Mission text WITHOUT the `loop:` prefix (objective；退出：…). */
   missionText: string
-  /** Optional explicit max rounds override (defaults to mission/exit text). */
-  maxRounds?: number
-  /** Optional wall-clock cap in ms (defaults to mission/exit text). */
-  maxWallMs?: number
+  /** Optional abort (Job Board signal / wake timeout). */
+  signal?: AbortSignal
   /** Optional logger override (tests / callers with their own context). */
   logger?: Logger
 }
 
 export type WakeLoopResult =
-  | { ok: true; run: LoopRun; started: boolean; skipped: boolean }
+  | { ok: true; run: LoopRun; started: boolean; skipped: boolean; resumed: boolean }
   | { ok: false; error: string }
 
+function resolveWakeTimeoutMs(): number {
+  const raw = (process.env.AGIM_LOOP_WAKE_TIMEOUT_MS ?? '').trim()
+  if (!raw) return DEFAULT_WAKE_TIMEOUT_MS
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_WAKE_TIMEOUT_MS
+  return n
+}
+
+function rollbackFreshRun(
+  input: WakeLoopInput,
+  createdThisWake: boolean,
+): void {
+  if (!createdThisWake) return
+  try {
+    stopLoop(input.platform, input.channelId, input.threadId, 'error')
+  } catch {
+    /* last resort — do not hide the original error */
+  }
+}
+
 /**
- * Create (or reuse) a Loop for a thread from a plain-text mission and start
+ * Create (or resume) a Loop for a thread from a plain-text mission and start
  * one parent turn so the Loop actually makes progress without a user message.
  *
- * Steps (all reuse existing exports — no state-machine changes):
- *   1. startLoop() with the mission text; an already-active Loop returns
- *      'already_running' → skipped.
- *   2. If still aligning (missing fields), fill objective/exit and confirm.
- *   3. Ensure the sticky agent can parent the Loop (switch to Agim if not).
- *   4. callAgentWithHistory() on that session; the injected Loop snippet +
+ * Steps:
+ *   1. Refuse empty / incomplete mission text (R6: do not auto-confirm).
+ *   2. If a Loop is already active:
+ *        - parent turn in-flight or pending_user_confirm → skip
+ *        - aligning leftover → stop it, then start fresh
+ *        - planning / dispatching / verifying / reflecting → resume one turn
+ *   3. startLoop({ source: 'scheduled' }); aligning → rollback + error.
+ *   4. Ensure the sticky agent can parent the Loop (switch to Agim if not).
+ *   5. callAgentWithHistory() with a timeout; the injected Loop snippet +
  *      full Agim toolset drive planning → dispatch → verdict in-turn.
  *
- * Never throws on Loop bookkeeping; caller-facing errors are returned as
- * { ok:false }. The agent turn may still throw — that propagates to the
- * caller (schedule.ts catches per-fire).
+ * Never throws; caller-facing errors are `{ ok:false }`. A run created in
+ * THIS wake is rolled back on any failure after startLoop.
  */
 export async function wakeLoopForThread(input: WakeLoopInput): Promise<WakeLoopResult> {
   const l = input.logger ?? log
   const text = (input.missionText || '').trim()
   if (!text) return { ok: false, error: 'empty mission text' }
 
-  // 1. Start (or skip if already running on this thread).
-  const started = startLoop({
-    platform: input.platform,
-    channelId: input.channelId,
-    threadId: input.threadId,
-    userId: input.userId,
-    text,
-  })
-  if (!started.ok) {
-    if (started.error === 'already_running') {
-      l.info({
-        event: 'loop-scheduler.skip_already_running',
-        platform: input.platform,
-        threadId: input.threadId,
-      }, 'loop already active on thread; scheduled wake-up skipped')
-      const active = getActiveLoop(input.platform, input.channelId, input.threadId)
-      if (!active) {
-        // Race: loop ended between startLoop's already_running check and now.
-        return { ok: false, error: 'loop ended during wake-up' }
-      }
-      return { ok: true, run: active, started: false, skipped: true }
-    }
-    return { ok: false, error: started.error }
-  }
-
-  // 2. Align: fill any missing hard fields and confirm.
-  if (!started.aligned || started.run.status === 'aligning') {
-    const parsed = parseLoopStartText(text)
-    if (parsed.objective) {
-      const r = setLoopObjective(input.platform, input.channelId, input.threadId, parsed.objective)
-      if (!r.ok && r.error !== 'not_aligning') {
-        return { ok: false, error: `objective: ${r.error}` }
-      }
-    }
-    if (parsed.exitDescription) {
-      const r = setLoopExit(input.platform, input.channelId, input.threadId, parsed.exitDescription)
-      if (!r.ok && r.error !== 'not_aligning') {
-        return { ok: false, error: `exit: ${r.error}` }
-      }
-    }
-    const confirmed = confirmLoopMission(input.platform, input.channelId, input.threadId)
-    if (!confirmed.ok) {
-      if (confirmed.error === 'not_aligning') {
-        // Someone else confirmed between our startLoop and here — fine.
-        l.debug({ event: 'loop-scheduler.confirm_race' }, 'mission confirmed concurrently')
-      } else {
-        return { ok: false, error: `confirm: ${confirmed.error}` }
-      }
-    }
-  }
-
-  // 3. Parent agent must be Agim Agent (Loop orchestration tools only exist
-  //    there). getOrCreateSession with 'agim' idempotently switches.
+  // Preconditions BEFORE creating a run — otherwise a missing agent leaves
+  // an aligning/planning Loop that wedges every later tick (already_running).
   const agimAgent = registry.findAgent('agim')
   if (!agimAgent) return { ok: false, error: 'Agim Agent not registered' }
   if (!(await isAgentAvailableCached(agimAgent.name))) {
     return { ok: false, error: 'Agim Agent unavailable (no LLM backend configured)' }
   }
-  const session = await sessionManager.getOrCreateSession(
-    input.platform, input.channelId, input.threadId, agimAgent.name,
-  )
+
+  const existing = getActiveLoop(input.platform, input.channelId, input.threadId)
+  let createdThisWake = false
+  let started = false
+  let resumed = false
+  let run!: LoopRun
+
+  if (existing) {
+    if (isLoopParentTurnActive(input.platform, input.channelId, input.threadId)) {
+      l.info({
+        event: 'loop-scheduler.skip_parent_active',
+        platform: input.platform,
+        threadId: input.threadId,
+      }, 'loop parent turn already in-flight; scheduled wake-up skipped')
+      return { ok: true, run: existing, started: false, skipped: true, resumed: false }
+    }
+    if (existing.status === 'pending_user_confirm') {
+      l.info({
+        event: 'loop-scheduler.skip_pending_confirm',
+        platform: input.platform,
+        threadId: input.threadId,
+      }, 'loop waiting for user confirm; scheduled wake-up skipped')
+      return { ok: true, run: existing, started: false, skipped: true, resumed: false }
+    }
+    if (existing.status === 'aligning') {
+      // Leftover from a previous incomplete fire (or a human /loop start).
+      // Do not auto-confirm. Clear it so this tick can start cleanly or fail.
+      stopLoop(input.platform, input.channelId, input.threadId, 'error')
+    } else {
+      run = existing
+      resumed = true
+    }
+  }
+
+  if (!resumed) {
+    const startedResult = startLoop({
+      platform: input.platform,
+      channelId: input.channelId,
+      threadId: input.threadId,
+      userId: input.userId,
+      text,
+      source: 'scheduled',
+    })
+    if (!startedResult.ok) {
+      return { ok: false, error: startedResult.error }
+    }
+    createdThisWake = true
+    started = true
+    run = startedResult.run
+    if (!startedResult.aligned || run.status === 'aligning') {
+      rollbackFreshRun(input, true)
+      return { ok: false, error: 'incomplete_mission' }
+    }
+  }
+
+  let session: Awaited<ReturnType<typeof sessionManager.getOrCreateSession>>
+  try {
+    session = await sessionManager.getOrCreateSession(
+      input.platform, input.channelId, input.threadId, agimAgent.name,
+    )
+  } catch (err) {
+    rollbackFreshRun(input, createdThisWake)
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
   if (!canParentLoop(session.agent)) {
+    rollbackFreshRun(input, createdThisWake)
     return { ok: false, error: `sticky agent ${session.agent} cannot parent a Loop` }
   }
 
-  // 4. One parent turn: the Loop snippet (buildLoopSnippet in router) tells
-  //    the model the current phase; the full Agim toolset (call_agents /
-  //    loop_verdict) lets runAgentLoop drive the round to completion.
+  const timeoutMs = resolveWakeTimeoutMs()
+  const wakeCtrl = new AbortController()
+  const onExternalAbort = () => wakeCtrl.abort()
+  if (input.signal) {
+    if (input.signal.aborted) wakeCtrl.abort()
+    else input.signal.addEventListener('abort', onExternalAbort, { once: true })
+  }
+  const timer = setTimeout(() => wakeCtrl.abort(), timeoutMs)
+
   const ctx: RouteContext = {
     platform: input.platform,
     channelId: input.channelId,
@@ -191,6 +234,7 @@ export async function wakeLoopForThread(input: WakeLoopInput): Promise<WakeLoopR
     logger: l,
     userId: input.userId,
     intent: 'loop-scheduled',
+    signal: wakeCtrl.signal,
   }
   const turnPrompt = [
     '⏰ 定时任务已触发。',
@@ -205,9 +249,13 @@ export async function wakeLoopForThread(input: WakeLoopInput): Promise<WakeLoopR
     event: 'loop-scheduler.wake',
     platform: input.platform,
     threadId: input.threadId,
-    loopId: started.run.id.slice(0, 8),
+    loopId: run!.id.slice(0, 8),
     headless: isHeadlessLoop(text),
-  }, 'scheduled Loop wake-up: starting parent turn')
+    resumed,
+    timeoutMs,
+  }, resumed
+    ? 'scheduled Loop wake-up: resuming parent turn'
+    : 'scheduled Loop wake-up: starting parent turn')
 
   try {
     const generator = await callAgentWithHistory(
@@ -215,19 +263,24 @@ export async function wakeLoopForThread(input: WakeLoopInput): Promise<WakeLoopR
       session.model, session.variant, session.planMode,
     )
     for await (const _chunk of generator) {
-      // Drain the generator; the adapter persists to session history.
+      if (wakeCtrl.signal.aborted) break
+    }
+  } catch (err) {
+    rollbackFreshRun(input, createdThisWake)
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
     }
   } finally {
-    // The loop run may have ended (verdict) or be parked in a phase; nothing
-    // to clean up here — writeRun owns persistence.
+    clearTimeout(timer)
+    input.signal?.removeEventListener('abort', onExternalAbort)
   }
 
-  const run = getActiveLoop(input.platform, input.channelId, input.threadId)
-  if (!run) {
-    // Ended within this turn (e.g. headless met=true or wall limit).
+  const after = getActiveLoop(input.platform, input.channelId, input.threadId)
+  if (!after) {
     l.info({ event: 'loop-scheduler.wake.ended_in_turn', threadId: input.threadId },
       'Loop ended during the wake-up turn')
-    return { ok: true, run: started.run, started: true, skipped: false }
+    return { ok: true, run: run!, started, skipped: false, resumed }
   }
-  return { ok: true, run, started: true, skipped: false }
+  return { ok: true, run: after, started, skipped: false, resumed }
 }

@@ -308,7 +308,7 @@ Focus **不会**再默认塞进 `objective`（避免「聚焦标题」被当成�
 | **退出下限 `minRounds`** | `stop`+`met=true` 在 `round < minRounds` 时拒绝 | Hard ✅（`need_more_rounds`） |
 | **退出上限 `maxRounds` / `maxWallMs`** | 触达即截断（可不经 verdict）；有 live 子代理时推迟 | Hard ✅ |
 | **独立 cheap 验收** | `stop`+`met=true` 前可选再判 | Soft/auto（`AGIM_LOOP_EVALUATOR`） |
-| **R6 Heartbeat 触发** | 只负责 start，仍走 ALIGNING | 暂缓 |
+| **R6 cron `loop:` 触发** | 只负责 start / 续跑一轮；字段不齐则失败回滚，**不**代 `confirm` | 最小刀（`/cron` 前缀） |
 
 #### 已拍板（2026-07-25）
 
@@ -467,6 +467,10 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | `AGIM_LOOP_DISPATCH_GATE` | on | 派工前禁父侧调研；亦控父侧等待门禁 |
 | `AGIM_LOOP_VERIFY_GATE` | on | 派工后强制 `loop_verdict` |
 | `AGIM_LOOP_EVALUATOR` | `auto` | `stop`+`met=true` 前独立 cheap 验收 |
+| `AGIM_LOOP_HEADLESS` | off | **仅** `source=scheduled` 的 cron Loop：`met=true` 跳过结案确认。交互 Loop 须使命含「无人值守」/`headless` |
+| `AGIM_LOOP_CONFIRM_TIMEOUT_MS` | unset（关） | 结案确认超时（opt-in）。到点默认 `objective_met`；`AGIM_LOOP_CONFIRM_TIMEOUT_ACTION=continue` 则进下一轮 planning |
+| `AGIM_LOOP_AUTO_VERIFY` | off | 父回合死后 cheap 补 `loop_verdict`（读本轮 job 结果）；失败回落 `verify_skipped` |
+| `AGIM_LOOP_WAKE_TIMEOUT_MS` | `600000` | 一次 cron 唤醒父回合上限 |
 | `AGIM_LOOPS_DIR` | `~/.agim/loops` | Loop JSON 目录（测试可覆盖） |
 | `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | `6` | 每 **user turn** 的 `call_agent` + `call_agents` 任务预算（Loop 多轮共用同一 turn 时见 §6.6） |
 
@@ -506,16 +510,16 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
 | **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 对焦/立即行动/结案底栏 docks（**非**小精灵气泡）；Tasks Loop 审计；结束总结 Markdown | 用户能看懂「待对焦/待派工/待验收」并直接操作 |
 | **加固** ✅ | **门禁 + 超时** | 派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` `timeoutMs:0`；假超时不覆盖成功 | 不出现「已提交却无活跃 Loop / UI 假待验收」 |
-| **R6** | **可选触发** | Heartbeat/cron **只负责 start**，仍走 ALIGNING | 不绕过对焦 |
+| **R6** | **可选触发** | `/cron` prompt `loop:` **只负责 start / 续跑一轮**；缺硬字段失败回滚，不代 confirm | 不绕过对焦 |
 
-推荐合入顺序：**R1 → R2 → R3 → R4 → R5 → 加固**（产品闭环）；**R6 可选，暂缓**。
+推荐合入顺序：**R1 → R2 → R3 → R4 → R5 → 加固**（产品闭环）；**R6** 现为 cron `loop:` 最小刀（Heartbeat 绑模板仍另开）。
 
 ```text
 R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──► R4 验收闭环 ──► R5 UX ✅
                                                                       │
                                                          加固（门禁/超时/exit）✅
                                                                       │
-                                                            R6 触发器（可选·暂缓）
+                                                            R6 触发器（cron `loop:` 最小刀）
 ```
 
 ---
@@ -528,7 +532,7 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 |-------------|------------|-------------|----------------|
 | Turn-based | 检查 | 普通对话 / skills | **L2 Agent Loop**（每轮工具循环） |
 | Goal-based | 停止条件 | **`/goal`**（达成或轮次上限；可有独立 evaluator） | **`/loop`（本 SSOT）** + R4 `met`/`nextDirection` + 可选 **cheap 独立验收** |
-| Time-based | 触发 | **`/loop` / `/schedule`**（按间隔再跑） | **Heartbeat / 提醒**（R6 暂缓；**不**占用 `/loop` 名） |
+| Time-based | 触发 | **`/loop` / `/schedule`**（按间隔再跑） | **`/cron` `loop:` 前缀**（R6 最小刀；**不**占用 `/loop` 名） |
 | Proactive | prompt + 组合 | schedule × goal × workflow | 未做；勿与使命 `/loop` 混谈 |
 
 **命名要点**：用户从 Claude 过来时，听到「Loop」常以为是定时轮询——在 Agim 里请说「使命闭环 / Loop Engineering L3」；定时能力另开刀。
@@ -557,7 +561,7 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 > **Loop = L3：先对焦（目标+退出条件）→ 拆解 → 子代理 → 验收 →（未达）再来 → 退出。**  
 > **两硬输入缺一不可；缺则 ALIGNING，不派工。**  
 > **≠ Claude 的定时 `/loop`；≈ 他们的 `/goal` 级闭环。**  
-> 节奏：R1–R5 + 门禁加固已齐；R6 触发暂缓。
+> 节奏：R1–R5 + 门禁加固已齐；R6 为 `/cron` `loop:` 最小刀（仍走对焦，不代 confirm）。
 
 ---
 
@@ -594,3 +598,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-27 | **文档**：交叉 [`agent-profiles.md`](./agent-profiles.md)；CLI sticky 可派工、不可当 Loop 父 → [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |
 | 2026-08-02 | **Subagent 终态立刻同步 dock**：`notifyLoopJobTerminal`→`loop-changed`；多子代理时仍按本轮 live 守候（单个完成 ≠ 验收）；SPA 不误标带 `jobId` 的 agent 卡 |
 | 2026-08-02 | **休眠唤醒空闲验收收割**：`maybeReapIdleLoopVerify`（父轮 idle + live=0 → `verify_skipped`）；`GET /api/loop` / 子代理终态 / 父轮 finally；HISTORY 清除已结束的 stuck Running |
+| 2026-08-15 | **R6 最小刀**：`/cron` `loop:` 前缀唤醒/续跑；字段不齐回滚；`AGIM_LOOP_HEADLESS` 仅 scheduled；结案超时 opt-in；`AGIM_LOOP_AUTO_VERIFY` 读 job 证据 |

@@ -24,6 +24,8 @@
 | 文件 | 说明 |
 |------|------|
 | [`code-review-2026-08-15.md`](./code-review-2026-08-15.md) | 2026-08-15 可用性/易用性/稳定性 CR 落地状态 |
+| [`loop-automation-review-2026-08-15.md`](./loop-automation-review-2026-08-15.md) | Loop 定时触发 / 自闭环审查快照（R6 前） |
+| [`feature-triage-2026-08-15.md`](./feature-triage-2026-08-15.md) | 功能取舍评估快照（v1.6.1 基准，部分建议已被否） |
 | [`code-review-2026-07-21-main.md`](./code-review-2026-07-21-main.md) | 2026-07-21 CR；#219/#220 收口；残留 P1c/L1/runtime-redirect |
 | [`code-review-2026-06-21-main.md`](./code-review-2026-06-21-main.md) | 历史 stub |
 | [`code-review-2026-05-06-main.md`](./code-review-2026-05-06-main.md) | 历史 stub |

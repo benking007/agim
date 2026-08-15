@@ -8,6 +8,7 @@
  * Opt out: AGIM_LOOP_VERIFY_GATE=off|0|false|no|disable
  */
 
+import { randomUUID } from 'node:crypto'
 import { threadHasPendingAsk } from './ask-user-rpc.js'
 import { isLoopParentTurnActive } from './loop-parent-turn.js'
 import {
@@ -19,6 +20,7 @@ import {
 } from './loop-run.js'
 import { isLoopAutoVerifyEnabled } from './loop-evaluator.js'
 import { logger as rootLogger } from './logger.js'
+import type { RouteContext } from './router.js'
 
 const log = rootLogger.child({ component: 'loop-verify-gate' })
 
@@ -82,30 +84,62 @@ export function loopVerifyFollowUpPrompt(): string {
   )
 }
 
+function autoVerifyKey(platform: string, channelId: string, threadId: string): string {
+  return `${platform || ''}__${channelId || ''}__${threadId || ''}`
+}
+
+/** Per-thread in-flight set — one reviewer at a time per Loop, not process-wide. */
+const autoVerifyInFlight = new Set<string>()
+
+export function isLoopAutoVerifyInFlight(
+  platform?: string,
+  channelId?: string,
+  threadId?: string,
+): boolean {
+  if (platform && threadId) {
+    return autoVerifyInFlight.has(autoVerifyKey(platform, channelId || '', threadId))
+  }
+  return autoVerifyInFlight.size > 0
+}
+
+function buildReapRouteContext(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  routeCtx?: RouteContext,
+): RouteContext {
+  if (routeCtx) return routeCtx
+  return {
+    platform,
+    channelId,
+    threadId,
+    defaultAgent: 'agim',
+    traceId: `loop-reap-${randomUUID().slice(0, 8)}`,
+    logger: log,
+    intent: 'loop-auto-verify',
+  }
+}
+
 /**
  * When Subagents are done but the parent turn already ended (sleep/wake,
  * abort, timeout) without `loop_verdict`, end the Loop as `verify_skipped`
  * so Portal does not show「还在继续」forever.
  *
- * With AGIM_LOOP_AUTO_VERIFY=1 (and a routeCtx available) the reaper first
- * runs a cheap auto-verify reviewer that PRODUCES the verdict the parent
- * never did; only when the reviewer is unavailable / unparseable does it
- * fall back to the hard verify_skipped stop. See loop-evaluator.ts.
+ * With AGIM_LOOP_AUTO_VERIFY=1 the reaper first runs a cheap auto-verify
+ * reviewer that PRODUCES the verdict the parent never did; only when the
+ * reviewer is unavailable / unparseable does it fall back to the hard
+ * verify_skipped stop. See loop-evaluator.ts. A RouteContext is optional —
+ * the reaper builds a minimal one so hot paths (parent finally / a2a /
+ * Portal poll) do not have to pass it.
  *
  * No-op while a parent turn is in-flight (about to verdict) or while
  * `loopNeedsVerdict` is false (live children / pending ask / …).
  */
-let autoVerifyInFlight = false
-
-export function isLoopAutoVerifyInFlight(): boolean {
-  return autoVerifyInFlight
-}
-
 export function maybeReapIdleLoopVerify(
   platform: string,
   channelId: string,
   threadId: string,
-  routeCtx?: import('./router.js').RouteContext,
+  routeCtx?: RouteContext,
 ): LoopExitEnforceResult {
   const active = getActiveLoop(platform, channelId, threadId)
   if (!active) return { ended: false, run: null }
@@ -120,18 +154,15 @@ export function maybeReapIdleLoopVerify(
     return { ended: false, run: active }
   }
 
-  // P1-1: auto-verify replaces the hard stop when opted in and we have a
-  // route context to spawn the reviewer with. Fire-and-forget: the reviewer
-  // runs as its own A2A subagent; the reaper returns the Loop still active so
-  // callers (a2a hook / poll) do not treat it as ended. The reviewer's
-  // verdict lands via applyLoopVerdict when it completes.
-  if (autoVerifyInFlight) {
+  const key = autoVerifyKey(platform, channelId, threadId)
+  if (autoVerifyInFlight.has(key)) {
     log.debug({ event: 'loop.auto_verify.reentrant_skipped', threadId },
-      'auto-verify already in flight; skip re-entrant reap')
+      'auto-verify already in flight on this thread; skip re-entrant reap')
     return { ended: false, run: active }
   }
-  if (routeCtx && isLoopAutoVerifyEnabled()) {
-    autoVerifyInFlight = true
+  if (isLoopAutoVerifyEnabled()) {
+    const ctx = buildReapRouteContext(platform, channelId, threadId, routeCtx)
+    autoVerifyInFlight.add(key)
     void (async () => {
       try {
         const { autoVerifyLoopRound } = await import('./loop-evaluator.js')
@@ -140,11 +171,10 @@ export function maybeReapIdleLoopVerify(
         if (!current) return
         const verdict = await autoVerifyLoopRound({
           run: current,
-          callerAgent: routeCtx.defaultAgent || 'agim',
-          routeCtx,
+          callerAgent: ctx.defaultAgent || 'agim',
+          routeCtx: ctx,
         })
         if (!verdict) {
-          // Reviewer unavailable → hard stop as before.
           forceLoopExitSkippedVerify(platform, channelId, threadId)
           return
         }
@@ -163,7 +193,7 @@ export function maybeReapIdleLoopVerify(
         }, 'auto-verify round threw; falling back to verify_skipped')
         try { forceLoopExitSkippedVerify(platform, channelId, threadId) } catch { /* last resort */ }
       } finally {
-        autoVerifyInFlight = false
+        autoVerifyInFlight.delete(key)
       }
     })()
     return { ended: false, run: active }

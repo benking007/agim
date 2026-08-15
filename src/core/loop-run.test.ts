@@ -845,16 +845,47 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(stop.run.status).not.toBe('pending_user_confirm')
   })
 
-  it('headless loop (AGIM_LOOP_HEADLESS=1) auto-ends on met=true; interactive stays pending', () => {
+  it('AGIM_LOOP_HEADLESS=1 does not skip HITL on interactive (user) Loops', () => {
     reset()
     const saved = process.env.AGIM_LOOP_HEADLESS
     try {
       process.env.AGIM_LOOP_HEADLESS = '1'
-      const threadId = 'loop-headless-env'
+      const threadId = 'loop-headless-env-user'
       const started = startLoop({
         ...base,
         threadId,
         text: '修好登录；退出条件为验收通过或最多5轮',
+      })
+      if (!started.ok) {
+        if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+        return
+      }
+      noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+      const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+        decision: 'stop',
+        summary: 'looks done',
+        met: true,
+      })
+      expect(stop.ok).toBe(true)
+      if (!stop.ok) return
+      expect(stop.run.status).toBe('pending_user_confirm')
+    } finally {
+      if (saved === undefined) delete process.env.AGIM_LOOP_HEADLESS
+      else process.env.AGIM_LOOP_HEADLESS = saved
+    }
+  })
+
+  it('AGIM_LOOP_HEADLESS=1 auto-ends scheduled Loops; keyword in objective also counts', () => {
+    reset()
+    const saved = process.env.AGIM_LOOP_HEADLESS
+    try {
+      process.env.AGIM_LOOP_HEADLESS = '1'
+      const threadId = 'loop-headless-env-sched'
+      const started = startLoop({
+        ...base,
+        threadId,
+        text: '修好登录；退出条件为验收通过或最多5轮',
+        source: 'scheduled',
       })
       if (!started.ok) {
         if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
@@ -875,26 +906,26 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
       else process.env.AGIM_LOOP_HEADLESS = saved
     }
 
-    // Interactive default (no env, no 无人值守 in mission) still parks.
-    const threadId2 = 'loop-interactive-still'
-    const interactive = startLoop({
+    const threadId2 = 'loop-headless-objective'
+    const keyed = startLoop({
       ...base,
       threadId: threadId2,
-      text: '修好登录；退出条件为验收通过或最多5轮',
+      text: '无人值守修好登录；退出条件为验收通过或最多5轮',
     })
-    if (!interactive.ok) {
-      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(interactive.error)
+    if (!keyed.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(keyed.error)
       return
     }
     noteLoopDispatch(base.platform, base.channelId, threadId2, { count: 1 })
-    const parked = applyLoopVerdict(base.platform, base.channelId, threadId2, {
+    const ended = applyLoopVerdict(base.platform, base.channelId, threadId2, {
       decision: 'stop',
       summary: 'looks done',
       met: true,
     })
-    expect(parked.ok).toBe(true)
-    if (!parked.ok) return
-    expect(parked.run.status).toBe('pending_user_confirm')
+    expect(ended.ok).toBe(true)
+    if (!ended.ok) return
+    expect(ended.run.status).toBe('ended')
+    expect(ended.run.endReason).toBe('objective_met')
   })
 
   it('maxRounds truncates after verify-unmet', () => {
@@ -1172,9 +1203,26 @@ describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
     return { platform, channelId, threadId }
   }
 
+  it('does nothing when AGIM_LOOP_CONFIRM_TIMEOUT_MS is unset (HITL default)', () => {
+    delete process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS
+    const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-off-'))
+    process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    try {
+      const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)
+      const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
+      expect(r.ended).toBe(false)
+      expect(getActiveLoop(platform, channelId, threadId)?.status).toBe('pending_user_confirm')
+    } finally {
+      if (savedMs === undefined) delete process.env.AGIM_LOOPS_DIR
+      else process.env.AGIM_LOOPS_DIR = savedMs
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
   it('auto-ends as objective_met after the timeout window', () => {
     const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-timeout-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS = String(30 * 60 * 1000)
     try {
       const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)
       const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
@@ -1193,6 +1241,7 @@ describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
   it('does not resolve before the timeout window', () => {
     const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-early-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS = String(30 * 60 * 1000)
     try {
       const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!, {
         confirmedAt: Date.now() - 60_000, // 1 min ago
@@ -1210,6 +1259,7 @@ describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
   it('AGIM_LOOP_CONFIRM_TIMEOUT_ACTION=continue advances to planning instead', () => {
     const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-continue-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS = String(30 * 60 * 1000)
     process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION = 'continue'
     try {
       const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)

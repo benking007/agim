@@ -33,7 +33,7 @@ const HELP = [
   '  | 场景           | Claude              | Agim                          |',
   '  | 普通对话迭代   | Turn-based / L2     | 普通 Agent 回合（非 /loop）   |',
   '  | 目标+停机条件  | `/goal`             | **本命令 `/loop`**（使命闭环）|',
-  '  | 定时再跑 prompt| **`/loop` /schedule** | Heartbeat / 提醒（R6 暂缓） |',
+  '  | 定时再跑 prompt| **`/loop` /schedule** | `/cron` `loop:` 前缀（R6 最小刀） |',
   '  | Focus 注意力   | （会话上下文）      | `/focus`（不是 Loop）         |',
   '',
   '**父编排 Agent**：必须是 **Agim Agent**（Portal 顶部选 Agim）。',

@@ -20,7 +20,8 @@ import {
   maybeReapIdleLoopVerify,
   isLoopAutoVerifyInFlight,
 } from './loop-verify-gate.js'
-import { isLoopAutoVerifyEnabled } from './loop-evaluator.js'
+import { formatLoopRoundEvidence, isLoopAutoVerifyEnabled } from './loop-evaluator.js'
+import type { LoopRun } from './loop-run.js'
 
 function seedLoop(dir: string, over: Record<string, unknown> = {}): {
   platform: string
@@ -71,6 +72,7 @@ describe('loop verify gate', () => {
     dir = mkdtempSync(join(tmpdir(), 'loop-verify-gate-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
     delete process.env.AGIM_LOOP_VERIFY_GATE
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
     _setTestLiveSubagents(false)
     _resetAskBusForTests()
   })
@@ -182,39 +184,28 @@ describe('loop verify gate', () => {
     expect(isLoopAutoVerifyInFlight()).toBe(false)
   })
 
-  it('reaper with auto-verify but no routeCtx still falls back to stop (no reviewer spawn)', () => {
+  it('reaper with auto-verify builds its own route ctx and defers (loop stays active)', async () => {
     process.env.AGIM_LOOP_AUTO_VERIFY = '1'
     const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
     const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
-    expect(r.ended).toBe(true)
-    if (r.ended) expect(r.run.endReason).toBe('verify_skipped')
-    expect(isLoopAutoVerifyInFlight()).toBe(false)
-  })
-
-  it('reaper with auto-verify + routeCtx defers to async reviewer (loop stays active)', async () => {
-    process.env.AGIM_LOOP_AUTO_VERIFY = '1'
-    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
-    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId, {
-      platform: a.platform,
-      channelId: a.channelId,
-      threadId: a.threadId,
-      defaultAgent: 'agim',
-      traceId: 'trace-test',
-      logger: {
-        info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {},
-        fatal: () => {}, level: 'info', bindings: () => ({}),
-        child: () => ({
-          info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {},
-          fatal: () => {}, level: 'info', bindings: () => ({}), child: () => null,
-        }),
-      } as unknown as import('pino').Logger,
-    } as import('./router.js').RouteContext)
     // Reviewer is fire-and-forget; the Loop is NOT ended synchronously.
     expect(r.ended).toBe(false)
-    expect(isLoopAutoVerifyInFlight()).toBe(true)
+    expect(isLoopAutoVerifyInFlight(a.platform, a.channelId, a.threadId)).toBe(true)
+    expect(isLoopAutoVerifyInFlight('other', 'c', 't-other')).toBe(false)
     // Give the async reviewer a beat to settle (it will fail: no cheap backend
     // in this unit env → falls back to verify_skipped).
-    await new Promise<void>((resolve) => setTimeout(resolve, 50))
-    expect(isLoopAutoVerifyInFlight()).toBe(false)
+    await new Promise<void>((resolve) => setTimeout(resolve, 80))
+    expect(isLoopAutoVerifyInFlight(a.platform, a.channelId, a.threadId)).toBe(false)
+  })
+
+  it('formatLoopRoundEvidence lists job ids and degrades when the board is empty', () => {
+    const run = {
+      roundJobIds: [11, 12],
+    } as LoopRun
+    const text = formatLoopRoundEvidence(run)
+    expect(text).toContain('#11')
+    expect(text).toContain('#12')
+    expect(formatLoopRoundEvidence({ roundJobIds: [] } as unknown as LoopRun))
+      .toContain('no Subagent results')
   })
 })

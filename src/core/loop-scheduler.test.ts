@@ -12,6 +12,11 @@ import {
 import { registry } from './registry.js'
 import { sessionManager } from './session.js'
 import { getActiveLoop, getLoopRun } from './loop-run.js'
+import {
+  markLoopParentTurnActive,
+  clearLoopParentTurnActive,
+  _resetLoopParentTurnsForTests,
+} from './loop-parent-turn.js'
 import { _truncateForTests } from './goals.js'
 import type { AgentAdapter } from './types.js'
 import type { Logger } from 'pino'
@@ -29,6 +34,7 @@ const noopLogger = (() => {
   stub.child = () => stub
   return stub as unknown as Logger
 })()
+void noopLogger
 
 function makeAgent(): AgentAdapter {
   return {
@@ -82,14 +88,15 @@ describe('loop-scheduler — headless detection (pure, runs on bun)', () => {
     expect(isHeadlessLoop('修好登录；退出：验收通过')).toBe(false)
   })
 
-  it('env AGIM_LOOP_HEADLESS=1 opts in', () => {
+  it('env AGIM_LOOP_HEADLESS does not flip the text probe (scoped to scheduled runs)', () => {
     process.env.AGIM_LOOP_HEADLESS = '1'
-    expect(isHeadlessLoop('修好登录；退出：验收通过')).toBe(true)
+    expect(isHeadlessLoop('修好登录；退出：验收通过')).toBe(false)
   })
 
   it('mission text 无人值守 / headless opts in', () => {
     expect(isHeadlessLoop('修好登录；退出：验收通过或无人值守')).toBe(true)
     expect(isHeadlessLoop('Fix login; exit: headless run')).toBe(true)
+    expect(isHeadlessLoop('无人值守修好登录；退出条件为验收通过')).toBe(true)
   })
 })
 
@@ -97,46 +104,59 @@ describe('wakeLoopForThread', () => {
   beforeEach(() => {
     try { _truncateForTests() } catch { /* ignore */ }
     try { sessionManager.stop() } catch { /* ignore */ }
+    _resetLoopParentTurnsForTests()
   })
 
   afterEach(() => {
     try { sessionManager.stop() } catch { /* ignore */ }
+    _resetLoopParentTurnsForTests()
     rmSync(join(TMP, 'sessions'), { recursive: true, force: true })
   })
 
   it('rejects empty mission text (runs on bun)', async () => {
     const r = await wakeLoopForThread({
-      platform: 'web', channelId: 'c', threadId: 't', userId: 'u1', missionText: '   ',
+      platform: 'cron', channelId: 'c', threadId: 't', userId: 'u1', missionText: '   ',
     })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain('empty mission text')
   })
 
-  it('surfaces failures as { ok:false } and never throws', async () => {
+  it('never throws; missing agent does not leave a Loop', async () => {
+    const hadAgent = !!registry.findAgent('agim')
     const r = await wakeLoopForThread({
-      platform: 'web', channelId: 'c', threadId: 't-fail', userId: 'u1',
-      missionText: '修好登录；退出：验收通过',
+      platform: 'cron', channelId: 'c', threadId: 't-fail', userId: 'u1',
+      missionText: '修好登录；退出条件为验收通过',
     })
-    // The contract: wake returns a structured error, never throws.
-    // The exact failure differs by environment:
-    //   - bun (no better-sqlite3): startLoop Path-B focus seeding fails
-    //     → focus_set_failed / focus_required;
-    //   - sqlite (node pool, no registered agent): 'Agim Agent not registered'.
-    if (!r.ok) {
-      expect([
-        'focus_set_failed',
-        'focus_required',
-        'Agim Agent not registered',
-      ]).toContain(r.error)
-      return
+    expect(r).toBeDefined()
+    if (!hadAgent) {
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.error).toBe('Agim Agent not registered')
+      expect(getActiveLoop('cron', 'c', 't-fail')).toBeNull()
     }
-    throw new Error(`expected wake to fail in this environment, got ok: ${JSON.stringify(r.run?.status)}`)
   })
 
-  it('creates a confirmed planning Loop and returns the run', async () => {
+  it('refuses incomplete mission text and leaves no wedged Loop', async () => {
     registry.registerAgent(makeAgent())
     const r = await wakeLoopForThread({
-      platform: 'web', channelId: 'cron-1', threadId: 't3', userId: 'u1',
+      platform: 'cron', channelId: 'cron-inc', threadId: 't-inc', userId: 'u1',
+      missionText: '修好登录',
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      // bun: startLoop Path-B cannot seed Focus (no better-sqlite3).
+      // sqlite: startLoop creates aligning, we roll it back.
+      expect(['incomplete_mission', 'focus_set_failed', 'focus_required']).toContain(r.error)
+    }
+    expect(getActiveLoop('cron', 'cron-inc', 't-inc')).toBeNull()
+    if (sqliteAvailable() && !r.ok) {
+      expect(r.error).toBe('incomplete_mission')
+    }
+  })
+
+  it('creates a planning Loop (both hard fields present) and returns the run', async () => {
+    registry.registerAgent(makeAgent())
+    const r = await wakeLoopForThread({
+      platform: 'cron', channelId: 'cron-1', threadId: 't3', userId: 'u1',
       missionText: '修好登录；退出条件为验收通过或最多5轮',
     })
     if (!r.ok) {
@@ -145,20 +165,21 @@ describe('wakeLoopForThread', () => {
     }
     expect(r.started).toBe(true)
     expect(r.skipped).toBe(false)
+    expect(r.resumed).toBe(false)
     expect(r.run.status).toBe('planning')
     expect(r.run.round).toBe(1)
+    expect(r.run.source).toBe('scheduled')
     expect(r.run.mission?.objective).toContain('修好登录')
     expect(r.run.maxRounds).toBe(5)
 
-    // The Loop is visible via the standard reader.
-    const active = getActiveLoop('web', 'cron-1', 't3')
+    const active = getActiveLoop('cron', 'cron-1', 't3')
     expect(active?.id).toBe(r.run.id)
   })
 
-  it('skips cleanly when a Loop is already active on the thread', async () => {
+  it('resumes an idle planning Loop instead of skipping', async () => {
     registry.registerAgent(makeAgent())
     const first = await wakeLoopForThread({
-      platform: 'web', channelId: 'cron-2', threadId: 't4', userId: 'u1',
+      platform: 'cron', channelId: 'cron-2', threadId: 't4', userId: 'u1',
       missionText: '修好登录；退出条件为验收通过或最多5轮',
     })
     if (!first.ok) {
@@ -167,28 +188,55 @@ describe('wakeLoopForThread', () => {
     }
 
     const second = await wakeLoopForThread({
-      platform: 'web', channelId: 'cron-2', threadId: 't4', userId: 'u1',
+      platform: 'cron', channelId: 'cron-2', threadId: 't4', userId: 'u1',
       missionText: '另一个目标；退出条件为验收通过',
     })
     expect(second.ok).toBe(true)
     if (!second.ok) return
     expect(second.started).toBe(false)
-    expect(second.skipped).toBe(true)
+    expect(second.skipped).toBe(false)
+    expect(second.resumed).toBe(true)
     expect(second.run.id).toBe(first.run.id)
+  })
+
+  it('skips when a parent turn is already in-flight', async () => {
+    registry.registerAgent(makeAgent())
+    const first = await wakeLoopForThread({
+      platform: 'cron', channelId: 'cron-2b', threadId: 't4b', userId: 'u1',
+      missionText: '修好登录；退出条件为验收通过或最多5轮',
+    })
+    if (!first.ok) {
+      if (sqliteAvailable()) throw new Error(`first wake failed on sqlite: ${first.error}`)
+      return
+    }
+    markLoopParentTurnActive('cron', 'cron-2b', 't4b')
+    try {
+      const second = await wakeLoopForThread({
+        platform: 'cron', channelId: 'cron-2b', threadId: 't4b', userId: 'u1',
+        missionText: '修好登录；退出条件为验收通过或最多5轮',
+      })
+      expect(second.ok).toBe(true)
+      if (!second.ok) return
+      expect(second.skipped).toBe(true)
+      expect(second.resumed).toBe(false)
+    } finally {
+      clearLoopParentTurnActive('cron', 'cron-2b', 't4b')
+    }
   })
 
   it('leaves a persistent Loop run on disk for later turns', async () => {
     registry.registerAgent(makeAgent())
     const r = await wakeLoopForThread({
-      platform: 'web', channelId: 'cron-3', threadId: 't5', userId: 'u1',
+      platform: 'cron', channelId: 'cron-3', threadId: 't5', userId: 'u1',
       missionText: '研究定价；退出条件为输出报告或最多3轮',
     })
     if (!r.ok) {
       if (sqliteAvailable()) throw new Error(`wake failed on sqlite: ${r.error}`)
       return
     }
-    const onDisk = getLoopRun('web', 'cron-3', 't5')
+    const onDisk = getLoopRun('cron', 'cron-3', 't5')
     expect(onDisk?.status).toBe('planning')
     expect(onDisk?.mission?.objective).toContain('研究定价')
+    expect(onDisk?.source).toBe('scheduled')
   })
 })

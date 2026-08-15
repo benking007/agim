@@ -17,7 +17,11 @@ import {
   loopNeedsVerdict,
   loopVerifyFollowUpPrompt,
   loopVerifySteerText,
+  maybeReapIdleLoopVerify,
+  isLoopAutoVerifyInFlight,
 } from './loop-verify-gate.js'
+import { formatLoopRoundEvidence, isLoopAutoVerifyEnabled } from './loop-evaluator.js'
+import type { LoopRun } from './loop-run.js'
 
 function seedLoop(dir: string, over: Record<string, unknown> = {}): {
   platform: string
@@ -68,6 +72,7 @@ describe('loop verify gate', () => {
     dir = mkdtempSync(join(tmpdir(), 'loop-verify-gate-'))
     process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
     delete process.env.AGIM_LOOP_VERIFY_GATE
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
     _setTestLiveSubagents(false)
     _resetAskBusForTests()
   })
@@ -156,5 +161,51 @@ describe('loop verify gate', () => {
     expect(loopVerifySteerText()).toContain('ask_user')
     expect(loopVerifyFollowUpPrompt()).toContain('loop_verdict')
     expect(loopVerifyFollowUpPrompt()).toContain('ask_user')
+  })
+
+  it('AGIM_LOOP_AUTO_VERIFY defaults off and reads env', () => {
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+    expect(isLoopAutoVerifyEnabled()).toBe(false)
+    process.env.AGIM_LOOP_AUTO_VERIFY = '1'
+    expect(isLoopAutoVerifyEnabled()).toBe(true)
+    process.env.AGIM_LOOP_AUTO_VERIFY = 'on'
+    expect(isLoopAutoVerifyEnabled()).toBe(true)
+    process.env.AGIM_LOOP_AUTO_VERIFY = 'off'
+    expect(isLoopAutoVerifyEnabled()).toBe(false)
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+  })
+
+  it('reaper without auto-verify falls back to verify_skipped stop', () => {
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(true)
+    if (r.ended) expect(r.run.endReason).toBe('verify_skipped')
+    expect(isLoopAutoVerifyInFlight()).toBe(false)
+  })
+
+  it('reaper with auto-verify builds its own route ctx and defers (loop stays active)', async () => {
+    process.env.AGIM_LOOP_AUTO_VERIFY = '1'
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    // Reviewer is fire-and-forget; the Loop is NOT ended synchronously.
+    expect(r.ended).toBe(false)
+    expect(isLoopAutoVerifyInFlight(a.platform, a.channelId, a.threadId)).toBe(true)
+    expect(isLoopAutoVerifyInFlight('other', 'c', 't-other')).toBe(false)
+    // Give the async reviewer a beat to settle (it will fail: no cheap backend
+    // in this unit env → falls back to verify_skipped).
+    await new Promise<void>((resolve) => setTimeout(resolve, 80))
+    expect(isLoopAutoVerifyInFlight(a.platform, a.channelId, a.threadId)).toBe(false)
+  })
+
+  it('formatLoopRoundEvidence lists job ids and degrades when the board is empty', () => {
+    const run = {
+      roundJobIds: [11, 12],
+    } as LoopRun
+    const text = formatLoopRoundEvidence(run)
+    expect(text).toContain('#11')
+    expect(text).toContain('#12')
+    expect(formatLoopRoundEvidence({ roundJobIds: [] } as unknown as LoopRun))
+      .toContain('no Subagent results')
   })
 })

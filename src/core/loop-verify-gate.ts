@@ -8,6 +8,7 @@
  * Opt out: AGIM_LOOP_VERIFY_GATE=off|0|false|no|disable
  */
 
+import { randomUUID } from 'node:crypto'
 import { threadHasPendingAsk } from './ask-user-rpc.js'
 import { isLoopParentTurnActive } from './loop-parent-turn.js'
 import {
@@ -17,7 +18,9 @@ import {
   threadHasLiveSubagents,
   type LoopExitEnforceResult,
 } from './loop-run.js'
+import { isLoopAutoVerifyEnabled } from './loop-evaluator.js'
 import { logger as rootLogger } from './logger.js'
+import type { RouteContext } from './router.js'
 
 const log = rootLogger.child({ component: 'loop-verify-gate' })
 
@@ -81,10 +84,53 @@ export function loopVerifyFollowUpPrompt(): string {
   )
 }
 
+function autoVerifyKey(platform: string, channelId: string, threadId: string): string {
+  return `${platform || ''}__${channelId || ''}__${threadId || ''}`
+}
+
+/** Per-thread in-flight set — one reviewer at a time per Loop, not process-wide. */
+const autoVerifyInFlight = new Set<string>()
+
+export function isLoopAutoVerifyInFlight(
+  platform?: string,
+  channelId?: string,
+  threadId?: string,
+): boolean {
+  if (platform && threadId) {
+    return autoVerifyInFlight.has(autoVerifyKey(platform, channelId || '', threadId))
+  }
+  return autoVerifyInFlight.size > 0
+}
+
+function buildReapRouteContext(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  routeCtx?: RouteContext,
+): RouteContext {
+  if (routeCtx) return routeCtx
+  return {
+    platform,
+    channelId,
+    threadId,
+    defaultAgent: 'agim',
+    traceId: `loop-reap-${randomUUID().slice(0, 8)}`,
+    logger: log,
+    intent: 'loop-auto-verify',
+  }
+}
+
 /**
  * When Subagents are done but the parent turn already ended (sleep/wake,
  * abort, timeout) without `loop_verdict`, end the Loop as `verify_skipped`
  * so Portal does not show「还在继续」forever.
+ *
+ * With AGIM_LOOP_AUTO_VERIFY=1 the reaper first runs a cheap auto-verify
+ * reviewer that PRODUCES the verdict the parent never did; only when the
+ * reviewer is unavailable / unparseable does it fall back to the hard
+ * verify_skipped stop. See loop-evaluator.ts. A RouteContext is optional —
+ * the reaper builds a minimal one so hot paths (parent finally / a2a /
+ * Portal poll) do not have to pass it.
  *
  * No-op while a parent turn is in-flight (about to verdict) or while
  * `loopNeedsVerdict` is false (live children / pending ask / …).
@@ -93,6 +139,7 @@ export function maybeReapIdleLoopVerify(
   platform: string,
   channelId: string,
   threadId: string,
+  routeCtx?: RouteContext,
 ): LoopExitEnforceResult {
   const active = getActiveLoop(platform, channelId, threadId)
   if (!active) return { ended: false, run: null }
@@ -106,6 +153,52 @@ export function maybeReapIdleLoopVerify(
     }, 'skip idle VERIFY reaper while parent turn in-flight')
     return { ended: false, run: active }
   }
+
+  const key = autoVerifyKey(platform, channelId, threadId)
+  if (autoVerifyInFlight.has(key)) {
+    log.debug({ event: 'loop.auto_verify.reentrant_skipped', threadId },
+      'auto-verify already in flight on this thread; skip re-entrant reap')
+    return { ended: false, run: active }
+  }
+  if (isLoopAutoVerifyEnabled()) {
+    const ctx = buildReapRouteContext(platform, channelId, threadId, routeCtx)
+    autoVerifyInFlight.add(key)
+    void (async () => {
+      try {
+        const { autoVerifyLoopRound } = await import('./loop-evaluator.js')
+        const { applyLoopVerdict, getActiveLoop: getActive } = await import('./loop-run.js')
+        const current = getActive(platform, channelId, threadId)
+        if (!current) return
+        const verdict = await autoVerifyLoopRound({
+          run: current,
+          callerAgent: ctx.defaultAgent || 'agim',
+          routeCtx: ctx,
+        })
+        if (!verdict) {
+          forceLoopExitSkippedVerify(platform, channelId, threadId)
+          return
+        }
+        applyLoopVerdict(platform, channelId, threadId, {
+          decision: verdict.met ? 'stop' : 'continue',
+          summary: verdict.summary,
+          met: verdict.met,
+          ...(verdict.gaps ? { gaps: verdict.gaps } : {}),
+          ...(verdict.nextDirection ? { nextDirection: verdict.nextDirection } : {}),
+        })
+      } catch (err) {
+        log.warn({
+          event: 'loop.auto_verify.unhandled',
+          threadId,
+          err: err instanceof Error ? err.message : String(err),
+        }, 'auto-verify round threw; falling back to verify_skipped')
+        try { forceLoopExitSkippedVerify(platform, channelId, threadId) } catch { /* last resort */ }
+      } finally {
+        autoVerifyInFlight.delete(key)
+      }
+    })()
+    return { ended: false, run: active }
+  }
+
   const r = forceLoopExitSkippedVerify(platform, channelId, threadId)
   if (r.ended) {
     log.info({

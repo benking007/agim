@@ -231,6 +231,7 @@ export interface LoopRun {
     | 'objective_met'
     | 'focus_off'
     | 'verify_skipped'
+    | 'confirm_timeout'
     | 'error'
   round: number
   /** Mirror of mission.exit.maxRounds when present; else provisional. */
@@ -283,6 +284,19 @@ export interface LoopRun {
   updatedAt: number
   lastVerdict?: LoopVerdict
   timeline: LoopTimelineEntry[]
+  /**
+   * Epoch ms when the Loop entered `pending_user_confirm`. Used by the
+   * confirm-timeout escape (AGIM_LOOP_CONFIRM_TIMEOUT_MS, opt-in): without
+   * it a met=true Loop would hang forever when no human ever opens the
+   * Portal dock.
+   */
+  confirmedAt?: number
+  /**
+   * Who opened the Loop. `scheduled` (cron `loop:` prefix) lets
+   * AGIM_LOOP_HEADLESS apply; interactive `/loop` stays HITL unless the
+   * mission text itself says 无人值守 / headless.
+   */
+  source?: 'user' | 'scheduled'
 }
 
 export interface LoopUsage {
@@ -1128,6 +1142,13 @@ export function maybeEnforceLoopExit(
 ): LoopExitEnforceResult {
   const run = getActiveLoop(platform, channelId, threadId)
   if (!run) return { ended: false, run: null }
+  // P1-2: confirm-timeout escape runs before the wall check — a parked
+  // met=true Loop should resolve on its own confirm window even when
+  // maxWallMs is unset or generous.
+  if (run.status === 'pending_user_confirm') {
+    const timedOut = maybeResolveLoopConfirmTimeout(platform, channelId, threadId, now)
+    if (timedOut.ended) return timedOut
+  }
   if (isLoopWallExceeded(run, now)) {
     if (run.status === 'pending_user_confirm') {
       return { ended: false, run }
@@ -1451,6 +1472,8 @@ export function startLoop(input: {
   threadId: string
   userId: string
   text?: string
+  /** Cron / scheduler wakes set `scheduled` so headless env stays scoped. */
+  source?: 'user' | 'scheduled'
 }): StartLoopResult {
   const existing = getActiveLoop(input.platform, input.channelId, input.threadId)
   if (existing) {
@@ -1544,6 +1567,7 @@ export function startLoop(input: {
     createdAt: now,
     updatedAt: now,
     timeline: [],
+    ...(input.source === 'scheduled' ? { source: 'scheduled' as const } : {}),
   }
   syncMissionMirrors(run)
   pushTimeline(
@@ -1827,6 +1851,114 @@ export function cancelLoopForFocusOff(
   return run
 }
 
+/** True when mission / cron text explicitly opts into unattended end. */
+export function missionMentionsHeadless(text: string): boolean {
+  return /无人值守|headless/i.test(text || '')
+}
+
+function isHeadlessEnvOn(): boolean {
+  const env = (process.env.AGIM_LOOP_HEADLESS ?? '').trim().toLowerCase()
+  return env === '1' || env === 'on' || env === 'true'
+}
+
+/**
+ * Headless (unattended) Loop opt-in. `met=true` ends immediately instead of
+ * parking in `pending_user_confirm`.
+ *
+ * - Mission objective / exit / body / acceptance contains 无人值守 or
+ *   `headless` → headless (any source).
+ * - `AGIM_LOOP_HEADLESS=1` applies **only** to `source === 'scheduled'`
+ *   so an operator env cannot silently skip HITL on chat Loops.
+ */
+export function isLoopHeadless(run: LoopRun): boolean {
+  const view = getMissionView(run)
+  const blob = [view.objective, view.exitDescription, view.body, view.acceptance]
+    .filter(Boolean)
+    .join('\n')
+  if (missionMentionsHeadless(blob)) return true
+  return run.source === 'scheduled' && isHeadlessEnvOn()
+}
+
+/** Confirm timeout is opt-in. Unset / 0 / invalid → disabled (HITL stays). */
+function resolveConfirmTimeoutMs(): number {
+  const raw = (process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS ?? '').trim()
+  if (!raw) return 0
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return n
+}
+
+function resolveConfirmTimeoutAction(): 'end' | 'continue' {
+  const raw = (process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION ?? '').trim().toLowerCase()
+  return raw === 'continue' ? 'continue' : 'end'
+}
+
+/**
+ * Confirm-timeout escape (P1-2): a Loop parked in `pending_user_confirm`
+ * (met=true, waiting for the Portal dock) must not hang forever when the
+ * operator opts in via AGIM_LOOP_CONFIRM_TIMEOUT_MS. Default is **off**
+ * so interactive HITL (`met=true` 不自动结案) stays the product default.
+ * When set, default action is `objective_met`, or the next planning round
+ * when AGIM_LOOP_CONFIRM_TIMEOUT_ACTION=continue.
+ *
+ * Idempotent + fail-soft: no timeout configured / not pending → no-op.
+ */
+export function maybeResolveLoopConfirmTimeout(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  now = Date.now(),
+): LoopExitEnforceResult {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return { ended: false, run: null }
+  if (run.status !== 'pending_user_confirm') return { ended: false, run }
+  const timeoutMs = resolveConfirmTimeoutMs()
+  if (timeoutMs <= 0) return { ended: false, run }
+  if (run.confirmedAt === undefined || !Number.isFinite(run.confirmedAt)) {
+    // Old run persisted before the field existed — treat current time as
+    // confirmedAt so a legacy hang still escapes after one timeout window.
+    run.confirmedAt = now
+    run.updatedAt = now
+    writeRun(run)
+    return { ended: false, run }
+  }
+  if (now - run.confirmedAt < timeoutMs) {
+    return { ended: false, run }
+  }
+
+  const action = resolveConfirmTimeoutAction()
+  if (action === 'continue') {
+    // Mirrors resolveLoopMetConfirm's continue branch: advance a round and
+    // return to planning, so the next wake-up / user message continues work.
+    if (run.round >= run.maxRounds) {
+      const ended = endLoopInternal(
+        run,
+        'limit',
+        `maxRounds ${run.maxRounds} (confirm timeout continue at cap)`,
+      )
+      return { ended: true, run: ended, reason: 'limit' }
+    }
+    if (!run.usage) run.usage = emptyLoopUsage()
+    run.usage.continueCount += 1
+    run.round += 1
+    run.dispatchesThisRound = 0
+    clearRoundJobs(run)
+    run.status = 'planning'
+    delete run.confirmedAt
+    pushTimeline(run, 'system', `confirm timeout → planning (round ${run.round})`)
+    run.updatedAt = Date.now()
+    writeRun(run)
+    return { ended: false, run }
+  }
+
+  const ended = endLoopInternal(
+    run,
+    'objective_met',
+    'confirm timeout — objective claim auto-accepted (AGIM_LOOP_CONFIRM_TIMEOUT_MS)',
+  )
+  return { ended: true, run: ended, reason: 'confirm_timeout' }
+}
+
 export function applyLoopVerdict(
   platform: string,
   channelId: string,
@@ -1918,8 +2050,17 @@ export function applyLoopVerdict(
 
   if (verdict.decision === 'stop') {
     if (verification?.met) {
+      // Headless (scheduled / unattended) Loops: met=true ends immediately.
+      // Opt-in: mission text 无人值守/headless, or AGIM_LOOP_HEADLESS on a
+      // scheduled run. Interactive chat Loops stay HITL. minRounds still
+      // applies (need_more_rounds).
+      if (isLoopHeadless(run)) {
+        endLoopInternal(run, 'objective_met', 'headless met=true → ended (no user confirm)')
+        return { ok: true, run }
+      }
       // HITL: do not auto-end — Portal dock lets user supplement + end/continue.
       run.status = 'pending_user_confirm'
+      run.confirmedAt = Date.now()
       pushTimeline(run, 'system', 'met=true → pending user confirm (end|continue)')
       writeRun(run)
       return { ok: true, run }
@@ -1981,6 +2122,7 @@ export function resolveLoopMetConfirm(
   }
 
   // continue → next planning round
+  delete run.confirmedAt
   if (run.round >= run.maxRounds) {
     endLoopInternal(run, 'limit', `maxRounds ${run.maxRounds} (user continue at cap)`)
     return { ok: true, run }

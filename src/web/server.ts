@@ -33,6 +33,7 @@ import { handleSearchApi } from './search-api.js'
 import { handleWorkspaceSkillsApi } from './workspace-skills-api.js'
 import { handleMemosApi, handleLocInfo, handleLocPost } from './memos-api.js'
 import { handleLoopApi } from './loop-api.js'
+import { handleLoopScheduleApi } from './loop-schedule-api.js'
 import { sendError } from './http-utils.js'
 import {
   checkAuth,
@@ -128,6 +129,14 @@ export async function startWebServer(options: {
     const c = clients.get(run.threadId)
     if (!c || c.ws.readyState !== 1 /* WebSocket.OPEN */) return
     sendToClient(c.ws, { type: 'loop-changed', threadId: run.threadId })
+  })
+  const { onLoopSchedulePendingChanged } = await import('../core/pending-loop-schedule.js')
+  const offLoopSchedule = onLoopSchedulePendingChanged((threadKey) => {
+    if (!threadKey.startsWith('web:web:')) return
+    const threadId = threadKey.slice('web:web:'.length)
+    const c = clients.get(threadId)
+    if (!c || c.ws.readyState !== 1 /* WebSocket.OPEN */) return
+    sendToClient(c.ws, { type: 'loop-schedule-changed', threadId })
   })
 
   // v1.1.10+: token-based auth for the web console.
@@ -382,6 +391,9 @@ export async function startWebServer(options: {
       || url.pathname.startsWith('/api/loops/')
     ) {
       if (await handleLoopApi(req, res, url)) return
+    }
+    if (url.pathname.startsWith('/api/loop-schedule/')) {
+      if (await handleLoopScheduleApi(req, res, url)) return
     }
 
     // /api/env + /api/security/diagnostics + /api/policy/auto-approve
@@ -1049,6 +1061,7 @@ export async function startWebServer(options: {
     close: () => {
       clearInterval(wsHeartbeat)
       offLoopWritten()
+      offLoopSchedule()
       // Close all WebSocket connections
       for (const [id, client] of clients) {
         client.ws.close()

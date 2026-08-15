@@ -24,6 +24,7 @@ import { handleStatsCommand } from './commands/stats.js'
 import { handleSessionsCommand } from './commands/sessions.js'
 import { handleWorkspacesCommand } from './commands/workspaces.js'
 import { handleCronCommand } from './commands/cron.js'
+import { handleCronloopCommand } from './commands/cronloop.js'
 import { handleRemindCommand } from './commands/remind.js'
 import { handleMemoCommand } from './commands/memo.js'
 import { handleHeartbeatCommand } from './commands/heartbeat.js'
@@ -261,6 +262,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'heartbeat') return { type: 'heartbeat', args: rest }
   if (cmd === 'focus' || cmd === 'f' || cmd === '聚焦') return { type: 'focus', args: rest }
   if (cmd === 'loop') return { type: 'loop', args: rest }
+  if (cmd === 'cronloop' || cmd === 'cornloop') return { type: 'cronloop', args: rest }
   if (cmd === 'skill' || cmd === 'skills' || cmd === '技能') return { type: 'skill', args: rest }
   if (cmd === 'job' || cmd === 'task') return { type: 'job', args: rest }
   if (cmd === 'outbox') return { type: 'outbox', args: rest }
@@ -378,6 +380,9 @@ export async function routeMessage(
     }
     case 'loop': {
       return handleLoopCommand(parsed.args, ctx)
+    }
+    case 'cronloop': {
+      return handleCronloopCommand(parsed.args, ctx)
     }
 
     case 'skill': {

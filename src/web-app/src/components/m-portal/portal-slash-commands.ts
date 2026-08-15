@@ -70,6 +70,14 @@ export const PORTAL_SLASH_COMMANDS: PortalSlashCommand[] = [
     action: { type: 'fill', text: '/loop ' },
   },
   {
+    id: 'cronloop',
+    label: 'Cronloop',
+    description: 'Schedule a Loop (confirm in the bottom dock)',
+    keywords: ['cronloop', 'cornloop', '定时loop', '定时闭环', 'scheduled'],
+    priority: 7,
+    action: { type: 'send', text: '/cronloop' },
+  },
+  {
     id: 'subagent',
     label: 'Subagent',
     description: 'Ask the agent to spawn a Subagent',

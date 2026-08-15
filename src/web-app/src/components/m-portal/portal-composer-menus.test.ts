@@ -88,6 +88,10 @@ describe('filterSlashCommands', () => {
     expect(loop?.id).toBe('loop')
     expect(loop?.action).toEqual({ type: 'fill', text: '/loop ' })
     expect(sub?.id).toBe('subagent')
+    const cronloop = filterSlashCommands('cronloop')[0]
+    expect(cronloop?.id).toBe('cronloop')
+    expect(cronloop?.action).toEqual({ type: 'send', text: '/cronloop' })
+    expect(filterSlashCommands('cornloop')[0]?.id).toBe('cronloop')
     expect(filterSlashCommands('goal').some((c) => c.id === 'goal')).toBe(false)
   })
 

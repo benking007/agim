@@ -9,6 +9,17 @@
 //
 // Cron expression is the standard 5-field POSIX format ("min hour dom mon dow").
 //
+// Scheduled Loop wake-ups: a prompt starting with `loop:` starts a Loop on
+// a dedicated `cron:<id>` thread (does not steal the user's Focus) instead
+// of a plain one-shot job. Both hard fields are required — the scheduler
+// does not auto-confirm ALIGNING. Example:
+//   /cron create nightly-loop agim "0 2 * * *" loop: 修复昨日故障；退出条件为验收通过或最多5轮
+// Natural language / `/cronloop` (bottom dock, never silent):
+//   开个定时 loop
+//   每天凌晨2点用 Loop 修登录；退出条件为验收通过或最多5轮
+// Headless (auto-end on met=true) requires 无人值守 / headless in the
+// mission text. AGIM_LOOP_HEADLESS=1 only applies to these scheduled runs.
+//
 // Renamed from /schedule in v0.2.38 to avoid colliding with Claude Code's
 // built-in /schedule skill (Anthropic remote routines). The /schedule alias
 // is still wired in router.ts but emits a one-line deprecation banner; it

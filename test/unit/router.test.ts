@@ -398,6 +398,12 @@ describe('parseMessage', () => {
       expect(parseMessage('/schedule list')).toEqual({ type: 'cron', args: 'list', legacy: true })
     })
 
+    it('parses /cronloop and /cornloop', () => {
+      expect(parseMessage('/cronloop')).toEqual({ type: 'cronloop', args: '' })
+      expect(parseMessage('/cronloop 每天凌晨2点')).toEqual({ type: 'cronloop', args: '每天凌晨2点' })
+      expect(parseMessage('/cornloop')).toEqual({ type: 'cronloop', args: '' })
+    })
+
     it('parses /approval and /auto as aliases', () => {
       expect(parseMessage('/approval')).toEqual({ type: 'approval', args: '' })
       expect(parseMessage('/approval clear')).toEqual({ type: 'approval', args: 'clear' })

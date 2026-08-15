@@ -274,6 +274,40 @@ export async function handleClientMessage(
 
       const parsed = parseMessage(text)
 
+      try {
+        const { tryHandleScheduledLoopTurn } = await import('../core/loop-schedule-intent.js')
+        const loopCard = await tryHandleScheduledLoopTurn({
+          platform: 'web',
+          channelId: 'web',
+          threadId: sessionThreadId,
+          userId: `web:${sessionThreadId}`,
+          text,
+          surface: 'dock',
+        })
+        if (loopCard.handled && loopCard.reply) {
+          const now = new Date()
+          try {
+            await sessionManager.addMessage('web', 'web', sessionThreadId, {
+              role: 'user', content: text, timestamp: now,
+            })
+            await sessionManager.addMessage('web', 'web', sessionThreadId, {
+              role: 'assistant', content: loopCard.reply, timestamp: now, agent: 'agim',
+            })
+          } catch { /* best-effort persist */ }
+          emit({ type: 'chunk', text: loopCard.reply })
+          emit({ type: 'done', text: loopCard.reply })
+          if (loopCard.dock) {
+            emit({ type: 'loop-schedule-changed', threadId: sessionThreadId })
+          }
+          return
+        }
+      } catch (err) {
+        logger.warn({
+          event: 'loop-schedule-intent.crashed',
+          err: err instanceof Error ? err.message : String(err),
+        }, 'scheduled-loop detector crashed — falling through')
+      }
+
       // Agent-switch command (/agim, /cc, /pi, …): routeMessage persists
       // the session switch, but the WS client + the chat dropdown only learn
       // about a switch via the explicit `switch-agent` path. Mirror it here so

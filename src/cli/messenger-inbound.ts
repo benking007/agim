@@ -8,6 +8,7 @@ import { consumeLocationContext, formatLocationAnnotation } from '../core/locati
 import { tryConsumeReply as tryConsumePendingReminderReply } from '../core/pending-reminder.js'
 import { createReminder } from '../core/reminders.js'
 import { tryDetectReminderIntent } from '../core/remind-intent.js'
+import { tryHandleScheduledLoopTurn } from '../core/loop-schedule-intent.js'
 import { handleMessage } from './handle-message.js'
 import { getDefaultAgent } from '../core/live-config.js'
 
@@ -217,6 +218,32 @@ export async function handleInboundMessage(ctx: MessageContext, defaultAgent: st
       lng: locCtxStash.lng,
       hasVenue: !!locCtxStash.venueLabel,
     })
+  }
+
+  // Scheduled-Loop confirmation card (NL → y/n → /cron loop:). Runs
+  // before reminder consume/detect so "每天2点跑一轮 Loop" is not
+  // stolen as a plain reminder.
+  try {
+    const loopCard = await tryHandleScheduledLoopTurn({
+      platform: ctx.platform,
+      channelId: ctx.channelId,
+      threadId: ctx.message.threadId,
+      userId: ctx.message.userId || '',
+      text: ctx.message.text,
+    })
+    if (loopCard.handled && loopCard.reply) {
+      await sink.deliver({
+        platform: ctx.platform, channelId: ctx.channelId, threadId: ctx.message.threadId,
+        payload: loopCard.reply, kind: 'text',
+      })
+      ctx.logger.info({ event: 'message.scheduled_loop_card' })
+      return
+    }
+  } catch (err) {
+    ctx.logger.warn({
+      event: 'loop-schedule-intent.crashed',
+      err: err instanceof Error ? err.message : String(err),
+    }, 'scheduled-loop detector crashed — falling through')
   }
 
   const replyDecision = tryConsumePendingReminderReply(tk, ctx.message.text)

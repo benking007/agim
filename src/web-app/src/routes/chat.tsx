@@ -59,6 +59,10 @@ const NativeSetupDialog = lazy(async () => {
   const module = await import('@/components/chat/native-setup-dialog')
   return { default: module.NativeSetupDialog }
 })
+const PortalScheduledLoopDock = lazy(async () => {
+  const module = await import('@/components/m-portal/portal-scheduled-loop-dock')
+  return { default: module.PortalScheduledLoopDock }
+})
 import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
@@ -360,6 +364,13 @@ export default function ChatRoute(): JSX.Element {
           })}
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <PortalScheduledLoopDock
+          threadId={state.clientId}
+          refreshKey={`${state.messages.length}:${state.status}`}
+        />
+      </Suspense>
 
       {/* v1.2.115 — floating approval dock pinned above the input.
           Renders only when there are pending cards. */}

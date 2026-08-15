@@ -124,6 +124,7 @@ export type ChatIncoming =
    * SPA re-fetches GET /api/loop (keeps DTO lang on the client).
    */
   | { type: 'loop-changed'; threadId: string }
+  | { type: 'loop-schedule-changed'; threadId: string }
   | { type: 'workspace'; ok: boolean; path: string | null; threadId?: string }
 
 /** Run lifecycle events emitted around each web chat request.

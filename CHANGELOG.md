@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Scheduled Loop wake-ups (R6 minimal)**: a `/cron` prompt starting with
+  `loop:` starts or resumes a Loop on a dedicated `cron:<id>` thread
+  (Job Board + optional webhook). Both hard fields are required — the
+  scheduler does not auto-confirm ALIGNING. Incomplete or failed wakes
+  roll back so the next tick is not wedged. Idle planning Loops resume
+  a parent turn; in-flight / pending-confirm ticks skip.
+- **IM `/loop confirm end|continue`**: resolve `pending_user_confirm`
+  from chat (Portal dock was the only entry).
+- **NL / `/cronloop` scheduled Loop dock**: phrases like
+  `开个定时 loop` or `每天凌晨2点用 Loop 修登录；退出条件为验收通过或最多5轮`
+  open a bottom sheet (never silent). Confirm writes `/cron` with a
+  `loop:` prompt. Alias `/cornloop`. IM without a dock still uses a
+  y/n card when fields are complete. Reminder-shaped lines are not stolen.
+
+### Changed
+
+- **Headless Loop** is per-mission (`无人值守` / `headless` in the
+  objective, exit, or body). `AGIM_LOOP_HEADLESS=1` applies only to
+  `source=scheduled` runs, not interactive chat Loops.
+- **Confirm timeout** (`AGIM_LOOP_CONFIRM_TIMEOUT_MS`) is opt-in;
+  unset keeps HITL (`met=true` does not auto-end).
+- **`AGIM_LOOP_AUTO_VERIFY`**: reaper builds its own route context,
+  locks per thread, and feeds the cheap reviewer real job-board
+  results (not bare `#id` lines).
+
+### Docs
+
+- R6 SSOT updated (`loop-engineering.md`, orchestration roadmap).
+  One-shot review / triage reports moved to `docs/archive/`.
+
 ## [1.6.2] - 2026-08-15
 
 ### Changed

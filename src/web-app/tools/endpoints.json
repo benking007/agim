@@ -17,6 +17,7 @@
     "src/web/jobs-api.ts",
     "src/web/llm-api.ts",
     "src/web/loop-api.ts",
+    "src/web/loop-schedule-api.ts",
     "src/web/mcp-api.ts",
     "src/web/memory-api.ts",
     "src/web/memos-api.ts",
@@ -36,7 +37,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 127,
+  "count": 130,
   "endpoints": [
     {
       "method": "DELETE",
@@ -275,6 +276,12 @@
     {
       "method": "GET",
       "path": "/api/loop",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/loop-schedule/pending",
       "source": "exact",
       "authRequired": true
     },
@@ -601,6 +608,18 @@
       "path": "/api/loc",
       "source": "exact",
       "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/loop-schedule/cancel",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/loop-schedule/confirm",
+      "source": "exact",
+      "authRequired": true
     },
     {
       "method": "POST",

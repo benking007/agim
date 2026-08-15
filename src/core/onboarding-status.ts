@@ -114,3 +114,8 @@ export async function markSetupSkipped(): Promise<OnboardingStatus> {
   }
   return loadOnboardingStatus()
 }
+
+/** First-run may boot the Web wizard before any agent or LLM is usable. */
+export function canStartWithoutAgents(status: Pick<OnboardingStatus, 'firstRun'>): boolean {
+  return status.firstRun === true
+}

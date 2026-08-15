@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getOnboardingStatus } from './onboarding-status.js'
+import { canStartWithoutAgents, getOnboardingStatus } from './onboarding-status.js'
 import type { Config } from './onboarding.js'
 
 function cfg(overrides: Partial<Config> = {}): Config {
@@ -84,5 +84,10 @@ describe('getOnboardingStatus', () => {
     })
     expect(status.firstRun).toBe(true)
     expect(status.reason).toBe('no-usable-agent')
+  })
+
+  it('lets first-run start without an agent so /setup can run', () => {
+    expect(canStartWithoutAgents({ firstRun: true })).toBe(true)
+    expect(canStartWithoutAgents({ firstRun: false })).toBe(false)
   })
 })

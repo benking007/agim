@@ -348,7 +348,7 @@ export function _setHeartbeatTicking(value: boolean): void {
 }
 
 // ---------------------------------------------------------------------
-// Scheduler lifecycle (called from cli.ts at boot)
+// Scheduler lifecycle (called from start-runtime.ts at boot)
 // ---------------------------------------------------------------------
 
 let timer: ReturnType<typeof setInterval> | null = null

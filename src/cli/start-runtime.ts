@@ -389,6 +389,12 @@ export async function runStartForeground(): Promise<void> {
   const { startReminderEngine } = await import('../core/reminders.js')
   startReminderEngine()
 
+  // Heartbeat scheduler is opt-in (AGIM_HEARTBEAT_ENABLED=on|1|true).
+  // Always call start so /heartbeat bind/show works; the function only
+  // arms setInterval when the env is set. See docs/architecture/heartbeat.md.
+  const { startHeartbeatScheduler } = await import('../core/heartbeat.js')
+  startHeartbeatScheduler()
+
   // Start the memo expiry sweeper (every 5 min — purges memos with
   // expires_at <= now). Idempotent: safe even if startSweepTimer is
   // called twice. Lazy import keeps memos.ts out of the cold-start path

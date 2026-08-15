@@ -310,7 +310,7 @@ async function handleMobileQR(req: IncomingMessage, res: ServerResponse): Promis
       loginUrl,
       qrDataUrl,
       exchangeExpiresAt: expiresAt,
-      revokeHint: '/settings/security/tokens',
+      revokeHint: `agim token revoke ${created.id}`,
     }))
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

@@ -1004,7 +1004,7 @@ export interface MobileQRResponse {
   qrDataUrl: string
   /** Epoch ms when the one-shot exchange code expires. */
   exchangeExpiresAt?: number
-  /** SPA path to take the admin to for revoke ("/settings/security/tokens"). */
+  /** CLI command that revokes this QR token (`agim token revoke <id>`). */
   revokeHint: string
 }
 

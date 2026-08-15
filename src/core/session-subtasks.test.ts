@@ -38,8 +38,11 @@ async function cleanupTestSessions(): Promise<void> {
     if (!name.endsWith('.json')) continue
     try {
       const raw = await readFile(join(SESSIONS_DIR, name), 'utf-8')
-      const parsed = JSON.parse(raw) as { platform?: string }
-      if (parsed.platform === PLATFORM) {
+      const parsed = JSON.parse(raw) as { platform?: string; threadId?: string }
+      if (
+        parsed.platform === PLATFORM
+        || (typeof parsed.threadId === 'string' && parsed.threadId.includes(THREAD))
+      ) {
         await unlink(join(SESSIONS_DIR, name)).catch(() => {})
         await unlink(join(SESSIONS_DIR, name.replace(/\.json$/, '.log'))).catch(() => {})
       }
@@ -87,5 +90,27 @@ describe('sessionManager.listAllSubtasks', () => {
     // may exist; our filter shows ours is zero.
     const all = await sessionManager.listAllSubtasks()
     expect(all.filter((s) => s.platform === PLATFORM).length).toBe(0)
+  })
+})
+
+describe('sessionManager.listRecentSessions', () => {
+  it('returns recent sessions for a platform, newest first', async () => {
+    await sessionManager.getOrCreateSession(PLATFORM, CHANNEL, `${THREAD}-a`, 'agim')
+    await sessionManager.getOrCreateSession(PLATFORM, CHANNEL, `${THREAD}-b`, 'claude-code')
+
+    const ours = await sessionManager.listRecentSessions({ platform: PLATFORM, limit: 10 })
+    expect(ours.length).toBeGreaterThanOrEqual(2)
+    expect(ours.every((s) => s.platform === PLATFORM)).toBe(true)
+    expect(ours.some((s) => s.threadId === `${THREAD}-a` && s.agent === 'agim')).toBe(true)
+    expect(ours.some((s) => s.threadId === `${THREAD}-b` && s.agent === 'claude-code')).toBe(true)
+    for (let i = 1; i < ours.length; i++) {
+      expect(ours[i - 1].lastActivity.getTime()).toBeGreaterThanOrEqual(ours[i].lastActivity.getTime())
+    }
+  })
+
+  it('does not include other platforms', async () => {
+    await sessionManager.getOrCreateSession('other-plat', CHANNEL, `${THREAD}-secret`, 'agim')
+    const ours = await sessionManager.listRecentSessions({ platform: PLATFORM, limit: 50 })
+    expect(ours.some((s) => s.threadId === `${THREAD}-secret`)).toBe(false)
   })
 })

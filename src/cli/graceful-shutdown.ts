@@ -111,6 +111,10 @@ export async function gracefulShutdown(ctx: StartRuntimeContext, signal: string,
     closeReminderDb()
   } catch { /* ignore */ }
   try {
+    const { stopHeartbeatScheduler } = await import('../core/heartbeat.js')
+    stopHeartbeatScheduler()
+  } catch { /* ignore */ }
+  try {
     const { closeMemosDb } = await import('../core/memos.js')
     closeMemosDb()  // also stops the sweep timer
   } catch { /* ignore */ }

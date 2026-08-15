@@ -247,7 +247,7 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'status') return { type: 'service', action: 'status', args: rest }
   if (cmd === 'restart') return { type: 'service', action: 'restart', args: rest }
   if (cmd === 'stop') return { type: 'service', action: 'stop', args: rest }
-  // /setup — legacy compatibility hint (admin onboarding moved to Web settings).
+  // /setup — IM shim pointing at the browser /setup wizard.
   if (cmd === 'setup') return { type: 'setup', args: rest }
   if (cmd === 'agents') return { type: 'command', command: 'agents' }
   if (cmd === 'new') return { type: 'command', command: 'new' }

@@ -57,8 +57,6 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     i18nKey: 'navigation.groups.review',
     tabs: [
       { to: 'a2a',   i18nKey: 'subnav.a2a',   mounted: true },
-      // v1.2.133 — native_exit_plan_mode audit log.
-      { to: 'plans', i18nKey: 'subnav.plans', mounted: true },
       { to: 'loops', i18nKey: 'subnav.loops', mounted: true },
     ],
   },

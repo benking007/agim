@@ -20,6 +20,8 @@
   "MEMORY_USERS_FAILED": "无法列出记忆用户：{{detail}}",
   "CONFIG_LOAD_FAILED": "无法加载配置。",
   "AGENTS_STATUS_FAILED": "无法检查 Agent 可用性。",
+  "ONBOARDING_STATUS_FAILED": "无法加载首次引导状态。",
+  "ONBOARDING_SKIP_FAILED": "无法跳过首次引导。",
   "JOB_CREATE_FAILED": "无法创建任务：{{detail}}",
   "JOB_RUN_FAILED": "无法运行任务：{{detail}}",
   "INTERNAL": "服务端内部错误。",

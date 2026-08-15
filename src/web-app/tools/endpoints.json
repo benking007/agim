@@ -21,6 +21,7 @@
     "src/web/memory-api.ts",
     "src/web/memos-api.ts",
     "src/web/messengers-api.ts",
+    "src/web/onboarding-api.ts",
     "src/web/outbox-a2a-api.ts",
     "src/web/search-api.ts",
     "src/web/serial-queue.ts",
@@ -35,7 +36,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 125,
+  "count": 127,
   "endpoints": [
     {
       "method": "DELETE",
@@ -363,6 +364,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/onboarding/status",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/outbox",
       "source": "exact",
       "authRequired": true
@@ -676,6 +683,12 @@
     {
       "method": "POST",
       "path": "/api/notify",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/onboarding/skip",
       "source": "exact",
       "authRequired": true
     },

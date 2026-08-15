@@ -20,6 +20,8 @@
   "MEMORY_USERS_FAILED": "Couldn't list memory users: {{detail}}",
   "CONFIG_LOAD_FAILED": "Couldn't load configuration.",
   "AGENTS_STATUS_FAILED": "Couldn't check agent availability.",
+  "ONBOARDING_STATUS_FAILED": "Couldn't load first-run setup status.",
+  "ONBOARDING_SKIP_FAILED": "Couldn't skip first-run setup.",
   "JOB_CREATE_FAILED": "Couldn't create the job: {{detail}}",
   "JOB_RUN_FAILED": "Couldn't run the job: {{detail}}",
   "INTERNAL": "Internal server error.",

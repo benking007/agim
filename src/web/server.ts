@@ -14,6 +14,7 @@ import { handleMcpApi } from './mcp-api.js'
 import { handleBackgroundTasksApi } from './background-tasks-api.js'
 import { handleAgimSkillsApi } from './agim-skills-api.js'
 import { handleConfigApi } from './config-api.js'
+import { handleOnboardingApi } from './onboarding-api.js'
 import { handleMemoryApi } from './memory-api.js'
 import { handleChatMediaApi } from './chat-media-api.js'
 import { handleServiceApi } from './service-api.js'
@@ -352,6 +353,10 @@ export async function startWebServer(options: {
     if (url.pathname === '/api/config'
         || url.pathname === '/api/agents/status') {
       const handled = await handleConfigApi(req, res, url)
+      if (handled) return
+    }
+    if (url.pathname.startsWith('/api/onboarding/')) {
+      const handled = await handleOnboardingApi(req, res, url)
       if (handled) return
     }
 

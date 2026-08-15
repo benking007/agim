@@ -114,9 +114,18 @@ describe('loop exit enforce (no verdict required)', () => {
     expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
   })
 
-  it('forceLoopExitSkippedVerify ends as verify_skipped', () => {
+  it('forceLoopExitSkippedVerify defers when rounds remain (avoids no_active_loop)', () => {
     const a = seed(process.env.AGIM_LOOPS_DIR!)
     const r = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(false)
+    expect(getActiveLoop(a.platform, a.channelId, a.threadId)).not.toBeNull()
+  })
+
+  it('forceLoopExitSkippedVerify can still simulate a premature verify_skipped reap', () => {
+    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    const r = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId, {
+      ignoreRemainingRounds: true,
+    })
     expect(r.ended).toBe(true)
     expect(r.reason).toBe('verify_skipped')
     expect(r.run?.endReason).toBe('verify_skipped')
@@ -132,7 +141,9 @@ describe('loop exit enforce (no verdict required)', () => {
   })
 
   it('forceLoopExitSkippedVerify defers while ask_user awaits user reply', async () => {
-    const a = seed(process.env.AGIM_LOOPS_DIR!)
+    const a = seed(process.env.AGIM_LOOPS_DIR!, {
+      fields: { round: 3, maxRounds: 3 },
+    })
     registerFakeMessenger(a.platform)
     const pending = handleAskOp(
       { question: '数据异常，采用哪组？', choices: ['A', 'B'], timeoutSec: 30 },
@@ -146,7 +157,7 @@ describe('loop exit enforce (no verdict required)', () => {
     await pending
     const after = forceLoopExitSkippedVerify(a.platform, a.channelId, a.threadId)
     expect(after.ended).toBe(true)
-    expect(after.reason).toBe('verify_skipped')
+    expect(after.reason).toBe('limit')
   })
 
   it('forceLoopExitSkippedVerify uses limit when round already at max', () => {

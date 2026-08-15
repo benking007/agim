@@ -91,7 +91,7 @@ const channelId = 'sim'
   }
 }
 
-// --- Case 3: skip verify → force verify_skipped ---
+// --- Case 3: skip verify mid-window → keep alive (hard N-round) ---
 {
   const threadId = 'verify-skipped'
   const started = startLoop({
@@ -101,15 +101,10 @@ const channelId = 'sim'
   noteLoopDispatch(platform, channelId, threadId, { count: 2 })
   const forced = forceLoopExitSkippedVerify(platform, channelId, threadId)
   const active = getActiveLoop(platform, channelId, threadId)
-  const stored = getLoopRun(platform, channelId, threadId)
   record(
-    'exit.verify-skipped',
-    forced.ended === true
-      && forced.reason === 'verify_skipped'
-      && active === null
-      && stored?.status === 'ended'
-      && stored?.endReason === 'verify_skipped',
-    `reason=${forced.reason} status=${stored?.status}`,
+    'exit.verify-skipped.deferred-rounds-remain',
+    forced.ended === false && active !== null && started.ok,
+    `ended=${forced.ended} status=${active?.status}`,
   )
 }
 

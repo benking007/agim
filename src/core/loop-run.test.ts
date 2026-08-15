@@ -839,7 +839,9 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(started.run.mission?.exit.minRounds).toBe(2)
     expect(started.run.mission?.exit.maxRounds).toBe(2)
     noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
-    const forced = forceLoopExitSkippedVerify(base.platform, base.channelId, threadId)
+    const forced = forceLoopExitSkippedVerify(base.platform, base.channelId, threadId, {
+      ignoreRemainingRounds: true,
+    })
     expect(forced.ended).toBe(true)
     expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
 
@@ -854,6 +856,38 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(cont.run.status).toBe('planning')
     expect(cont.run.round).toBe(2)
     expect(getActiveLoop(base.platform, base.channelId, threadId)?.round).toBe(2)
+  })
+
+  it('getActiveLoop / loop_verdict resolve web channel aliases (web / default / empty)', () => {
+    reset()
+    const threadId = 'loop-channel-alias'
+    const started = startLoop({
+      platform: 'web',
+      channelId: 'web',
+      userId: 'u1',
+      threadId,
+      text: '分析黄金；退出条件为分析 2 轮结束',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(getActiveLoop('web', 'web', threadId)?.id).toBe(started.run.id)
+    expect(getActiveLoop('web', 'default', threadId)?.id).toBe(started.run.id)
+    expect(getActiveLoop('web', '', threadId)?.id).toBe(started.run.id)
+    expect(buildLoopSnippet('web', 'default', threadId)).toContain('loop ACTIVE')
+
+    noteLoopDispatch('web', 'default', threadId, { count: 1 })
+    const cont = applyLoopVerdict('web', 'default', threadId, {
+      decision: 'continue',
+      summary: '第一轮已汇总，继续第二轮',
+      met: false,
+      nextDirection: '补齐缺口后再验收',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.round).toBe(2)
+    expect(getActiveLoop('web', 'web', threadId)?.round).toBe(2)
   })
 
   it('headless loop (mission text 无人值守) auto-ends on met=true without user confirm', () => {

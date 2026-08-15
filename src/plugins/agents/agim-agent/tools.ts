@@ -25,7 +25,9 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
 
   const agimCtx = {
     platform: o.platform || 'native-agent',
-    channelId: o.channelId || 'default',
+    // Keep the same channel key as loopScope / startLoop. Remapping empty
+    // to "default" made loop_verdict miss a run stored under "" or "web".
+    channelId: o.channelId ?? '',
     threadId: o.threadId || sessionId,
     userId: o.userId || 'unknown',
     callerAgent: 'agim',

@@ -662,7 +662,21 @@ export function formatMissionFields(run: LoopRun, opts?: { draftLabel?: boolean 
   return lines
 }
 
-function readRun(platform: string, channelId: string, threadId: string): LoopRun | null {
+/** Portal / A2A / Native tool ctx often disagree on the same web thread. */
+const LOOP_CHANNEL_ALIASES = ['', 'default', 'web'] as const
+
+function channelLookupCandidates(channelId: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const c of [channelId, ...LOOP_CHANNEL_ALIASES]) {
+    if (seen.has(c)) continue
+    seen.add(c)
+    out.push(c)
+  }
+  return out
+}
+
+function readRunExact(platform: string, channelId: string, threadId: string): LoopRun | null {
   const key = liveRunKey(platform, channelId, threadId)
   const cached = liveRunCache.get(key)
   if (cached) return cached
@@ -678,6 +692,19 @@ function readRun(platform: string, channelId: string, threadId: string): LoopRun
     log.warn({ event: 'loop.read_failed', err: String(err) })
     return null
   }
+}
+
+function readRun(platform: string, channelId: string, threadId: string): LoopRun | null {
+  const exact = readRunExact(platform, channelId, threadId)
+  if (exact) return exact
+  // Snippet / parent turn may use "web" while loop_verdict looks up
+  // "" or "default" (assembleToolsForPi historically remapped empty → default).
+  for (const alias of channelLookupCandidates(channelId)) {
+    if (alias === channelId) continue
+    const run = readRunExact(platform, alias, threadId)
+    if (run) return run
+  }
+  return null
 }
 
 function writeHistoryRun(run: LoopRun): void {
@@ -1176,11 +1203,18 @@ export function maybeEnforceLoopExit(
  * When VERIFY follow-up still did not produce loop_verdict, force-end the Loop
  * so it cannot hang forever in「待验收」with a delivered report.
  * Also defers while Subagents are still live.
+ *
+ * Mid-window (round < maxRounds) stays alive: ending here is what surfaces
+ * as loop_verdict → no_active_loop and blocks a hard N-round Loop (e.g.
+ * 「分析 2 轮结束」) from reaching the next round. Last-round idle still
+ * ends as `limit`. Pass `ignoreRemainingRounds` only to simulate a
+ * premature reap in tests.
  */
 export function forceLoopExitSkippedVerify(
   platform: string,
   channelId: string,
   threadId: string,
+  opts?: { ignoreRemainingRounds?: boolean },
 ): LoopExitEnforceResult {
   const wall = maybeEnforceLoopExit(platform, channelId, threadId)
   if (wall.ended) return wall
@@ -1216,6 +1250,17 @@ export function forceLoopExitSkippedVerify(
       `maxRounds ${run.maxRounds} (verify skipped; enforced without verdict)`,
     )
     return { ended: true, run: ended, reason: 'limit' }
+  }
+
+  if (!opts?.ignoreRemainingRounds) {
+    log.info({
+      event: 'loop.exit_deferred_rounds_remain',
+      reason: 'verify_skipped',
+      threadId,
+      round: run.round,
+      maxRounds: run.maxRounds,
+    }, 'defer verify_skipped while Loop rounds remain')
+    return { ended: false, run }
   }
 
   const ended = endLoopInternal(

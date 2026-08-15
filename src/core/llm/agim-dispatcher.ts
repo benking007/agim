@@ -1481,9 +1481,15 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               const extra = ended?.status === 'ended'
                 ? ` (already ended as ${ended.endReason || 'ended'} at round ${ended.round}/${ended.maxRounds})`
                 : ''
+              const remaining = !!ended && ended.round < ended.maxRounds
               return err(
                 `loop_verdict failed: no_active_loop${extra}`
-                + ' — Loop session is not active; cannot submit a verdict.',
+                + (remaining
+                  ? ' — Loop still has remaining rounds. Retry loop_verdict with '
+                    + 'decision=continue|revise and met=false; do NOT deliver a '
+                    + 'final report or skip the next round.'
+                  : ' — Loop session is not active; cannot submit a verdict. '
+                    + 'Do not invent a substitute end-of-loop report unless the user asked to stop.'),
               )
             }
             return err(`loop_verdict failed: ${r.error}`)

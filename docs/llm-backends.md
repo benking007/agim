@@ -12,11 +12,11 @@
 
 ## 2. 配置方式
 
-建议优先用 `agim config`：
+建议优先用浏览器向导（首次）或设置页：
 
-1. CLI 主入口：`agim config` → `Agim Agent 大模型 API`
-2. Web：`/settings/llm`
-3. CLI 高级命令：`agim setup llm`
+1. 首次：`agim` / `agim go` → `http://localhost:3000/setup`（见 [`first-run-setup.md`](./first-run-setup.md)）
+2. Web：`/settings/llm`（与 `/setup` 共用 Quick-enable）
+3. CLI 高级：`agim config` → `Agim Agent 大模型 API`，或 `agim setup llm`
 4. 手工编辑 `~/.agim/config.json` + `~/.agim/llm-secrets.json`
 
 > `agim setup llm add` 现在要求 API Key 必填；如果你走环境变量模式，也需要保证对应 backend 名称能解析到有效密钥来源。

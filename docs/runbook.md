@@ -50,6 +50,12 @@ Environment="AGIM_ENABLE_GLOBAL_IM=1"
 
 ---
 
+## 1a. First-run wizard
+
+Fresh install: `agim` starts the service and opens `http://localhost:3000/setup`.
+See [`first-run-setup.md`](./first-run-setup.md). `agim start` no longer exits
+when no coding agent is installed yet.
+
 ## 1b. Web bootstrap token
 
 首次启动 Web 服务且尚未有任何 access token 时，会生成一次性 bootstrap token：

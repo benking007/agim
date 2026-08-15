@@ -24,9 +24,10 @@ aliases until the migration window closes — see
 Display rule: show **Agim Agent** to humans; persist **`agim`** in
 `config.json` / new sessions / jobs. Boot migrates legacy `native`.
 
-First-run rule: recommend `agim go` (Web + one agent). Empty `messengers`
-is a supported web-console-only shape; Telegram/Discord stay gated behind
-`AGIM_ENABLE_GLOBAL_IM=1`.
+First-run rule: recommend `agim` (or `agim go`) → browser `/setup` → one
+model + one API key → chat. Empty `messengers` is a supported
+web-console-only shape; Telegram/Discord stay gated behind
+`AGIM_ENABLE_GLOBAL_IM=1`. SSOT: [`first-run-setup.md`](./first-run-setup.md).
 
 ## Protocols (do not collapse)
 

@@ -35,7 +35,7 @@ Both the root project and `src/web-app` commit npm v3 lockfiles whose tarballs r
 
 ### Running the app locally
 
-1. The app requires a config at `~/.agim/config.json`. Without it, interactive wizards (`agim go` / `agim config`) create one. For a non-interactive stub that skips IM:
+1. The app requires a config at `~/.agim/config.json`. Without it, `agim` / `agim go` start the service and open `/setup` in the browser (or `agim config` for the advanced CLI). For a non-interactive stub that skips IM:
 
 ```json
 {
@@ -47,7 +47,7 @@ Both the root project and `src/web-app` commit npm v3 lockfiles whose tarballs r
 
 Web-console-only is valid — empty `messengers` no longer blocks `agim start`. Telegram/Discord stay hidden unless `AGIM_ENABLE_GLOBAL_IM=1`.
 
-2. At least one agent must be available: either an agent CLI on PATH (`<command> --version`), or Agim Agent with a usable `llmBackends` entry (+ API key in `~/.agim/llm-secrets.json`). A stub `/usr/local/bin/claude` satisfies the CLI check for cloud VMs. For local SPA debugging without tokens, `AGIM_WEB_AUTH=off` is fine on loopback.
+2. First-run `agim start` may boot with no CLI agent and no LLM key so `/setup` can run. After setup, at least one agent must be usable: a CLI on PATH (`<command> --version`), or Agim Agent with `llmBackends` + a key in `~/.agim/llm-secrets.json`. A stub `/usr/local/bin/claude` satisfies the CLI check for cloud VMs (and clears `firstRun`). For local SPA debugging without tokens, `AGIM_WEB_AUTH=off` is fine on loopback.
 
 3. After `npm run build`, start with `node dist/cli.js start` (or `agim start --bg`). Web UI at `http://localhost:3000` (token-gated unless `AGIM_WEB_AUTH=off` or loopback trust). On first boot the server writes a one-time raw token to `~/.agim/web-bootstrap-token` (chmod 600). Retrieve it with `agim token bootstrap` or `cat ~/.agim/web-bootstrap-token` — **not** `agim token list` (that only shows hashes).
 

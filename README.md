@@ -30,7 +30,8 @@ First run will:
 2. If none are ready, start Agim and open `http://localhost:3000/setup` so you can pick DeepSeek / Kimi / GLM / MiMo / Ollama and paste one API key.
 3. Print the Web console URL. On first boot a one-time token is written to `~/.agim/web-bootstrap-token` (retrieve with `agim token bootstrap` if needed). Loopback (`127.0.0.1`) usually skips login.
 
-Default Web console: `http://localhost:3000` · first-run wizard: `/setup`
+Default Web console: `http://localhost:3000` · first-run wizard: `/setup`  
+Skip writes `setupSkipped` and leaves `/setup` available. Details: [`docs/first-run-setup.md`](docs/first-run-setup.md).
 
 - Chat: `/`
 - Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs, Focus / Loop docks — see [`docs/portal-composer.md`](docs/portal-composer.md))

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-15
+
 ### Added
 
 - **First-run setup wizard**: bare `agim` on a fresh install skips the CLI
@@ -13,6 +15,8 @@ All notable changes to this project will be documented in this file.
   CLI menu. Machines that already have a CLI agent keep the previous
   `agim go` path. `GET /api/onboarding/status` and `POST /api/onboarding/skip`
   share the same readiness decision as the CLI.
+- **First-run docs**: [`docs/first-run-setup.md`](docs/first-run-setup.md)
+  is the SSOT for the wizard, skip, CLI, and onboarding API.
 
 ### Fixed
 
@@ -23,6 +27,11 @@ All notable changes to this project will be documented in this file.
 - **First-run `/` on a narrow viewport**: `MobileChatRedirect` sent
   phones to `/m/chat` before `ChatRoute` could send them to `/setup`.
   `FirstRunRedirect` now wraps both chat surfaces.
+
+## [1.5.99] - 2026-08-15
+
+### Fixed
+
 - **2026-08-15 CR (availability / usability / stability)**: heartbeat ticks
   no longer overlap on the same binding; DingTalk outbound `fetch` and the
   outbox `doSend` worker now time out (30s / 60s) so one hung send cannot

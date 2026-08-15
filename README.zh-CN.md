@@ -30,7 +30,8 @@ agim
 2. 如果还没有可用 Agent，启动 Agim 并打开 `http://localhost:3000/setup`，在浏览器里选 DeepSeek / Kimi / GLM / MiMo / Ollama 并粘贴一个 API Key。
 3. 打印 Web 控制台地址。首次启动会把一次性 token 写到 `~/.agim/web-bootstrap-token`（需要时用 `agim token bootstrap` 查看）。本机 `127.0.0.1` 访问通常可免登。
 
-默认 Web 控制台：`http://localhost:3000` · 首次向导：`/setup`
+默认 Web 控制台：`http://localhost:3000` · 首次向导：`/setup`  
+跳过会写入 `setupSkipped`，`/setup` 仍可打开。详见 [`docs/first-run-setup.md`](docs/first-run-setup.md)。
 
 - 对话：`/`
 - 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区、Focus / Loop 底栏等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）

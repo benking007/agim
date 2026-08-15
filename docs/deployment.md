@@ -42,16 +42,12 @@ npm link
 推荐入口（Web-first，不必先配 IM）：
 
 ```bash
-agim go
-```
-
-`agim go` 会探测本机 Agent（或引导配置 Agim Agent API），写入 `~/.agim/config.json`，并后台启动服务。跑通 Web 对话后再用设置页或 `agim config` 连接微信 / 飞书 / 钉钉。
-
-也可打开引导菜单：
-
-```bash
 agim
 ```
+
+全新安装时 `agim` / `agim go` 会启动服务并打开 `http://localhost:3000/setup`：在浏览器里选模型、粘贴一个 API Key，然后进聊天。不必先在 CLI 里配 LLM。本机已有 Claude Code 等 CLI Agent 时，则直接启动并打开聊天。
+
+跑通 Web 对话后再用设置页或 `agim config` 连接微信 / 飞书 / 钉钉。完整说明见 [`first-run-setup.md`](./first-run-setup.md)。
 
 手工配置入口：
 

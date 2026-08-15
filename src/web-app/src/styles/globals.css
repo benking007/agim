@@ -149,6 +149,39 @@
     box-shadow: 0 4px 20px -2px rgb(99 102 241 / 0.15);
   }
 
+  /* Running status line — Cursor-style highlight sweep (not opacity pulse).
+     Keep `text-*` on the element so currentColor is the base gray. */
+  .text-shimmer {
+    background-image: linear-gradient(
+      100deg,
+      currentColor 0%,
+      currentColor 38%,
+      color-mix(in srgb, currentColor 18%, white) 50%,
+      currentColor 62%,
+      currentColor 100%
+    );
+    background-size: 220% 100%;
+    background-position: 120% 50%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: text-shimmer 2.2s linear infinite;
+  }
+
+  @keyframes text-shimmer {
+    0% { background-position: 120% 50%; }
+    100% { background-position: -20% 50%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .text-shimmer {
+      animation: none;
+      background-image: none;
+      -webkit-text-fill-color: currentColor;
+    }
+  }
+
   /* Hide scrollbars on mobile portal surfaces (design prototype). */
   .scrollbar-none {
     -ms-overflow-style: none;

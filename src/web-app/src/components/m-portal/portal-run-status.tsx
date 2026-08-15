@@ -173,7 +173,7 @@ export function PortalRunStatus({
             <span
               data-testid="portal-run-collapsed-line"
               className={cn(
-                'min-w-0 truncate text-zinc-400 animate-pulse',
+                'min-w-0 truncate text-zinc-400 text-shimmer',
                 collapsedSummary
                   ? 'text-[11px] font-medium normal-case tracking-normal'
                   : 'text-[9px] font-bold uppercase tracking-wider',
@@ -191,7 +191,7 @@ export function PortalRunStatus({
         ) : (
           <span className={cn(
             'text-[9px] font-bold uppercase tracking-wider text-zinc-400',
-            running && 'animate-pulse',
+            running && 'text-shimmer',
           )}>
             {running ? runningLabel : agentName}
           </span>

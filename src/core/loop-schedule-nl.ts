@@ -29,16 +29,16 @@ export function parseCnInt(raw: string): number | null {
   if (/^\d{1,2}$/.test(t)) return Number(t)
   if (t === '十') return 10
   if (t.startsWith('十') && t.length === 2) {
-    const ones = CN_DIGIT[t[1]!]
+    const ones = CN_DIGIT[t.charAt(1)]
     return ones === undefined ? null : 10 + ones
   }
   if (t.length === 2 && t[1] === '十') {
-    const tens = CN_DIGIT[t[0]!]
+    const tens = CN_DIGIT[t.charAt(0)]
     return tens === undefined ? null : tens * 10
   }
   if (t.length === 3 && t[1] === '十') {
-    const tens = CN_DIGIT[t[0]!]
-    const ones = CN_DIGIT[t[2]!]
+    const tens = CN_DIGIT[t.charAt(0)]
+    const ones = CN_DIGIT[t.charAt(2)]
     if (tens === undefined || ones === undefined) return null
     return tens * 10 + ones
   }
@@ -73,8 +73,9 @@ function parseClock(chunk: string): { minute: number; hour: number } | null {
 function parseDows(chunk: string): string | null {
   if (/每个工作日|工作日|weekdays?/i.test(chunk)) return '1-5'
   const weekly = chunk.match(/每周([一二三四五六日天]+)/)
-  if (!weekly) return null
-  const days = [...weekly[1]!].map((ch) => DOW_CN[ch]).filter((n): n is number => n !== undefined)
+  const weeklyDays = weekly?.[1]
+  if (!weeklyDays) return null
+  const days = [...weeklyDays].map((ch) => DOW_CN[ch]).filter((n): n is number => n !== undefined)
   if (days.length === 0) return null
   return [...new Set(days)].sort((a, b) => a - b).join(',')
 }
@@ -100,7 +101,7 @@ export function nlToCron(text: string): NlCron | null {
     return {
       cron: `${clock.minute} ${clock.hour} ${day} * *`,
       label: `每月${day}号 ${pad(clock.hour)}:${pad(clock.minute)}`,
-      matched: monthly[0]!,
+      matched: monthly[0] ?? '',
     }
   }
 

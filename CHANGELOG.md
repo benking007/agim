@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-15
+
+### Added
+
+- **First-run setup wizard**: bare `agim` on a fresh install skips the CLI
+  menu and starts the service, then opens `http://localhost:3000/setup`.
+  The browser wizard picks a model, saves one API key, pings it, and
+  continues into chat. Skip writes `setupSkipped` and restores the normal
+  CLI menu. Machines that already have a CLI agent keep the previous
+  `agim go` path. `GET /api/onboarding/status` and `POST /api/onboarding/skip`
+  share the same readiness decision as the CLI.
+- **First-run docs**: [`docs/first-run-setup.md`](docs/first-run-setup.md)
+  is the SSOT for the wizard, skip, CLI, and onboarding API.
+
+### Fixed
+
+- **First-run `agim start`**: a fresh install with no CLI agent and no
+  LLM key used to exit (`No coding agent found!`) before the Web server
+  bound, so `agim` / `agim go` could not open `/setup`. First-run now
+  continues and points at the browser wizard.
+- **First-run `/` on a narrow viewport**: `MobileChatRedirect` sent
+  phones to `/m/chat` before `ChatRoute` could send them to `/setup`.
+  `FirstRunRedirect` now wraps both chat surfaces.
+
+## [1.5.99] - 2026-08-15
+
 ### Fixed
 
 - **2026-08-15 CR (availability / usability / stability)**: heartbeat ticks

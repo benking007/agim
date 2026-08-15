@@ -17,21 +17,21 @@ It is designed for production use: at-least-once persistent delivery, session co
 
 Requires **Node.js ≥ 22.19**. A C++ toolchain (`gcc/g++`, `make`, `python3`) is needed so `better-sqlite3` can compile on install.
 
-You do not need to configure IM, systemd, tokens, or workspaces first.
-Start with the smallest loop: Web console + one working agent.
+After install, run `agim` (or `agim go`). The first command starts the service and opens the browser wizard: pick a model, paste one API key, then chat.
 
 ```bash
 npm install -g agim-cli
-agim go
+agim
 ```
 
-`agim go` will:
+First run will:
 
 1. Detect usable local agents such as Claude Code, Codex, GitHub Copilot CLI, Cursor, Kimi Code, Qoder, PI, MiMo Code, Antigravity, or Agim Agent.
-2. Help configure an Agim Agent model API if no agent is ready yet.
-3. Start Agim in the background and print the Web console URL. On first boot a one-time token is written to `~/.agim/web-bootstrap-token` (retrieve with `agim token bootstrap` if needed). Loopback (`127.0.0.1`) usually skips login.
+2. If none are ready, start Agim and open `http://localhost:3000/setup` so you can pick DeepSeek / Kimi / GLM / MiMo / Ollama and paste one API key.
+3. Print the Web console URL. On first boot a one-time token is written to `~/.agim/web-bootstrap-token` (retrieve with `agim token bootstrap` if needed). Loopback (`127.0.0.1`) usually skips login.
 
-Default Web console: `http://localhost:3000`
+Default Web console: `http://localhost:3000` · first-run wizard: `/setup`  
+Skip writes `setupSkipped` and leaves `/setup` available. Details: [`docs/first-run-setup.md`](docs/first-run-setup.md).
 
 - Chat: `/`
 - Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs, Focus / Loop docks — see [`docs/portal-composer.md`](docs/portal-composer.md))
@@ -58,8 +58,8 @@ Common CLI entries:
 
 | Command | When to use |
 |---|---|
-| `agim` | Open the guided entry menu when you are unsure what to run |
-| `agim go` | First install: get one agent + Web working |
+| `agim` | First run opens setup; later runs show the entry menu |
+| `agim go` | Start the service and open the first-run wizard (or chat, if an agent is already ready) |
 | `agim web` | Recover the console URL, service state, or token path |
 | `agim web --open` | Open the Web console in your default browser |
 | `agim web --start --open` | Start the background service and open Web in one step |

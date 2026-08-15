@@ -240,6 +240,8 @@ export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
       burst: z.number().int().positive(),
     }).optional(),
   })).optional(),
+  /** First-run wizard: operator chose "skip for now". */
+  setupSkipped: z.boolean().optional(),
   /** Boot migration flags (idempotent). */
   nativeAgentToggleMigrated: z.boolean().optional(),
   agimAgentIdMigrated: z.boolean().optional(),

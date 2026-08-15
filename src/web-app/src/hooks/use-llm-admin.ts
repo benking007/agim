@@ -11,6 +11,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { client } from '@/lib/api/client'
+import { onboardingKeys } from '@/hooks/use-onboarding'
 
 // ─── LLM types (mirror the backend wire shapes) ──────────────────
 
@@ -150,7 +151,10 @@ export function useLlmQuickEnable() {
   const qc = useQueryClient()
   return useMutation<LlmQuickEnableResult, Error, LlmQuickEnableBody>({
     mutationFn: (body) => client.post('/api/llm/quick-enable', { body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: llmKeys.all })
+      void qc.invalidateQueries({ queryKey: onboardingKeys.status })
+    },
   })
 }
 

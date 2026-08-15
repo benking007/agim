@@ -80,6 +80,7 @@ function renderChat(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <Routes>
           <Route path="/" element={<ChatRoute />} />
+          <Route path="/setup" element={<div>setup-wizard</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -93,11 +94,23 @@ describe('/chat first-use runway', () => {
       cb(0)
       return 1
     })
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      backends: [],
-      roles: {},
-      presets: [],
-    }), { status: 200, headers: { 'content-type': 'application/json' } })))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+      const url = String(input)
+      const body = url.includes('/api/onboarding/status')
+        ? {
+            firstRun: false,
+            reason: 'cli-agent-available',
+            hasLlmSecret: false,
+            availableCliAgents: ['claude-code'],
+            defaultAgent: 'claude-code',
+            skipped: false,
+          }
+        : { backends: [], roles: {}, presets: [] }
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }))
   })
 
   it('renders the first-use runway when the chat is empty and connected', () => {
@@ -131,6 +144,28 @@ describe('/chat first-use runway', () => {
     renderChat(baseState({ messages: [userMessage('hello')] }))
 
     expect(screen.queryByRole('heading', { name: 'Get one chat working first' })).not.toBeInTheDocument()
+  })
+
+  it('redirects first-run visitors to /setup', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+      const url = String(input)
+      const body = url.includes('/api/onboarding/status')
+        ? {
+            firstRun: true,
+            reason: 'no-usable-agent',
+            hasLlmSecret: false,
+            availableCliAgents: [],
+            defaultAgent: 'agim',
+            skipped: false,
+          }
+        : { backends: [], roles: {}, presets: [] }
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }))
+    renderChat()
+    expect(await screen.findByText('setup-wizard')).toBeInTheDocument()
   })
 
   it('renders the runway over existing history when welcome=1 is present', () => {

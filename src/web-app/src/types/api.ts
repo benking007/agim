@@ -852,6 +852,8 @@ export interface AppConfig {
     dataAgent?: string
   }
   webPort?: number
+  /** First-run wizard: operator chose "skip for now". */
+  setupSkipped?: boolean
   telegram?: { botToken?: string; channelId?: string }
   feishu?: { appId?: string; appSecret?: string; channelId?: string }
   dingtalk?: {
@@ -1293,4 +1295,19 @@ export interface SubmitChatFeedbackResponse {
   vote: 'up' | 'down' | null
   messageIndex: number
   messageId: string | null
+}
+
+export type OnboardingReason =
+  | 'no-usable-agent'
+  | 'no-llm'
+  | 'cli-agent-available'
+  | 'ready'
+
+export interface OnboardingStatus {
+  firstRun: boolean
+  reason: OnboardingReason
+  hasLlmSecret: boolean
+  availableCliAgents: string[]
+  defaultAgent: string
+  skipped: boolean
 }

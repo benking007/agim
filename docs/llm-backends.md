@@ -12,11 +12,11 @@
 
 ## 2. 配置方式
 
-建议优先用 `agim config`：
+建议优先用浏览器向导（首次）或设置页：
 
-1. CLI 主入口：`agim config` → `Agim Agent 大模型 API`
-2. Web：`/settings/llm`
-3. CLI 高级命令：`agim setup llm`
+1. 首次：`agim` / `agim go` → `http://localhost:3000/setup`（见 [`first-run-setup.md`](./first-run-setup.md)）
+2. Web：`/settings/llm`（与 `/setup` 共用 Quick-enable）
+3. CLI 高级：`agim config` → `Agim Agent 大模型 API`，或 `agim setup llm`
 4. 手工编辑 `~/.agim/config.json` + `~/.agim/llm-secrets.json`
 
 > `agim setup llm add` 现在要求 API Key 必填；如果你走环境变量模式，也需要保证对应 backend 名称能解析到有效密钥来源。
@@ -60,7 +60,7 @@
 
 > **任务派发速查（Settings → LLM）**：用下拉选择「编码 / 金融分析 / 批量采集」对应的 agent 与 backend。Backend 写入 `llmRoles.finance`（分析）与 `llmRoles.cheap`（采集）；**不硬编码 deepseek**——选你已配置的任意 backend。速查表注入 Agim 系统提示。SSOT：`src/core/dispatch-routes.ts`。
 
-> **Recommended first-run:** `agim setup llm quick`（默认 DeepSeek / `deepseek-v4-pro`，粘贴 API Key 一键启用双模型）。Web `/settings/llm`、桌面聊天与 `/m/chat` 在 Agim 未配置时也会引导同一流程；可切换其他厂商预设。
+> **Recommended first-run:** run `agim` (or `agim go`) and finish `http://localhost:3000/setup` (DeepSeek default / `deepseek-v4-pro`, paste one API key). Web `/settings/llm`, desktop chat, and `/m/chat` reuse the same quick-enable path. `agim config` / `agim setup-llm` remain the advanced CLI.
 >
 > 一键启用后：backend **name = model ID**（可含 `.`，如 `kimi-k2.6`）；`label` 写入预设 key（如 `deepseek`）供分组与去重。
 

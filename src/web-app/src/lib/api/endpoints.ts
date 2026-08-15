@@ -43,6 +43,7 @@ import type {
   ResolveApprovalResponse,
   MobileQRBody,
   MobileQRResponse,
+  OnboardingStatus,
   SearchProvidersResponse,
   SearchTestBody,
   SearchTestResponse,
@@ -176,6 +177,14 @@ export const api = {
   /** GET /api/config */
   getConfig: () =>
     client.get<AppConfig>('/api/config'),
+
+  /** GET /api/onboarding/status */
+  getOnboardingStatus: () =>
+    client.get<OnboardingStatus>('/api/onboarding/status'),
+
+  /** POST /api/onboarding/skip */
+  skipOnboarding: () =>
+    client.post<OnboardingStatus>('/api/onboarding/skip'),
 
   /** PUT /api/config */
   updateConfig: (body: Partial<AppConfig>) =>

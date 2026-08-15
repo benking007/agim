@@ -26,18 +26,14 @@ When Agim dispatches work to a non-Agim CLI via `call_agent(s)`, specialty fit c
 
 ## First setup flow
 
-1. Run `agim go`.
-2. Let Agim detect installed agents.
-3. If no external agent is ready, configure Agim Agent (`agim` / alias `native`) with an OpenAI-compatible or Anthropic backend.
-4. Open Web and send the first message.
+1. Run `agim` (or `agim go`).
+2. If no CLI agent is on PATH, the browser opens `http://localhost:3000/setup`. Pick a model and paste one API key (or choose local Ollama).
+3. If a CLI agent is already installed, Agim starts the service and opens chat instead.
+4. Send the first Web message.
 5. After Web chat works, enable IM channels from Settings.
 
-You can revisit agent setup later with:
-
-```bash
-agim config
-agim doctor
-```
+`/setup` stays available later. Advanced CLI: `agim config` / `agim setup-llm` / `agim doctor`.  
+Details: [`first-run-setup.md`](./first-run-setup.md).
 
 ## Workspaces and memory
 

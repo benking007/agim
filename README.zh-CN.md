@@ -17,20 +17,21 @@ Agim 是一个 **IM 到 AI Agent 的桥接系统**。
 
 需要 **Node.js ≥ 22.19**。安装时需能编译 `better-sqlite3`（`gcc/g++`、`make`、`python3`）。
 
-先不用配置 IM，也不用理解 systemd / token / 工作区。先把 Web 控制台跑起来，确认能和一个 Agent 对话：
+安装后运行 `agim`（或 `agim go`）。第一次会启动服务并打开浏览器向导：选一个模型、粘贴 API Key，然后直接聊天。
 
 ```bash
 npm install -g agim-cli
-agim go
+agim
 ```
 
-`agim go` 会做三件事：
+首次运行会：
 
 1. 检测本机可用的 Agent（Claude Code / Codex / GitHub Copilot CLI / Cursor / Kimi Code / Qoder / PI / MiMo Code / Antigravity / Agim Agent 等）。
-2. 如果没有可用 Agent，引导你配置 Agim Agent 的大模型 API。
-3. 后台启动 Agim，并打印 Web 控制台地址。首次启动会把一次性 token 写到 `~/.agim/web-bootstrap-token`（需要时用 `agim token bootstrap` 查看）。本机 `127.0.0.1` 访问通常可免登。
+2. 如果还没有可用 Agent，启动 Agim 并打开 `http://localhost:3000/setup`，在浏览器里选 DeepSeek / Kimi / GLM / MiMo / Ollama 并粘贴一个 API Key。
+3. 打印 Web 控制台地址。首次启动会把一次性 token 写到 `~/.agim/web-bootstrap-token`（需要时用 `agim token bootstrap` 查看）。本机 `127.0.0.1` 访问通常可免登。
 
-默认 Web 控制台：`http://localhost:3000`
+默认 Web 控制台：`http://localhost:3000` · 首次向导：`/setup`  
+跳过会写入 `setupSkipped`，`/setup` 仍可打开。详见 [`docs/first-run-setup.md`](docs/first-run-setup.md)。
 
 - 对话：`/`
 - 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区、Focus / Loop 底栏等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
@@ -57,8 +58,8 @@ agim doctor
 
 | 命令 | 什么时候用 |
 |---|---|
-| `agim` | 不确定该运行哪个命令时，打开引导入口菜单 |
-| `agim go` | 第一次安装后，先跑通 Agent + Web |
+| `agim` | 首次运行进入设置向导；之后显示入口菜单 |
+| `agim go` | 启动服务并打开首次向导（已有可用 Agent 时直接进入聊天） |
 | `agim web` | 忘记控制台地址、服务状态或 token 路径 |
 | `agim web --open` | 用默认浏览器打开 Web 控制台 |
 | `agim web --start --open` | 后台启动服务并一步打开 Web |

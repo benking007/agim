@@ -4,7 +4,12 @@
  */
 
 import { AgentPortal } from '@/components/m-portal/agent-portal'
+import { FirstRunRedirect } from '@/components/setup/first-run-redirect'
 
 export default function MobileChatRoute(): JSX.Element {
-  return <AgentPortal />
+  return (
+    <FirstRunRedirect>
+      <AgentPortal />
+    </FirstRunRedirect>
+  )
 }

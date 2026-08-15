@@ -293,6 +293,7 @@ describe('Web REST API', () => {
         '/api/outbox/stats',
         '/api/env?reveal=1',
         '/api/service/log-tail',
+        '/api/onboarding/status',
       ]
 
       for (const path of paths) {
@@ -310,6 +311,18 @@ describe('Web REST API', () => {
         },
       })
       expect(res.status).toBe(200)
+    })
+
+    it('forbids POST /api/onboarding/skip for role=user', async () => {
+      const token = createToken('integration-user-onboarding-skip', { role: 'user' })
+      const res = await fetch(url('/api/onboarding/skip'), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token.raw}`,
+          'x-forwarded-for': '203.0.113.10',
+        },
+      })
+      expect(res.status).toBe(403)
     })
 
     it('forbids DELETE /api/viewer/:id for role=user (mutation requires admin)', async () => {

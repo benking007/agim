@@ -11,6 +11,7 @@
 import { BACK, menu, UserAbortError } from './prompts.js'
 import { pickLang } from './lang-picker.js'
 import { readSavedLang, t, type Lang } from './i18n.js'
+import { loadOnboardingStatus } from '../core/onboarding-status.js'
 
 export type EntryAction =
   | { kind: 'quickstart' }
@@ -63,6 +64,14 @@ export async function runEntryMenu(): Promise<{ action: EntryAction; lang: Lang 
       return { action: { kind: 'quit' }, lang: readSavedLang() ?? 'zh' }
     }
     throw err
+  }
+  try {
+    const status = await loadOnboardingStatus()
+    if (status.firstRun) {
+      return { action: { kind: 'quickstart' }, lang }
+    }
+  } catch {
+    // Probe failure must not block the menu for returning users.
   }
   console.log()
   console.log(t(lang, 'menu.title'))

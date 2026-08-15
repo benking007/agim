@@ -1,6 +1,6 @@
 /**
  * Topbar — verify:
- *   * Brand link always renders
+ *   * Brand link always renders and goes to /dashboard
  *   * Primary nav is Chat / Tasks / Memory / Workspace / Settings
  *   * Active route gets the brand workbench style
  *   * children slot renders between nav and theme controls
@@ -40,17 +40,18 @@ describe('Topbar', () => {
     expect(screen.getByRole('link', { name: 'Agent Files' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
     expect(nav.querySelector('a[href="/dashboard"]')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Reminders' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Memos' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Observability' })).not.toBeInTheDocument()
   })
 
-  it('keeps a brand-adjacent Home link back to the dashboard', () => {
+  it('sends the brand mark to the dashboard', () => {
     renderAt('/')
-    const home = screen.getByRole('link', { name: 'Home' })
-    expect(home).toHaveAttribute('href', '/dashboard')
-    expect(home).toHaveAttribute('title', 'Home workbench')
+    const brand = screen.getByRole('link', { name: 'Agim' })
+    expect(brand).toHaveAttribute('href', '/dashboard')
+    expect(brand).toHaveAttribute('title', 'Home workbench')
   })
 
   it('marks the active route with the accent style', () => {

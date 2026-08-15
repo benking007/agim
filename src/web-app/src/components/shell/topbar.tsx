@@ -5,7 +5,7 @@
  *
  * Five primary entries. Approvals live under Tasks; Reminders / Memos
  * under Memory; Observability under Settings. Old URLs redirect.
- * Brand goes to Chat; a Home icon beside it returns to `/dashboard`.
+ * Brand goes to `/dashboard`; Chat stays a primary nav item.
  *
  * Mobile (< sm):
  *   * Brand stays on the left
@@ -15,7 +15,7 @@
 
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { LayoutDashboard, Zap } from 'lucide-react'
+import { Zap } from 'lucide-react'
 import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
@@ -94,36 +94,19 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
           'px-3 py-3 sm:px-6',
         )}
       >
-        <div className="flex shrink-0 items-center gap-1">
-          <NavLink
-            to="/"
-            className="flex items-center gap-2.5 no-underline"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-400 text-white shadow-sm shadow-brand-500/10">
-              <Zap className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <span className="hidden items-center gap-2 sm:flex">
-              <span className="text-lg font-bold tracking-normal text-text">{t('appName')}</span>
-            </span>
-          </NavLink>
-          <NavLink
-            to="/dashboard"
-            end
-            title={t('dashboard.title')}
-            aria-label={t('nav.dashboard')}
-            className={({ isActive }) =>
-              cn(
-                'flex h-8 w-8 items-center justify-center rounded-lg no-underline tap-target',
-                'transition-colors',
-                isActive
-                  ? 'bg-brand-50 text-brand-600 dark:bg-accent-bg dark:text-accent'
-                  : 'text-text-dim hover:bg-surface-hover hover:text-text',
-              )
-            }
-          >
-            <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-          </NavLink>
-        </div>
+        <NavLink
+          to="/dashboard"
+          title={t('dashboard.title')}
+          aria-label={t('appName')}
+          className="flex shrink-0 items-center gap-2.5 no-underline"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-400 text-white shadow-sm shadow-brand-500/10">
+            <Zap className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="hidden items-center gap-2 sm:flex">
+            <span className="text-lg font-bold tracking-normal text-text">{t('appName')}</span>
+          </span>
+        </NavLink>
 
         {isDesktop && <div className="flex min-w-0 flex-1">{navLinks}</div>}
 

@@ -23,6 +23,7 @@
 
 | 文件 | 说明 |
 |------|------|
+| [`code-review-2026-08-15.md`](./code-review-2026-08-15.md) | 2026-08-15 可用性/易用性/稳定性 CR 落地状态 |
 | [`code-review-2026-07-21-main.md`](./code-review-2026-07-21-main.md) | 2026-07-21 CR；#219/#220 收口；残留 P1c/L1/runtime-redirect |
 | [`code-review-2026-06-21-main.md`](./code-review-2026-06-21-main.md) | 历史 stub |
 | [`code-review-2026-05-06-main.md`](./code-review-2026-05-06-main.md) | 历史 stub |

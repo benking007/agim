@@ -44,7 +44,6 @@ function stepKindBadge(step: ChatActivityStep): string | null {
     if (step.status === 'success') return '已完成'
     if (step.status === 'error' || step.status === 'denied') return '失败'
   }
-  if (step.kind === 'reflect') return '执行过程'
   return null
 }
 
@@ -100,7 +99,7 @@ export function ActivityBlock({ activity }: ActivityBlockProps): JSX.Element {
       {stepCount === 0 && running && (
         <Text dimColor>  等待工具活动…</Text>
       )}
-      {activity.steps.filter((step) => step.kind !== 'reflect').map((step) => {
+      {activity.steps.map((step) => {
         const badge = stepKindBadge(step)
         const preview = step.preview
           ? (step.preview.length > 120 ? `${step.preview.slice(0, 120)}…` : step.preview)

@@ -246,7 +246,7 @@
     "notConnectedRetry": "未连接，正在重连，请稍后重试。",
     "threadReassigned": "原会话属于其他登录身份，已为你开启新对话。",
     "connecting": "正在连接 agim…",
-    "disconnected": "已断开，自动重连中；可以继续输入。",
+    "disconnected": "已断开，正在自动重连。重连完成前输入框不可用。",
     "welcomeTitle": "开始对话",
     "welcomeBody": "输入消息向当前 Agent 提问。点上方下拉可切换 Agent。",
     "welcomeBodyMobile": "在下方输入消息，或从菜单切换 Agent、开启新对话。",

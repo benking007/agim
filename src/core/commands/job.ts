@@ -8,6 +8,7 @@ import { createJob, getJob, listJobs, cancelJob, runJob, getJobStats, type Job }
 import { workspaceRegistry } from '../workspace.js'
 import { buildSkillsSummary } from '../skills/loader.js'
 import type { AgentTurnOutcome } from '../types.js'
+import { imText, resolveImLang } from '../im-i18n.js'
 
 const JOB_STATUS_ICON: Record<string, string> = {
   pending: '⏳', running: '🔄', completed: '✅', delivered: '📬',
@@ -55,15 +56,31 @@ ${jobs.map(formatJob).join('\n')}
 
     case 'create':
     case 'c': {
-      if (!rest) return '用法: /job create <agent> <prompt>\n\n例如: /job create opencode 分析这段代码的性能问题'
+      const lang = resolveImLang({ platform: ctx.platform, userId: ctx.userId, channelId: ctx.channelId })
+      if (!rest) {
+        return imText(lang,
+          '用法: /job create <agent> <prompt>\n\n例如: /job create opencode 分析这段代码的性能问题',
+          'Usage: /job create <agent> <prompt>\n\nExample: /job create opencode analyze this code for performance issues',
+        )
+      }
       const spaceIdx = rest.indexOf(' ')
-      if (spaceIdx < 0) return '用法: /job create <agent> <prompt>\n\n请提供 agent 名称和任务内容。'
+      if (spaceIdx < 0) {
+        return imText(lang,
+          '用法: /job create <agent> <prompt>\n\n请提供 agent 名称和任务内容。',
+          'Usage: /job create <agent> <prompt>\n\nProvide an agent name and the task text.',
+        )
+      }
       const agentName = rest.slice(0, spaceIdx)
       const prompt = rest.slice(spaceIdx + 1).trim()
-      if (!prompt) return '请提供任务内容。'
+      if (!prompt) return imText(lang, '请提供任务内容。', 'Please provide the task text.')
 
       const agent = registry.findAgent(agentName)
-      if (!agent) return `❌ Agent "${agentName}" not found.`
+      if (!agent) {
+        return imText(lang,
+          `❌ 找不到 Agent "${agentName}"。`,
+          `❌ Agent "${agentName}" not found.`,
+        )
+      }
 
       // M6: workspace whitelist applies to direct command paths too. Without
       // this, a member of a workspace whose `agents: ['opencode']` whitelist

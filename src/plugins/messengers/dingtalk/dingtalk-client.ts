@@ -169,6 +169,7 @@ export class DingTalkClient {
           'x-acs-dingtalk-access-token': String(accessToken),
         },
         body: JSON.stringify({ downloadCode, robotCode: this.lastSeenRobotCode }),
+        signal: AbortSignal.timeout(30_000),
       })
       if (!res.ok) {
         const txt = await res.text().catch(() => '')
@@ -197,7 +198,7 @@ export class DingTalkClient {
     // Step 2: GET the CDN URL. DingTalk's CDN may be on different alibaba
     // hosts depending on the file type / region; no host restriction here.
     try {
-      const res = await fetch(downloadUrl)
+      const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) })
       if (!res.ok) {
         log.warn({ status: res.status, event: 'dingtalk.media.cdn_get_failed' },
           'CDN refused the download')
@@ -262,6 +263,7 @@ export class DingTalkClient {
         'x-acs-dingtalk-access-token': String(accessToken),
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     })
     if (!res.ok) {
       const txt = await res.text().catch(() => '')

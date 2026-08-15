@@ -16,7 +16,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { stat, open } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
-import { sendJson } from './http-utils.js'
+import { sendJson, sendError } from './http-utils.js'
 import { requireAdmin } from './auth.js'
 import { logger as rootLogger } from '../core/logger.js'
 
@@ -65,6 +65,8 @@ async function handleServiceStatus(res: ServerResponse): Promise<void> {
     const st = detectService()
     const web = readWebEndpoint()
     const boot = getBootInfo()
+    const { sqlitePersistenceStatus } = await import('../core/sqlite-helper.js')
+    const persistence = sqlitePersistenceStatus()
     sendJson(res, 200, {
       mode: st.mode,
       pid: st.pid,
@@ -76,9 +78,11 @@ async function handleServiceStatus(res: ServerResponse): Promise<void> {
       bootPhase: boot.phase,
       bootMsSinceStart: boot.msSinceStart,
       bootPhaseTimings: boot.phaseTimings,
+      persistence,
+      persistenceBroken: persistence.some((p) => p.broken),
     })
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+    sendError(res, 500, 'INTERNAL', { message: err instanceof Error ? err.message : String(err) })
   }
 }
 

@@ -16,7 +16,7 @@ import {
   confirm,
   Separator,
 } from '@inquirer/prompts'
-import { t, type Lang, type Key } from './i18n.js'
+import { resolveCliLang, t, type Lang, type Key } from './i18n.js'
 
 export const BACK = Symbol('back')
 export type BackSentinel = typeof BACK
@@ -120,7 +120,7 @@ export async function inputText(opts: {
       message: opts.message,
       default: opts.default,
       validate: (v: string) => {
-        if (opts.required && !v.trim()) return 'Required'
+        if (opts.required && !v.trim()) return resolveCliLang() === 'zh' ? '必填' : 'Required'
         if (opts.validate) return opts.validate(v)
         return true
       },
@@ -139,7 +139,7 @@ export async function inputSecret(opts: {
       message: opts.message,
       mask: '*',
       validate: (v: string) => {
-        if (opts.required && !v) return 'Required'
+        if (opts.required && !v) return resolveCliLang() === 'zh' ? '必填' : 'Required'
         if (opts.validate) return opts.validate(v)
         return true
       },

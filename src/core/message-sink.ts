@@ -28,6 +28,7 @@
 import type { MessengerAdapter } from './types.js'
 import { registry } from './registry.js'
 import { logger as rootLogger } from './logger.js'
+import { withTimeout } from '../utils/timeout.js'
 import {
   enqueue, pickPending, claimForSend, requeueStuckSending, markDelivered, markFailed,
   type OutboxKind, type OutboxPriority, type OutboxRow,
@@ -466,7 +467,7 @@ async function workerTick(): Promise<void> {
       // re-send that a silent markDelivered failure used to cause.
       if (!claimForSend(row.id)) continue
       try {
-        await doSend(row)
+        await withTimeout(doSend(row), 60_000, `outbox doSend #${row.id}`)
         markDelivered(row.id)
         // Phase 2: cascade delivery → linked inline job. row.job_id is
         // populated when sink.deliver was called with a SinkPayload.jobId.

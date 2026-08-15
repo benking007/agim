@@ -75,6 +75,9 @@
 近期已关闭的 CR 清单（含 #219/#220 收口状态与残留 backlog）：  
 [`archive/code-review-2026-07-21-main.md`](./archive/code-review-2026-07-21-main.md)。
 
+2026-08-15 可用性 / 易用性 / 稳定性审查落地：  
+[`archive/code-review-2026-08-15.md`](./archive/code-review-2026-08-15.md)。
+
 ## 版本变更
 
 - [`../CHANGELOG.md`](../CHANGELOG.md)：唯一版本变更来源

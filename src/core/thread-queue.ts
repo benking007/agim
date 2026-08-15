@@ -23,6 +23,7 @@
 
 const queues = new Map<string, Promise<unknown>>()
 const depths = new Map<string, number>()
+const MAX_QUEUE_DEPTH = 20
 
 export interface ThreadQueueOpts {
   /** Called once if this run had to wait. `ahead` is the number of runs
@@ -43,6 +44,9 @@ export async function runOnThread<T>(
 ): Promise<T> {
   const prev = queues.get(key) ?? Promise.resolve()
   const ahead = depths.get(key) ?? 0
+  if (ahead >= MAX_QUEUE_DEPTH) {
+    throw new Error(`thread queue full (${ahead}/${MAX_QUEUE_DEPTH}) — try again later`)
+  }
 
   if (ahead > 0 && opts.onQueued) {
     const onQueued = opts.onQueued

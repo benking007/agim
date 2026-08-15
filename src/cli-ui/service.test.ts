@@ -107,7 +107,7 @@ describe('cmdWeb', () => {
     })
     expect(opened).toBe('')
     expect(out).toContain('agim web --start --open')
-    expect(out).toContain('服务未运行')
+    expect(out.includes('服务未运行') || out.includes('Service:not running')).toBe(true)
   })
 
   it('opens the local console URL when the service is running', async () => {
@@ -126,7 +126,10 @@ describe('cmdWeb', () => {
       expect(code).toBe(0)
     })
     expect(opened).toBe('http://127.0.0.1:3333')
-    expect(out).toContain('浏览器：已打开 http://127.0.0.1:3333')
+    expect(
+      out.includes('浏览器：已打开 http://127.0.0.1:3333')
+      || out.includes('Browser: opened http://127.0.0.1:3333'),
+    ).toBe(true)
   })
 })
 

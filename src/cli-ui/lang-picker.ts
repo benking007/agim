@@ -4,7 +4,7 @@
 // once flips the default for next time.
 
 import { menu } from './prompts.js'
-import { readSavedLang, saveLang, t, type Lang } from './i18n.js'
+import { detectLangFromEnv, readSavedLang, saveLang, t, type Lang } from './i18n.js'
 
 /**
  * Prompt for language. Default = last saved choice, or 'zh' for first-run
@@ -15,7 +15,7 @@ import { readSavedLang, saveLang, t, type Lang } from './i18n.js'
  */
 export async function pickLang(): Promise<Lang> {
   const saved = readSavedLang()
-  const def: Lang = saved ?? 'zh'
+  const def: Lang = saved ?? detectLangFromEnv() ?? 'en'
   // i18n.t needs a Lang to render the picker question itself. We render
   // in the user's saved language (or zh on first run) so returning users
   // never see English they didn't ask for.

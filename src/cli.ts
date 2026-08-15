@@ -138,16 +138,22 @@ program
   .command('go')
   .description('First run: configure one agent, start Web, then continue in `agim web`')
   .action(async () => {
+    const { readSavedLang } = await import('./cli-ui/i18n.js')
+    const { pickLang } = await import('./cli-ui/lang-picker.js')
     const { runQuickstart } = await import('./cli-ui/quickstart.js')
-    await runQuickstart()
+    const lang = readSavedLang() ?? await pickLang()
+    await runQuickstart(lang)
   })
 
 program.addCommand(
   program.createCommand('quickstart')
     .description('Compatibility alias for `agim go`')
     .action(async () => {
+      const { readSavedLang } = await import('./cli-ui/i18n.js')
+      const { pickLang } = await import('./cli-ui/lang-picker.js')
       const { runQuickstart } = await import('./cli-ui/quickstart.js')
-      await runQuickstart()
+      const lang = readSavedLang() ?? await pickLang()
+      await runQuickstart(lang)
     }),
   { hidden: true },
 )

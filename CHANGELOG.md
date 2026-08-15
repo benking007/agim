@@ -6,6 +6,38 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **2026-08-15 CR (availability / usability / stability)**: heartbeat ticks
+  no longer overlap on the same binding; DingTalk outbound `fetch` and the
+  outbox `doSend` worker now time out (30s / 60s) so one hung send cannot
+  stall every channel or `/restart`; crash recovery marks inline jobs
+  `interrupted` instead of `failed`; SQLite `dbBroken` retries init every
+  5 minutes and `/api/service/status` exposes persistence health; WebSocket
+  servers ping/pong and drop half-open sockets; `callHelperAgent` aborts
+  the underlying agent and clears its timer; REST handlers have a top-level
+  try/catch plus explicit `requestTimeout` / `headersTimeout`; WeChat
+  inbound is persisted before the long-poll cursor advances and the dedup
+  TTL is 10 minutes; `messenger.start()` is capped at 30s; restart
+  completion keeps the pending file when the IM push fails; reminders prune
+  fired/cancelled rows; media cleanup runs from the start path (not only
+  Telegram); Loop hot-path reads use an in-memory cache; active-run
+  snapshots and the thread queue are bounded; the retired agent-loop
+  truncates input history.
+
+- **CLI / IM English**: the `en` dictionary no longer embeds Chinese for
+  `agim start` / token / bootstrap copy; the boot banner is localized;
+  `resolveCliLang()` follows `LANG` / `LC_ALL` (default `en`); `agim go`
+  prompts for language on first run. High-frequency IM errors are
+  bilingual (Telegram/Discord default English) with optional per-user
+  memory. Wizard: drop the duplicate native-agent row, DingTalk Back
+  cancels without saving, token menu has a real prompt, uninstall does
+  not re-ask language, and hidden Telegram/Discord get an
+  `AGIM_ENABLE_GLOBAL_IM` hint. SPA code-copy and disconnect copy use
+  i18n (disconnect no longer claims you can keep typing).
+
+- **Dependency audit**: `ip-address`, `fast-uri`, `hono`, `@hono/node-server`,
+  and `tar` upgraded. `sharp` (via optional `@huggingface/transformers`)
+  still has no fix; `undici` still arrives via `discord.js`.
+
 - **Outbox migration on old DBs**: schema no longer creates `idx_outbox_dedup`
   before `dedup_key` exists. Pre-1.5 databases were throwing
   `no such column: dedup_key`, after which sqlite-helper marked the queue

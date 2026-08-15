@@ -1080,7 +1080,29 @@ export function startReminderEngine(): void {
   if (typeof tickTimer === 'object' && tickTimer && 'unref' in tickTimer) {
     (tickTimer as { unref: () => void }).unref()
   }
+  try { pruneOldReminders() } catch { /* best-effort */ }
   log.info({ tickMs: TICK_INTERVAL_MS }, 'Reminder engine started')
+}
+
+const REMINDER_RETENTION_DAYS = 14
+
+export function pruneOldReminders(d: Database.Database | null = getDb()): number {
+  if (!d) return 0
+  try {
+    const info = d.prepare(
+      `DELETE FROM reminders
+        WHERE status IN ('fired', 'cancelled')
+          AND COALESCE(fired_at, created_at) < datetime('now', '-' || ? || ' days')`,
+    ).run(REMINDER_RETENTION_DAYS)
+    if (info.changes > 0) {
+      log.info({ event: 'reminders.prune', deleted: info.changes, days: REMINDER_RETENTION_DAYS },
+        `Pruned ${info.changes} reminder row(s)`)
+    }
+    return info.changes
+  } catch (err) {
+    log.warn({ event: 'reminders.prune_failed', err: String(err) })
+    return 0
+  }
 }
 
 export function stopReminderEngine(): void {

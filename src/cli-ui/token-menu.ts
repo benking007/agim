@@ -29,7 +29,7 @@ export async function runTokenMenu(lang: Lang): Promise<void> {
     try {
       pick = await menu<'create' | 'list' | 'revoke' | 'back'>({
         lang,
-        message: '?',
+        message: t(lang, 'token.cli.prompt'),
         choices: [
           { value: 'create', name: t(lang, 'token.choice.create') },
           { value: 'list',   name: t(lang, 'token.choice.list') },

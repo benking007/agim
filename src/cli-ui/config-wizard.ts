@@ -288,6 +288,9 @@ async function sectionMessengers(lang: Lang, cfg: Config): Promise<Config> {
     console.log()
     console.log(t(lang, 'messengers.title'))
     console.log(t(lang, 'messengers.subtitle'))
+    if (!isGlobalImEnabled()) {
+      console.log(t(lang, 'messengers.global_im_hidden'))
+    }
     console.log()
     const specs = visibleMessengerSpecs()
     const choices = specs.map(spec => ({
@@ -519,38 +522,40 @@ async function configureDingtalk(lang: Lang, cfg: Config): Promise<Config> {
   // Batch 1 (#4) — access policy + (#7) ack-reaction. Both default to the
   // pre-1.2.37 behavior ('open' / 'off') so an existing config keeps
   // working without re-running the wizard.
-  const dmPolicy = (await menu<'open' | 'pairing' | 'allowlist'>({
+  const dmPolicy = (await menu<'open' | 'pairing' | 'allowlist' | 'keep'>({
     lang,
     message: t(lang, 'dingtalk.field.dm_policy'),
     choices: [
       { value: 'open', name: t(lang, 'dingtalk.policy.open') },
       { value: 'pairing', name: t(lang, 'dingtalk.policy.pairing') },
       { value: 'allowlist', name: t(lang, 'dingtalk.policy.allowlist') },
+      { value: 'keep', name: t(lang, 'dingtalk.keep_default') },
     ],
-    back: 'messengers.action.back',
-  })) as 'open' | 'pairing' | 'allowlist' | typeof BACK
-  const groupPolicy = (await menu<'open' | 'allowlist' | 'disabled'>({
+  })) as 'open' | 'pairing' | 'allowlist' | 'keep' | typeof BACK
+  if (dmPolicy === BACK) return cfg
+  const groupPolicy = (await menu<'open' | 'allowlist' | 'disabled' | 'keep'>({
     lang,
     message: t(lang, 'dingtalk.field.group_policy'),
     choices: [
       { value: 'open', name: t(lang, 'dingtalk.policy.open') },
       { value: 'allowlist', name: t(lang, 'dingtalk.policy.allowlist') },
       { value: 'disabled', name: t(lang, 'dingtalk.policy.disabled') },
+      { value: 'keep', name: t(lang, 'dingtalk.keep_default') },
     ],
-    back: 'messengers.action.back',
-  })) as 'open' | 'allowlist' | 'disabled' | typeof BACK
-  const ackReaction = (await menu<'off' | 'emoji' | 'kaomoji'>({
+  })) as 'open' | 'allowlist' | 'disabled' | 'keep' | typeof BACK
+  if (groupPolicy === BACK) return cfg
+  const ackReaction = (await menu<'off' | 'emoji' | 'kaomoji' | 'keep'>({
     lang,
     message: t(lang, 'dingtalk.field.ack_reaction'),
     choices: [
       { value: 'off', name: t(lang, 'dingtalk.ack.off') },
       { value: 'emoji', name: t(lang, 'dingtalk.ack.emoji') },
       { value: 'kaomoji', name: t(lang, 'dingtalk.ack.kaomoji') },
+      { value: 'keep', name: t(lang, 'dingtalk.keep_default') },
     ],
-    back: 'messengers.action.back',
-  })) as 'off' | 'emoji' | 'kaomoji' | typeof BACK
+  })) as 'off' | 'emoji' | 'kaomoji' | 'keep' | typeof BACK
+  if (ackReaction === BACK) return cfg
 
-  // BACK preserves the existing setting; explicit pick overwrites.
   const messengers = new Set(cfg.messengers || [])
   messengers.add('dingtalk')
   return {
@@ -560,9 +565,9 @@ async function configureDingtalk(lang: Lang, cfg: Config): Promise<Config> {
       clientId,
       clientSecret,
       channelId: current?.channelId,
-      dmPolicy: dmPolicy === BACK ? (current?.dmPolicy || 'open') : dmPolicy,
-      groupPolicy: groupPolicy === BACK ? (current?.groupPolicy || 'open') : groupPolicy,
-      ackReaction: ackReaction === BACK ? (current?.ackReaction || 'off') : ackReaction,
+      dmPolicy: dmPolicy === 'keep' ? (current?.dmPolicy || 'open') : dmPolicy,
+      groupPolicy: groupPolicy === 'keep' ? (current?.groupPolicy || 'open') : groupPolicy,
+      ackReaction: ackReaction === 'keep' ? (current?.ackReaction || 'off') : ackReaction,
       // allowFrom / groupAllowFrom not edited here — operators with allowlist
       // mode use config.json or the Web admin (#4 cont.) to manage the lists.
       allowFrom: current?.allowFrom,
@@ -632,7 +637,6 @@ interface AgentSpec {
 }
 
 const AGENT_SPECS: AgentSpec[] = [
-  { id: 'agim',        cmd: '__native__' },
   { id: 'native',      cmd: '__native__' },
   { id: 'claude-code', cmd: 'claude' },
   { id: 'opencode',    cmd: 'opencode',     authHintKey: 'agents.auth_hint.opencode' },

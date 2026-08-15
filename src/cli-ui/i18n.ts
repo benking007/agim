@@ -109,7 +109,7 @@ const en = {
   'messengers.label.wechat': 'WeChat (iLink bot)',
   'messengers.label.telegram': 'Telegram',
   'messengers.label.feishu': 'Feishu / Lark',
-  'messengers.label.dingtalk': 'DingTalk (钉钉)',
+  'messengers.label.dingtalk': 'DingTalk',
   'messengers.label.discord': 'Discord',
   'messengers.label.email': 'Email (SMTP push)',
   'messengers.row': '{label} — {status}',
@@ -136,7 +136,7 @@ const en = {
   'tg.field.token_keep': 'Bot token (Enter = keep existing {hint})',
   'tg.field.channel': 'Channel id (optional, Enter = default)',
 
-  'feishu.docs': 'To create a Feishu bot:\n  1. https://open.feishu.cn/app → 创建自建应用\n  2. Enable Bot capability\n  3. Subscribe to im.message.receive_v1\n  4. Permissions: im:message, im:message.p2p_msg:readonly, im:message:send_as_bot\n  5. Create + publish a version\n  6. Copy App ID and App Secret',
+  'feishu.docs': 'To create a Feishu bot:\n  1. https://open.feishu.cn/app → Create a custom app\n  2. Enable Bot capability\n  3. Subscribe to im.message.receive_v1\n  4. Permissions: im:message, im:message.p2p_msg:readonly, im:message:send_as_bot\n  5. Create + publish a version\n  6. Copy App ID and App Secret',
   'feishu.field.app_id': 'App ID',
   'feishu.field.app_secret': 'App Secret',
   'feishu.field.app_secret_keep': 'App Secret (Enter = keep existing)',
@@ -285,7 +285,7 @@ const en = {
   // ─── Baidu Maps AK ───────────────────────────────────────────────────
   'baidu.title': 'Baidu Maps AK (for /memo address geocoding)',
   'baidu.subtitle': 'Optional — without it, /memo still works with raw coords + browser GPS.',
-  'baidu.howto': 'Get a free AK: https://lbsyun.baidu.com → Console → 应用管理 → 创建应用 → 服务端 API',
+  'baidu.howto': 'Get a free AK: https://lbsyun.baidu.com → Console → Apps → Create app → Server API',
   'baidu.action.set': 'Set / update AK',
   'baidu.action.clear': 'Clear AK (disable geocoding)',
   'baidu.action.back': '← Back',
@@ -361,39 +361,45 @@ const en = {
   'info.prefix': 'ℹ {message}',
 
   // ─── agim start — native LLM / MCP boot (PR81) ─────────────────────
-  'start.mcp_connected': 'MCP 服务器已连接：{servers}（{toolCount} 个工具）',
-  'start.mcp_connect_failures': 'MCP 服务器连接失败：{failures}',
-  'start.native_agent': 'Agim Agent：{desc}',
-  'start.native_boot_failed': 'Native LLM/MCP 启动失败：{message}',
-  'start.agents_unavailable': '部分 agent 不可用：{missing}',
-  'start.agents_install_header': '安装 agent：',
-  'start.agents_install_one': '安装 {agent}：{hint}',
-  'start.agents_install_line': '  - {agent}：{hint}',
-  'start.no_agents': '未找到可用的 coding agent！',
-  'start.install_one_agent': '请至少安装一个 agent，然后重新运行 agim start。',
-  'start.agent_workspace': 'Agent 工作区：{agent} → {dir}',
-  'start.workspace_boot_failed': 'Agent 工作区初始化失败：{message}',
-  'start.workspace_fallback': 'Agent 将回退到 Agim cwd（systemd 下为 "/"）',
-  'start.admin_bootstrap_failed': 'admin bootstrap 设置失败：{message}',
-  'agents.label.native': 'Agim Agent（进程内 LLM）',
+  'start.mcp_connected': 'MCP servers connected: {servers} ({toolCount} tools)',
+  'start.mcp_connect_failures': 'MCP server connection failed: {failures}',
+  'start.native_agent': 'Agim Agent: {desc}',
+  'start.native_boot_failed': 'Native LLM/MCP boot failed: {message}',
+  'start.agents_unavailable': 'Some agents are unavailable: {missing}',
+  'start.agents_install_header': 'Install agents:',
+  'start.agents_install_one': 'Install {agent}: {hint}',
+  'start.agents_install_line': '  - {agent}: {hint}',
+  'start.no_agents': 'No coding agent found!',
+  'start.install_one_agent': 'Install at least one agent, then run agim start again.',
+  'start.agent_workspace': 'Agent workspace: {agent} → {dir}',
+  'start.workspace_boot_failed': 'Agent workspace init failed: {message}',
+  'start.workspace_fallback': 'Agent will fall back to Agim cwd ("/" under systemd)',
+  'start.admin_bootstrap_failed': 'admin bootstrap setup failed: {message}',
+  'start.ready': 'Service is up!',
+  'start.web_console': 'Web console: {url}',
+  'start.press_ctrl_c': 'Press Ctrl+C to stop',
+  'agents.label.native': 'Agim Agent (in-process LLM)',
   'agents.install_hint.native': 'Run `agim config` → Agim Agent model APIs. You can also edit llmBackends + API key in ~/.agim/config.json (docs/llm-backends.md).',
-  'token.cli.create_ok': '已创建新的访问 token。',
-  'token.cli.create_warn': '原始值仅显示这一次，请立即保存。',
-  'token.cli.create_usage': '在 /login 页面粘贴，或使用 Authorization: Bearer <token> 头发送。',
-  'token.cli.unlabeled': '（无标签）',
-  'token.cli.list_path': '存储位置：{file}',
-  'token.cli.list_empty': '（暂无 token — 运行 `agim token create` 创建）',
-  'token.cli.never': '（从未）',
-  'token.cli.revoke_ok': 'token {id} 已撤销。',
-  'token.cli.revoke_missing': '未找到 token {id}。',
-  'token.bootstrap.ok_title': 'Web bootstrap 访问 token（一次性读取）：',
-  'token.bootstrap.save_warn': '请立即保存 — 执行本命令后 bootstrap 文件将被删除。',
-  'token.bootstrap.usage': '在 /login 粘贴，或使用 Authorization: Bearer <token>。',
-  'token.bootstrap.none': '无可用的 bootstrap token。',
-  'token.bootstrap.start_hint': '请先启动 agim（`agim start`）以生成首个 token，然后重新运行：',
-  'token.bootstrap.consumed': 'Bootstrap token 已被消费或从未写入。',
-  'token.bootstrap.file_hint': '若主机上文件仍存在：cat {file}',
-  'token.bootstrap.create_hint': '或创建新 token：',
+  'token.cli.create_ok': 'Created a new access token.',
+  'token.cli.create_warn': 'The raw value is shown only once — save it now.',
+  'token.cli.create_usage': 'Paste it on /login, or send Authorization: Bearer <token>.',
+  'token.cli.unlabeled': '(no label)',
+  'token.cli.list_path': 'Stored at: {file}',
+  'token.cli.list_empty': '(no tokens — run `agim token create`)',
+  'token.cli.never': '(never)',
+  'token.cli.revoke_ok': 'Token {id} revoked.',
+  'token.cli.revoke_missing': 'Token {id} not found.',
+  'token.cli.prompt': 'What do you want to do?',
+  'token.bootstrap.ok_title': 'Web bootstrap access token (one-time read):',
+  'token.bootstrap.save_warn': 'Save it now — this command deletes the bootstrap file.',
+  'token.bootstrap.usage': 'Paste it on /login, or send Authorization: Bearer <token>.',
+  'token.bootstrap.none': 'No bootstrap token available.',
+  'token.bootstrap.start_hint': 'Start agim first (`agim start`) to mint the first token, then rerun:',
+  'token.bootstrap.consumed': 'Bootstrap token was already consumed or never written.',
+  'token.bootstrap.file_hint': 'If the file still exists on this host: cat {file}',
+  'token.bootstrap.create_hint': 'Or create a new token:',
+  'messengers.global_im_hidden': 'Telegram and Discord are hidden. Set AGIM_ENABLE_GLOBAL_IM=1 to show them.',
+  'dingtalk.keep_default': 'Keep current / default',
   'ok.prefix': '✓ {message}',
 } as const
 
@@ -759,6 +765,9 @@ const zh: Record<Key, string> = {
   'start.workspace_boot_failed': 'Agent 工作区初始化失败：{message}',
   'start.workspace_fallback': 'Agent 将回退到 Agim cwd（systemd 下为 "/"）',
   'start.admin_bootstrap_failed': 'admin bootstrap 设置失败：{message}',
+  'start.ready': '服务已启动！',
+  'start.web_console': 'Web 控制台：{url}',
+  'start.press_ctrl_c': '按 Ctrl+C 停止',
 
   // ─── agent install hints (PR81 native) ─────────────────────────────
   'agents.label.native': 'Agim Agent（进程内 LLM）',
@@ -781,7 +790,10 @@ const zh: Record<Key, string> = {
   'token.bootstrap.start_hint': '请先启动 agim（`agim start`）以生成首个 token，然后重新运行：',
   'token.bootstrap.consumed': 'Bootstrap token 已被消费或从未写入。',
   'token.bootstrap.file_hint': '若主机上文件仍存在：cat {file}',
+  'token.cli.prompt': '请选择操作：',
   'token.bootstrap.create_hint': '或创建新 token：',
+  'messengers.global_im_hidden': 'Telegram / Discord 已隐藏。设置 AGIM_ENABLE_GLOBAL_IM=1 后可见。',
+  'dingtalk.keep_default': '保留当前/默认值',
 
   'ok.prefix': '✓ {message}',
 }
@@ -846,8 +858,21 @@ export function formatAgentInstallHint(lang: Lang, missing: string[]): string {
   return `${t(lang, 'start.agents_install_header')}\n${lines.join('\n')}`
 }
 
+export function detectLangFromEnv(): Lang | null {
+  const env = process.env.LC_ALL || process.env.LANG || process.env.LC_MESSAGES || ''
+  const head = env.split('.')[0]?.replace('_', '-').toLowerCase() ?? ''
+  if (head.startsWith('zh')) return 'zh'
+  if (head.startsWith('en')) return 'en'
+  return null
+}
+
 export function resolveCliLang(): Lang {
-  return readSavedLang() ?? 'zh'
+  return readSavedLang() ?? detectLangFromEnv() ?? 'en'
+}
+
+/** Raw EN strings — tests assert this dict contains no CJK. */
+export function enDictionaryEntries(): ReadonlyArray<readonly [string, string]> {
+  return Object.entries(en)
 }
 
 export const LANG_PREF_FILE = PREF_FILE

@@ -13,7 +13,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
   Bot,
@@ -63,6 +63,7 @@ import { AskDock } from '@/components/chat/ask-dock'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { isNativeSetupError } from '@/components/chat/error-hints'
 import { useComposerModelStatus } from '@/hooks/use-composer-model-status'
+import { useOnboardingStatus } from '@/hooks/use-onboarding'
 import { Topbar } from '@/components/shell/topbar'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
@@ -98,6 +99,7 @@ export default function ChatRoute(): JSX.Element {
   const [compactRateBaseline, setCompactRateBaseline] = useState(state.compactRate)
   const compactRate = optimisticCompactRate ?? state.compactRate
   const [searchParams] = useSearchParams()
+  const onboarding = useOnboardingStatus()
   // Clear optimistic overrides when the server session catches up (render-time sync).
   if (state.thinkVariant !== thinkBaseline) {
     setThinkBaseline(state.thinkVariant)
@@ -230,6 +232,10 @@ export default function ChatRoute(): JSX.Element {
     }
     setPendingSends((cur) => cur.filter((row) => row.id !== id))
     send(item.text)
+  }
+
+  if (onboarding.data?.firstRun && !forceWelcome) {
+    return <Navigate to="/setup" replace />
   }
 
   return (

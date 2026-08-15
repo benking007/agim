@@ -22,6 +22,7 @@ export const LAZY_NAMESPACES = [
   'workspace',
   'observability',
   'settings',
+  'setup',
 ] as const
 
 export type LazyNamespace = (typeof LAZY_NAMESPACES)[number]

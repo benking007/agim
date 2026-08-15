@@ -53,6 +53,10 @@ function lazy(factory: () => Promise<{ default: React.ComponentType }>) {
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
   {
+    path: '/setup',
+    lazy: authedLazy(() => import('@/routes/setup')),
+  },
+  {
     path: '/',
     element: (
       <RequireAuth>

@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Execution history reflect rows** keep the thinking line and preview;
+  only the `一步一想` / `执行过程 ·` prefix and badge are gone. The
+  bordered parent card between Plan and Subagents stays removed.
 - **Headless Loop** is per-mission (`无人值守` / `headless` in the
   objective, exit, or body). `AGIM_LOOP_HEADLESS=1` applies only to
   `source=scheduled` runs, not interactive chat Loops.

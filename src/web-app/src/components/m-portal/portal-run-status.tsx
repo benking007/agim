@@ -95,14 +95,6 @@ function stepLabel(
   if (isTodoActivityStep(step)) {
     return t('chat.todoActivityLabel', { defaultValue: 'Plan updated' })
   }
-  if (step.kind === 'reflect') {
-    return step.label
-      ? t('chat.activityReflectNext', {
-          next: step.label,
-          defaultValue: 'Execution · {{next}}',
-        })
-      : t('chat.activityReflect', { defaultValue: 'Execution' })
-  }
   return step.label
 }
 
@@ -270,7 +262,7 @@ export function PortalRunStatus({
                 : t('chat.portal.noSteps')}
             </p>
           )}
-          {activity.steps.filter((step) => step.kind !== 'reflect').map((step) => (
+          {activity.steps.map((step) => (
             <div key={step.id} className="min-w-0">
               <div className={cn(
                 'flex items-center gap-1.5 text-[12px]',
@@ -303,11 +295,6 @@ export function PortalRunStatus({
                 {step.kind === 'agent' && (
                   <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
                     {t('chat.activitySubagentBadge', { defaultValue: 'subagent' })}
-                  </span>
-                )}
-                {step.kind === 'reflect' && (
-                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
-                    {t('chat.activityReflectBadge', { defaultValue: 'run' })}
                   </span>
                 )}
               </div>

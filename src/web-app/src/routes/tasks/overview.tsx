@@ -165,6 +165,7 @@ export default function TasksOverviewRoute(): JSX.Element {
     {
       title: t('overview.groups.work'),
       links: [
+        ['approvals', '/tasks/approvals'],
         ['jobs', '/tasks/jobs'],
         ['subtasks', '/tasks/subtasks'],
         ['bgjobs', '/tasks/bgjobs'],

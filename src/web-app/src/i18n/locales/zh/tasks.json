@@ -10,6 +10,7 @@
   },
   "subnav": {
     "overview": "总览",
+    "approvals": "审批",
     "jobs": "作业",
     "subtasks": "子任务",
     "bgjobs": "后台任务",

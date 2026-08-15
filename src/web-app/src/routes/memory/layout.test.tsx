@@ -63,10 +63,13 @@ describe('/memory layout', () => {
     renderAt('/memory?user=wechat%3Au1')
 
     expect(screen.queryByText('Start')).not.toBeInTheDocument()
+    expect(screen.queryByText('Notes')).not.toBeInTheDocument()
     expect(screen.queryByText('User memory')).not.toBeInTheDocument()
     expect(screen.queryByText('Processing')).not.toBeInTheDocument()
     expect(screen.queryByText('Recall')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/memory?user=wechat%3Au1')
+    expect(screen.getByRole('link', { name: 'Reminders' })).toHaveAttribute('href', '/memory/reminders?user=wechat%3Au1')
+    expect(screen.getByRole('link', { name: 'Memos' })).toHaveAttribute('href', '/memory/memos?user=wechat%3Au1')
     expect(screen.getByRole('link', { name: 'Facts' })).toHaveAttribute('href', '/memory/facts?user=wechat%3Au1')
     expect(screen.getByRole('link', { name: 'Persona' })).toHaveAttribute('href', '/memory/persona?user=wechat%3Au1')
     expect(screen.getByRole('link', { name: 'Distillation' })).toHaveAttribute('href', '/memory/distill?user=wechat%3Au1')

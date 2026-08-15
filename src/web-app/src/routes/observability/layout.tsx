@@ -6,7 +6,7 @@
 
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { WorkbenchFrame } from '@/components/shell/workbench-frame'
+import { PageFrame } from '@/components/shell/workbench-frame'
 import {
   Select,
   SelectContent,
@@ -37,7 +37,7 @@ export default function ObservabilityLayout(): JSX.Element {
   }
 
   return (
-    <WorkbenchFrame contentClassName="space-y-4">
+    <PageFrame contentClassName="space-y-4">
       <div className="rounded-xl border border-border bg-surface px-3 py-3 shadow-sm sm:px-4">
         <div className="flex items-center gap-3">
           <span className="text-sm text-text-dim shrink-0">{t('window.label')}</span>
@@ -86,6 +86,6 @@ export default function ObservabilityLayout(): JSX.Element {
       <section className="pb-safe">
         <Outlet />
       </section>
-    </WorkbenchFrame>
+    </PageFrame>
   )
 }

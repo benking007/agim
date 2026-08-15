@@ -10,6 +10,7 @@
   },
   "subnav": {
     "overview": "Overview",
+    "approvals": "Approvals",
     "jobs": "Jobs",
     "subtasks": "Subtasks",
     "bgjobs": "Background",

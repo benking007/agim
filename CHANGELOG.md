@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Topbar 10 → 5**: Chat, Tasks, Memory, Workspace, Settings. Approvals
+  move under Tasks; Reminders / Memos under Memory; Observability under
+  Settings. Old URLs redirect. Brand goes to Chat; `/dashboard` stays as
+  a bookmark.
+- **Settings Advanced**: Search, STT, Email, and Viewer leave the main
+  rail for `/settings/advanced`. `/settings/stt` and the other old paths
+  still redirect so IM error copy keeps working.
+
 ## [1.6.0] - 2026-08-15
 
 ### Added

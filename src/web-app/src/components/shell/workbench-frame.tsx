@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -29,6 +29,29 @@ interface WorkbenchFrameProps {
   children: React.ReactNode
   contentClassName?: string
   footer?: boolean
+}
+
+const WorkbenchChromeContext = createContext(false)
+
+/**
+ * Use on pages that sometimes mount alone and sometimes nest under
+ * Tasks / Memory / Settings. Skips a second Topbar + sidebar when a
+ * parent already rendered {@link WorkbenchFrame}.
+ */
+export function PageFrame({
+  children,
+  contentClassName,
+  footer = true,
+}: WorkbenchFrameProps): JSX.Element {
+  const nested = useContext(WorkbenchChromeContext)
+  if (nested) {
+    return <div className={cn('min-w-0', contentClassName)}>{children}</div>
+  }
+  return (
+    <WorkbenchFrame contentClassName={contentClassName} footer={footer}>
+      {children}
+    </WorkbenchFrame>
+  )
 }
 
 interface WorkbenchNavItem {
@@ -74,7 +97,7 @@ const WORKBENCH_NAV: WorkbenchNavGroup[] = [
       { to: '/tasks', labelKey: 'dashboard.advanced.tasks', icon: <Workflow /> },
       { to: '/memory', labelKey: 'dashboard.advanced.memory', icon: <BrainCircuit /> },
       { to: '/workspace', labelKey: 'dashboard.quick.workspace', icon: <PanelLeft /> },
-      { to: '/observability', labelKey: 'dashboard.advanced.observability', icon: <Activity /> },
+      { to: '/settings/observability', labelKey: 'dashboard.advanced.observability', icon: <Activity /> },
       { to: '/settings', labelKey: 'nav.settings', icon: <Settings /> },
     ],
   },
@@ -116,6 +139,7 @@ export function WorkbenchFrame({
   }
 
   return (
+    <WorkbenchChromeContext.Provider value={true}>
     <TooltipProvider delayDuration={180}>
       <div className="flex h-dvh flex-col bg-bg text-text antialiased">
       <Topbar />
@@ -248,6 +272,7 @@ export function WorkbenchFrame({
       )}
       </div>
     </TooltipProvider>
+    </WorkbenchChromeContext.Provider>
   )
 }
 

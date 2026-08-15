@@ -27,12 +27,22 @@
     "stt": "语音转写",
     "mobile": "手机端",
     "agimSkills": "agim Skills",
+    "advanced": "高级",
+    "observability": "观测",
     "policy": "策略",
     "security": "安全",
     "workspaces": "成员与限流",
     "admins": "管理员",
     "env": "环境变量",
     "service": "服务"
+  },
+  "advanced": {
+    "title": "高级",
+    "subtitle": "搜索、语音转写、邮件和长文 Viewer。API 不变，只是从主设置栏收进去。",
+    "searchDesc": "网页搜索提供商链路和密钥。",
+    "sttDesc": "按住说话与 IM 语音转写厂商。",
+    "emailDesc": "提醒和通知用的 SMTP。",
+    "viewerDesc": "长文 Viewer、隧道和地图密钥。"
   },
   "start": {
     "title": "开始使用",

@@ -27,12 +27,22 @@
     "stt": "Speech-to-text",
     "mobile": "Mobile",
     "agimSkills": "agim Skills",
+    "advanced": "Advanced",
+    "observability": "Observability",
     "policy": "Policy",
     "security": "Security",
     "workspaces": "Access Rules",
     "admins": "Admins",
     "env": "Env Vars",
     "service": "Service"
+  },
+  "advanced": {
+    "title": "Advanced",
+    "subtitle": "Search, speech-to-text, email, and the long-message viewer. APIs stay the same; this is just a quieter door.",
+    "searchDesc": "Web search provider chain and API keys.",
+    "sttDesc": "Hold-to-talk and IM voice transcription vendors.",
+    "emailDesc": "SMTP for reminder and notification mail.",
+    "viewerDesc": "Long-message viewer, tunnel, and map keys."
   },
   "start": {
     "title": "Start here",

@@ -14,6 +14,7 @@
   "navigation": {
     "groups": {
       "overview": "开始",
+      "notes": "便签",
       "user": "用户记忆",
       "processing": "后台处理",
       "recall": "检索"
@@ -21,6 +22,8 @@
   },
   "tabs": {
     "overview": "总览",
+    "reminders": "提醒",
+    "memos": "备忘",
     "facts":   "事实",
     "persona": "画像",
     "distill": "蒸馏",

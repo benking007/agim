@@ -22,7 +22,7 @@ import {
 } from './service.js'
 import { menu, inputText, UserAbortError } from './prompts.js'
 import { pickLang } from './lang-picker.js'
-import { readSavedLang, t, type Lang } from './i18n.js'
+import { readSavedLang, resolveCliLang, t, type Lang } from './i18n.js'
 import { CONFIG_DIR, CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
 import { ENV_FILE, readEnvFile, removeEnvFile } from './env-file.js'
 
@@ -228,7 +228,7 @@ function systemdUnitPath(): string | null {
  *  don't re-prompt for language inside per-command handlers — they
  *  shouldn't disrupt scripted flows. */
 function quietLang(): Lang {
-  return readSavedLang() ?? 'zh'
+  return resolveCliLang()
 }
 
 // ─── status ──────────────────────────────────────────────────────────
@@ -562,7 +562,7 @@ function secureDelete(path: string, shredAvailable: boolean): void {
 }
 
 export async function cmdUninstall(): Promise<void> {
-  const lang = await pickLang()
+  const lang = readSavedLang() ?? await pickLang()
   // Path interpolations — match whatever AGIM_HOME / AGIM_WORKSPACES
   // resolved to so the prompts reflect the actual on-disk layout.
   const pathVars = {

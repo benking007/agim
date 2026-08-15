@@ -246,7 +246,7 @@
     "notConnectedRetry": "Not connected. Reconnecting — try again in a moment.",
     "threadReassigned": "Previous chat belongs to another login — started a new conversation.",
     "connecting": "Connecting to agim…",
-    "disconnected": "Disconnected. Reconnecting automatically; you can keep typing.",
+    "disconnected": "Disconnected. Reconnecting automatically — input is paused until the socket is back.",
     "welcomeTitle": "Start a conversation",
     "welcomeBody": "Type a message to ask the active agent. Use the agent dropdown to switch.",
     "welcomeBodyMobile": "Type a message below. Switch agent or start over from the menu.",

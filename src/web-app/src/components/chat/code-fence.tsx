@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
 function nodeToText(node: ReactNode): string {
@@ -125,6 +126,7 @@ export function CodeFence({
   className?: string
   children?: ReactNode
 }): JSX.Element {
+  const { t } = useTranslation()
   const raw = useMemo(() => nodeToText(children).replace(/\n$/, ''), [children])
   const lang = langFromClass(className)
   const [html, setHtml] = useState<string | null>(null)
@@ -152,7 +154,7 @@ export function CodeFence({
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
-      toast.error('复制失败')
+      toast.error(t('chat.copyFailed'))
     }
   }
 
@@ -166,10 +168,10 @@ export function CodeFence({
           type="button"
           onClick={() => void onCopy()}
           className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-text-dim transition hover:bg-surface hover:text-text"
-          aria-label="Copy code"
+          aria-label={t('chat.copy')}
         >
           {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
-          {copied ? '已复制' : '复制'}
+          {copied ? t('chat.copied') : t('chat.copy')}
         </button>
       </div>
       <pre className="agim-mono overflow-x-auto p-2.5 text-[12px] leading-relaxed">

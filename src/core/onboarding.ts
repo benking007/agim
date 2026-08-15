@@ -471,11 +471,16 @@ export function formatAgentInstallHint(missing: string[]): string {
 /**
  * Format error message when agent is not available
  */
-export function formatAgentNotAvailableError(agentName: string): string {
+export function formatAgentNotAvailableError(
+  agentName: string,
+  lang: 'zh' | 'en' = 'zh',
+): string {
   let installHint: string
 
   if (agentName === 'antigravity') {
-    installHint = `安装方式:
+    installHint = lang === 'en'
+      ? `Install:\n  curl -fsSL https://antigravity.google/cli/install.sh | bash\nThen run \`agy\` and complete Google OAuth.`
+      : `安装方式:
   curl -fsSL https://antigravity.google/cli/install.sh | bash
 然后跑一次 \`agy\` 走 Google 账号 OAuth 完成首次登录。`
   } else {
@@ -484,6 +489,9 @@ export function formatAgentNotAvailableError(agentName: string): string {
     else installHint = hint ? `npm i -g ${hint.npmPackage}` : `npm i -g ${agentName}`
   }
 
+  if (lang === 'en') {
+    return `❌ ${agentName} is not installed or unavailable.\n\n${installHint}\n\nOr switch agent:\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
+  }
   return `❌ ${agentName} 未安装或当前不可用。\n\n${installHint}\n\n或换用其他 Agent：\n  /agim - Agim Agent\n  /cc - Claude Code\n  /cx - Codex\n  /co - GitHub Copilot\n  /oc - OpenCode\n  /agy - Antigravity\n  /kimi - Kimi Code\n  /qd - Qoder\n  /pi - PI\n  /mimo - MiMo Code`
 }
 

@@ -5,6 +5,7 @@ import type { RouteContext } from '../router.js'
 import { registry } from '../registry.js'
 import { sessionManager } from '../session.js'
 import { isAgentAvailableCached, formatAgentNotAvailableError } from '../onboarding.js'
+import { imText, resolveImLang } from '../im-i18n.js'
 import { getJob } from '../job-board.js'
 import { callAgentWithHistory, prepareSubtaskAgentCallOptions } from '../router.js'
 
@@ -19,17 +20,24 @@ export async function handleAgentCommand(
   if (existingSession?.activeSubtaskId) {
     const tid = existingSession.activeSubtaskId
     const job = getJob(tid) ?? existingSession.subtasks?.find((subtask) => subtask.id === tid)
+    const lang = resolveImLang({ platform: ctx.platform, userId: ctx.userId, channelId: ctx.channelId })
     if (!job) {
-      return `❌ 任务 #${tid} 已不存在。使用 /job switch main 返回主会话。`
+      return imText(lang,
+        `❌ 任务 #${tid} 已不存在。使用 /job switch main 返回主会话。`,
+        `❌ Job #${tid} no longer exists. Use /job switch main to return to the main session.`,
+      )
     }
 
     const subtaskAgent = registry.findAgent(job.agent)
     if (!subtaskAgent) {
-      return `❌ 任务 #${tid} 的 Agent "${job.agent}" 不可用。`
+      return imText(lang,
+        `❌ 任务 #${tid} 的 Agent "${job.agent}" 不可用。`,
+        `❌ Agent "${job.agent}" for job #${tid} is unavailable.`,
+      )
     }
 
     if (!(await isAgentAvailableCached(subtaskAgent.name))) {
-      return formatAgentNotAvailableError(subtaskAgent.name)
+      return formatAgentNotAvailableError(subtaskAgent.name, lang)
     }
 
     const subThreadId = `${ctx.threadId}:sub:${tid}`
@@ -45,13 +53,17 @@ export async function handleAgentCommand(
 
   const agentName = existingSession?.agent || ctx.defaultAgent
 
+  const lang = resolveImLang({ platform: ctx.platform, userId: ctx.userId, channelId: ctx.channelId })
   const agent = registry.findAgent(agentName)
   if (!agent) {
-    return `❌ 找不到 Agent "${agentName}"。用 /agents 查看可用 Agent。`
+    return imText(lang,
+      `❌ 找不到 Agent "${agentName}"。用 /agents 查看可用 Agent。`,
+      `❌ Agent "${agentName}" not found. Use /agents to list available agents.`,
+    )
   }
 
   if (!(await isAgentAvailableCached(agent.name))) {
-    return formatAgentNotAvailableError(agent.name)
+    return formatAgentNotAvailableError(agent.name, lang)
   }
 
   const session = await sessionManager.getOrCreateSession(

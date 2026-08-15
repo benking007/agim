@@ -154,6 +154,7 @@ const GLUE_RE = new RegExp([
 export function stripScheduleGlue(text: string, extra?: string): string {
   let out = text
   if (extra) out = out.replace(extra, ' ')
+  out = out.replace(OPEN_DRAFT_RE, ' ')
   out = out.replace(
     /(?:每天|每日|每周[一二三四五六日天]+|每个工作日|工作日|每月\s*\d+\s*号?|every\s+day)\s*(?:凌晨|早上|上午|中午|下午|晚上)?\s*(?:\d{1,2}|[零〇一二两三四五六七八九十]{1,3})?\s*(?::|：|点)?\s*(?:\d{1,2})?/gi,
     ' ',

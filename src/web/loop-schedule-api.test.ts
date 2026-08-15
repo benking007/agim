@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach } from 'bun:test'
-import { EventEmitter } from 'node:events'
 import {
   _clearLoopScheduleForTest,
   getPendingLoopSchedule,
@@ -16,19 +15,25 @@ interface MockRes {
   end(b: string): void
 }
 
-type FakeReq = EventEmitter & {
-  method: string
-  [Symbol.asyncIterator](): AsyncIterableIterator<Buffer>
-}
-
 function makeReq(method: string, body?: unknown): import('node:http').IncomingMessage {
-  const ee = new EventEmitter() as FakeReq
-  ee.method = method
-  const raw = body === undefined ? null : JSON.stringify(body)
-  ee[Symbol.asyncIterator] = (async function* () {
-    if (raw !== null) yield Buffer.from(raw)
-  }) as () => AsyncIterableIterator<Buffer>
-  return ee as unknown as import('node:http').IncomingMessage
+  const raw = body === undefined ? '' : JSON.stringify(body)
+  const listeners: Record<string, Array<(...a: unknown[]) => void>> = {}
+  const req = {
+    method,
+    headers: {},
+    on(ev: string, cb: (...a: unknown[]) => void) {
+      if (!listeners[ev]) listeners[ev] = []
+      listeners[ev].push(cb)
+      if (ev === 'data') {
+        queueMicrotask(() => {
+          if (raw) cb(Buffer.from(raw))
+          for (const end of listeners.end ?? []) end()
+        })
+      }
+      return req
+    },
+  }
+  return req as unknown as import('node:http').IncomingMessage
 }
 
 function makeRes(): MockRes {

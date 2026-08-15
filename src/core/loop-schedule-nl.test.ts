@@ -25,6 +25,7 @@ describe('looksLikeScheduledLoopAsk', () => {
     expect(looksLikeScheduledLoopAsk('scheduled loop please')).toBe(true)
     expect(looksLikeScheduledLoopDraftOpen('开个定时 loop')).toBe(true)
     expect(looksLikeScheduledLoopDraftOpen('每天8点提醒我吃药')).toBe(false)
+    expect(parseScheduledLoopMission(stripScheduleGlue('开个定时 loop')).objective).toBe('')
   })
 })
 

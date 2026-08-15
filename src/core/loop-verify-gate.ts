@@ -199,6 +199,21 @@ export function maybeReapIdleLoopVerify(
     return { ended: false, run: active }
   }
 
+  // Parent may be between hops (or marked under a different channelId)
+  // while still required to call loop_verdict and continue. Ending here
+  // as verify_skipped is what surfaces as loop_verdict → no_active_loop
+  // on a hard N-round Loop. Only force-end when this is already the last
+  // round (or auto-verify above already produced a verdict).
+  if (active.round < active.maxRounds) {
+    log.debug({
+      event: 'loop.reap_deferred_rounds_remain',
+      threadId,
+      round: active.round,
+      maxRounds: active.maxRounds,
+    }, 'skip idle VERIFY reaper while Loop rounds remain')
+    return { ended: false, run: active }
+  }
+
   const r = forceLoopExitSkippedVerify(platform, channelId, threadId)
   if (r.ended) {
     log.info({

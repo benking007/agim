@@ -1368,7 +1368,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'loop_verdict')
             if (gate) return err(gate)
           }
-          const { applyLoopVerdict, getActiveLoop } = await import('../loop-run.js')
+          const { applyLoopVerdict, getActiveLoop, getLoopRun } = await import('../loop-run.js')
           const decision = String(args.decision || '')
           if (decision !== 'continue' && decision !== 'revise' && decision !== 'stop') {
             return err('loop_verdict failed: decision must be continue|revise|stop')
@@ -1474,6 +1474,16 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               return err(
                 'loop_verdict failed: met_use_stop — objective is met; call again with '
                 + 'decision=stop and met=true (ends as objective_met).',
+              )
+            }
+            if (r.error === 'no_active_loop') {
+              const ended = getLoopRun(ctx.platform, ctx.channelId, ctx.threadId)
+              const extra = ended?.status === 'ended'
+                ? ` (already ended as ${ended.endReason || 'ended'} at round ${ended.round}/${ended.maxRounds})`
+                : ''
+              return err(
+                `loop_verdict failed: no_active_loop${extra}`
+                + ' — Loop session is not active; cannot submit a verdict.',
               )
             }
             return err(`loop_verdict failed: ${r.error}`)

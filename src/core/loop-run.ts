@@ -31,6 +31,7 @@ import {
 import { threadHasPendingAsk } from './ask-user-rpc.js'
 import {
   focusOff,
+  focusOn,
   getFocusOn,
   setFocus,
 } from './focus.js'
@@ -1280,13 +1281,20 @@ export function parseExitConstraints(exitDescription: string): {
     }
   }
 
-  // Ceiling-only phrases
+  // Ceiling phrases. A sole 「N 轮结束」/「分析 N 轮结束」(no 或/or
+  // alternative) is a hard window — min = max = N. 「验收通过或 5 轮结束」
+  // stays ceiling-only so early met=true is still allowed.
+  const exactEndHit = text.match(/(\d+)\s*轮\s*结束/)
+  const hasAltExit = /(?:或|或者|\bor\b)/i.test(text)
   const maxHit =
     text.match(/最多\s*(\d+)\s*轮/)
-    || text.match(/(\d+)\s*轮\s*结束/)
+    || exactEndHit
     || text.match(/(\d+)\s*rounds?/i)
   if (maxHit && maxRounds == null) {
     maxRounds = clampRounds(Number.parseInt(maxHit[1]!, 10))
+  }
+  if (exactEndHit && !hasAltExit && minRounds == null && maxRounds != null) {
+    minRounds = maxRounds
   }
 
   if (minRounds != null && maxRounds != null && minRounds > maxRounds) {
@@ -1959,6 +1967,38 @@ export function maybeResolveLoopConfirmTimeout(
   return { ended: true, run: ended, reason: 'confirm_timeout' }
 }
 
+/**
+ * Idle VERIFY reaper can end a Loop as verify_skipped while the parent is
+ * still synthesizing and about to call loop_verdict (channel-key mismatch
+ * or the gap between last child join and the next hop). If rounds remain,
+ * bring that run back so the hard floor / continue path still works.
+ */
+function revivePrematureVerifySkip(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): LoopRun | null {
+  const ended = getLoopRun(platform, channelId, threadId)
+  if (!ended || ended.status !== 'ended') return null
+  if (ended.endReason !== 'verify_skipped') return null
+  if (ended.round >= ended.maxRounds) return null
+  ended.status = 'verifying'
+  delete ended.endReason
+  ended.updatedAt = Date.now()
+  pushTimeline(ended, 'system', 'revived after premature verify_skipped reap (rounds remain)')
+  writeRun(ended)
+  if (ended.openedFocus) {
+    try { focusOn(ended.platform, ended.channelId, ended.threadId) } catch { /* optional */ }
+  }
+  log.info({
+    event: 'loop.revived_verify_skip',
+    threadId,
+    round: ended.round,
+    maxRounds: ended.maxRounds,
+  }, 'revived Loop after premature verify_skipped reap')
+  return ended
+}
+
 export function applyLoopVerdict(
   platform: string,
   channelId: string,
@@ -1966,6 +2006,7 @@ export function applyLoopVerdict(
   verdict: LoopVerdict,
 ): { ok: true; run: LoopRun } | { ok: false; error: string } {
   const run = getActiveLoop(platform, channelId, threadId)
+    ?? revivePrematureVerifySkip(platform, channelId, threadId)
   if (!run) return { ok: false, error: 'no_active_loop' }
   if (run.status === 'aligning') {
     return { ok: false, error: 'aligning' }

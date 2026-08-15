@@ -17,6 +17,7 @@ import {
   cancelLoopForFocusOff,
   confirmLoopMission,
   countRoundLiveSubagents,
+  forceLoopExitSkippedVerify,
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
@@ -129,6 +130,11 @@ describe('parseLoopStartText', () => {
     expect(repeat.maxRounds).toBe(6) // min=N, max=N*2
     expect(parseExitConstraints('验收通过或 5 轮结束').maxRounds).toBe(5)
     expect(parseExitConstraints('验收通过或 5 轮结束').minRounds).toBeUndefined()
+    const hard = parseExitConstraints('分析 2 轮结束')
+    expect(hard.minRounds).toBe(2)
+    expect(hard.maxRounds).toBe(2)
+    expect(parseExitConstraints('2轮结束').minRounds).toBe(2)
+    expect(parseExitConstraints('2轮结束').maxRounds).toBe(2)
   })
 
   it('parseExitConstraints accepts 至少/最少/不少于 N 轮 as minRounds', () => {
@@ -816,6 +822,38 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(abandon.ok).toBe(true)
     if (!abandon.ok) return
     expect(abandon.run.endReason).toBe('stop_verdict')
+  })
+
+  it('revives a premature verify_skipped reap so loop_verdict can continue', () => {
+    reset()
+    const threadId = 'loop-revive-verify-skip'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '分析黄金；退出条件为分析 2 轮结束',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.run.mission?.exit.minRounds).toBe(2)
+    expect(started.run.mission?.exit.maxRounds).toBe(2)
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    const forced = forceLoopExitSkippedVerify(base.platform, base.channelId, threadId)
+    expect(forced.ended).toBe(true)
+    expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
+
+    const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: '第一轮已汇总，继续第二轮',
+      met: false,
+      nextDirection: '补齐缺口后再验收',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.status).toBe('planning')
+    expect(cont.run.round).toBe(2)
+    expect(getActiveLoop(base.platform, base.channelId, threadId)?.round).toBe(2)
   })
 
   it('headless loop (mission text 无人值守) auto-ends on met=true without user confirm', () => {

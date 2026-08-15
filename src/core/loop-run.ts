@@ -1326,9 +1326,9 @@ export function parseExitConstraints(exitDescription: string): {
     }
   }
 
-  // Ceiling only. 「分析 2 轮结束」/「验收通过或 5 轮结束」set maxRounds
-  // so the parent can still met=true on an earlier round and open the
-  // user confirm dock. Hard floors stay explicit: 至少 / 做满 / 重复.
+  // Ceiling only. 「N 轮结束」/「最多 N 轮」set maxRounds so the parent
+  // can still met=true on an earlier round and open the user confirm
+  // dock. Hard floors stay explicit: 至少 / 做满 / 重复.
   const maxHit =
     text.match(/最多\s*(\d+)\s*轮/)
     || text.match(/(\d+)\s*轮\s*结束/)

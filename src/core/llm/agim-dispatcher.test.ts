@@ -714,10 +714,10 @@ describe('buildAgimDispatcher', () => {
         openedFocus: false,
         status: 'verifying',
         round: 1,
-        maxRounds: 2,
+        maxRounds: 100,
         mission: {
           objective: '分析黄金',
-          exit: { description: '分析 2 轮结束', maxRounds: 2, minRounds: 2, onFocusOff: 'cancel' },
+          exit: { description: '验收通过或最多100轮', maxRounds: 100, onFocusOff: 'cancel' },
         },
         dispatchesThisRound: 3,
         roundJobIds: [],

@@ -91,7 +91,7 @@ const channelId = 'sim'
   }
 }
 
-// --- Case 3: skip verify mid-window → keep alive (hard N-round) ---
+// --- Case 3: skip verify mid-window → keep alive so parent can still verdict ---
 {
   const threadId = 'verify-skipped'
   const started = startLoop({

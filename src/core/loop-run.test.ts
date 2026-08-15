@@ -130,11 +130,11 @@ describe('parseLoopStartText', () => {
     expect(repeat.maxRounds).toBe(6) // min=N, max=N*2
     expect(parseExitConstraints('验收通过或 5 轮结束').maxRounds).toBe(5)
     expect(parseExitConstraints('验收通过或 5 轮结束').minRounds).toBeUndefined()
-    const ceiling = parseExitConstraints('分析 2 轮结束')
+    const ceiling = parseExitConstraints('分析 100 轮结束')
     expect(ceiling.minRounds).toBeUndefined()
-    expect(ceiling.maxRounds).toBe(2)
-    expect(parseExitConstraints('2轮结束').minRounds).toBeUndefined()
-    expect(parseExitConstraints('2轮结束').maxRounds).toBe(2)
+    expect(ceiling.maxRounds).toBe(100)
+    expect(parseExitConstraints('100轮结束').minRounds).toBeUndefined()
+    expect(parseExitConstraints('100轮结束').maxRounds).toBe(100)
   })
 
   it('parseExitConstraints accepts 至少/最少/不少于 N 轮 as minRounds', () => {
@@ -826,20 +826,20 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(abandon.run.endReason).toBe('stop_verdict')
   })
 
-  it('「分析 2 轮结束」is a ceiling; round-1 met=true still opens the confirm dock', () => {
+  it('round-1 met=true opens the confirm dock regardless of maxRounds ceiling', () => {
     reset()
     const threadId = 'loop-ceiling-confirm-dock'
     const started = startLoop({
       ...base,
       threadId,
-      text: '分析黄金；退出条件为分析 2 轮结束',
+      text: '分析黄金；退出条件为验收通过或最多100轮',
     })
     if (!started.ok) {
       if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
       return
     }
     expect(started.run.mission?.exit.minRounds).toBeUndefined()
-    expect(started.run.mission?.exit.maxRounds).toBe(2)
+    expect(started.run.mission?.exit.maxRounds).toBe(100)
     noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
 
     const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
@@ -862,14 +862,13 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     const started = startLoop({
       ...base,
       threadId,
-      text: '分析黄金；退出条件为分析 2 轮结束',
+      text: '分析黄金；退出条件为验收通过或最多100轮',
     })
     if (!started.ok) {
       if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
       return
     }
-    expect(started.run.mission?.exit.minRounds).toBeUndefined()
-    expect(started.run.mission?.exit.maxRounds).toBe(2)
+    expect(started.run.mission?.exit.maxRounds).toBe(100)
     noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
     const forced = forceLoopExitSkippedVerify(base.platform, base.channelId, threadId, {
       ignoreRemainingRounds: true,
@@ -898,7 +897,7 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
       channelId: 'web',
       userId: 'u1',
       threadId,
-      text: '分析黄金；退出条件为分析 2 轮结束',
+      text: '分析黄金；退出条件为验收通过或最多100轮',
     })
     if (!started.ok) {
       if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)

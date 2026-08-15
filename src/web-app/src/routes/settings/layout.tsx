@@ -54,13 +54,8 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     tabs: [
       // P1 follow-up — agim SKILL.md editor.
       { to: 'agim-skills', i18nKey: 'tabs.agimSkills', mounted: true },
-      // v1.2.126 — web_search provider chain + per-provider keys.
-      { to: 'search',      i18nKey: 'tabs.search',     mounted: true },
-      // Speech-to-text: 讯飞 / 腾讯 / 百度 / 阶跃 / MiMo / GLM / OpenAI / whisper.cpp
-      { to: 'stt',         i18nKey: 'tabs.stt',        mounted: true },
       { to: 'mcp',         i18nKey: 'tabs.mcp',        mounted: true },
-      { to: 'email',       i18nKey: 'tabs.email',      mounted: true },
-      { to: 'viewer',      i18nKey: 'tabs.viewer',     mounted: true },
+      { to: 'advanced',    i18nKey: 'tabs.advanced',   mounted: true },
     ],
   },
   {
@@ -73,6 +68,7 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
       { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },
       // R13 follow-up — /settings/env catch-all editor removed; raw
       // env-var editing belongs in `~/.agim/env` on the host.
+      { to: 'observability', i18nKey: 'tabs.observability', mounted: true },
       { to: 'service',    i18nKey: 'tabs.service',    mounted: true },
     ],
   },

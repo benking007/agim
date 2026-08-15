@@ -243,7 +243,7 @@ export default function DashboardRoute(): JSX.Element {
       detail: t('dashboard.advanced.skillsDetail'),
     },
     {
-      to: '/observability',
+      to: '/settings/observability',
       icon: <Activity />,
       title: t('dashboard.advanced.observability'),
       detail: t('dashboard.advanced.observabilityDetail'),

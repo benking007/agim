@@ -1,13 +1,13 @@
 /**
- * /tasks/jobs — the long-running agent invocations list.
+ * /tasks/jobs — agent work list (jobs + nested subtasks).
  *
- * Composes every PR-8/9 primitive: DataTable + StatusBadge + Pagination
- * + ConfirmDialog + EmptyState + useEventStream. The route is a thin
- * presenter: data via useJobs (react-query), URL state via useSearchParams,
- * live refresh via the SSE `job` event invalidating the jobs query key.
+ * Default view is long-running jobs. `?kind=subtasks` shows the
+ * flattened per-conversation child-task table. /tasks/subtasks
+ * redirects here so the Tasks rail only has one Work entry.
  *
- * URL contract (all params optional):
+ * Jobs URL contract (all params optional):
  *   ?page=2&per_page=20&status=running
+ * Subtasks: ?kind=subtasks&agent=codex
  *
  * Why URL state rather than zustand:
  *   * deep-link friendly ("show me failed jobs page 3")
@@ -47,6 +47,8 @@ import { useEventStream, type SseStatus } from '@/hooks/use-event-stream'
 import type { Job, JobStatus, ListJobsQuery } from '@/types/api'
 import { describeError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
+import { readWorkKind, WorkKindTabs } from '@/routes/tasks/work-kind-tabs'
+import SubtasksRoute from '@/routes/tasks/subtasks'
 
 const PER_PAGE_OPTIONS = [10, 20, 50, 100]
 const DEFAULT_PER_PAGE = 20
@@ -71,6 +73,12 @@ const LIVE_STATUS_CLASS: Record<SseStatus, string> = {
 }
 
 export default function JobsRoute(): JSX.Element {
+  const [params] = useSearchParams()
+  if (readWorkKind(params) === 'subtasks') return <SubtasksRoute />
+  return <JobsPanel />
+}
+
+function JobsPanel(): JSX.Element {
   const { t } = useTranslation(['tasks', 'common'])
   const [params, setParams] = useSearchParams()
   const invalidateJobs = useInvalidateJobs()
@@ -218,6 +226,7 @@ export default function JobsRoute(): JSX.Element {
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold">{t('jobs.title')}</h1>
+          <WorkKindTabs />
           <span className={cn('text-xs font-medium tabular-nums', LIVE_STATUS_CLASS[live])}>
             {t(`jobs.live.${live}`)}
           </span>

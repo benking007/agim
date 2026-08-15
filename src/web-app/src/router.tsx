@@ -78,8 +78,9 @@ const router = createBrowserRouter([
     lazy: authedLazy(() => import('@/routes/tasks/layout')),
     children: [
       { index: true,       lazy: lazy(() => import('@/routes/tasks/overview')) },
+      { path: 'approvals', lazy: lazy(() => import('@/routes/approvals')) },
       { path: 'jobs',      lazy: lazy(() => import('@/routes/tasks/jobs')) },
-      { path: 'subtasks',  lazy: lazy(() => import('@/routes/tasks/subtasks')) },
+      { path: 'subtasks',  lazy: lazy(() => import('@/routes/tasks/subtasks-redirect')) },
       { path: 'bgjobs',    lazy: lazy(() => import('@/routes/tasks/bgjobs')) },
       { path: 'schedules', lazy: lazy(() => import('@/routes/tasks/schedules')) },
       { path: 'outbox',    lazy: lazy(() => import('@/routes/tasks/outbox')) },
@@ -87,33 +88,26 @@ const router = createBrowserRouter([
       // P1 follow-up — cross-thread admin views (heartbeat / asks).
       { path: 'heartbeat', lazy: lazy(() => import('@/routes/tasks/heartbeat')) },
       { path: 'asks',      lazy: lazy(() => import('@/routes/tasks/asks')) },
-      // v1.2.133 — plan-history audit (native_exit_plan_mode handshakes).
-      { path: 'plans',     lazy: lazy(() => import('@/routes/tasks/plans')) },
+      // /tasks/plans UI retired; GET /api/plans stays. Keep the bookmark.
+      { path: 'plans',     element: <Navigate to="/tasks" replace /> },
       // Loop Engineering audit (per-run history under ~/.agim/loops/history).
       { path: 'loops',     lazy: lazy(() => import('@/routes/tasks/loops')) },
     ],
   },
-  {
-    path: '/approvals',
-    lazy: authedLazy(() => import('@/routes/approvals')),
-  },
-  {
-    path: '/reminders',
-    lazy: authedLazy(() => import('@/routes/reminders')),
-  },
-  {
-    path: '/memos',
-    lazy: authedLazy(() => import('@/routes/memos')),
-  },
+  { path: '/approvals', element: <Navigate to="/tasks/approvals" replace /> },
+  { path: '/reminders', element: <Navigate to="/memory/reminders" replace /> },
+  { path: '/memos',     element: <Navigate to="/memory/memos" replace /> },
   {
     path: '/memory',
     lazy: authedLazy(() => import('@/routes/memory/layout')),
     children: [
-      { index: true,     lazy: lazy(() => import('@/routes/memory/overview')) },
-      { path: 'facts',   lazy: lazy(() => import('@/routes/memory/facts')) },
-      { path: 'persona', lazy: lazy(() => import('@/routes/memory/persona')) },
-      { path: 'distill', lazy: lazy(() => import('@/routes/memory/distill')) },
-      { path: 'vector',  lazy: lazy(() => import('@/routes/memory/vector')) },
+      { index: true,       lazy: lazy(() => import('@/routes/memory/overview')) },
+      { path: 'reminders', lazy: lazy(() => import('@/routes/reminders')) },
+      { path: 'memos',     lazy: lazy(() => import('@/routes/memos')) },
+      { path: 'facts',     lazy: lazy(() => import('@/routes/memory/facts')) },
+      { path: 'persona',   lazy: lazy(() => import('@/routes/memory/persona')) },
+      { path: 'distill',   lazy: lazy(() => import('@/routes/memory/distill')) },
+      { path: 'vector',    lazy: lazy(() => import('@/routes/memory/vector')) },
       // Skills moved into Settings → 技能 (2026-05 second pass). Old
       // /memory/skills + /skills bookmarks redirect to the combined
       // Settings home.
@@ -136,12 +130,11 @@ const router = createBrowserRouter([
   },
   {
     path: '/observability',
-    lazy: authedLazy(() => import('@/routes/observability/layout')),
     children: [
-      { index: true,    element: <Navigate to="health" replace /> },
-      { path: 'health', lazy: lazy(() => import('@/routes/observability/health')) },
-      { path: 'topn',   lazy: lazy(() => import('@/routes/observability/topn')) },
-      { path: 'audit',  lazy: lazy(() => import('@/routes/observability/audit')) },
+      { index: true, element: <Navigate to="/settings/observability" replace /> },
+      { path: 'health', element: <Navigate to="/settings/observability/health" replace /> },
+      { path: 'topn',   element: <Navigate to="/settings/observability/topn" replace /> },
+      { path: 'audit',  element: <Navigate to="/settings/observability/audit" replace /> },
     ],
   },
   {
@@ -151,8 +144,8 @@ const router = createBrowserRouter([
       { index: true,        element: <Navigate to="start" replace /> },
       { path: 'start',      lazy: lazy(() => import('@/routes/settings/start')) },
       { path: 'messengers', lazy: lazy(() => import('@/routes/settings/messengers')) },
-      { path: 'email',      lazy: lazy(() => import('@/routes/settings/email')) },
-      { path: 'viewer',     lazy: lazy(() => import('@/routes/settings/viewer')) },
+      { path: 'email',      element: <Navigate to="/settings/advanced/email" replace /> },
+      { path: 'viewer',     element: <Navigate to="/settings/advanced/viewer" replace /> },
       { path: 'agents',     lazy: lazy(() => import('@/routes/settings/agents')) },
       { path: 'policy',     lazy: lazy(() => import('@/routes/settings/policy')) },
       { path: 'security',   lazy: lazy(() => import('@/routes/settings/security')) },
@@ -168,8 +161,29 @@ const router = createBrowserRouter([
       { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
       { path: 'native-agent', element: <Navigate to="/settings/llm" replace /> },
       // v1.2.126 — web_search provider chain + per-provider API keys.
-      { path: 'search',       lazy: lazy(() => import('@/routes/settings/search')) },
-      { path: 'stt',          lazy: lazy(() => import('@/routes/settings/stt')) },
+      { path: 'search',       element: <Navigate to="/settings/advanced/search" replace /> },
+      { path: 'stt',          element: <Navigate to="/settings/advanced/stt" replace /> },
+      {
+        path: 'advanced',
+        lazy: lazy(() => import('@/routes/settings/advanced/layout')),
+        children: [
+          { index: true,    lazy: lazy(() => import('@/routes/settings/advanced/hub')) },
+          { path: 'search', lazy: lazy(() => import('@/routes/settings/search')) },
+          { path: 'stt',    lazy: lazy(() => import('@/routes/settings/stt')) },
+          { path: 'email',  lazy: lazy(() => import('@/routes/settings/email')) },
+          { path: 'viewer', lazy: lazy(() => import('@/routes/settings/viewer')) },
+        ],
+      },
+      {
+        path: 'observability',
+        lazy: lazy(() => import('@/routes/observability/layout')),
+        children: [
+          { index: true,    element: <Navigate to="health" replace /> },
+          { path: 'health', lazy: lazy(() => import('@/routes/observability/health')) },
+          { path: 'topn',   lazy: lazy(() => import('@/routes/observability/topn')) },
+          { path: 'audit',  lazy: lazy(() => import('@/routes/observability/audit')) },
+        ],
+      },
       // v1.2.129 — admin generates mobile QR for /m/chat.
       { path: 'mobile',       lazy: lazy(() => import('@/routes/settings/mobile')) },
       {
@@ -191,11 +205,6 @@ const router = createBrowserRouter([
   {
     path: '/m/chat',
     lazy: authedLazy(() => import('@/routes/m/chat')),
-  },
-  // Visual playground for floating approval / ask docks (no auth).
-  {
-    path: '/dev/chat-docks',
-    lazy: lazy(() => import('@/routes/dev/chat-docks-preview')),
   },
   { path: '*', element: <NotFoundRoute /> },
 ], {

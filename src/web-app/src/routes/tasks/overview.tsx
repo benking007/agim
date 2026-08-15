@@ -165,8 +165,8 @@ export default function TasksOverviewRoute(): JSX.Element {
     {
       title: t('overview.groups.work'),
       links: [
+        ['approvals', '/tasks/approvals'],
         ['jobs', '/tasks/jobs'],
-        ['subtasks', '/tasks/subtasks'],
         ['bgjobs', '/tasks/bgjobs'],
         ['outbox', '/tasks/outbox'],
       ],
@@ -183,7 +183,7 @@ export default function TasksOverviewRoute(): JSX.Element {
       title: t('overview.groups.review'),
       links: [
         ['a2a', '/tasks/a2a'],
-        ['plans', '/tasks/plans'],
+        ['loops', '/tasks/loops'],
       ],
     },
   ] as const

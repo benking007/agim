@@ -14,6 +14,7 @@
   "navigation": {
     "groups": {
       "overview": "Start",
+      "notes": "Notes",
       "user": "User memory",
       "processing": "Processing",
       "recall": "Recall"
@@ -21,6 +22,8 @@
   },
   "tabs": {
     "overview": "Overview",
+    "reminders": "Reminders",
+    "memos": "Memos",
     "facts":   "Facts",
     "persona": "Persona",
     "distill": "Distillation",

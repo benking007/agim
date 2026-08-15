@@ -8,10 +8,9 @@
  *   2. Render QR, the embedded URL, and the token id.
  *   3. Phone scans → /m/login exchanges code → sets cookie → /m/chat.
  *
- * Revoke: the link points the admin at /settings/security/tokens
- * where every token can be killed (the same UI works for the QR
- * tokens because they're stored in the same table with a
- * mobile-via-qr-* label).
+ * Revoke: there is no Tokens settings page. The API returns a CLI
+ * command (`agim token revoke <id>`); QR tokens live in the same
+ * store as other web tokens (`mobile-via-qr-*` label).
  */
 
 import { useState } from 'react'
@@ -163,12 +162,13 @@ export default function SettingsMobileRoute(): JSX.Element {
             <div className="text-xs">
               <div className="font-medium">{t('mobile.warningTitle')}</div>
               <p className="mt-1 text-text-dim">{t('mobile.warningBody')}</p>
-              <a
-                href={result.revokeHint}
-                className="mt-1 inline-block underline text-accent"
-              >
+              <p className="mt-1 text-text-dim">
                 {t('mobile.revokeLink')}
-              </a>
+                {' '}
+                <code className="rounded bg-surface-hover px-1 py-0.5 font-mono text-[11px]">
+                  {result.revokeHint}
+                </code>
+              </p>
             </div>
           </div>
         </section>

@@ -87,7 +87,7 @@ Supported agent details: `docs/agents.md`
 | Focus | per-thread attention anchor (`/focus`) | `docs/architecture/focus.md` |
 | Loop Engineering | align → dispatch → verify (`/loop`; Agim sticky parent; Portal docks) | `docs/architecture/loop-engineering.md` |
 | Subagent / A2A | nested `call_agent` / `call_agents` + specialty profiles | `docs/architecture/subagent.md`, `docs/architecture/agent-profiles.md` |
-| Heartbeat | periodic proactive loop (`/heartbeat`) | `docs/architecture/reminders.md` |
+| Heartbeat | periodic proactive loop (`/heartbeat`) | `docs/architecture/heartbeat.md` |
 | Ask user | structured agent→user choices | `docs/ask-user.md` |
 | Reminders | one-shot / recurring reminders | `docs/architecture/reminders.md` |
 | Memos | 5W1H persistent notes with optional location | `docs/im-workspaces-guide.md` |

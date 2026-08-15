@@ -10,6 +10,7 @@
   },
   "subnav": {
     "overview": "总览",
+    "approvals": "审批",
     "jobs": "作业",
     "subtasks": "子任务",
     "bgjobs": "后台任务",
@@ -20,6 +21,9 @@
     "asks": "待回答",
     "plans": "计划审计",
     "loops": "Loop 审计"
+  },
+  "work": {
+    "viewsLabel": "作业或子任务"
   },
   "overview": {
     "title": "任务总览",

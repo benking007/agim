@@ -36,8 +36,8 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     id: 'work',
     i18nKey: 'navigation.groups.work',
     tabs: [
+      { to: 'approvals', i18nKey: 'subnav.approvals', mounted: true },
       { to: 'jobs',     i18nKey: 'subnav.jobs',     mounted: true },
-      { to: 'subtasks', i18nKey: 'subnav.subtasks', mounted: true },
       { to: 'bgjobs',   i18nKey: 'subnav.bgjobs',   mounted: true },
       { to: 'outbox',   i18nKey: 'subnav.outbox',   mounted: true },
     ],
@@ -57,8 +57,6 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     i18nKey: 'navigation.groups.review',
     tabs: [
       { to: 'a2a',   i18nKey: 'subnav.a2a',   mounted: true },
-      // v1.2.133 — native_exit_plan_mode audit log.
-      { to: 'plans', i18nKey: 'subnav.plans', mounted: true },
       { to: 'loops', i18nKey: 'subnav.loops', mounted: true },
     ],
   },

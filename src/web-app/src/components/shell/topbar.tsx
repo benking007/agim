@@ -3,17 +3,14 @@
  * protected route. Holds: brand, primary nav (Chat / Tasks / ...),
  * theme + language controls.
  *
+ * Five primary entries. Approvals live under Tasks; Reminders / Memos
+ * under Memory; Observability under Settings. Old URLs redirect.
+ * Brand goes to `/dashboard`; Chat stays a primary nav item.
+ *
  * Mobile (< sm):
  *   * Brand stays on the left
- *   * Nav collapses into a horizontal scroll strip (no hamburger
- *     yet — the nav is short enough that a horizontal scroller is more
- *     thumb-friendly than a drawer for now)
+ *   * Nav collapses into a horizontal scroll strip
  *   * Theme+lang stay on the right, condensed
- *
- * The /chat route shipped in M1 with its own bespoke topbar (status
- * pill + agent picker). It'll adopt this shell in a follow-up; the
- * Topbar is forward-compatible (extra topbar slot left of the
- * controls for future page chrome via children).
  */
 
 import { NavLink } from 'react-router-dom'
@@ -28,23 +25,12 @@ interface NavEntry {
   i18nKey: string
 }
 
-/** Order matches the M1 plan's IA. Each entry is gated on the route
- *  actually existing — we show only the ones plumbed-in so users
- *  don't click a "Reminders" link that 404s mid-M2. As each follow-up
- *  PR lands its route, the `mounted` flag flips. */
-const NAV: Array<NavEntry & { mounted: boolean }> = [
-  { to: '/dashboard',      i18nKey: 'nav.dashboard',     mounted: true  },
-  { to: '/',              i18nKey: 'nav.chat',          mounted: true  },
-  { to: '/tasks',         i18nKey: 'nav.tasks',         mounted: true  },
-  { to: '/approvals',     i18nKey: 'nav.approvals',     mounted: true  },
-  { to: '/reminders',     i18nKey: 'nav.reminders',     mounted: true  },
-  { to: '/memos',         i18nKey: 'nav.memos',         mounted: true  },
-  { to: '/memory',        i18nKey: 'nav.memory',        mounted: true  },
-  // Skills consolidated under Settings → 技能 in 2026-05. Old /skills URLs
-  // still resolve via the redirect in router.tsx so bookmarks don't 404.
-  { to: '/workspace',     i18nKey: 'nav.workspace',     mounted: true  },
-  { to: '/observability', i18nKey: 'nav.observability', mounted: true  },
-  { to: '/settings',      i18nKey: 'nav.settings',      mounted: true  },
+const NAV: NavEntry[] = [
+  { to: '/',          i18nKey: 'nav.chat' },
+  { to: '/tasks',     i18nKey: 'nav.tasks' },
+  { to: '/memory',    i18nKey: 'nav.memory' },
+  { to: '/workspace', i18nKey: 'nav.workspace' },
+  { to: '/settings',  i18nKey: 'nav.settings' },
 ]
 
 export interface TopbarProps {
@@ -72,7 +58,7 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
       )}
       aria-label={t('appName')}
     >
-      {NAV.filter((n) => n.mounted).map((n) => (
+      {NAV.map((n) => (
         <NavLink
           key={n.to}
           to={n.to}
@@ -110,6 +96,8 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
       >
         <NavLink
           to="/dashboard"
+          title={t('dashboard.title')}
+          aria-label={t('appName')}
           className="flex shrink-0 items-center gap-2.5 no-underline"
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-400 text-white shadow-sm shadow-brand-500/10">

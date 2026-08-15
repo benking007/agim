@@ -1,7 +1,7 @@
 /**
  * Topbar — verify:
- *   * Brand link always renders
- *   * Only mounted nav entries appear (no /reminders link until PR-12)
+ *   * Brand link always renders and goes to /dashboard
+ *   * Primary nav is Chat / Tasks / Memory / Workspace / Settings
  *   * Active route gets the brand workbench style
  *   * children slot renders between nav and theme controls
  */
@@ -33,16 +33,25 @@ describe('Topbar', () => {
 
   it('renders only the mounted nav links', () => {
     renderAt('/')
-    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Agim' })
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Reminders' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Memos' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Agent Files' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Observability' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
+    expect(nav.querySelector('a[href="/dashboard"]')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Reminders' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Memos' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Observability' })).not.toBeInTheDocument()
+  })
+
+  it('sends the brand mark to the dashboard', () => {
+    renderAt('/')
+    const brand = screen.getByRole('link', { name: 'Agim' })
+    expect(brand).toHaveAttribute('href', '/dashboard')
+    expect(brand).toHaveAttribute('title', 'Home workbench')
   })
 
   it('marks the active route with the accent style', () => {

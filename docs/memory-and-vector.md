@@ -17,7 +17,7 @@ agim 1.2.0 把长期记忆做成两层：
              │
              ▼
 ┌──── facts ────────────────┐
-│ 5W1H 结构化事实           │    自动从对话蒸馏 + /memo 手动写
+│ 5W1H 结构化事实           │    自动从对话蒸馏（写时按 what 去重）
 │  what / who / when /      │
 │  where / why + 类型 +     │
 │  confidence + 向量        │
@@ -31,7 +31,7 @@ agim 1.2.0 把长期记忆做成两层：
 └───────────────────────────┘
 ```
 
-**全部数据本机**：`~/.agim/memory.db`（SQLite）+ `~/.agim/cache/transformers/`（可选向量模型）。**永远不离开你的机器**——除非你显式开远程 OpenAI 兼容后端。
+**全部数据本机**：`~/.agim/memory.db`（SQLite）+ `~/.agim/cache/transformers/`（可选向量模型）。**永远不离开你的机器**——除非你显式开远程 OpenAI 兼容后端。`/memo` 写的是独立的 `memos.db`（5W1H 便签），不会进入 facts 表。
 
 ---
 

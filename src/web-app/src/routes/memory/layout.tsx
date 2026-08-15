@@ -6,7 +6,7 @@
  * held in URL state (?user=) so sub-tabs read it via useSearchParams.
  */
 
-import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { WorkbenchFrame } from '@/components/shell/workbench-frame'
 import { MemoryUserPicker } from '@/components/memory/user-picker'
@@ -20,7 +20,7 @@ interface SubTab {
 }
 
 interface SubTabGroup {
-  id: 'overview' | 'user' | 'processing' | 'recall'
+  id: 'overview' | 'notes' | 'user' | 'processing' | 'recall'
   i18nKey: string
   tabs: SubTab[]
 }
@@ -31,6 +31,14 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     i18nKey: 'navigation.groups.overview',
     tabs: [
       { to: '.', i18nKey: 'tabs.overview', mounted: true, end: true },
+    ],
+  },
+  {
+    id: 'notes',
+    i18nKey: 'navigation.groups.notes',
+    tabs: [
+      { to: 'reminders', i18nKey: 'tabs.reminders', mounted: true },
+      { to: 'memos',     i18nKey: 'tabs.memos',     mounted: true },
     ],
   },
   {
@@ -60,8 +68,10 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
 
 export default function MemoryLayout(): JSX.Element {
   const { t } = useTranslation('memory')
+  const location = useLocation()
   const [params, setParams] = useSearchParams()
   const userKey = params.get('user') ?? ''
+  const showUserPicker = !/\/memory\/(reminders|memos)\/?$/.test(location.pathname)
 
   function setUserKey(next: string): void {
     const p = new URLSearchParams(params)
@@ -72,13 +82,14 @@ export default function MemoryLayout(): JSX.Element {
 
   return (
     <WorkbenchFrame contentClassName="space-y-4">
-      {/* User picker — the primary navigation control for this page */}
+      {showUserPicker && (
       <div className="rounded-xl border border-border bg-surface px-3 py-3 shadow-sm sm:px-4">
         <div className="flex items-center gap-3">
           <span className="text-sm text-text-dim shrink-0">{t('userPicker.label')}</span>
           <MemoryUserPicker value={userKey} onChange={setUserKey} />
         </div>
       </div>
+      )}
 
       {/* Sub-tab nav */}
       <nav

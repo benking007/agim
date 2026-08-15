@@ -20,7 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { MapPin, NotebookText, RefreshCcw, Search, Trash2 } from 'lucide-react'
 
-import { WorkbenchFrame } from '@/components/shell/workbench-frame'
+import { PageFrame } from '@/components/shell/workbench-frame'
 import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { EmptyState } from '@/components/common/empty-state'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -194,7 +194,7 @@ export default function MemosRoute(): JSX.Element {
   )
 
   return (
-    <WorkbenchFrame contentClassName="pb-safe">
+    <PageFrame contentClassName="pb-safe">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
         <header className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-3">
@@ -297,7 +297,7 @@ export default function MemosRoute(): JSX.Element {
           onConfirm={onConfirmDelete}
         />
       </div>
-    </WorkbenchFrame>
+    </PageFrame>
   )
 }
 

@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Loader2, RefreshCcw, ShieldCheck } from 'lucide-react'
 
-import { WorkbenchFrame } from '@/components/shell/workbench-frame'
+import { PageFrame } from '@/components/shell/workbench-frame'
 import { Button } from '@/components/ui/button'
 import { ApprovalCard } from '@/components/approvals/approval-card'
 import { EmptyState } from '@/components/common/empty-state'
@@ -79,7 +79,7 @@ export default function ApprovalsRoute(): JSX.Element {
   }
 
   return (
-    <WorkbenchFrame contentClassName="pb-safe">
+    <PageFrame contentClassName="pb-safe">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <header className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-3">
@@ -134,7 +134,7 @@ export default function ApprovalsRoute(): JSX.Element {
           </div>
         )}
       </div>
-    </WorkbenchFrame>
+    </PageFrame>
   )
 }
 

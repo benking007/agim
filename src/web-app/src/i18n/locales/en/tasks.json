@@ -10,6 +10,7 @@
   },
   "subnav": {
     "overview": "Overview",
+    "approvals": "Approvals",
     "jobs": "Jobs",
     "subtasks": "Subtasks",
     "bgjobs": "Background",
@@ -20,6 +21,9 @@
     "asks": "Ask User",
     "plans": "Plans",
     "loops": "Loops"
+  },
+  "work": {
+    "viewsLabel": "Jobs or subtasks"
   },
   "overview": {
     "title": "Tasks overview",

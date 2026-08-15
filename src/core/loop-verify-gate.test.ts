@@ -190,7 +190,7 @@ describe('loop verify gate', () => {
     const a = seedLoop(process.env.AGIM_LOOPS_DIR!, { round: 3, maxRounds: 3 })
     const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
     expect(r.ended).toBe(true)
-    if (r.ended) expect(r.run.endReason).toBe('limit')
+    if (r.ended && r.run) expect(r.run.endReason).toBe('limit')
     expect(isLoopAutoVerifyInFlight()).toBe(false)
   })
 

@@ -1330,7 +1330,7 @@ describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
       const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)
       const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
       expect(r.ended).toBe(true)
-      if (!r.ended) return
+      if (!r.ended || !r.run) return
       expect(r.run.status).toBe('ended')
       expect(r.run.endReason).toBe('objective_met')
       expect(r.reason).toBe('confirm_timeout')

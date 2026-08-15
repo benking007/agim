@@ -690,9 +690,59 @@ body content
     invalidateSkillsCache()
     const summary = buildSkillsSummary()
     expect(summary).toContain('fin-data-style')
-    expect(summary).toContain('Chinese stock prices')
+    // v1.6.1 — tier-1 rows carry the first sentence only; the full
+    // multi-sentence description is reachable via read_skill.
+    expect(summary).toContain('Query the local A-share database for daily quotes and indicators')
+    expect(summary).not.toContain('Chinese stock prices')
     // And critically: NOT a raw `>-` literal in the description slot.
     expect(summary).not.toMatch(/- fin-data-style:\s*>-/)
+  })
+
+  it('v1.6.1 — long descriptions are condensed to the first sentence', () => {
+    writeSkill(wsRoot, 'multi-sentence', `---
+name: multi-sentence
+description: >-
+  First sentence about this skill. Second sentence with extra detail.
+  Third sentence, even more detail that would inflate the prompt.
+---
+body
+`)
+    invalidateSkillsCache()
+    const summary = buildSkillsSummary()
+    expect(summary).toContain('- multi-sentence: First sentence about this skill.')
+    expect(summary).not.toContain('Second sentence')
+    expect(summary).not.toContain('Third sentence')
+  })
+
+  it('v1.6.1 — oneLineDescription handles Chinese terminators and hard caps', async () => {
+    const { oneLineDescription, SHORT_ROW_DESCRIPTION_CHARS } = await import('./loader.js')
+    expect(oneLineDescription('查询用户长期事实。使用 5W1H 记录。')).toBe('查询用户长期事实。')
+    expect(oneLineDescription('Persist facts. Use 5W1H.')).toBe('Persist facts.')
+    const long = 'x'.repeat(SHORT_ROW_DESCRIPTION_CHARS + 40)
+    const out = oneLineDescription(long)
+    expect(out.length).toBe(SHORT_ROW_DESCRIPTION_CHARS + 1)  // + '…'
+    expect(out.endsWith('…')).toBe(true)
+    expect(oneLineDescription('')).toBe('')
+  })
+
+  it('v1.6.1 — AGIM_SKILLS_FULL_DESCRIPTIONS=1 restores full inline descriptions', async () => {
+    const saved = process.env.AGIM_SKILLS_FULL_DESCRIPTIONS
+    try {
+      process.env.AGIM_SKILLS_FULL_DESCRIPTIONS = '1'
+      writeSkill(wsRoot, 'full-mode', `---
+name: full-mode
+description: First sentence here. Second sentence still present.
+---
+body
+`)
+      invalidateSkillsCache()
+      const summary = buildSkillsSummary()
+      expect(summary).toContain('- full-mode: First sentence here. Second sentence still present.')
+    } finally {
+      if (saved === undefined) delete process.env.AGIM_SKILLS_FULL_DESCRIPTIONS
+      else process.env.AGIM_SKILLS_FULL_DESCRIPTIONS = saved
+      invalidateSkillsCache()
+    }
   })
 })
 

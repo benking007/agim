@@ -10,8 +10,10 @@
 //
 // Three-tier progressive disclosure (modelled on nanobot):
 //
-//   tier 1: name + description, injected into every system prompt as a
-//           "skills available" block. Cheap (~30-50 tokens per skill).
+//   tier 1: name + first-sentence description, injected into every
+//           system prompt as a "skills available" block. Cheap
+//           (~15-30 tokens per skill; full description opt-in via
+//           AGIM_SKILLS_FULL_DESCRIPTIONS=1).
 //   tier 2: full SKILL.md body, fetched on-demand via the
 //           mcp__agim__read_skill MCP tool when the agent decides the
 //           description matches the user's intent.
@@ -704,24 +706,57 @@ const SKILLS_ROUTING_HEADER: string = [
 ].join('\n')
 
 /**
- * v1.2.151 — Render one skill as a tier-1 row with full description.
- * The body is defensive against malformed YAML block-scalar leakage.
+ * v1.2.151 — Render one skill as a tier-1 row. The body is defensive
+ * against malformed YAML block-scalar leakage.
  *
- * NOTE: workspace skills (bucket 3) MUST always go through this path
- * — operator-installed business skills are an "I want this" signal
- * from the deployment, so we keep their full descriptions for routing
- * precision regardless of how many there are. The token cost is real
- * but intentional; operators with 100+ workspace skills can use the
- * SPA `/settings/skill-injection` editor to prune (see override path).
+ * v1.6.1 — Row descriptions are condensed to the first sentence
+ * (SHORT_ROW_DESCRIPTION_CHARS cap) so the injected block stays small
+ * even with many skills: a 38-skill install went from ~9 KB to ~3 KB.
+ * The full description is still available via mcp__agim__read_skill.
+ * Operators who need full descriptions inline can set
+ * AGIM_SKILLS_FULL_DESCRIPTIONS=1 to restore the previous behaviour.
  */
 function renderSkillRow(s: SkillMeta): string {
   const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
   const flag = s.always ? ' [always]' : ''
   const descClean = (s.description || '').trim()
   const description = descClean && descClean !== '>-' && descClean !== '|'
-    ? descClean
+    ? (fullDescriptionsEnabled() ? descClean : oneLineDescription(descClean))
     : '(no description in SKILL.md — read body via mcp__agim__read_skill)'
   return `- ${s.name}: ${description}${reason}${flag}`
+}
+
+/** Hard cap for one-line row descriptions in the injected skills block.
+ *  Long descriptions inflate the system-prompt budget for every turn;
+ *  the full text stays reachable via mcp__agim__read_skill. */
+export const SHORT_ROW_DESCRIPTION_CHARS = 120
+
+/** Operators with a large skill install can opt back into full inline
+ *  descriptions (token cost is theirs to own). */
+export function fullDescriptionsEnabled(): boolean {
+  return (process.env.AGIM_SKILLS_FULL_DESCRIPTIONS || '').trim() === '1'
+}
+
+/** Condense a description to its first sentence, capped at
+ *  SHORT_ROW_DESCRIPTION_CHARS. Handles Chinese (。！？) and English
+ *  (.!?) sentence terminators, then hard-truncates with "…". Never
+ *  returns an empty string when the input is non-empty. */
+export function oneLineDescription(desc: string): string {
+  const clean = (desc || '').trim().replace(/\s+/g, ' ')
+  if (!clean) return ''
+  // First sentence. Chinese terminators (。！？) end a sentence with no
+  // following whitespace; English ones (.!?) must be followed by
+  // whitespace/EOF so "v1.2.151" or "e.g." keep going. Take whichever
+  // match ends earliest (a Chinese terminator may appear inside an
+  // English sentence and vice versa).
+  const zh = clean.match(/^.*?[。！？]/)
+  const en = clean.match(/^.*?[.!?](?=\s|$)/)
+  const candidates = [zh?.[0], en?.[0]].filter((m): m is string => Boolean(m))
+  const first = candidates.length > 0
+    ? candidates.sort((a, b) => a.length - b.length)[0].trim()
+    : clean
+  if (first.length <= SHORT_ROW_DESCRIPTION_CHARS) return first
+  return `${first.slice(0, SHORT_ROW_DESCRIPTION_CHARS).trimEnd()}…`
 }
 
 /** Inline `always: true` skill bodies. Shared between override + auto. */
@@ -750,9 +785,10 @@ function appendAlwaysOnBodies(all: ReadonlyArray<SkillMeta>, lines: string[]): v
  * within reach. ECC remainder lives at the bottom as the on-demand
  * pool.
  *
- * Buckets 0/1/2/3 all emit full rows (renderSkillRow). Only bucket 4
- * (ECC remainder) clusters — and even then, the cluster path can be
- * disabled or scoped via `AGIM_SKILLS_INJECT_ECC_REMAINDER`.
+ * Buckets 0/1/2/3 all emit one row per skill (renderSkillRow; one-line
+ * description since v1.6.1, or full with AGIM_SKILLS_FULL_DESCRIPTIONS=1).
+ * Only bucket 4 (ECC remainder) clusters — and even then, the cluster
+ * path can be disabled or scoped via `AGIM_SKILLS_INJECT_ECC_REMAINDER`.
  */
 export function buildAutoInjectionBlock(all: ReadonlyArray<SkillMeta>): string {
   const byBucket: Record<number, SkillMeta[]> = { 0: [], 1: [], 2: [], 3: [], 4: [] }

@@ -366,7 +366,10 @@ export default function ChatRoute(): JSX.Element {
       </div>
 
       <Suspense fallback={null}>
-        <PortalScheduledLoopDock threadId={state.clientId} />
+        <PortalScheduledLoopDock
+          threadId={state.clientId}
+          refreshKey={`${state.messages.length}:${state.status}`}
+        />
       </Suspense>
 
       {/* v1.2.115 — floating approval dock pinned above the input.

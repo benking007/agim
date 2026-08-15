@@ -72,4 +72,28 @@ describe('usePortalScheduledLoop', () => {
       expect(result.current.pending?.cron).toBe('0 2 * * *')
     })
   })
+
+  it('refetches when refreshKey changes (after the assistant reply)', async () => {
+    getPending
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        cron: '0 2 * * *',
+        timeText: '每天凌晨2点',
+        objective: '修登录',
+        exitDescription: '验收通过',
+        headless: false,
+        createdAt: 3,
+      })
+    const { result, rerender } = renderHook(
+      ({ key }) => usePortalScheduledLoop('thread-1', key),
+      { initialProps: { key: '0' } },
+    )
+    await waitFor(() => {
+      expect(result.current.pending).toBeNull()
+    })
+    rerender({ key: '1' })
+    await waitFor(() => {
+      expect(result.current.pending?.objective).toBe('修登录')
+    })
+  })
 })

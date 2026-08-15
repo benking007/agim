@@ -871,6 +871,7 @@ export function AgentPortal(): JSX.Element {
               <Suspense fallback={null}>
                 <PortalScheduledLoopDock
                   threadId={portalThreadId}
+                  refreshKey={loopRefreshKey}
                   dark={dark}
                   flush
                 />

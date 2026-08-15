@@ -14,6 +14,7 @@ import { usePortalScheduledLoop } from './use-portal-scheduled-loop'
 
 export interface PortalScheduledLoopDockProps {
   threadId: string | null | undefined
+  refreshKey?: number | string
   dark?: boolean
   flush?: boolean
   className?: string
@@ -21,13 +22,14 @@ export interface PortalScheduledLoopDockProps {
 
 export const PortalScheduledLoopDock = memo(function PortalScheduledLoopDock({
   threadId,
+  refreshKey,
   dark,
   flush,
   className,
 }: PortalScheduledLoopDockProps): JSX.Element | null {
   const { i18n } = useTranslation()
   const zh = i18n.language?.startsWith('zh') ?? true
-  const { pending, busy, error, confirm, cancel } = usePortalScheduledLoop(threadId)
+  const { pending, busy, error, confirm, cancel } = usePortalScheduledLoop(threadId, refreshKey)
   if (!pending) return null
   return (
     <ScheduledLoopDock

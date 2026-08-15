@@ -296,6 +296,9 @@ export async function handleClientMessage(
           } catch { /* best-effort persist */ }
           emit({ type: 'chunk', text: loopCard.reply })
           emit({ type: 'done', text: loopCard.reply })
+          if (loopCard.dock) {
+            emit({ type: 'loop-schedule-changed', threadId: sessionThreadId })
+          }
           return
         }
       } catch (err) {

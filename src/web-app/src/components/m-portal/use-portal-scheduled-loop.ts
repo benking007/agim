@@ -12,7 +12,12 @@ import {
 } from '@/lib/api/loop-schedule'
 import { openChatWs } from '@/lib/api/ws'
 
-export function usePortalScheduledLoop(threadId: string | null | undefined): {
+const POLL_MS = 3000
+
+export function usePortalScheduledLoop(
+  threadId: string | null | undefined,
+  refreshKey?: number | string,
+): {
   pending: LoopSchedulePending | null
   busy: boolean
   error: string | null
@@ -42,8 +47,15 @@ export function usePortalScheduledLoop(threadId: string | null | undefined): {
   }, [threadId])
 
   useEffect(() => {
+    void refreshKey
     void refresh()
-  }, [refresh])
+  }, [refresh, refreshKey])
+
+  useEffect(() => {
+    if (!threadId) return
+    const id = window.setInterval(() => { void refresh() }, POLL_MS)
+    return () => window.clearInterval(id)
+  }, [threadId, refresh])
 
   useEffect(() => {
     if (!threadId) return

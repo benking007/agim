@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,8 +30,10 @@ import {
   countLoopChildJobs,
   parseExitConstraints,
   parseLoopStartText,
+  maybeResolveLoopConfirmTimeout,
   resolveLoopMetConfirm,
   setLoopAcceptance,
+  setLoopBody,
   setLoopExit,
   setLoopObjective,
   startLoop,
@@ -816,6 +818,85 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(abandon.run.endReason).toBe('stop_verdict')
   })
 
+  it('headless loop (mission text 无人值守) auto-ends on met=true without user confirm', () => {
+    reset()
+    const threadId = 'loop-headless-text'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好登录；退出条件为验收通过或无人值守',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+
+    const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'stop',
+      summary: 'regression green; login ok',
+      met: true,
+    })
+    expect(stop.ok).toBe(true)
+    if (!stop.ok) return
+    expect(stop.run.status).toBe('ended')
+    expect(stop.run.endReason).toBe('objective_met')
+    // The user-confirm dock must NOT be shown for headless runs.
+    expect(stop.run.status).not.toBe('pending_user_confirm')
+  })
+
+  it('headless loop (AGIM_LOOP_HEADLESS=1) auto-ends on met=true; interactive stays pending', () => {
+    reset()
+    const saved = process.env.AGIM_LOOP_HEADLESS
+    try {
+      process.env.AGIM_LOOP_HEADLESS = '1'
+      const threadId = 'loop-headless-env'
+      const started = startLoop({
+        ...base,
+        threadId,
+        text: '修好登录；退出条件为验收通过或最多5轮',
+      })
+      if (!started.ok) {
+        if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+        return
+      }
+      noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+      const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+        decision: 'stop',
+        summary: 'looks done',
+        met: true,
+      })
+      expect(stop.ok).toBe(true)
+      if (!stop.ok) return
+      expect(stop.run.status).toBe('ended')
+      expect(stop.run.endReason).toBe('objective_met')
+    } finally {
+      if (saved === undefined) delete process.env.AGIM_LOOP_HEADLESS
+      else process.env.AGIM_LOOP_HEADLESS = saved
+    }
+
+    // Interactive default (no env, no 无人值守 in mission) still parks.
+    const threadId2 = 'loop-interactive-still'
+    const interactive = startLoop({
+      ...base,
+      threadId: threadId2,
+      text: '修好登录；退出条件为验收通过或最多5轮',
+    })
+    if (!interactive.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(interactive.error)
+      return
+    }
+    noteLoopDispatch(base.platform, base.channelId, threadId2, { count: 1 })
+    const parked = applyLoopVerdict(base.platform, base.channelId, threadId2, {
+      decision: 'stop',
+      summary: 'looks done',
+      met: true,
+    })
+    expect(parked.ok).toBe(true)
+    if (!parked.ok) return
+    expect(parked.run.status).toBe('pending_user_confirm')
+  })
+
   it('maxRounds truncates after verify-unmet', () => {
     reset()
     const threadId = 'loop-r4-rounds'
@@ -1039,4 +1120,111 @@ describe('onLoopRunWritten', () => {
 
 process.on('exit', () => {
   try { rmSync(TMP, { recursive: true, force: true }) } catch { /* ignore */ }
+})
+
+// ─── P1-2: confirm-timeout escape for pending_user_confirm ─────────────
+describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
+  const savedMs = process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS
+  const savedAction = process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION
+
+  afterEach(() => {
+    if (savedMs === undefined) delete process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS
+    else process.env.AGIM_LOOP_CONFIRM_TIMEOUT_MS = savedMs
+    if (savedAction === undefined) delete process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION
+    else process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION = savedAction
+  })
+
+  function seedPending(dir: string, over: Record<string, unknown> = {}): {
+    platform: string
+    channelId: string
+    threadId: string
+  } {
+    const platform = 'wechat'
+    const channelId = 'rest'
+    const threadId = `t-confirm-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`
+    const sessionKey = `${platform}__${channelId}__${threadId}`
+    const now = Date.now()
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    writeFileSync(join(dir, `${sessionKey}.json`), JSON.stringify({
+      id: `cccccccc-cccc-cccc-cccc-${threadId.slice(-12).padStart(12, '0')}`,
+      sessionKey,
+      platform,
+      channelId,
+      threadId,
+      focusSnapshot: '分析金价',
+      openedFocus: false,
+      status: 'pending_user_confirm',
+      round: 1,
+      maxRounds: 3,
+      mission: {
+        objective: '分析金价箱体',
+        exit: { description: '找到箱体或最多3轮', maxRounds: 3, onFocusOff: 'cancel' },
+      },
+      dispatchesThisRound: 1,
+      usage: { dispatchCount: 1, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+      lastVerification: { at: now, met: true, summary: '箱体已定位' },
+      createdAt: now,
+      updatedAt: now,
+      confirmedAt: now - 40 * 60 * 1000, // 40 min ago → past the 30 min default
+      timeline: [],
+      ...over,
+    }), 'utf8')
+    return { platform, channelId, threadId }
+  }
+
+  it('auto-ends as objective_met after the timeout window', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-timeout-'))
+    process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    try {
+      const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)
+      const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
+      expect(r.ended).toBe(true)
+      if (!r.ended) return
+      expect(r.run.status).toBe('ended')
+      expect(r.run.endReason).toBe('objective_met')
+      expect(r.reason).toBe('confirm_timeout')
+    } finally {
+      if (savedMs === undefined) delete process.env.AGIM_LOOPS_DIR
+      else process.env.AGIM_LOOPS_DIR = savedMs
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  it('does not resolve before the timeout window', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-early-'))
+    process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    try {
+      const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!, {
+        confirmedAt: Date.now() - 60_000, // 1 min ago
+      })
+      const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
+      expect(r.ended).toBe(false)
+      expect(getActiveLoop(platform, channelId, threadId)?.status).toBe('pending_user_confirm')
+    } finally {
+      if (savedMs === undefined) delete process.env.AGIM_LOOPS_DIR
+      else process.env.AGIM_LOOPS_DIR = savedMs
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  it('AGIM_LOOP_CONFIRM_TIMEOUT_ACTION=continue advances to planning instead', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loop-confirm-continue-'))
+    process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION = 'continue'
+    try {
+      const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)
+      const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
+      expect(r.ended).toBe(false)
+      const run = getActiveLoop(platform, channelId, threadId)
+      expect(run?.status).toBe('planning')
+      expect(run?.round).toBe(2)
+      expect(run?.usage.continueCount).toBe(1)
+    } finally {
+      if (savedMs === undefined) delete process.env.AGIM_LOOPS_DIR
+      else process.env.AGIM_LOOPS_DIR = savedMs
+      if (savedAction === undefined) delete process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION
+      else process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION = savedAction
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
 })

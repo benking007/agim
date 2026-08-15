@@ -17,7 +17,10 @@ import {
   loopNeedsVerdict,
   loopVerifyFollowUpPrompt,
   loopVerifySteerText,
+  maybeReapIdleLoopVerify,
+  isLoopAutoVerifyInFlight,
 } from './loop-verify-gate.js'
+import { isLoopAutoVerifyEnabled } from './loop-evaluator.js'
 
 function seedLoop(dir: string, over: Record<string, unknown> = {}): {
   platform: string
@@ -156,5 +159,62 @@ describe('loop verify gate', () => {
     expect(loopVerifySteerText()).toContain('ask_user')
     expect(loopVerifyFollowUpPrompt()).toContain('loop_verdict')
     expect(loopVerifyFollowUpPrompt()).toContain('ask_user')
+  })
+
+  it('AGIM_LOOP_AUTO_VERIFY defaults off and reads env', () => {
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+    expect(isLoopAutoVerifyEnabled()).toBe(false)
+    process.env.AGIM_LOOP_AUTO_VERIFY = '1'
+    expect(isLoopAutoVerifyEnabled()).toBe(true)
+    process.env.AGIM_LOOP_AUTO_VERIFY = 'on'
+    expect(isLoopAutoVerifyEnabled()).toBe(true)
+    process.env.AGIM_LOOP_AUTO_VERIFY = 'off'
+    expect(isLoopAutoVerifyEnabled()).toBe(false)
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+  })
+
+  it('reaper without auto-verify falls back to verify_skipped stop', () => {
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(true)
+    if (r.ended) expect(r.run.endReason).toBe('verify_skipped')
+    expect(isLoopAutoVerifyInFlight()).toBe(false)
+  })
+
+  it('reaper with auto-verify but no routeCtx still falls back to stop (no reviewer spawn)', () => {
+    process.env.AGIM_LOOP_AUTO_VERIFY = '1'
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(true)
+    if (r.ended) expect(r.run.endReason).toBe('verify_skipped')
+    expect(isLoopAutoVerifyInFlight()).toBe(false)
+  })
+
+  it('reaper with auto-verify + routeCtx defers to async reviewer (loop stays active)', async () => {
+    process.env.AGIM_LOOP_AUTO_VERIFY = '1'
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId, {
+      platform: a.platform,
+      channelId: a.channelId,
+      threadId: a.threadId,
+      defaultAgent: 'agim',
+      traceId: 'trace-test',
+      logger: {
+        info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {},
+        fatal: () => {}, level: 'info', bindings: () => ({}),
+        child: () => ({
+          info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {},
+          fatal: () => {}, level: 'info', bindings: () => ({}), child: () => null,
+        }),
+      } as unknown as import('pino').Logger,
+    } as import('./router.js').RouteContext)
+    // Reviewer is fire-and-forget; the Loop is NOT ended synchronously.
+    expect(r.ended).toBe(false)
+    expect(isLoopAutoVerifyInFlight()).toBe(true)
+    // Give the async reviewer a beat to settle (it will fail: no cheap backend
+    // in this unit env → falls back to verify_skipped).
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+    expect(isLoopAutoVerifyInFlight()).toBe(false)
   })
 })

@@ -51,6 +51,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'choice-card-edit',
   'subagent-stopped',
   'loop-changed',
+  'loop-schedule-changed',
   'steer-accepted',
 ])
 
@@ -416,6 +417,8 @@ export function makeOnIncoming(
         return
       case 'loop-changed':
         // Portal Loop docks subscribe via openChatWs in use-portal-loop.
+        return
+      case 'loop-schedule-changed':
         return
       case 'steer-accepted':
         // Optimistic APPEND_USER already painted the bubble.

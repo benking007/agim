@@ -14,10 +14,11 @@ All notable changes to this project will be documented in this file.
   a parent turn; in-flight / pending-confirm ticks skip.
 - **IM `/loop confirm end|continue`**: resolve `pending_user_confirm`
   from chat (Portal dock was the only entry).
-- **NL scheduled Loop card**: phrases like
-  `每天凌晨2点用 Loop 修登录；退出条件为验收通过或最多5轮` show a
-  y/n card (never silent). Confirm writes `/cron` with a `loop:`
-  prompt. Reminder-shaped lines are not stolen.
+- **NL / `/cronloop` scheduled Loop dock**: phrases like
+  `开个定时 loop` or `每天凌晨2点用 Loop 修登录；退出条件为验收通过或最多5轮`
+  open a bottom sheet (never silent). Confirm writes `/cron` with a
+  `loop:` prompt. Alias `/cornloop`. IM without a dock still uses a
+  y/n card when fields are complete. Reminder-shaped lines are not stolen.
 
 ### Changed
 

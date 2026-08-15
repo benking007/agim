@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
+  commitPendingLoopSchedule,
+  openScheduledLoopDraft,
   tryDetectScheduledLoopIntent,
   tryHandleScheduledLoopTurn,
 } from './loop-schedule-intent.js'
@@ -76,6 +78,53 @@ describe('tryDetectScheduledLoopIntent', () => {
     expect(r.reply).toContain('退出条件')
     expect(getPendingLoopSchedule('wechat:c1:t1')).toBeNull()
   })
+
+  it('dock surface stashes a draft even when exit is missing', async () => {
+    const r = await tryDetectScheduledLoopIntent({
+      ...BASE,
+      platform: 'web',
+      channelId: 'web',
+      threadId: 'web-dock',
+      text: '开个定时 loop',
+      surface: 'dock',
+    })
+    expect(r.handled).toBe(true)
+    expect(r.dock).toBe(true)
+    expect(r.reply).toContain('底栏')
+    const pending = getPendingLoopSchedule('web:web:web-dock')
+    expect(pending).not.toBeNull()
+    expect(pending?.objective).toBe('')
+    expect(pending?.exitDescription).toBe('')
+  })
+})
+
+describe('openScheduledLoopDraft /cronloop', () => {
+  it('opens an empty dock draft', () => {
+    const r = openScheduledLoopDraft({
+      platform: 'web',
+      channelId: 'web',
+      threadId: 't-cronloop',
+      surface: 'dock',
+    })
+    expect(r.handled).toBe(true)
+    expect(r.dock).toBe(true)
+    expect(getPendingLoopSchedule('web:web:t-cronloop')).not.toBeNull()
+  })
+
+  it('pre-fills clock + mission from the rest of the line', () => {
+    const r = openScheduledLoopDraft({
+      platform: 'web',
+      channelId: 'web',
+      threadId: 't-fill',
+      text: '每天凌晨2点 修登录；退出条件为验收通过或最多5轮',
+      surface: 'dock',
+    })
+    expect(r.handled).toBe(true)
+    const pending = getPendingLoopSchedule('web:web:t-fill')
+    expect(pending?.cron).toBe('0 2 * * *')
+    expect(pending?.objective).toContain('修登录')
+    expect(pending?.exitDescription).toContain('验收通过')
+  })
 })
 
 describe('tryHandleScheduledLoopTurn y/n', () => {
@@ -128,5 +177,32 @@ describe('tryHandleScheduledLoopTurn y/n', () => {
     expect(created?.prompt.startsWith('loop:')).toBe(true)
     expect(created?.prompt).toContain('退出条件为验收通过')
     if (created) deleteSchedule(created.id)
+  })
+})
+
+describe('dock confirm writes loop: cron', () => {
+  it('sqlite: commit after /cronloop draft writes a loop: row', () => {
+    if (!sqliteAvailable()) return
+    registry.registerAgent(makeAgim())
+    openScheduledLoopDraft({
+      platform: 'web',
+      channelId: 'web',
+      threadId: 't-dock-commit',
+      text: '每天凌晨2点 修登录底栏；退出条件为验收通过或最多5轮',
+      surface: 'dock',
+    })
+    const pending = getPendingLoopSchedule('web:web:t-dock-commit')
+    expect(pending).not.toBeNull()
+    const created = commitPendingLoopSchedule({
+      pending: pending!,
+      userId: 'u-dock',
+    })
+    expect(created.ok).toBe(true)
+    const row = listSchedules().find((s) => s.prompt.includes('修登录底栏'))
+    expect(row).toBeDefined()
+    expect(row?.cron).toBe('0 2 * * *')
+    expect(row?.agent).toBe('agim')
+    expect(row?.prompt.startsWith('loop:')).toBe(true)
+    if (row) deleteSchedule(row.id)
   })
 })

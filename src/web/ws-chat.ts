@@ -282,6 +282,7 @@ export async function handleClientMessage(
           threadId: sessionThreadId,
           userId: `web:${sessionThreadId}`,
           text,
+          surface: 'dock',
         })
         if (loopCard.handled && loopCard.reply) {
           const now = new Date()

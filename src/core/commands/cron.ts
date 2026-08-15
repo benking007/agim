@@ -14,7 +14,8 @@
 // of a plain one-shot job. Both hard fields are required — the scheduler
 // does not auto-confirm ALIGNING. Example:
 //   /cron create nightly-loop agim "0 2 * * *" loop: 修复昨日故障；退出条件为验收通过或最多5轮
-// Natural language (confirmation card, never silent):
+// Natural language / `/cronloop` (bottom dock, never silent):
+//   开个定时 loop
 //   每天凌晨2点用 Loop 修登录；退出条件为验收通过或最多5轮
 // Headless (auto-end on met=true) requires 无人值守 / headless in the
 // mission text. AGIM_LOOP_HEADLESS=1 only applies to these scheduled runs.

@@ -67,6 +67,8 @@ interface DetectorResult {
 export interface LoopScheduleTurnResult {
   handled: boolean
   reply?: string
+  /** Web Portal should open the bottom dock instead of relying on y/n. */
+  dock?: boolean
 }
 
 const NOT_HANDLED: LoopScheduleTurnResult = { handled: false }
@@ -77,15 +79,24 @@ function threadKeyOf(platform: string, channelId: string, threadId: string): str
 
 function formatCard(p: Omit<PendingLoopSchedule, 'createdAt'>): string {
   const headlessLine = p.headless ? '\n   无人值守：是（达标后自动结案）' : ''
+  const time = p.cron
+    ? `${p.cronLabel || p.timeText}（\`${p.cron}\`）`
+    : (p.timeText || '（待填）')
   return [
     '🔁 要不要创建这条**定时 Loop**？',
-    `   时间：${p.cronLabel}（\`${p.cron}\`）`,
-    `   目标：${p.objective}`,
-    `   退出：${p.exitDescription}${headlessLine}`,
+    `   时间：${time}`,
+    `   目标：${p.objective || '（待填）'}`,
+    `   退出：${p.exitDescription || '（待填）'}${headlessLine}`,
     '',
     '到点会在专用 cron 线程上 start / 续跑一轮（不抢你当前对话的 Focus）。',
-    '回复 `y` 创建 / `n` 不用（5 分钟没回复自动忽略）',
+    'Web 请在底栏补齐后点「创建」；IM 回复 `y` 创建 / `n` 不用（5 分钟没回复自动忽略）',
   ].join('\n')
+}
+
+function formatDockNudge(complete: boolean): string {
+  return complete
+    ? '请在底栏确认定时 Loop（时间、目标、退出条件），点「创建」后才会写入 cron。'
+    : '请在底栏补齐定时 Loop：时间、目标、退出条件。点「创建」后才会写入 cron。'
 }
 
 function validateCron(expr: string): { cron: string; next: Date } | null {
@@ -99,20 +110,36 @@ function validateCron(expr: string): { cron: string; next: Date } | null {
   }
 }
 
+export function resolveScheduleTime(raw: string): { cron: string; label: string } | null {
+  const t = (raw || '').trim()
+  if (!t) return null
+  const parsed = nlToCron(t)
+  if (parsed && validateCron(parsed.cron)) {
+    return { cron: parsed.cron, label: parsed.label }
+  }
+  if (/^(\S+\s+){4}\S+$/.test(t) && validateCron(t)) {
+    return { cron: t, label: t }
+  }
+  return null
+}
+
 function propose(
   threadKey: string,
   slots: {
     cron: string
     cronLabel: string
+    timeText?: string
     objective: string
     exitDescription: string
     headless: boolean
   },
+  surface: 'dock' | 'card',
 ): LoopScheduleTurnResult {
   const pending = {
-    name: suggestLoopScheduleName(slots.objective),
+    name: suggestLoopScheduleName(slots.objective || 'loop'),
     cron: slots.cron,
     cronLabel: slots.cronLabel,
+    timeText: slots.timeText || slots.cronLabel || slots.cron || '',
     objective: slots.objective.slice(0, 200),
     exitDescription: slots.exitDescription.slice(0, 200),
     headless: slots.headless,
@@ -123,8 +150,39 @@ function propose(
     threadKey,
     cron: pending.cron,
     objective: pending.objective,
+    surface,
   })
-  return { handled: true, reply: formatCard(pending) }
+  const complete = Boolean(pending.cron && pending.objective && pending.exitDescription)
+  return {
+    handled: true,
+    dock: true,
+    reply: surface === 'dock' ? formatDockNudge(complete) : formatCard(pending),
+  }
+}
+
+/** Open / refresh a draft for `/cronloop` or the Portal dock. */
+export function openScheduledLoopDraft(opts: {
+  platform: string
+  channelId: string
+  threadId: string
+  text?: string
+  surface?: 'dock' | 'card'
+}): LoopScheduleTurnResult {
+  const threadKey = threadKeyOf(opts.platform, opts.channelId, opts.threadId)
+  const trimmed = (opts.text || '').trim()
+  const parsedCron = trimmed ? nlToCron(trimmed) : null
+  const resolved = trimmed ? resolveScheduleTime(trimmed) : null
+  const mission = trimmed
+    ? parseScheduledLoopMission(stripScheduleGlue(trimmed, parsedCron?.matched))
+    : { objective: '', exitDescription: '', headless: false }
+  return propose(threadKey, {
+    cron: resolved?.cron || parsedCron?.cron || '',
+    cronLabel: resolved?.label || parsedCron?.label || '',
+    timeText: parsedCron?.matched || trimmed,
+    objective: mission.objective,
+    exitDescription: mission.exitDescription,
+    headless: mission.headless,
+  }, opts.surface || 'dock')
 }
 
 function incompleteHint(kind: 'exit' | 'cron' | 'objective'): string {
@@ -165,9 +223,9 @@ async function llmFill(opts: {
 }
 
 /**
- * Detect a scheduled-Loop ask and return a confirmation card.
- * Incomplete Loop-ish lines are still `handled` (hint, no pending) so the
- * reminder detector does not steal them.
+ * Detect a scheduled-Loop ask. Web (`surface: 'dock'`) always stashes a
+ * draft so the bottom sheet can fill missing fields. IM keeps the y/n card
+ * when complete, otherwise a hint (still handled so reminders do not steal).
  */
 export async function tryDetectScheduledLoopIntent(opts: {
   platform: string
@@ -176,10 +234,12 @@ export async function tryDetectScheduledLoopIntent(opts: {
   userId: string
   text: string
   now?: Date
+  surface?: 'dock' | 'card'
 }): Promise<LoopScheduleTurnResult> {
   const trimmed = (opts.text || '').trim()
   if (!looksLikeScheduledLoopAsk(trimmed)) return NOT_HANDLED
 
+  const surface = opts.surface || 'card'
   const threadKey = threadKeyOf(opts.platform, opts.channelId, opts.threadId)
   const parsedCron = nlToCron(trimmed)
   const mission = parseScheduledLoopMission(stripScheduleGlue(trimmed, parsedCron?.matched))
@@ -190,15 +250,27 @@ export async function tryDetectScheduledLoopIntent(opts: {
       return propose(threadKey, {
         cron: parsedCron.cron,
         cronLabel: parsedCron.label,
+        timeText: parsedCron.matched || parsedCron.label,
         objective: mission.objective,
         exitDescription: mission.exitDescription,
         headless: mission.headless,
-      })
+      }, surface)
     }
   }
 
-  // Deterministic clock + goal but no exit: do not spend an LLM turn,
-  // and do not fall through to the reminder detector.
+  // Incomplete but clearly a scheduled-Loop ask: open the dock draft
+  // (Web) or hint (IM). Do not spend an LLM turn when the clock parsed.
+  if (surface === 'dock') {
+    return propose(threadKey, {
+      cron: parsedCron?.cron || '',
+      cronLabel: parsedCron?.label || '',
+      timeText: parsedCron?.matched || parsedCron?.label || '',
+      objective: mission.objective,
+      exitDescription: mission.exitDescription,
+      headless: mission.headless,
+    }, 'dock')
+  }
+
   if (parsedCron && mission.objective && !mission.exitDescription) {
     return { handled: true, reply: incompleteHint('exit') }
   }
@@ -217,16 +289,19 @@ export async function tryDetectScheduledLoopIntent(opts: {
     const objective = (det.objective || mission.objective || '').trim()
     const exitDescription = (det.exit_description || mission.exitDescription || '').trim()
     const headless = det.headless === true || mission.headless
+    if (ok && objective && exitDescription) {
+      return propose(threadKey, {
+        cron: ok.cron,
+        cronLabel: (det.cron_label || parsedCron?.label || ok.cron).trim(),
+        timeText: parsedCron?.matched || det.cron_label || ok.cron,
+        objective,
+        exitDescription,
+        headless,
+      }, surface)
+    }
     if (!ok) return { handled: true, reply: incompleteHint('cron') }
     if (!objective) return { handled: true, reply: incompleteHint('objective') }
-    if (!exitDescription) return { handled: true, reply: incompleteHint('exit') }
-    return propose(threadKey, {
-      cron: ok.cron,
-      cronLabel: (det.cron_label || parsedCron?.label || ok.cron).trim(),
-      objective,
-      exitDescription,
-      headless,
-    })
+    return { handled: true, reply: incompleteHint('exit') }
   }
 
   if (looksLikeScheduledLoopAsk(trimmed) && !parsedCron) {
@@ -270,6 +345,7 @@ export async function tryHandleScheduledLoopTurn(opts: {
   userId: string
   text: string
   now?: Date
+  surface?: 'dock' | 'card'
 }): Promise<LoopScheduleTurnResult> {
   const threadKey = threadKeyOf(opts.platform, opts.channelId, opts.threadId)
   const decision = tryConsumeLoopScheduleReply(threadKey, opts.text)
@@ -297,5 +373,5 @@ export async function tryHandleScheduledLoopTurn(opts: {
   }
 
   if (opts.text.trim().startsWith('/')) return NOT_HANDLED
-  return tryDetectScheduledLoopIntent(opts)
+  return tryDetectScheduledLoopIntent({ ...opts, surface: opts.surface })
 }

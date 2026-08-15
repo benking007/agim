@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   looksLikeScheduledLoopAsk,
+  looksLikeScheduledLoopDraftOpen,
   nlToCron,
   parseCnInt,
   parseScheduledLoopMission,
@@ -16,6 +17,14 @@ describe('looksLikeScheduledLoopAsk', () => {
     expect(looksLikeScheduledLoopAsk('帮我开个 loop 修登录；退出条件为验收通过')).toBe(false)
     expect(looksLikeScheduledLoopAsk('/cron create x agim "0 2 * * *" loop: 修')).toBe(false)
     expect(looksLikeScheduledLoopAsk('')).toBe(false)
+  })
+
+  it('treats “开个定时 loop” as a draft-open ask', () => {
+    expect(looksLikeScheduledLoopAsk('开个定时 loop')).toBe(true)
+    expect(looksLikeScheduledLoopAsk('开个定时loop')).toBe(true)
+    expect(looksLikeScheduledLoopAsk('scheduled loop please')).toBe(true)
+    expect(looksLikeScheduledLoopDraftOpen('开个定时 loop')).toBe(true)
+    expect(looksLikeScheduledLoopDraftOpen('每天8点提醒我吃药')).toBe(false)
   })
 })
 

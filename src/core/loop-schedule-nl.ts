@@ -16,11 +16,18 @@ const DOW_CN: Record<string, number> = {
 /** Recurring clock + Loop-ish wording. Both required to avoid stealing reminders. */
 const RECUR_HINT_RE = /每天|每日|每周|每月|每个工作日|工作日|每隔|every\s+day|weekdays?/i
 const LOOP_HINT_RE = /loop|闭环|使命|定时\s*(开|跑|启)|跑\s*一?\s*轮|再跑一?轮|无人值守/i
+/** Bare “open a scheduled Loop” — dock fills the rest. */
+const OPEN_DRAFT_RE = /开个?\s*定时\s*(loop|闭环)|定时\s*(开|跑|启)\s*(个)?\s*(loop|闭环)|scheduled\s+loop/i
 
 export function looksLikeScheduledLoopAsk(text: string): boolean {
   const t = (text || '').trim()
   if (!t || t.startsWith('/')) return false
+  if (OPEN_DRAFT_RE.test(t)) return true
   return RECUR_HINT_RE.test(t) && LOOP_HINT_RE.test(t)
+}
+
+export function looksLikeScheduledLoopDraftOpen(text: string): boolean {
+  return OPEN_DRAFT_RE.test((text || '').trim())
 }
 
 export function parseCnInt(raw: string): number | null {

@@ -308,7 +308,7 @@ Focus **不会**再默认塞进 `objective`（避免「聚焦标题」被当成�
 | **退出下限 `minRounds`** | `stop`+`met=true` 在 `round < minRounds` 时拒绝 | Hard ✅（`need_more_rounds`） |
 | **退出上限 `maxRounds` / `maxWallMs`** | 触达即截断（可不经 verdict）；有 live 子代理时推迟 | Hard ✅ |
 | **独立 cheap 验收** | `stop`+`met=true` 前可选再判 | Soft/auto（`AGIM_LOOP_EVALUATOR`） |
-| **R6 cron `loop:` 触发** | 只负责 start / 续跑一轮；字段不齐则失败回滚，**不**代 `confirm`。NL 须确认卡 | 最小刀（`/cron` 前缀 + 确认卡） |
+| **R6 cron `loop:` 触发** | 只负责 start / 续跑一轮；字段不齐则失败回滚，**不**代 `confirm`。NL / `/cronloop` 须底栏确认 | 最小刀（`/cron` 前缀 + 底栏） |
 
 #### 已拍板（2026-07-25）
 
@@ -510,7 +510,7 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | **R4** ✅ | **VERIFY + REFLECT** | `loop_verdict` 结构化 `met`/`gaps`/`nextDirection`；`met=true→stop`；未达 reflect→planning；`maxRounds`/`maxWallMs` 截断 | 死循环有 exit 截断 |
 | **R5** ✅ | **收尾 UX（必备）** | `GET /api/loop`；Portal 对焦/立即行动/结案底栏 docks（**非**小精灵气泡）；Tasks Loop 审计；结束总结 Markdown | 用户能看懂「待对焦/待派工/待验收」并直接操作 |
 | **加固** ✅ | **门禁 + 超时** | 派工/验收硬门禁；exit 不等待 verdict；`loop_verdict` `timeoutMs:0`；假超时不覆盖成功 | 不出现「已提交却无活跃 Loop / UI 假待验收」 |
-| **R6** | **可选触发** | `/cron` prompt `loop:` **只负责 start / 续跑一轮**；缺硬字段失败回滚，不代 confirm。自然语言先出 y/n 确认卡，确认后才写入 `loop:` cron | 不绕过对焦；不静默建 |
+| **R6** | **可选触发** | `/cron` prompt `loop:` **只负责 start / 续跑一轮**；缺硬字段失败回滚，不代 confirm。自然语言 / `/cronloop` 先出底栏（IM 完整字段才出 y/n 卡），确认后才写入 `loop:` cron | 不绕过对焦；不静默建 |
 
 推荐合入顺序：**R1 → R2 → R3 → R4 → R5 → 加固**（产品闭环）；**R6** 现为 cron `loop:` 最小刀（Heartbeat 绑模板仍另开）。
 
@@ -600,3 +600,4 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-08-02 | **休眠唤醒空闲验收收割**：`maybeReapIdleLoopVerify`（父轮 idle + live=0 → `verify_skipped`）；`GET /api/loop` / 子代理终态 / 父轮 finally；HISTORY 清除已结束的 stuck Running |
 | 2026-08-15 | **R6 最小刀**：`/cron` `loop:` 前缀唤醒/续跑；字段不齐回滚；`AGIM_LOOP_HEADLESS` 仅 scheduled；结案超时 opt-in；`AGIM_LOOP_AUTO_VERIFY` 读 job 证据 |
 | 2026-08-15 | **R6 NL 确认卡**：`每天凌晨2点用 Loop …；退出条件为…` 先出 y/n，确认后 `createSchedule(loop:)`；提醒句不抢 |
+| 2026-08-15 | **R6 底栏确认**：`/cronloop`（别名 `/cornloop`）与「开个定时 loop」打开底部浮窗；Web 不静默建；IM 完整字段仍可用 y/n |

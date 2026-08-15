@@ -54,6 +54,10 @@ const PortalLoopDock = lazy(async () => {
   const module = await import('./portal-loop-dock')
   return { default: module.PortalLoopDock }
 })
+const PortalScheduledLoopDock = lazy(async () => {
+  const module = await import('./portal-scheduled-loop-dock')
+  return { default: module.PortalScheduledLoopDock }
+})
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
@@ -865,6 +869,11 @@ export function AgentPortal(): JSX.Element {
             </div>
             <div className="mx-auto w-full max-w-[750px]">
               <Suspense fallback={null}>
+                <PortalScheduledLoopDock
+                  threadId={portalThreadId}
+                  dark={dark}
+                  flush
+                />
                 <PortalLoopDock
                   threadId={portalThreadId}
                   refreshKey={loopRefreshKey}

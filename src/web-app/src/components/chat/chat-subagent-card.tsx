@@ -180,7 +180,7 @@ function StepReflectSlot({
         ) : null}
         <span
           data-testid="step-reflect-line"
-          className={cn('min-w-0 truncate', live && 'text-shimmer')}
+          className={cn('min-w-0 truncate', live && 'agim-shimmer')}
         >
           {line}
         </span>
@@ -279,7 +279,7 @@ function SubagentRow({
         >
           <span
             data-testid="subagent-live-status"
-            className={live ? 'text-shimmer-accent' : undefined}
+            className={live ? 'agim-shimmer-accent' : undefined}
           >
             {statusLabel(step, t)}
           </span>

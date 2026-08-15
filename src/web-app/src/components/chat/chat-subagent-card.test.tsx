@@ -282,7 +282,7 @@ describe('ChatSubagentCard', () => {
     const slot = screen.getByTestId('step-reflect-slot')
     expect(slot.className).toMatch(/\bh-5\b/)
     expect(slot.textContent).toMatch(/Thinking|思考中|Execution|执行过程|Step reflect|一步一想/)
-    expect(screen.getByTestId('step-reflect-line').className).toMatch(/text-shimmer/)
+    expect(screen.getByTestId('step-reflect-line').className).toMatch(/agim-shimmer/)
     expect(slot.innerHTML).not.toMatch(/opacity-0|transition-opacity|animate-pulse/)
   })
 
@@ -303,11 +303,11 @@ describe('ChatSubagentCard', () => {
       })}
     />)
     const line = screen.getByTestId('step-reflect-line')
-    expect(line.className).toMatch(/text-shimmer/)
+    expect(line.className).toMatch(/agim-shimmer/)
     expect(line.className).not.toMatch(/animate-pulse|opacity-0/)
     expect(line.textContent).toContain('Summarize which links')
     const status = screen.getByTestId('subagent-live-status')
-    expect(status.className).toMatch(/text-shimmer-accent/)
+    expect(status.className).toMatch(/agim-shimmer-accent/)
     expect(status.textContent).toMatch(/Waiting for subagent|等待子代理/)
   })
 
@@ -331,9 +331,9 @@ describe('ChatSubagentCard', () => {
     />)
     await user.click(screen.getByRole('button', { name: /Subagents · 1|子代理 · 1/ }))
     const line = screen.getByTestId('step-reflect-line')
-    expect(line.className).not.toMatch(/text-shimmer/)
+    expect(line.className).not.toMatch(/agim-shimmer/)
     expect(line.textContent).toContain('Summarize the links')
-    expect(screen.getByTestId('subagent-live-status').className).not.toMatch(/text-shimmer/)
+    expect(screen.getByTestId('subagent-live-status').className).not.toMatch(/agim-shimmer/)
   })
 
   it('does not show the slot on CLI workers', () => {

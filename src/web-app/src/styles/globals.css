@@ -150,11 +150,11 @@
   }
 
   /* Running status — Cursor-style highlight sweep (not opacity pulse).
-     Keep `text-*` so currentColor is the base. The gradient must always
-     cover the glyphs; mixing the peak with white on teal reads as gray,
-     so muted lines use a near-white sheen and accent lines use cyan. */
-  .text-shimmer,
-  .text-shimmer-accent {
+     Class names must NOT start with `text-`: tailwind-merge treats
+     `text-shimmer` as a color utility and drops `text-zinc-400`, so
+     the line inherits near-white and the sheen disappears. */
+  .agim-shimmer,
+  .agim-shimmer-accent {
     display: inline-block;
     max-width: 100%;
     background-size: 220% 100%;
@@ -162,107 +162,99 @@
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: text-shimmer 2.2s linear infinite;
+    animation: agim-shimmer 2.2s linear infinite;
   }
 
-  .text-shimmer {
-    background-image: linear-gradient(
-      90deg,
-      currentColor 0%,
-      currentColor 30%,
-      #d4d4d8 42%,
-      #fafafa 50%,
-      #d4d4d8 58%,
-      currentColor 70%,
-      currentColor 100%
-    );
-  }
-
-  .text-shimmer-accent {
+  .agim-shimmer {
     background-image: linear-gradient(
       90deg,
       currentColor 0%,
       currentColor 28%,
-      #0d9488 40%,
-      #2dd4bf 48%,
-      #99f6e4 50%,
-      #2dd4bf 52%,
-      #0d9488 60%,
+      #d4d4d8 40%,
+      #fafafa 50%,
+      #d4d4d8 60%,
       currentColor 72%,
       currentColor 100%
     );
   }
 
-  html[data-theme='dark'] .text-shimmer {
+  .agim-shimmer-accent {
     background-image: linear-gradient(
       90deg,
       currentColor 0%,
-      currentColor 24%,
-      #a1a1aa 36%,
-      #e4e4e7 46%,
-      #ffffff 50%,
-      #e4e4e7 54%,
-      #a1a1aa 64%,
-      currentColor 76%,
+      currentColor 26%,
+      #0f766e 38%,
+      #14b8a6 46%,
+      #2dd4bf 50%,
+      #14b8a6 54%,
+      #0f766e 62%,
+      currentColor 74%,
       currentColor 100%
     );
   }
 
-  html[data-theme='dark'] .text-shimmer-accent {
+  html[data-theme='dark'] .agim-shimmer {
     background-image: linear-gradient(
       90deg,
-      currentColor 0%,
-      currentColor 22%,
-      #2dd4bf 36%,
-      #5eead4 44%,
-      #a5f3fc 50%,
-      #5eead4 56%,
-      #2dd4bf 64%,
-      currentColor 78%,
-      currentColor 100%
+      #a1a1aa 0%,
+      #a1a1aa 22%,
+      #d4d4d8 38%,
+      #ffffff 50%,
+      #d4d4d8 62%,
+      #a1a1aa 78%,
+      #a1a1aa 100%
+    );
+  }
+
+  html[data-theme='dark'] .agim-shimmer-accent {
+    background-image: linear-gradient(
+      90deg,
+      #2dd4bf 0%,
+      #2dd4bf 20%,
+      #5eead4 36%,
+      #4fffdc 50%,
+      #5eead4 64%,
+      #2dd4bf 80%,
+      #2dd4bf 100%
     );
   }
 
   @media (prefers-color-scheme: dark) {
-    html:not([data-theme='light']) .text-shimmer {
+    html:not([data-theme='light']) .agim-shimmer {
       background-image: linear-gradient(
         90deg,
-        currentColor 0%,
-        currentColor 24%,
-        #a1a1aa 36%,
-        #e4e4e7 46%,
+        #a1a1aa 0%,
+        #a1a1aa 22%,
+        #d4d4d8 38%,
         #ffffff 50%,
-        #e4e4e7 54%,
-        #a1a1aa 64%,
-        currentColor 76%,
-        currentColor 100%
+        #d4d4d8 62%,
+        #a1a1aa 78%,
+        #a1a1aa 100%
       );
     }
 
-    html:not([data-theme='light']) .text-shimmer-accent {
+    html:not([data-theme='light']) .agim-shimmer-accent {
       background-image: linear-gradient(
         90deg,
-        currentColor 0%,
-        currentColor 22%,
-        #2dd4bf 36%,
-        #5eead4 44%,
-        #a5f3fc 50%,
-        #5eead4 56%,
-        #2dd4bf 64%,
-        currentColor 78%,
-        currentColor 100%
+        #2dd4bf 0%,
+        #2dd4bf 20%,
+        #5eead4 36%,
+        #4fffdc 50%,
+        #5eead4 64%,
+        #2dd4bf 80%,
+        #2dd4bf 100%
       );
     }
   }
 
-  @keyframes text-shimmer {
+  @keyframes agim-shimmer {
     0% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .text-shimmer,
-    .text-shimmer-accent {
+    .agim-shimmer,
+    .agim-shimmer-accent {
       animation: none;
       background-image: none;
       -webkit-text-fill-color: currentColor;

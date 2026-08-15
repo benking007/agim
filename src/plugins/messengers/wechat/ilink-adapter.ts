@@ -8,6 +8,7 @@ import { ILINK_ERRORS, ITEM_TYPE } from './ilink-types.js'
 import { join } from 'node:path'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { logger as rootLogger } from '../../../core/logger.js'
 import { Backoff } from '../../../utils/backoff.js'
 import {
@@ -34,7 +35,47 @@ const CREDENTIALS_FILE = join(AGIM_HOME, 'wechat-credentials.json')
 const _POLL_TIMEOUT = 30000 // 30 seconds
 const CONTEXT_TOKEN_TTL = 30 * 60 * 1000 // 30 minutes
 
-const PROCESSED_MESSAGES_TTL = 60 * 1000 // 1 minute
+const PROCESSED_MESSAGES_TTL = 10 * 60 * 1000 // 10 minutes — align with recovery window
+const INBOUND_QUEUE_FILE = join(AGIM_HOME, 'wechat-inbound-queue.json')
+
+type QueuedInbound = { id: string; msg: WeixinMessage; at: number }
+
+function loadInboundQueue(): QueuedInbound[] {
+  try {
+    const raw = JSON.parse(readFileSync(INBOUND_QUEUE_FILE, 'utf8')) as QueuedInbound[]
+    return Array.isArray(raw) ? raw : []
+  } catch {
+    return []
+  }
+}
+
+function saveInboundQueue(rows: QueuedInbound[]): void {
+  try {
+    mkdirSync(AGIM_HOME, { recursive: true, mode: 0o700 })
+    writeFileSync(INBOUND_QUEUE_FILE, JSON.stringify(rows), { encoding: 'utf8', mode: 0o600 })
+  } catch (err) {
+    log.warn({ event: 'wechat.inbound.persist_failed', err: String(err) })
+  }
+}
+
+function persistInboundMessages(msgs: WeixinMessage[]): void {
+  if (msgs.length === 0) return
+  const q = loadInboundQueue()
+  const seen = new Set(q.map((r) => r.id))
+  for (const msg of msgs) {
+    const id = String(msg.message_id || `${Date.now()}-${Math.random()}`)
+    if (seen.has(id)) continue
+    q.push({ id, msg, at: Date.now() })
+    seen.add(id)
+  }
+  saveInboundQueue(q)
+}
+
+function dequeueInboundMessage(messageId: string): void {
+  if (!messageId) return
+  const next = loadInboundQueue().filter((r) => r.id !== messageId)
+  saveInboundQueue(next)
+}
 
 export class ILinkWeChatAdapter implements MessengerAdapter {
   readonly name = 'wechat-ilink'
@@ -86,6 +127,17 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
     this.isRunning = true
     log.info('WeChat iLink adapter started')
+
+    const pending = loadInboundQueue()
+    if (pending.length > 0) {
+      log.warn({ event: 'wechat.inbound.replay', count: pending.length },
+        'replaying inbound messages persisted before cursor advance')
+      for (const row of pending) {
+        this.handleIncomingMessage(row.msg)
+          .catch((err) => log.error({ err: String(err) }, 'replayed inbound handler error'))
+          .finally(() => dequeueInboundMessage(row.id))
+      }
+    }
 
     // Start polling in background
     this.startPolling()
@@ -343,13 +395,15 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
 
         const isSuccess = response.ret === 0 || response.ret === undefined
         if (isSuccess) {
+          if (response.msgs?.length) persistInboundMessages(response.msgs)
           this.pollState.getUpdatesBuf = response.get_updates_buf
 
           if (response.msgs) {
             for (const msg of response.msgs) {
-              this.handleIncomingMessage(msg).catch(err =>
-                log.error({ err: err instanceof Error ? err.message : String(err) }, 'Message handler error')
-              )
+              this.handleIncomingMessage(msg)
+                .catch(err =>
+                  log.error({ err: err instanceof Error ? err.message : String(err) }, 'Message handler error'))
+                .finally(() => dequeueInboundMessage(String(msg.message_id)))
             }
           }
         } else if (response.ret === ILINK_ERRORS.SESSION_EXPIRED) {
@@ -410,6 +464,13 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
       try {
         const response = await this.client.getUpdates('')
         if (response.ret === 0 || response.ret === undefined) {
+          if (response.msgs?.length) {
+            persistInboundMessages(response.msgs)
+            log.warn({
+              event: 'wechat.inbound.cursor_consumed',
+              recovered: response.msgs.length,
+            }, 'SESSION_EXPIRED refresh consumed server cursor; persisted inbound for replay')
+          }
           this.pollState.getUpdatesBuf = response.get_updates_buf
           if (response.msgs) {
             for (const msg of response.msgs) {
@@ -425,9 +486,11 @@ export class ILinkWeChatAdapter implements MessengerAdapter {
               // main poll loop: fire-and-forget + per-message dedup inside
               // handleIncomingMessage (so a later real re-delivery of the
               // same id is still deduped).
-              this.handleIncomingMessage(msg).catch((err) =>
-                log.error({ err: err instanceof Error ? err.message : String(err) },
-                  'Recovered-message handler error'))
+              this.handleIncomingMessage(msg)
+                .catch((err) =>
+                  log.error({ err: err instanceof Error ? err.message : String(err) },
+                    'Recovered-message handler error'))
+                .finally(() => dequeueInboundMessage(String(msg.message_id)))
             }
           }
           log.info({ attempt, recovered: response.msgs?.length ?? 0 }, 'Session recovered after SESSION_EXPIRED')

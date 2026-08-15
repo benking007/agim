@@ -48,9 +48,29 @@ export interface ActiveRunSnapshot {
 /** Keep finished runs briefly so a refresh right after completion still
  *  restores the accordion / run-finish row. */
 const FINISHED_RETENTION_MS = 60 * 60 * 1000
+const PARTIAL_TEXT_MAX_CHARS = 400_000
+const MAX_FINISHED_SNAPSHOTS = 500
 
 const runs = new Map<string, ActiveRunSnapshot>()
 const finishTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function evictFinishedSnapshots(): void {
+  const finished: Array<{ threadId: string; finishedAt: number }> = []
+  for (const [threadId, snap] of runs) {
+    if (snap.status !== 'running' && snap.finishedAt) {
+      finished.push({ threadId, finishedAt: snap.finishedAt })
+    }
+  }
+  if (finished.length <= MAX_FINISHED_SNAPSHOTS) return
+  finished.sort((a, b) => a.finishedAt - b.finishedAt)
+  const drop = finished.length - MAX_FINISHED_SNAPSHOTS
+  for (let i = 0; i < drop; i++) {
+    const id = finished[i]?.threadId
+    if (!id) continue
+    clearFinishTimer(id)
+    runs.delete(id)
+  }
+}
 
 function clearFinishTimer(threadId: string): void {
   const t = finishTimers.get(threadId)
@@ -114,6 +134,9 @@ export function appendActiveRunChunk(threadId: string, chunk: string): void {
   const snap = runs.get(threadId)
   if (!snap || snap.status !== 'running') return
   snap.partialText += chunk
+  if (snap.partialText.length > PARTIAL_TEXT_MAX_CHARS) {
+    snap.partialText = snap.partialText.slice(-PARTIAL_TEXT_MAX_CHARS)
+  }
 }
 
 export function setActiveRunPartialText(threadId: string, text: string): void {
@@ -175,6 +198,7 @@ export function finishActiveRun(
     }
     return next
   })
+  evictFinishedSnapshots()
   clearFinishTimer(threadId)
   finishTimers.set(
     threadId,

@@ -83,13 +83,21 @@ let activeJobs = 0
  */
 function reapStaleRunning(d: Database.Database): void {
   try {
-    const stmt = d.prepare(
-      "UPDATE jobs SET status='failed', error='agim restarted while running', completed_at=datetime('now') WHERE status='running'"
-    )
-    const info = stmt.run()
-    if (info.changes > 0) {
-      rootLogger.warn({ event: 'job-board.reap', stale: info.changes },
-        `Marked ${info.changes} stale running job(s) as failed`)
+    // Inline turns are recoverable ("reply 1 to retry"). Background jobs
+    // have no that prompt, so they stay failed.
+    const inline = d.prepare(
+      "UPDATE jobs SET status='interrupted', error='agim restarted while running', completed_at=datetime('now') WHERE status='running' AND kind='inline'",
+    ).run()
+    const jobs = d.prepare(
+      "UPDATE jobs SET status='failed', error='agim restarted while running', completed_at=datetime('now') WHERE status='running' AND kind!='inline'",
+    ).run()
+    if (inline.changes > 0) {
+      rootLogger.warn({ event: 'job-board.reap', staleInline: inline.changes },
+        `Marked ${inline.changes} stale running inline job(s) as interrupted`)
+    }
+    if (jobs.changes > 0) {
+      rootLogger.warn({ event: 'job-board.reap', stale: jobs.changes },
+        `Marked ${jobs.changes} stale running job(s) as failed`)
     }
   } catch {
     // best-effort; missing table is fine on first start

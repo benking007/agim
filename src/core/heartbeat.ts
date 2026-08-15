@@ -302,13 +302,18 @@ export async function runForBinding(row: HeartbeatRow): Promise<RunResult> {
   return { status: 'delivered', reason, deliveredText: trimmedOut, rawAgentOutput: trimmedOut }
 }
 
+let ticking = false
+
 /**
  * One scheduler pass. Picks up to 50 due bindings and runs them
- * sequentially; concurrent ticks on the same scheduler are intentional
- * (avoids stampedes on the user's agent, keeps memory bounded). Returns
- * a summary so tests can assert on it.
+ * sequentially. Overlapping ticks are skipped — a binding can take
+ * longer than the period (decide + execute ≈ 70s vs 60s tick), and a
+ * second pass would spawn a duplicate agent on the same thread.
  */
 export async function tickOnce(): Promise<{ scanned: number; results: Record<string, number> }> {
+  if (ticking) return { scanned: 0, results: { skipped_reentry: 1 } }
+  ticking = true
+  try {
   const due = listDueBindings()
   const results: Record<string, number> = {}
   for (const row of due) {
@@ -327,6 +332,19 @@ export async function tickOnce(): Promise<{ scanned: number; results: Record<str
     log.info({ event: 'heartbeat.tick.done', scanned: due.length, results })
   }
   return { scanned: due.length, results }
+  } finally {
+    ticking = false
+  }
+}
+
+/** Test hook: expose in-flight guard. */
+export function _isHeartbeatTicking(): boolean {
+  return ticking
+}
+
+/** Test hook: force the in-flight flag. */
+export function _setHeartbeatTicking(value: boolean): void {
+  ticking = value
 }
 
 // ---------------------------------------------------------------------
@@ -345,6 +363,7 @@ export function startHeartbeatScheduler(): void {
   const period = tickIntervalMs()
   log.info({ event: 'heartbeat.scheduler.start', periodMs: period })
   timer = setInterval(() => {
+    if (ticking) return
     void tickOnce().catch((err) => {
       log.warn({ event: 'heartbeat.tick.unhandled', err: String(err) })
     })

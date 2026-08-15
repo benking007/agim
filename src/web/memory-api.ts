@@ -121,7 +121,7 @@ async function handleMemoryUsers(_req: IncomingMessage, res: ServerResponse): Pr
     const { listUsers } = await import('../core/memory.js')
     sendJson(res, 200, { users: listUsers() })
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+    sendError(res, 500, 'MEMORY_USERS_FAILED', { message: err instanceof Error ? err.message : String(err) })
   }
 }
 

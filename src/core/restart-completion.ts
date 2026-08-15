@@ -76,9 +76,13 @@ export async function processRestartPending(defaultAgent: string): Promise<void>
       failHint
   }
 
-  await pushToInitiator(state.initiator, body)
-
-  safeUnlink(RESTART_PENDING_FILE)
+  const pushed = await pushToInitiator(state.initiator, body)
+  if (pushed) {
+    safeUnlink(RESTART_PENDING_FILE)
+  } else {
+    log.warn({ event: 'restart-completion.keep_pending' },
+      'completion push failed — keeping pending file for next boot')
+  }
 }
 
 interface HealthResult {
@@ -122,19 +126,19 @@ async function selfHealthCheck(defaultAgent: string): Promise<HealthResult> {
   }
 }
 
-async function pushToInitiator(initiator: RestartInitiator, body: string): Promise<void> {
+async function pushToInitiator(initiator: RestartInitiator, body: string): Promise<boolean> {
   if (initiator.source !== 'im') {
     // Web / CLI initiator — the caller surface gets its own reply via
     // polling (web) or stdout (cli). Skip the push but log.
     log.info({ event: 'restart-completion.skip_push', source: initiator.source },
       'restart initiator was not an IM thread; skipping completion push')
-    return
+    return true
   }
 
   if (!initiator.platform || !initiator.threadId) {
     log.warn({ event: 'restart-completion.push_missing_ctx', initiator },
       'IM initiator missing platform/threadId; cannot push completion message')
-    return
+    return false
   }
 
   const adapter = resolveMessenger(initiator.platform)
@@ -144,7 +148,7 @@ async function pushToInitiator(initiator: RestartInitiator, body: string): Promi
       platform: initiator.platform,
       registered: registry.listMessengers(),
     }, 'IM messenger not registered after restart; completion push dropped')
-    return
+    return false
   }
 
   try {
@@ -170,12 +174,14 @@ async function pushToInitiator(initiator: RestartInitiator, body: string): Promi
       platform: initiator.platform,
       threadId: initiator.threadId,
     })
+    return true
   } catch (err) {
     log.warn({
       event: 'restart-completion.push_failed',
       err: err instanceof Error ? err.message : String(err),
       platform: initiator.platform,
-    }, 'completion message push threw — dropping')
+    }, 'completion message push threw — keeping pending file')
+    return false
   }
 }
 

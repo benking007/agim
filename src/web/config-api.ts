@@ -196,7 +196,7 @@ async function handleGetConfig(_req: IncomingMessage, res: ServerResponse): Prom
       agentStatus,
     })
   } catch (_err) {
-    sendJson(res, 500, { error: 'Failed to load config' })
+    sendError(res, 500, 'CONFIG_LOAD_FAILED', { message: 'Failed to load config' })
   }
 }
 
@@ -391,7 +391,7 @@ async function handleAgentsStatus(_req: IncomingMessage, res: ServerResponse): P
     const agentStatus = await getAgentStatuses()
     sendJson(res, 200, agentStatus)
   } catch (_err) {
-    sendJson(res, 500, { error: 'Failed to check agents' })
+    sendError(res, 500, 'AGENTS_STATUS_FAILED', { message: 'Failed to check agents' })
   }
 }
 

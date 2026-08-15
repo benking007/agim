@@ -257,7 +257,15 @@ export async function initiateRestart(initiator: RestartInitiator): Promise<Init
   const helperAck = pre.warnings.length === 0
     ? '🔄 重启中… 预计 5–10 秒内回来。'
     : `🔄 重启中… 预计 5–10 秒内回来。\n   注意：${pre.warnings.join('；')}`
-  await deliverRestartAck(initiator, helperAck)
+  try {
+    const { withTimeout } = await import('../utils/timeout.js')
+    await withTimeout(deliverRestartAck(initiator, helperAck), 8_000, 'restart ack')
+  } catch (err) {
+    log.warn({
+      event: 'restart-flow.ack_timeout',
+      err: err instanceof Error ? err.message : String(err),
+    }, 'restart ack timed out or failed; continuing restart')
+  }
 
   setTimeout(() => {
     try { process.kill(process.pid, 'SIGTERM') } catch { process.exit(0) }

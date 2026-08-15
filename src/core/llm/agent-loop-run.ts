@@ -105,8 +105,15 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   let blankRetryCount = 0
   const blankRetryMax = resolveBlankRetryMax()
 
+  const HISTORY_WINDOW = 48
+  const compactHistory = (): void => {
+    if (history.length <= HISTORY_WINDOW) return
+    history.splice(2, history.length - HISTORY_WINDOW)
+  }
+
   let iter = 0
   for (; iter < maxIter; iter++) {
+    compactHistory()
     if (signal.signal.aborted) {
       signal.cleanup()
       return {

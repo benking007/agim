@@ -18,6 +18,10 @@ export interface SqliteHelper {
    *  in cli.ts so WAL is checkpointed cleanly instead of leaving the
    *  next startup to recover from -wal/-shm.  */
   close(): void
+  /** True while init is failing (until the next retry window). */
+  isBroken(): boolean
+  /** Component tag used in status / logs. */
+  component(): string
   /** Mark the DB broken (test hook). */
   _markBroken(reason: string): void
 }
@@ -43,14 +47,28 @@ export interface CreateOptions {
  * `get()` returns null — letting callers fail soft without crashing the
  * pipeline.
  */
+const RETRY_BROKEN_MS = 5 * 60 * 1000
+const helpers: SqliteHelper[] = []
+
+export function sqlitePersistenceStatus(): Array<{ component: string; broken: boolean }> {
+  return helpers.map((h) => ({ component: h.component(), broken: h.isBroken() }))
+}
+
 export function createSqliteHelper(opts: CreateOptions): SqliteHelper {
   let db: Database.Database | null = null
   let dbBroken = false
-  const log = opts.logger?.child({ component: opts.component || 'sqlite' })
+  let brokenAt = 0
+  const component = opts.component || 'sqlite'
+  const log = opts.logger?.child({ component })
 
-  return {
+  const helper: SqliteHelper = {
     get(): Database.Database | null {
-      if (dbBroken) return null
+      if (dbBroken) {
+        if (Date.now() - brokenAt < RETRY_BROKEN_MS) return null
+        dbBroken = false
+        log?.info({ event: 'sqlite.retry_init', file: opts.file },
+          `${component} retrying SQLite init after broken window`)
+      }
       if (!db) {
         try {
           mkdirSync(dirname(opts.file), { recursive: true })
@@ -61,10 +79,11 @@ export function createSqliteHelper(opts: CreateOptions): SqliteHelper {
           if (opts.init) opts.init(db)
         } catch (err) {
           dbBroken = true
+          brokenAt = Date.now()
           db = null
           const msg = err instanceof Error ? err.message : String(err)
           log?.warn({ event: 'sqlite.disabled', file: opts.file, error: msg },
-            `${opts.component || 'sqlite'} disabled: ${msg}`)
+            `${component} disabled: ${msg}`)
           return null
         }
       }
@@ -98,10 +117,21 @@ export function createSqliteHelper(opts: CreateOptions): SqliteHelper {
       }
     },
 
+    isBroken(): boolean {
+      return dbBroken
+    },
+
+    component(): string {
+      return component
+    },
+
     _markBroken(reason: string): void {
       dbBroken = true
+      brokenAt = Date.now()
       db = null
       log?.warn({ event: 'sqlite.markbroken', reason }, `marked broken: ${reason}`)
     },
   }
+  helpers.push(helper)
+  return helper
 }

@@ -1165,6 +1165,8 @@ export interface ServiceStatus {
   bootPhase: string
   bootMsSinceStart: number
   bootPhaseTimings: Record<string, number>
+  persistence?: Array<{ component: string; broken: boolean }>
+  persistenceBroken?: boolean
 }
 
 export interface ServiceLogTailResponse {

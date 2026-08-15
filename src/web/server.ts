@@ -32,6 +32,7 @@ import { handleSearchApi } from './search-api.js'
 import { handleWorkspaceSkillsApi } from './workspace-skills-api.js'
 import { handleMemosApi, handleLocInfo, handleLocPost } from './memos-api.js'
 import { handleLoopApi } from './loop-api.js'
+import { sendError } from './http-utils.js'
 import {
   checkAuth,
   requireAdmin,
@@ -200,6 +201,7 @@ export async function startWebServer(options: {
 
   // HTTP request handler — static files + REST API
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    try {
     const url = new URL(req.url || '/', `http://localhost:${port}`)
 
     // ─── v1.1.10 auth gate ───────────────────────────────────────────
@@ -491,7 +493,20 @@ export async function startWebServer(options: {
 
     res.writeHead(404)
     res.end('Not found')
+    } catch (err) {
+      webLog.error({
+        event: 'http.unhandled',
+        err: err instanceof Error ? err.message : String(err),
+      }, 'REST handler threw')
+      if (!res.headersSent) {
+        sendError(res, 500, 'INTERNAL', {
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
   })
+  httpServer.requestTimeout = 120_000
+  httpServer.headersTimeout = 60_000
 
   // WebSocket server with auth + same-origin gate. Before R9 the WS
   // upgrade event bypassed checkAuth entirely (the upgrade path isn't
@@ -682,6 +697,9 @@ export async function startWebServer(options: {
     threadOwners.set(clientId, tokenId)
 
     webLog.info({ clientId }, 'Client connected')
+    const aliveWs = ws as WebSocket & { isAlive?: boolean }
+    aliveWs.isAlive = true
+    ws.on('pong', () => { aliveWs.isAlive = true })
 
     // Send available agents list
     sendToClient(ws, {
@@ -1005,9 +1023,26 @@ export async function startWebServer(options: {
     (metricsTick as { unref: () => void }).unref()
   }
 
+  const wsHeartbeat = setInterval(() => {
+    for (const [id, client] of clients) {
+      const sock = client.ws as WebSocket & { isAlive?: boolean }
+      if (sock.isAlive === false) {
+        webLog.warn({ event: 'ws.zombie', clientId: id }, 'terminating half-open WebSocket')
+        try { sock.terminate() } catch { /* ignore */ }
+        continue
+      }
+      sock.isAlive = false
+      try { sock.ping() } catch { /* ignore */ }
+    }
+  }, 30_000)
+  if (typeof wsHeartbeat === 'object' && wsHeartbeat && 'unref' in wsHeartbeat) {
+    wsHeartbeat.unref()
+  }
+
   return {
     port,
     close: () => {
+      clearInterval(wsHeartbeat)
       offLoopWritten()
       // Close all WebSocket connections
       for (const [id, client] of clients) {

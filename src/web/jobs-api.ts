@@ -256,7 +256,7 @@ async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: numb
 
     sendJson(res, 200, { ok: true, traceId })
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
+    sendError(res, 500, 'JOB_RUN_FAILED', { message: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -265,11 +265,11 @@ async function handleCreateJob(req: IncomingMessage, res: ServerResponse): Promi
     const body = await readBody(req, res)
     const { agent, prompt } = JSON.parse(body) as { agent?: string; prompt?: string }
     if (!agent || !prompt) {
-      sendJson(res, 400, { error: 'Missing agent / prompt' })
+      sendError(res, 400, 'VALIDATION', { message: 'Missing agent / prompt' })
       return
     }
     if (!registry.findAgent(agent)) {
-      sendJson(res, 404, { error: `Agent "${agent}" not registered` })
+      sendError(res, 404, 'NOT_FOUND', { message: `Agent "${agent}" not registered`, detail: agent })
       return
     }
     const { createJob } = await import('../core/job-board.js')
@@ -278,7 +278,11 @@ async function handleCreateJob(req: IncomingMessage, res: ServerResponse): Promi
   } catch (err) {
     const e = err as Error & { handled?: boolean; statusCode?: number }
     if (e?.handled) return
-    if (!res.headersSent) sendJson(res, e?.statusCode || 500, { error: e instanceof Error ? e.message : String(err) })
+    if (!res.headersSent) {
+      sendError(res, e?.statusCode || 500, 'JOB_CREATE_FAILED', {
+        message: e instanceof Error ? e.message : String(err),
+      })
+    }
   }
 }
 

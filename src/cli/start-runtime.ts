@@ -598,7 +598,8 @@ export async function runStartForeground(): Promise<void> {
     })
 
     try {
-      await messenger.start()
+      const { withTimeout } = await import('../utils/timeout.js')
+      await withTimeout(messenger.start(), 30_000, `messenger ${name} start`)
       console.log(`✅ Started messenger: ${name}`)
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
@@ -630,6 +631,17 @@ export async function runStartForeground(): Promise<void> {
   // ticks at AGIM_OUTBOX_TICK_MS (default 1s).
   sink.startWorker()
   console.log('✅ Message-sink worker started')
+
+  try {
+    const { cleanupOldMedia } = await import('../plugins/messengers/telegram/media-download.js')
+    void cleanupOldMedia().catch((err) => {
+      console.warn('media cleanup failed:', err instanceof Error ? err.message : String(err))
+    })
+    const mediaSweep = setInterval(() => {
+      void cleanupOldMedia().catch(() => { /* ignore */ })
+    }, 60 * 60 * 1000)
+    if (typeof mediaSweep === 'object' && mediaSweep && 'unref' in mediaSweep) mediaSweep.unref()
+  } catch { /* optional path — telegram module always present in this repo */ }
 
   // Phase 3 — startup recovery scan. Look at jobs.db for inline rows
   // that got 'interrupted' on the previous shutdown and are still inside
@@ -745,11 +757,15 @@ export async function runStartForeground(): Promise<void> {
     console.warn('Viewer tunnel start failed:', err instanceof Error ? err.message : String(err))
   }
 
-  console.log('\n✅ 服务已启动！')
-  if (ctx.webServer) {
-    console.log(`   Web 控制台：http://localhost:${ctx.webServer.port}`)
+  {
+    const { resolveCliLang, t: cliT } = await import('../cli-ui/i18n.js')
+    const bootLang = resolveCliLang()
+    console.log(`\n✅ ${cliT(bootLang, 'start.ready')}`)
+    if (ctx.webServer) {
+      console.log(`   ${cliT(bootLang, 'start.web_console', { url: `http://localhost:${ctx.webServer.port}` })}`)
+    }
+    console.log(cliT(bootLang, 'start.press_ctrl_c'))
   }
-  console.log('按 Ctrl+C 停止')
 
   // v1.5 — flip boot phase to 'ready' so the web restart-polling UI
   // can wait for full readiness instead of merely "HTTP server up".

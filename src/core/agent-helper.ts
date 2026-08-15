@@ -133,17 +133,19 @@ export async function callHelperAgent(opts: CallHelperOpts): Promise<string | nu
 
   let acc = ''
   const start = Date.now()
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeoutMs)
+  if (typeof timer === 'object' && timer && 'unref' in timer) timer.unref()
   try {
-    const generator = adapter.sendPrompt('llm-helper', composed, [])
-    const collect = (async () => {
-      for await (const chunk of generator) {
-        acc += chunk
-        if (acc.length >= maxChars) break
-      }
-    })()
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`helper agent timed out (${timeoutMs}ms)`)), timeoutMs))
-    await Promise.race([collect, timeout])
+    const generator = adapter.sendPrompt('llm-helper', composed, [], { signal: ac.signal })
+    for await (const chunk of generator) {
+      if (ac.signal.aborted) break
+      acc += chunk
+      if (acc.length >= maxChars) break
+    }
+    if (ac.signal.aborted) {
+      throw new Error(`helper agent timed out (${timeoutMs}ms)`)
+    }
     const text = acc.trim()
     log.debug({
       event: 'helper.ok',
@@ -157,6 +159,9 @@ export async function callHelperAgent(opts: CallHelperOpts): Promise<string | nu
       err: err instanceof Error ? err.message : String(err),
     }, 'helper agent call failed — caller will fall back')
     return null
+  } finally {
+    clearTimeout(timer)
+    if (!ac.signal.aborted) ac.abort()
   }
 }
 

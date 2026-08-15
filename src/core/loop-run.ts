@@ -493,6 +493,12 @@ function pathFor(platform: string, channelId: string, threadId: string): string 
   return join(loopsDir(), `${threadKey(platform, channelId, threadId)}.json`)
 }
 
+const liveRunCache = new Map<string, LoopRun>()
+
+function liveRunKey(platform: string, channelId: string, threadId: string): string {
+  return `${platform}\n${channelId}\n${threadId}`
+}
+
 function ensureDir(): void {
   const dir = loopsDir()
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -642,12 +648,17 @@ export function formatMissionFields(run: LoopRun, opts?: { draftLabel?: boolean 
 }
 
 function readRun(platform: string, channelId: string, threadId: string): LoopRun | null {
+  const key = liveRunKey(platform, channelId, threadId)
+  const cached = liveRunCache.get(key)
+  if (cached) return cached
   const p = pathFor(platform, channelId, threadId)
   if (!existsSync(p)) return null
   try {
     const raw = JSON.parse(readFileSync(p, 'utf8')) as LoopRun
     if (!raw || typeof raw !== 'object' || !raw.id) return null
-    return normalizeRun(raw)
+    const run = normalizeRun(raw)
+    liveRunCache.set(key, run)
+    return run
   } catch (err) {
     log.warn({ event: 'loop.read_failed', err: String(err) })
     return null
@@ -684,6 +695,7 @@ function notifyLoopRunWritten(run: LoopRun): void {
 }
 
 function writeRun(run: LoopRun): boolean {
+  liveRunCache.set(liveRunKey(run.platform, run.channelId, run.threadId), run)
   try {
     ensureDir()
     const p = pathFor(run.platform, run.channelId, run.threadId)

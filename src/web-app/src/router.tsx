@@ -22,6 +22,7 @@ import LoginRoute from '@/routes/login'
 import ChatRoute from '@/routes/chat'
 import NotFoundRoute from '@/routes/not-found'
 import { MobileChatRedirect } from '@/components/chat/mobile-chat-redirect'
+import { FirstRunRedirect } from '@/components/setup/first-run-redirect'
 
 /** Wrap a `lazy:` factory so the route renders behind RequireAuth.
  *  We can't apply the auth wrapper via element AND lazy, so the
@@ -60,9 +61,11 @@ const router = createBrowserRouter([
     path: '/',
     element: (
       <RequireAuth>
-        <MobileChatRedirect>
-          <ChatRoute />
-        </MobileChatRedirect>
+        <FirstRunRedirect>
+          <MobileChatRedirect>
+            <ChatRoute />
+          </MobileChatRedirect>
+        </FirstRunRedirect>
       </RequireAuth>
     ),
   },

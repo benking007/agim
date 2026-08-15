@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
   LLM key used to exit (`No coding agent found!`) before the Web server
   bound, so `agim` / `agim go` could not open `/setup`. First-run now
   continues and points at the browser wizard.
+- **First-run `/` on a narrow viewport**: `MobileChatRedirect` sent
+  phones to `/m/chat` before `ChatRoute` could send them to `/setup`.
+  `FirstRunRedirect` now wraps both chat surfaces.
 - **2026-08-15 CR (availability / usability / stability)**: heartbeat ticks
   no longer overlap on the same binding; DingTalk outbound `fetch` and the
   outbox `doSend` worker now time out (30s / 60s) so one hung send cannot

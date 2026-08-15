@@ -152,14 +152,16 @@
   /* Running status line — Cursor-style highlight sweep (not opacity pulse).
      Keep `text-*` on the element so currentColor is the base gray.
      The gradient must always cover the glyphs; no-repeat + an off-screen
-     start paints later letters transparent and looks like a typewriter. */
+     start paints later letters transparent and looks like a typewriter.
+     Dark UI needs a wider, nearer-white band — 22% white on zinc-400
+     reads as static gray. */
   .text-shimmer {
     background-image: linear-gradient(
       90deg,
       currentColor 0%,
-      currentColor 42%,
-      color-mix(in srgb, currentColor 22%, white) 50%,
-      currentColor 58%,
+      currentColor 38%,
+      color-mix(in srgb, currentColor 42%, white) 50%,
+      currentColor 62%,
       currentColor 100%
     );
     background-size: 200% 100%;
@@ -168,6 +170,30 @@
     background-clip: text;
     -webkit-text-fill-color: transparent;
     animation: text-shimmer 2.4s linear infinite;
+  }
+
+  html[data-theme='dark'] .text-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      currentColor 0%,
+      currentColor 32%,
+      color-mix(in srgb, currentColor 18%, white) 50%,
+      currentColor 68%,
+      currentColor 100%
+    );
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme='light']) .text-shimmer {
+      background-image: linear-gradient(
+        90deg,
+        currentColor 0%,
+        currentColor 32%,
+        color-mix(in srgb, currentColor 18%, white) 50%,
+        currentColor 68%,
+        currentColor 100%
+      );
+    }
   }
 
   @keyframes text-shimmer {

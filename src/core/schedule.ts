@@ -316,6 +316,48 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
     return
   }
 
+  // R6 minimal cut — scheduled Loop wake-ups. A prompt starting with `loop:`
+  // creates/starts a Loop on the schedule's thread instead of a plain job.
+  // The mission text after the prefix carries objective + exit conditions
+  // (parseLoopStartText format). No job row is created; the Loop run file is
+  // the persisted state.
+  // Dynamic import keeps schedule.ts free of a static edge to router.ts
+  // (loop-scheduler → router), avoiding a heavy load-time coupling.
+  const { isLoopSchedulePrompt, wakeLoopForThread, loopMissionText } = await import('./loop-scheduler.js')
+  if (isLoopSchedulePrompt(s.prompt)) {
+    const missionText = loopMissionText(s.prompt)
+    if (!missionText) {
+      logger.warn({ scheduleId: s.id }, 'loop: schedule has empty mission text; skipping this run')
+      return
+    }
+    const threadId = s.workspace_id
+      ? `${s.workspace_id}:${s.name}`
+      : `cron:${s.id}`
+    logger.info({ scheduleId: s.id, name: s.name, threadId }, 'Scheduled Loop wake-up fired')
+    const result = await wakeLoopForThread({
+      platform: 'web',
+      channelId: s.workspace_id || `cron:${s.id}`,
+      threadId,
+      userId: s.creator_id || 'scheduler',
+      missionText,
+    }).catch((err) => {
+      logger.error({
+        scheduleId: s.id,
+        err: err instanceof Error ? err.message : String(err),
+        event: 'schedule.loop_wake_failed',
+      }, 'scheduled Loop wake-up threw')
+      return { ok: false, error: String(err) } as const
+    })
+    if (!result.ok) {
+      logger.warn({ scheduleId: s.id, reason: result.error, event: 'schedule.loop_wake_skipped' },
+        'scheduled Loop wake-up did not start')
+    } else if (result.skipped) {
+      logger.info({ scheduleId: s.id, event: 'schedule.loop_already_active' },
+        'Loop already active on scheduled thread; wake-up skipped')
+    }
+    return
+  }
+
   const jobId = createJob(s.agent, s.prompt, {
     creatorId: s.creator_id,
     workspaceId: s.workspace_id,

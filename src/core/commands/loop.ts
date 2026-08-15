@@ -15,6 +15,7 @@ import {
   getLoopRun,
   getMissionView,
   parseLoopStartText,
+  resolveLoopMetConfirm,
   setLoopAcceptance,
   setLoopBody,
   setLoopExit,
@@ -52,6 +53,8 @@ const HELP = [
   '  `/loop body <text>`      可选正文/补充提示（写入 Mission，非硬门禁）',
   '  `/loop acceptance <text>` 可选验收细则（写入 Mission）',
   '  `/loop confirm`          两硬字段齐后确认 → planning',
+  '  `/loop confirm end`      达标（pending 结案）时结束归档',
+  '  `/loop confirm continue` 达标后继续下一轮（可附方向）',
   '  `/loop status`           查看阶段 / 目标+退出 / 正文 / **用量**',
   '  `/loop stop`             强制结束',
   '  `/loop help`             本帮助',
@@ -149,13 +152,39 @@ export async function handleLoopCommand(args: string, ctx: RouteContext): Promis
   }
 
   if (sub === 'confirm' || sub === 'ok' || sub === '确认') {
+    const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+    // P1-2: met=true 结案确认。IM-only 线程没有 Portal 浮窗，聊天侧必须能
+    // 完成 end|continue（此前只能 /loop stop 弃疗或永久挂着）。
+    if (active?.status === 'pending_user_confirm') {
+      const action = (parts[1] || '').toLowerCase()
+      if (action !== 'end' && action !== 'continue' && action !== '结案' && action !== '继续') {
+        return 'Loop 已达标，等待结案确认：\n  `/loop confirm end`      结束并归档\n  `/loop confirm continue`  再跑一轮（可附 `；下一轮方向…`）\n\n（或 `/loop stop` 直接放弃）'
+      }
+      const isEnd = action === 'end' || action === '结案'
+      const actionWord = parts[1] ?? ''
+      const supplement = isEnd ? undefined : rest.slice(actionWord.length).trim() || undefined
+      const r = resolveLoopMetConfirm(ctx.platform, ctx.channelId, ctx.threadId, {
+        action: isEnd ? 'end' : 'continue',
+        ...(supplement ? { supplement } : {}),
+      })
+      if (!r.ok) return `❌ ${r.error}`
+      if (isEnd) {
+        return [
+          `✅ Loop 已结案（objective_met）· round ${r.run.round} · ${r.run.id.slice(0, 8)}`,
+          '',
+          formatLoopEndedSummary(r.run),
+        ].join('\n')
+      }
+      return `✅ 已确认继续 → **planning** · round ${r.run.round}/${r.run.maxRounds}（下一轮派工前仍须先 call_agents）`
+    }
+
     const blocked = await gateLoopParent(ctx)
     if (blocked) return blocked
     const r = confirmLoopMission(ctx.platform, ctx.channelId, ctx.threadId)
     if (!r.ok) {
       if (r.error === 'incomplete') {
-        const active = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
-        if (active) return formatAligningPrompt(active)
+        const activeLoop = getActiveLoop(ctx.platform, ctx.channelId, ctx.threadId)
+        if (activeLoop) return formatAligningPrompt(activeLoop)
       }
       return mapAlignError(r.error)
     }

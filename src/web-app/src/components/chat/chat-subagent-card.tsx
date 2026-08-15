@@ -273,13 +273,13 @@ function SubagentRow({
         <p className={cn(
           'pl-5 text-[11px] leading-snug',
           live
-            ? (dark ? 'text-teal-400/90' : 'text-teal-700')
+            ? (dark ? 'text-teal-300' : 'text-teal-700')
             : (dark ? 'text-zinc-600' : 'text-text-muted'),
         )}
         >
           <span
             data-testid="subagent-live-status"
-            className={live ? 'text-shimmer' : undefined}
+            className={live ? 'text-shimmer-accent' : undefined}
           >
             {statusLabel(step, t)}
           </span>

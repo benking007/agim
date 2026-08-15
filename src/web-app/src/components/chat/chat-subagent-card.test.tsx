@@ -307,7 +307,7 @@ describe('ChatSubagentCard', () => {
     expect(line.className).not.toMatch(/animate-pulse|opacity-0/)
     expect(line.textContent).toContain('Summarize which links')
     const status = screen.getByTestId('subagent-live-status')
-    expect(status.className).toMatch(/text-shimmer/)
+    expect(status.className).toMatch(/text-shimmer-accent/)
     expect(status.textContent).toMatch(/Waiting for subagent|等待子代理/)
   })
 

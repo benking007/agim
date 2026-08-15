@@ -22,6 +22,9 @@
     "plans": "计划审计",
     "loops": "Loop 审计"
   },
+  "work": {
+    "viewsLabel": "作业或子任务"
+  },
   "overview": {
     "title": "任务总览",
     "subtitle": "查看哪些任务在运行、哪些需要你处理、细节该去哪里看。",

@@ -38,7 +38,6 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     tabs: [
       { to: 'approvals', i18nKey: 'subnav.approvals', mounted: true },
       { to: 'jobs',     i18nKey: 'subnav.jobs',     mounted: true },
-      { to: 'subtasks', i18nKey: 'subnav.subtasks', mounted: true },
       { to: 'bgjobs',   i18nKey: 'subnav.bgjobs',   mounted: true },
       { to: 'outbox',   i18nKey: 'subnav.outbox',   mounted: true },
     ],

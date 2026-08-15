@@ -167,7 +167,6 @@ export default function TasksOverviewRoute(): JSX.Element {
       links: [
         ['approvals', '/tasks/approvals'],
         ['jobs', '/tasks/jobs'],
-        ['subtasks', '/tasks/subtasks'],
         ['bgjobs', '/tasks/bgjobs'],
         ['outbox', '/tasks/outbox'],
       ],

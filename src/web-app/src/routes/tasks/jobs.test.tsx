@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
@@ -46,11 +46,11 @@ function jsonResponse(body: unknown): Response {
   })
 }
 
-function renderPage(): ReturnType<typeof render> {
+function renderPage(path = '/tasks/jobs'): ReturnType<typeof render> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/tasks/jobs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <Routes>
           <Route path="/tasks/jobs" element={<JobsRoute />} />
         </Routes>
@@ -100,6 +100,48 @@ describe('/tasks/jobs', () => {
       // The DataTable shows both the desktop empty cell and the
       // mobile-card empty state in jsdom (both are mounted).
       expect(screen.getAllByText('No jobs yet').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('kind=subtasks shows the nested subtask table', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      jsonResponse({
+        subtasks: [
+          {
+            id: 1, agent: 'codex', prompt: 'fix the bug', status: 'completed',
+            createdAt: '2026-05-18T08:00:00Z',
+            platform: 'wechat', channelId: 'c', threadId: 't',
+            parentAgent: 'claude', parentSessionId: 'abcd1234ef',
+          },
+        ],
+      }),
+    )
+    renderPage('/tasks/jobs?kind=subtasks')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Subtasks' })).toBeInTheDocument()
+      expect(within(screen.getByRole('table')).getByText('fix the bug')).toBeInTheDocument()
+    })
+  })
+
+  it('Subtasks tab switches the table to /api/subtasks', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy.mockImplementation(async (input) => {
+      const u = String(input)
+      if (u.startsWith('/api/subtasks')) return jsonResponse({ subtasks: [] })
+      if (u.startsWith('/api/jobs')) {
+        return jsonResponse({
+          jobs: [],
+          stats: { pending: 0, running: 0, completed: 0, failed: 0, delivered: 0 },
+        })
+      }
+      return jsonResponse({})
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Jobs' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('tab', { name: 'Subtasks' }))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Subtasks' })).toBeInTheDocument()
+      expect(fetchSpy.mock.calls.some((c) => String(c[0]).startsWith('/api/subtasks'))).toBe(true)
     })
   })
 })

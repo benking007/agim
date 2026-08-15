@@ -51,6 +51,8 @@ describe('/tasks layout', () => {
     expect(screen.queryByText('Review')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/tasks')
     expect(screen.getByRole('link', { name: 'Approvals' })).toHaveAttribute('href', '/tasks/approvals')
+    expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/tasks/jobs')
+    expect(screen.queryByRole('link', { name: 'Subtasks' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Outbox' })).toHaveAttribute('href', '/tasks/outbox')
     expect(screen.getByRole('link', { name: 'Ask User' })).toHaveAttribute('href', '/tasks/asks')
     expect(screen.getByTestId('tasks-child')).toBeInTheDocument()

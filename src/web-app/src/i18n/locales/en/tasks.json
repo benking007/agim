@@ -22,6 +22,9 @@
     "plans": "Plans",
     "loops": "Loops"
   },
+  "work": {
+    "viewsLabel": "Jobs or subtasks"
+  },
   "overview": {
     "title": "Tasks overview",
     "subtitle": "See what is running, what needs you, and where to inspect details.",

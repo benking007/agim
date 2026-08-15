@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 - **Settings Advanced**: Search, STT, Email, and Viewer leave the main
   rail for `/settings/advanced`. `/settings/stt` and the other old paths
   still redirect so IM error copy keeps working.
+- **Tasks Jobs + Subtasks**: one rail entry at `/tasks/jobs` with an
+  in-page Jobs / Subtasks switch (`?kind=subtasks`). `/tasks/subtasks`
+  redirects and keeps `?agent=`.
 
 ## [1.6.0] - 2026-08-15
 

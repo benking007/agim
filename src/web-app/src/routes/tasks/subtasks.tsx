@@ -1,6 +1,7 @@
 /**
- * /tasks/subtasks — flattened view of per-conversation child tasks
- * spawned by parent agents.
+ * Subtasks table — mounted from /tasks/jobs?kind=subtasks.
+ * /tasks/subtasks redirects there. Read-only: the backend doesn't
+ * expose cancel / re-run for subtasks separately from the parent.
  *
  * Read-only: the backend doesn't expose cancel / re-run for subtasks
  * separately from the parent session. The page mirrors the columns
@@ -28,6 +29,7 @@ import { useSubtasks, useInvalidateSubtasks } from '@/hooks/use-subtasks'
 import { useEventStream, type SseStatus } from '@/hooks/use-event-stream'
 import type { Subtask } from '@/types/api'
 import { cn } from '@/lib/utils'
+import { WorkKindTabs } from '@/routes/tasks/work-kind-tabs'
 
 const LIVE_STATUS_CLASS: Record<SseStatus, string> = {
   connected:    'text-success',
@@ -123,6 +125,7 @@ export default function SubtasksRoute(): JSX.Element {
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold">{t('subtasks.title')}</h1>
+          <WorkKindTabs />
           <span className={cn('text-xs font-medium tabular-nums', LIVE_STATUS_CLASS[live])}>
             {t(`jobs.live.${live}`)}
           </span>

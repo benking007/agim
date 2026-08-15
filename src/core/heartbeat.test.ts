@@ -17,7 +17,12 @@
 //      before they configure any CLI agent.
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { runForBinding } from './heartbeat.js'
+import {
+  runForBinding,
+  startHeartbeatScheduler,
+  stopHeartbeatScheduler,
+  schedulerInfo,
+} from './heartbeat.js'
 import type { HeartbeatRow } from './heartbeat-store.js'
 import { loadFromConfig, _resetRegistry } from './llm/index.js'
 import { saveSecret, envKeyForBackend, LLM_SECRETS_PATH } from './llm/secrets.js'
@@ -26,6 +31,7 @@ import { existsSync, unlinkSync } from 'node:fs'
 const ORIGINAL_FETCH = globalThis.fetch
 const ENV_KEYS = [
   'AGIM_HEARTBEAT_ENABLED',
+  'AGIM_HEARTBEAT_TICK_INTERVAL_MS',
   'AGIM_NOTIFICATION_EVALUATOR',
   envKeyForBackend('cheap-mock'),
 ]
@@ -123,5 +129,43 @@ describe('runForBinding — decide phase', () => {
     globalThis.fetch = (async () => new Response('boom', { status: 500 })) as unknown as typeof fetch
     const result = await runForBinding(makeRow())
     expect(result.status).toBe('no-agent')
+  })
+})
+
+describe('heartbeat scheduler lifecycle', () => {
+  afterEach(() => {
+    stopHeartbeatScheduler()
+  })
+
+  it('does not arm an interval when AGIM_HEARTBEAT_ENABLED is unset', () => {
+    startHeartbeatScheduler()
+    expect(schedulerInfo()).toEqual({
+      enabled: false,
+      running: false,
+      periodMs: 60_000,
+    })
+  })
+
+  it('starts and stops when enabled', () => {
+    process.env.AGIM_HEARTBEAT_ENABLED = '1'
+    process.env.AGIM_HEARTBEAT_TICK_INTERVAL_MS = '5000'
+    startHeartbeatScheduler()
+    expect(schedulerInfo()).toEqual({
+      enabled: true,
+      running: true,
+      periodMs: 5000,
+    })
+    stopHeartbeatScheduler()
+    expect(schedulerInfo().running).toBe(false)
+    expect(schedulerInfo().enabled).toBe(true)
+  })
+
+  it('is idempotent on start', () => {
+    process.env.AGIM_HEARTBEAT_ENABLED = '1'
+    startHeartbeatScheduler()
+    startHeartbeatScheduler()
+    expect(schedulerInfo().running).toBe(true)
+    stopHeartbeatScheduler()
+    expect(schedulerInfo().running).toBe(false)
   })
 })

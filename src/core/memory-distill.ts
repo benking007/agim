@@ -20,9 +20,8 @@
 //     Future consolidation can promote frequently-confirmed facts to 0.9+
 //     and demote unused ones; the v1.5 first cut just stores them.
 //
-//   * Dedup at write time (TODO: v1.6) — for now we just append. If
-//     extraction surfaces "user lives in 杭州" three times in three turns,
-//     we'll have three rows. Consolidation cron will dedupe.
+//   * Dedup at write time by exact `what` — findFactIdByWhat + touchFact.
+//     Re-confirmed facts bump recency instead of inserting a duplicate row.
 
 import type { AgentAdapter } from './types.js'
 import { logger as rootLogger } from './logger.js'

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Heartbeat scheduler wired**: `agim start` calls `startHeartbeatScheduler()`
+  and shutdown calls `stopHeartbeatScheduler()`. Automatic ticks stay opt-in
+  (`AGIM_HEARTBEAT_ENABLED=1`). See [`docs/architecture/heartbeat.md`](docs/architecture/heartbeat.md).
+- **`/sessions` lists local threads**: no longer probes an external dashboard
+  on `:8001`. Shows recent `~/.agim/sessions` for the current platform.
+- **IM `/setup`**: points at the browser `/setup` wizard (and Settings →
+  Admins for IM admin assignment) instead of a dead “deprecated” note.
+- **Token revoke hint**: mobile QR no longer links to the missing
+  `/settings/security/tokens` page; it shows `agim token revoke <id>`.
+
+### Removed
+
+- **`/dev/chat-docks`**: unauthenticated visual sandbox.
+- **`/tasks/plans` UI**: nav and page removed; bookmarks redirect to `/tasks`.
+  `GET /api/plans` stays.
+
+### Docs
+
+- Heartbeat has its own architecture note; README no longer points at
+  `reminders.md`.
+- `docs/memory-and-vector.md`: facts come from distillation (`/memo` writes
+  `memos.db`, not facts).
+
 ## [1.6.0] - 2026-08-15
 
 ### Added

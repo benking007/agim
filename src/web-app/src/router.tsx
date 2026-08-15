@@ -87,8 +87,8 @@ const router = createBrowserRouter([
       // P1 follow-up — cross-thread admin views (heartbeat / asks).
       { path: 'heartbeat', lazy: lazy(() => import('@/routes/tasks/heartbeat')) },
       { path: 'asks',      lazy: lazy(() => import('@/routes/tasks/asks')) },
-      // v1.2.133 — plan-history audit (native_exit_plan_mode handshakes).
-      { path: 'plans',     lazy: lazy(() => import('@/routes/tasks/plans')) },
+      // /tasks/plans UI retired; GET /api/plans stays. Keep the bookmark.
+      { path: 'plans',     element: <Navigate to="/tasks" replace /> },
       // Loop Engineering audit (per-run history under ~/.agim/loops/history).
       { path: 'loops',     lazy: lazy(() => import('@/routes/tasks/loops')) },
     ],
@@ -191,11 +191,6 @@ const router = createBrowserRouter([
   {
     path: '/m/chat',
     lazy: authedLazy(() => import('@/routes/m/chat')),
-  },
-  // Visual playground for floating approval / ask docks (no auth).
-  {
-    path: '/dev/chat-docks',
-    lazy: lazy(() => import('@/routes/dev/chat-docks-preview')),
   },
   { path: '*', element: <NotFoundRoute /> },
 ], {

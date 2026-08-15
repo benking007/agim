@@ -16,8 +16,8 @@
 
 | 候选 | 现状 | 建议 |
 |------|------|------|
-| `/tasks/plans` | `native_exit_plan_mode` 审计页 | UI 可下线；`plan-history` 核心可留作审计 API/日志 |
-| `/dev/chat-docks` | 未挂导航的 DEV 视觉沙箱 | 可直接删路由与文件 |
+| `/tasks/plans` | `native_exit_plan_mode` 审计页 | **已下线 UI**（`/tasks/plans` → `/tasks`）；`GET /api/plans` 保留 |
+| `/dev/chat-docks` | 未挂导航的 DEV 视觉沙箱 | **已删**路由与预览页 |
 | Viewer 隧道设置 | Portal 已内联长文；cloudflared quick tunnel 偏冷 | 可先藏设置项；保留 paste/viewer 读路径 |
 | TG / Discord | 已由 `AGIM_ENABLE_GLOBAL_IM=1` 默认隐藏 | 维持门控即可；全删代码侵入大，暂不建议 |
 | Search / STT 提供商矩阵 | Settings 面较重 | 可降级为「高级 / CLI-only」 |

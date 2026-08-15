@@ -8,7 +8,7 @@
  *
  * Storage is process-local Map (+ optional disk mirror under AGIM_HOME
  * so a soft restart within TTL can still redeem). Not a durable auth
- * store — revoke the underlying token via /settings/security/tokens.
+ * store — revoke the underlying token with `agim token revoke <id>`.
  */
 
 import { randomBytes } from 'node:crypto'

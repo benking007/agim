@@ -25,6 +25,16 @@ const log = rootLogger.child({ component: 'session' })
 
 const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
 
+/** Disk-scan row used by `/sessions` (no message bodies). */
+export interface RecentSessionSummary {
+  platform: string
+  channelId: string
+  threadId: string
+  agent: string
+  lastActivity: Date
+  turns: number
+}
+
 function sanitizeKey(raw: string): string {
   return raw.replace(/[^A-Za-z0-9_-]/g, (c) => {
     return createHash('sha256').update(c).digest('hex').slice(0, 8)
@@ -1052,6 +1062,55 @@ class SessionManager {
     // newest first
     out.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     return out
+  }
+
+  /**
+   * Scan session metadata on disk and return the most recently active
+   * threads. Used by `/sessions` so IM/Web list *this* machine's
+   * conversations instead of probing an external dashboard.
+   *
+   * Same scan rules as {@link listAllSubtasks}: the filename is a
+   * one-way sanitize, so we read platform/channelId/threadId from the
+   * JSON body.
+   */
+  async listRecentSessions(opts: {
+    platform?: string
+    limit?: number
+  } = {}): Promise<RecentSessionSummary[]> {
+    let names: string[]
+    try {
+      names = await readdir(SESSIONS_DIR)
+    } catch {
+      return []
+    }
+    const out: RecentSessionSummary[] = []
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      try {
+        const raw = await readFile(join(SESSIONS_DIR, name), 'utf-8')
+        const parsed = JSON.parse(raw) as Partial<Session> & { usage?: { turns?: number } }
+        if (!parsed.platform || !parsed.channelId || !parsed.threadId) continue
+        if (opts.platform && parsed.platform !== opts.platform) continue
+        const lastActivity = parsePersistedDate(parsed.lastActivity)
+        if (!lastActivity) continue
+        const turns = typeof parsed.usage?.turns === 'number' && Number.isFinite(parsed.usage.turns)
+          ? parsed.usage.turns
+          : 0
+        out.push({
+          platform: parsed.platform,
+          channelId: parsed.channelId,
+          threadId: parsed.threadId,
+          agent: parsed.agent || '',
+          lastActivity,
+          turns,
+        })
+      } catch {
+        // skip corrupt session file
+      }
+    }
+    out.sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())
+    const limit = opts.limit && opts.limit > 0 ? Math.floor(opts.limit) : 10
+    return out.slice(0, limit)
   }
 
   /**

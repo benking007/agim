@@ -150,28 +150,29 @@
   }
 
   /* Running status line — Cursor-style highlight sweep (not opacity pulse).
-     Keep `text-*` on the element so currentColor is the base gray. */
+     Keep `text-*` on the element so currentColor is the base gray.
+     The gradient must always cover the glyphs; no-repeat + an off-screen
+     start paints later letters transparent and looks like a typewriter. */
   .text-shimmer {
     background-image: linear-gradient(
-      100deg,
+      90deg,
       currentColor 0%,
-      currentColor 38%,
-      color-mix(in srgb, currentColor 18%, white) 50%,
-      currentColor 62%,
+      currentColor 42%,
+      color-mix(in srgb, currentColor 22%, white) 50%,
+      currentColor 58%,
       currentColor 100%
     );
-    background-size: 220% 100%;
-    background-position: 120% 50%;
-    background-repeat: no-repeat;
+    background-size: 200% 100%;
+    background-position: 100% 50%;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: text-shimmer 2.2s linear infinite;
+    animation: text-shimmer 2.4s linear infinite;
   }
 
   @keyframes text-shimmer {
-    0% { background-position: 120% 50%; }
-    100% { background-position: -20% 50%; }
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
   }
 
   @media (prefers-reduced-motion: reduce) {

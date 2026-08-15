@@ -33,7 +33,7 @@ const HELP = [
   '  | 场景           | Claude              | Agim                          |',
   '  | 普通对话迭代   | Turn-based / L2     | 普通 Agent 回合（非 /loop）   |',
   '  | 目标+停机条件  | `/goal`             | **本命令 `/loop`**（使命闭环）|',
-  '  | 定时再跑 prompt| **`/loop` /schedule** | `/cron` `loop:` 前缀（R6 最小刀） |',
+  '  | 定时再跑 prompt| **`/loop` /schedule** | `/cron` `loop:` 或自然语言确认卡 |',
   '  | Focus 注意力   | （会话上下文）      | `/focus`（不是 Loop）         |',
   '',
   '**父编排 Agent**：必须是 **Agim Agent**（Portal 顶部选 Agim）。',
@@ -73,6 +73,10 @@ const HELP = [
   '',
   '路径 A：先 `/focus …` 再 `/loop` → 结束不关 Focus',
   '路径 B：直接 `/loop <text>` → 代开 Focus，结束 Focus off',
+  '',
+  '定时再跑（先出确认卡，不静默创建）：',
+  '  每天凌晨2点用 Loop 修登录；退出条件为验收通过或最多5轮',
+  '  或 `/cron create nightly-loop agim "0 2 * * *" loop: 修登录；退出条件为验收通过或最多5轮`',
 ].join('\n')
 
 async function resolveStickyAgentId(ctx: RouteContext): Promise<string> {

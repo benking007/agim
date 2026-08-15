@@ -36,6 +36,8 @@ export default defineConfig({
       'src/core/focus.test.ts',
       'src/core/loop-run.test.ts',
       'src/core/loop-scheduler.test.ts',
+      'src/core/loop-schedule-nl.test.ts',
+      'src/core/loop-schedule-intent.test.ts',
       'src/core/loop-verify-gate.test.ts',
       'src/core/commands/loop-parent-gate.test.ts',
       'src/web/background-tasks-api.test.ts',

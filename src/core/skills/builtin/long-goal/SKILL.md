@@ -29,7 +29,7 @@ user should switch sticky to Agim first
 If the user says any of:
 - "帮我跟一下 X 项目"
 - "接下来一周关注 Y"
-- "每天早上看一下 Z"
+- "每天早上看一下 Z"（当场 Focus；若要**定时开 Loop**，用户说「每天…用 Loop…退出条件为…」会先出确认卡）
 - "我要做完 W 才停"
 - "long-term track..."
 

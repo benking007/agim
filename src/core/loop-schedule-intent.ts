@@ -310,6 +310,22 @@ export async function tryDetectScheduledLoopIntent(opts: {
   return NOT_HANDLED
 }
 
+export function formatCreatedLoopScheduleReply(input: {
+  id: number
+  pending: Pick<PendingLoopSchedule, 'cron' | 'cronLabel' | 'objective' | 'exitDescription'>
+  nextIso?: string
+}): string {
+  return [
+    `✅ 已创建定时 Loop #${input.id}`,
+    `   时间：${input.pending.cronLabel}（\`${input.pending.cron}\`）`,
+    `   目标：${input.pending.objective}`,
+    `   退出：${input.pending.exitDescription}`,
+    input.nextIso ? `   下次：${input.nextIso}` : '',
+    '',
+    '列表：`/cron list`　停用：`/cron disable <id>`',
+  ].filter(Boolean).join('\n')
+}
+
 export function commitPendingLoopSchedule(input: {
   pending: PendingLoopSchedule
   userId: string
@@ -360,15 +376,11 @@ export async function tryHandleScheduledLoopTurn(opts: {
     if (!created.ok) return { handled: true, reply: `❌ 创建失败：${created.error}` }
     return {
       handled: true,
-      reply: [
-        `✅ 已创建定时 Loop #${created.id}`,
-        `   时间：${decision.pending.cronLabel}（\`${decision.pending.cron}\`）`,
-        `   目标：${decision.pending.objective}`,
-        `   退出：${decision.pending.exitDescription}`,
-        created.nextIso ? `   下次：${created.nextIso}` : '',
-        '',
-        '列表：`/cron list`　停用：`/cron disable <id>`',
-      ].filter(Boolean).join('\n'),
+      reply: formatCreatedLoopScheduleReply({
+        id: created.id,
+        pending: decision.pending,
+        nextIso: created.nextIso,
+      }),
     }
   }
 

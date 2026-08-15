@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   commitPendingLoopSchedule,
+  formatCreatedLoopScheduleReply,
   openScheduledLoopDraft,
   tryDetectScheduledLoopIntent,
   tryHandleScheduledLoopTurn,
@@ -98,6 +99,28 @@ describe('tryDetectScheduledLoopIntent', () => {
   })
 })
 
+describe('formatCreatedLoopScheduleReply', () => {
+  it('includes id, clock, mission, and next run', () => {
+    const text = formatCreatedLoopScheduleReply({
+      id: 5,
+      pending: {
+        cron: '0 2 * * *',
+        cronLabel: '每天 02:00',
+        objective: '修登录',
+        exitDescription: '验收通过',
+      },
+      nextIso: '2026-08-16T02:00:00.000Z',
+    })
+    expect(text).toContain('已创建定时 Loop #5')
+    expect(text).toContain('每天 02:00')
+    expect(text).toContain('0 2 * * *')
+    expect(text).toContain('修登录')
+    expect(text).toContain('验收通过')
+    expect(text).toContain('2026-08-16T02:00:00.000Z')
+    expect(text).toContain('/cron list')
+  })
+})
+
 describe('openScheduledLoopDraft /cronloop', () => {
   it('opens an empty dock draft', () => {
     const r = openScheduledLoopDraft({
@@ -170,6 +193,7 @@ describe('tryHandleScheduledLoopTurn y/n', () => {
     })
     expect(r.handled).toBe(true)
     expect(r.reply).toContain('已创建定时 Loop')
+    expect(r.reply).toContain('/cron list')
     const created = listSchedules().find((s) => s.prompt.includes('修登录确认卡'))
     expect(created).toBeDefined()
     expect(created?.cron).toBe('0 2 * * *')

@@ -26,7 +26,7 @@ export function confirmLoopSchedule(body: {
   objective: string
   exitDescription: string
   headless?: boolean
-}): Promise<{ ok: true; id: number; nextIso: string }> {
+}): Promise<{ ok: true; id: number; nextIso: string; reply?: string }> {
   return client.post('/api/loop-schedule/confirm', { body })
 }
 

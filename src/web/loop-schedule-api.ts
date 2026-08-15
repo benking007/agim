@@ -12,9 +12,11 @@ import {
 } from '../core/pending-loop-schedule.js'
 import {
   commitPendingLoopSchedule,
+  formatCreatedLoopScheduleReply,
   resolveScheduleTime,
 } from '../core/loop-schedule-intent.js'
 import { suggestLoopScheduleName } from '../core/loop-schedule-nl.js'
+import { sessionManager } from '../core/session.js'
 import { readBody, sendJson } from './http-utils.js'
 
 function threadKeyOf(platform: string, channelId: string, threadId: string): string {
@@ -132,10 +134,26 @@ async function handleConfirm(req: IncomingMessage, res: ServerResponse): Promise
     return
   }
   clearPendingLoopSchedule(threadKey)
+  const reply = formatCreatedLoopScheduleReply({
+    id: created.id,
+    pending,
+    nextIso: created.nextIso,
+  })
+  try {
+    await sessionManager.addMessage(platform, channelId, threadId, {
+      role: 'assistant',
+      content: reply,
+      agent: 'agim',
+      timestamp: new Date(),
+    })
+  } catch {
+    /* best-effort — toast still fires on the client */
+  }
   sendJson(res, 200, {
     ok: true,
     id: created.id,
     nextIso: created.nextIso,
+    reply,
     pending: null,
   })
 }

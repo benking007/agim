@@ -4,6 +4,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import {
   cancelLoopSchedule,
   confirmLoopSchedule,
@@ -29,6 +31,8 @@ export function usePortalScheduledLoop(
   }) => Promise<boolean>
   cancel: () => Promise<void>
 } {
+  const { i18n } = useTranslation()
+  const zh = i18n.language?.startsWith('zh') ?? true
   const [pending, setPending] = useState<LoopSchedulePending | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -88,7 +92,11 @@ export function usePortalScheduledLoop(
     setBusy(true)
     setError(null)
     try {
-      await confirmLoopSchedule({ threadId, ...draft })
+      const created = await confirmLoopSchedule({ threadId, ...draft })
+      toast.success(zh
+        ? `已创建定时 Loop #${created.id}${created.nextIso ? `，下次 ${created.nextIso}` : ''}`
+        : `Scheduled Loop #${created.id} created${created.nextIso ? `. Next ${created.nextIso}` : ''}`)
+      openChatWs().send({ type: 'get-history', threadId })
       await refresh()
       return true
     } catch (err) {
@@ -97,7 +105,7 @@ export function usePortalScheduledLoop(
     } finally {
       setBusy(false)
     }
-  }, [refresh, threadId])
+  }, [refresh, threadId, zh])
 
   const cancel = useCallback(async () => {
     if (!threadId) return

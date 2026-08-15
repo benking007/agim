@@ -28,9 +28,15 @@ only when the agent actually needs the skill:
 
 | tier | what is loaded | when | cost |
 |---|---|---|---|
-| **1** | name + description per skill | every turn (auto-injected into system prompt) | ~30–50 tokens per skill |
+| **1** | name + first-sentence description per skill | every turn (auto-injected into system prompt) | ~15–30 tokens per skill |
 | **2** | full SKILL.md body | on-demand via `mcp__agim__read_skill('name')` | one body per request |
 | **3** | files in `scripts/`, `references/`, `assets/` | on-demand via the agent's normal file-read tool, when the body references them | per-file |
+
+Tier-1 rows carry the skill's first sentence only (capped at 120
+chars) so the injected block stays small even with many skills — the
+full description is always one `read_skill` call away. Operators who
+want full inline descriptions can set `AGIM_SKILLS_FULL_DESCRIPTIONS=1`
+(token cost is theirs to own).
 
 Compared to bundling every skill body into the system prompt, this
 keeps even a 20-skill install affordable: only the skills the user's

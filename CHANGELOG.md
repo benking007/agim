@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-08-15
+
 ### Changed
 
 - **Topbar 10 → 5**: Chat, Tasks, Memory, Workspace, Settings. Approvals

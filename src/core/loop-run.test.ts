@@ -17,6 +17,7 @@ import {
   cancelLoopForFocusOff,
   confirmLoopMission,
   countRoundLiveSubagents,
+  forceLoopExitSkippedVerify,
   formatLoopStatus,
   getActiveLoop,
   getLoopRun,
@@ -129,6 +130,11 @@ describe('parseLoopStartText', () => {
     expect(repeat.maxRounds).toBe(6) // min=N, max=N*2
     expect(parseExitConstraints('验收通过或 5 轮结束').maxRounds).toBe(5)
     expect(parseExitConstraints('验收通过或 5 轮结束').minRounds).toBeUndefined()
+    const ceiling = parseExitConstraints('分析 100 轮结束')
+    expect(ceiling.minRounds).toBeUndefined()
+    expect(ceiling.maxRounds).toBe(100)
+    expect(parseExitConstraints('100轮结束').minRounds).toBeUndefined()
+    expect(parseExitConstraints('100轮结束').maxRounds).toBe(100)
   })
 
   it('parseExitConstraints accepts 至少/最少/不少于 N 轮 as minRounds', () => {
@@ -613,6 +619,8 @@ describe('loop-run R3 PLAN+DISPATCH', () => {
 
     const snip = buildLoopSnippet(base.platform, base.channelId, threadId)
     expect(snip).toContain('VERIFY (R4)')
+    expect(snip).toContain('parent verifier')
+    expect(snip).toContain('确认结束')
     expect(snip).toContain('HARD GATE')
     expect(snip).not.toContain('MUST decompose')
 
@@ -816,6 +824,101 @@ describe('loop-run R4 VERIFY+REFLECT', () => {
     expect(abandon.ok).toBe(true)
     if (!abandon.ok) return
     expect(abandon.run.endReason).toBe('stop_verdict')
+  })
+
+  it('round-1 met=true opens the confirm dock regardless of maxRounds ceiling', () => {
+    reset()
+    const threadId = 'loop-ceiling-confirm-dock'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '分析黄金；退出条件为验收通过或最多100轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.run.mission?.exit.minRounds).toBeUndefined()
+    expect(started.run.mission?.exit.maxRounds).toBe(100)
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+
+    const stop = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'stop',
+      summary: '第一轮已形成可交付结论，建议结束并落报告',
+      met: true,
+    })
+    expect(stop.ok).toBe(true)
+    if (!stop.ok) return
+    expect(stop.run.status).toBe('pending_user_confirm')
+    expect(getActiveLoop(base.platform, base.channelId, threadId)?.status).toBe('pending_user_confirm')
+    const snip = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snip).toContain('PENDING_USER_CONFIRM')
+    expect(snip).toContain('确认结束')
+  })
+
+  it('revives a premature verify_skipped reap so loop_verdict can continue', () => {
+    reset()
+    const threadId = 'loop-revive-verify-skip'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '分析黄金；退出条件为验收通过或最多100轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(started.run.mission?.exit.maxRounds).toBe(100)
+    noteLoopDispatch(base.platform, base.channelId, threadId, { count: 1 })
+    const forced = forceLoopExitSkippedVerify(base.platform, base.channelId, threadId, {
+      ignoreRemainingRounds: true,
+    })
+    expect(forced.ended).toBe(true)
+    expect(getActiveLoop(base.platform, base.channelId, threadId)).toBeNull()
+
+    const cont = applyLoopVerdict(base.platform, base.channelId, threadId, {
+      decision: 'continue',
+      summary: '第一轮已汇总，继续第二轮',
+      met: false,
+      nextDirection: '补齐缺口后再验收',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.status).toBe('planning')
+    expect(cont.run.round).toBe(2)
+    expect(getActiveLoop(base.platform, base.channelId, threadId)?.round).toBe(2)
+  })
+
+  it('getActiveLoop / loop_verdict resolve web channel aliases (web / default / empty)', () => {
+    reset()
+    const threadId = 'loop-channel-alias'
+    const started = startLoop({
+      platform: 'web',
+      channelId: 'web',
+      userId: 'u1',
+      threadId,
+      text: '分析黄金；退出条件为验收通过或最多100轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    expect(getActiveLoop('web', 'web', threadId)?.id).toBe(started.run.id)
+    expect(getActiveLoop('web', 'default', threadId)?.id).toBe(started.run.id)
+    expect(getActiveLoop('web', '', threadId)?.id).toBe(started.run.id)
+    expect(buildLoopSnippet('web', 'default', threadId)).toContain('loop ACTIVE')
+
+    noteLoopDispatch('web', 'default', threadId, { count: 1 })
+    const cont = applyLoopVerdict('web', 'default', threadId, {
+      decision: 'continue',
+      summary: '第一轮已汇总，继续第二轮',
+      met: false,
+      nextDirection: '补齐缺口后再验收',
+    })
+    expect(cont.ok).toBe(true)
+    if (!cont.ok) return
+    expect(cont.run.round).toBe(2)
+    expect(getActiveLoop('web', 'web', threadId)?.round).toBe(2)
   })
 
   it('headless loop (mission text 无人值守) auto-ends on met=true without user confirm', () => {
@@ -1227,7 +1330,7 @@ describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
       const { platform, channelId, threadId } = seedPending(process.env.AGIM_LOOPS_DIR!)
       const r = maybeResolveLoopConfirmTimeout(platform, channelId, threadId)
       expect(r.ended).toBe(true)
-      if (!r.ended) return
+      if (!r.ended || !r.run) return
       expect(r.run.status).toBe('ended')
       expect(r.run.endReason).toBe('objective_met')
       expect(r.reason).toBe('confirm_timeout')

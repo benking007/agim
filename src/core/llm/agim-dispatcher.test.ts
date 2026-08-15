@@ -684,4 +684,100 @@ describe('buildAgimDispatcher', () => {
       expect(r2.text).toMatch(/call_agents join/i)
     })
   })
+
+  describe('loop_verdict finds Loop across web channel aliases', () => {
+    let dir: string
+    const SAVED = { loops: process.env.AGIM_LOOPS_DIR }
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'loop-verdict-alias-'))
+      process.env.AGIM_LOOPS_DIR = join(dir, 'loops')
+    })
+
+    afterEach(() => {
+      if (SAVED.loops === undefined) delete process.env.AGIM_LOOPS_DIR
+      else process.env.AGIM_LOOPS_DIR = SAVED.loops
+      try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    })
+
+    it('accepts continue when run is stored under web but tool ctx uses default', async () => {
+      const threadId = `t-alias-${Date.now()}`
+      const now = Date.now()
+      mkdirSync(process.env.AGIM_LOOPS_DIR!, { recursive: true, mode: 0o700 })
+      writeFileSync(join(process.env.AGIM_LOOPS_DIR!, `web__web__${threadId}.json`), JSON.stringify({
+        id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        sessionKey: `web__web__${threadId}`,
+        platform: 'web',
+        channelId: 'web',
+        threadId,
+        focusSnapshot: '分析黄金',
+        openedFocus: false,
+        status: 'verifying',
+        round: 1,
+        maxRounds: 100,
+        mission: {
+          objective: '分析黄金',
+          exit: { description: '验收通过或最多100轮', maxRounds: 100, onFocusOff: 'cancel' },
+        },
+        dispatchesThisRound: 3,
+        roundJobIds: [],
+        loopJobIds: [],
+        usage: { dispatchCount: 3, evaluatorCount: 0, continueCount: 0, reviseCount: 0 },
+        createdAt: now,
+        updatedAt: now,
+        timeline: [],
+      }), 'utf8')
+
+      const d = buildAgimDispatcher({
+        platform: 'web',
+        channelId: 'default',
+        threadId,
+        userId: 'u',
+        callerAgent: 'agim',
+      })
+      const r = await d(
+        {
+          id: 'v1',
+          name: 'mcp__agim__loop_verdict',
+          arguments: {
+            decision: 'continue',
+            met: false,
+            summary: '第一轮已汇总',
+            nextDirection: '第二轮补缺口',
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(r.isError).toBe(false)
+      const parsed = JSON.parse(r.text) as { round?: number; status?: string }
+      expect(parsed.round).toBe(2)
+      expect(parsed.status).toBe('planning')
+    })
+
+    it('no_active_loop tells the model not to skip remaining rounds', async () => {
+      const d = buildAgimDispatcher({
+        platform: 'web',
+        channelId: 'web',
+        threadId: 'no-loop-here',
+        userId: 'u',
+        callerAgent: 'agim',
+      })
+      const r = await d(
+        {
+          id: 'v-miss',
+          name: 'mcp__agim__loop_verdict',
+          arguments: {
+            decision: 'continue',
+            met: false,
+            summary: '第一轮已汇总',
+            nextDirection: '第二轮',
+          },
+        },
+        NOOP_SIGNAL,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/no_active_loop/)
+      expect(r.text).toMatch(/Do not invent a substitute end-of-loop report/i)
+    })
+  })
 })

@@ -159,6 +159,8 @@ describe('loop verify gate', () => {
   it('steer + follow-up copy mention loop_verdict and mid-review ask_user', () => {
     expect(loopVerifySteerText()).toContain('loop_verdict')
     expect(loopVerifySteerText()).toContain('ask_user')
+    expect(loopVerifySteerText()).toContain('parent verifier')
+    expect(loopVerifySteerText()).toContain('确认结束')
     expect(loopVerifyFollowUpPrompt()).toContain('loop_verdict')
     expect(loopVerifyFollowUpPrompt()).toContain('ask_user')
   })
@@ -175,12 +177,20 @@ describe('loop verify gate', () => {
     delete process.env.AGIM_LOOP_AUTO_VERIFY
   })
 
-  it('reaper without auto-verify falls back to verify_skipped stop', () => {
+  it('reaper without auto-verify defers while rounds remain', () => {
     delete process.env.AGIM_LOOP_AUTO_VERIFY
     const a = seedLoop(process.env.AGIM_LOOPS_DIR!)
     const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
+    expect(r.ended).toBe(false)
+    expect(isLoopAutoVerifyInFlight()).toBe(false)
+  })
+
+  it('reaper without auto-verify ends on the last round', () => {
+    delete process.env.AGIM_LOOP_AUTO_VERIFY
+    const a = seedLoop(process.env.AGIM_LOOPS_DIR!, { round: 3, maxRounds: 3 })
+    const r = maybeReapIdleLoopVerify(a.platform, a.channelId, a.threadId)
     expect(r.ended).toBe(true)
-    if (r.ended) expect(r.run.endReason).toBe('verify_skipped')
+    if (r.ended && r.run) expect(r.run.endReason).toBe('limit')
     expect(isLoopAutoVerifyInFlight()).toBe(false)
   })
 

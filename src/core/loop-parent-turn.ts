@@ -38,7 +38,17 @@ export function isLoopParentTurnActive(
   threadId: string,
 ): boolean {
   if (!platform || !threadId) return false
-  return activeParentTurns.has(key(platform, channelId, threadId))
+  if (activeParentTurns.has(key(platform, channelId, threadId))) return true
+  // A2A / Portal often pass channelId "web" while the parent turn was
+  // marked with "" or "default" (or the reverse). Treat same
+  // platform+thread as in-flight so idle VERIFY reapers do not kill a
+  // live parent about to call loop_verdict.
+  const prefix = `${platform || ''}__`
+  const suffix = `__${threadId}`
+  for (const k of activeParentTurns) {
+    if (k.startsWith(prefix) && k.endsWith(suffix)) return true
+  }
+  return false
 }
 
 /** Test-only. */

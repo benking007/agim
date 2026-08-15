@@ -560,10 +560,13 @@ export function getAgimTools(): ToolDef[] {
     {
       name: 'mcp__agim__loop_verdict',
       description:
-        'Loop VERIFY/REFLECT verdict (not during ALIGNING). continue/revise require ≥1 '
-        + 'call_agent(s) this round (R3) AND structured verification (R4): met=false, '
-        + 'summary, nextDirection (gaps recommended). met=true must use decision=stop '
-        + '(independent cheap evaluator may veto; AGIM_LOOP_EVALUATOR=auto|on|off). '
+        'Parent VERIFY after Subagents finish: recommend continue vs end; that '
+        + 'recommendation is met. continue/revise require ≥1 call_agent(s) this '
+        + 'round (R3) AND structured verification (R4): met=false, summary, '
+        + 'nextDirection (gaps recommended). met=true must use decision=stop — '
+        + 'opens the Portal confirm dock (确认结束 / 继续下一轮; then 落报告). '
+        + 'Do not skip this tool or dump the full report in chat. Independent '
+        + 'cheap evaluator may veto met=true (AGIM_LOOP_EVALUATOR=auto|on|off). '
         + 'stop without met abandons. Exit truncates on maxRounds/maxWallMs.',
       parameters: {
         type: 'object',
@@ -1368,7 +1371,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
             const gate = await refuseIfLoopAligning(ctx.platform, ctx.channelId, ctx.threadId, 'loop_verdict')
             if (gate) return err(gate)
           }
-          const { applyLoopVerdict, getActiveLoop } = await import('../loop-run.js')
+          const { applyLoopVerdict, getActiveLoop, getLoopRun } = await import('../loop-run.js')
           const decision = String(args.decision || '')
           if (decision !== 'continue' && decision !== 'revise' && decision !== 'stop') {
             return err('loop_verdict failed: decision must be continue|revise|stop')
@@ -1474,6 +1477,22 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
               return err(
                 'loop_verdict failed: met_use_stop — objective is met; call again with '
                 + 'decision=stop and met=true (ends as objective_met).',
+              )
+            }
+            if (r.error === 'no_active_loop') {
+              const ended = getLoopRun(ctx.platform, ctx.channelId, ctx.threadId)
+              const extra = ended?.status === 'ended'
+                ? ` (already ended as ${ended.endReason || 'ended'} at round ${ended.round}/${ended.maxRounds})`
+                : ''
+              const remaining = !!ended && ended.round < ended.maxRounds
+              return err(
+                `loop_verdict failed: no_active_loop${extra}`
+                + (remaining
+                  ? ' — Loop still has remaining rounds. Retry loop_verdict with '
+                    + 'decision=continue|revise and met=false; do NOT deliver a '
+                    + 'final report or skip the next round.'
+                  : ' — Loop session is not active; cannot submit a verdict. '
+                    + 'Do not invent a substitute end-of-loop report unless the user asked to stop.'),
               )
             }
             return err(`loop_verdict failed: ${r.error}`)

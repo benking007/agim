@@ -31,6 +31,7 @@ import {
 import { threadHasPendingAsk } from './ask-user-rpc.js'
 import {
   focusOff,
+  focusOn,
   getFocusOn,
   setFocus,
 } from './focus.js'
@@ -661,7 +662,21 @@ export function formatMissionFields(run: LoopRun, opts?: { draftLabel?: boolean 
   return lines
 }
 
-function readRun(platform: string, channelId: string, threadId: string): LoopRun | null {
+/** Portal / A2A / Native tool ctx often disagree on the same web thread. */
+const LOOP_CHANNEL_ALIASES = ['', 'default', 'web'] as const
+
+function channelLookupCandidates(channelId: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const c of [channelId, ...LOOP_CHANNEL_ALIASES]) {
+    if (seen.has(c)) continue
+    seen.add(c)
+    out.push(c)
+  }
+  return out
+}
+
+function readRunExact(platform: string, channelId: string, threadId: string): LoopRun | null {
   const key = liveRunKey(platform, channelId, threadId)
   const cached = liveRunCache.get(key)
   if (cached) return cached
@@ -677,6 +692,19 @@ function readRun(platform: string, channelId: string, threadId: string): LoopRun
     log.warn({ event: 'loop.read_failed', err: String(err) })
     return null
   }
+}
+
+function readRun(platform: string, channelId: string, threadId: string): LoopRun | null {
+  const exact = readRunExact(platform, channelId, threadId)
+  if (exact) return exact
+  // Snippet / parent turn may use "web" while loop_verdict looks up
+  // "" or "default" (assembleToolsForPi historically remapped empty → default).
+  for (const alias of channelLookupCandidates(channelId)) {
+    if (alias === channelId) continue
+    const run = readRunExact(platform, alias, threadId)
+    if (run) return run
+  }
+  return null
 }
 
 function writeHistoryRun(run: LoopRun): void {
@@ -1175,11 +1203,18 @@ export function maybeEnforceLoopExit(
  * When VERIFY follow-up still did not produce loop_verdict, force-end the Loop
  * so it cannot hang forever in「待验收」with a delivered report.
  * Also defers while Subagents are still live.
+ *
+ * Mid-window (round < maxRounds) stays alive: ending here is what surfaces
+ * as loop_verdict → no_active_loop, so the parent never finishes VERIFY
+ * and the Portal confirm / 落报告 docks never appear. Last-round idle
+ * still ends as `limit`. Pass `ignoreRemainingRounds` only to simulate a
+ * premature reap in tests.
  */
 export function forceLoopExitSkippedVerify(
   platform: string,
   channelId: string,
   threadId: string,
+  opts?: { ignoreRemainingRounds?: boolean },
 ): LoopExitEnforceResult {
   const wall = maybeEnforceLoopExit(platform, channelId, threadId)
   if (wall.ended) return wall
@@ -1215,6 +1250,17 @@ export function forceLoopExitSkippedVerify(
       `maxRounds ${run.maxRounds} (verify skipped; enforced without verdict)`,
     )
     return { ended: true, run: ended, reason: 'limit' }
+  }
+
+  if (!opts?.ignoreRemainingRounds) {
+    log.info({
+      event: 'loop.exit_deferred_rounds_remain',
+      reason: 'verify_skipped',
+      threadId,
+      round: run.round,
+      maxRounds: run.maxRounds,
+    }, 'defer verify_skipped while Loop rounds remain')
+    return { ended: false, run }
   }
 
   const ended = endLoopInternal(
@@ -1280,7 +1326,9 @@ export function parseExitConstraints(exitDescription: string): {
     }
   }
 
-  // Ceiling-only phrases
+  // Ceiling only. 「N 轮结束」/「最多 N 轮」set maxRounds so the parent
+  // can still met=true on an earlier round and open the user confirm
+  // dock. Hard floors stay explicit: 至少 / 做满 / 重复.
   const maxHit =
     text.match(/最多\s*(\d+)\s*轮/)
     || text.match(/(\d+)\s*轮\s*结束/)
@@ -1959,6 +2007,38 @@ export function maybeResolveLoopConfirmTimeout(
   return { ended: true, run: ended, reason: 'confirm_timeout' }
 }
 
+/**
+ * Idle VERIFY reaper can end a Loop as verify_skipped while the parent is
+ * still synthesizing and about to call loop_verdict (channel-key mismatch
+ * or the gap between last child join and the next hop). If rounds remain,
+ * bring that run back so the hard floor / continue path still works.
+ */
+function revivePrematureVerifySkip(
+  platform: string,
+  channelId: string,
+  threadId: string,
+): LoopRun | null {
+  const ended = getLoopRun(platform, channelId, threadId)
+  if (!ended || ended.status !== 'ended') return null
+  if (ended.endReason !== 'verify_skipped') return null
+  if (ended.round >= ended.maxRounds) return null
+  ended.status = 'verifying'
+  delete ended.endReason
+  ended.updatedAt = Date.now()
+  pushTimeline(ended, 'system', 'revived after premature verify_skipped reap (rounds remain)')
+  writeRun(ended)
+  if (ended.openedFocus) {
+    try { focusOn(ended.platform, ended.channelId, ended.threadId) } catch { /* optional */ }
+  }
+  log.info({
+    event: 'loop.revived_verify_skip',
+    threadId,
+    round: ended.round,
+    maxRounds: ended.maxRounds,
+  }, 'revived Loop after premature verify_skipped reap')
+  return ended
+}
+
 export function applyLoopVerdict(
   platform: string,
   channelId: string,
@@ -1966,6 +2046,7 @@ export function applyLoopVerdict(
   verdict: LoopVerdict,
 ): { ok: true; run: LoopRun } | { ok: false; error: string } {
   const run = getActiveLoop(platform, channelId, threadId)
+    ?? revivePrematureVerifySkip(platform, channelId, threadId)
   if (!run) return { ok: false, error: 'no_active_loop' }
   if (run.status === 'aligning') {
     return { ok: false, error: 'aligning' }
@@ -2273,16 +2354,22 @@ export function buildLoopSnippet(
     )
   } else {
     lines.push(
-      'VERIFY (R4): call loop_verdict with structured fields against Objective'
+      'VERIFY (R4): YOU are the parent verifier. Synthesize Subagent results, '
+        + 'then recommend whether to continue another round or end. That '
+        + 'recommendation IS met — you MUST call loop_verdict; skipping it '
+        + '(or treating a tool error as "just deliver this round") skips the '
+        + 'user confirm dock and the 落报告 offer. '
+        + 'Compare against Objective'
         + (view.acceptance ? '/Acceptance' : '')
         + ': met (boolean), summary, and if unmet: gaps[] + nextDirection. '
         + 'MID-REVIEW HITL: if conclusion is uncertain, you have a question, or '
         + 'data looks anomalous — call mcp__agim__ask_user first; after the user '
         + 'replies, continue with loop_verdict. '
         + 'HARD GATE: before verdict, parent ONLY waits / ask_user (no research/dispatch). '
-        + 'After loop_verdict succeeds you may summarize or do follow-up research. '
         + 'HARD: only after ALL Subagents for this round have finished. '
-        + 'met=true → decision=stop → Portal user confirm (end|continue)'
+        + 'met=true → decision=stop → Portal dock asks the user 确认结束 '
+        + '(then 落报告) or 继续下一轮. Do NOT dump the full report in chat; '
+        + 'the dock owns the conclusion'
         + (view.minRounds ? `; requires round≥${view.minRounds}` : '')
         + '. '
         + 'met=false → decision=continue|revise (reflect → next round dispatch). '

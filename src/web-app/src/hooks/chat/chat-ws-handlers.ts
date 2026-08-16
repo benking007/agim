@@ -37,6 +37,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'run-finish',
   'usage',
   'activity-step',
+  'injected-context',
   'agent-switched',
   'plan-mode',
   'step-reflect-mode',
@@ -106,6 +107,9 @@ export function normalizeHistoryMessage(h: HistoryMessage, i: number): ChatMessa
         finishedAt: h.activity.finishedAt,
         durationMs: h.activity.durationMs,
         error: h.activity.error,
+        ...(h.activity.injectedContext
+          ? { injectedContext: h.activity.injectedContext }
+          : {}),
         steps: h.activity.steps.map(normalizeActivityStep),
       }
     : undefined
@@ -272,6 +276,9 @@ export function makeOnIncoming(
             : undefined,
           durationMs: msg.durationMs,
           error: msg.error,
+          ...(typeof msg.injectedContext === 'string' && msg.injectedContext
+            ? { injectedContext: msg.injectedContext }
+            : {}),
           ...(msg.threadId ? { threadId: msg.threadId } : {}),
         })
         // Eagerly bind the streaming target so chunks that arrive before
@@ -279,6 +286,11 @@ export function makeOnIncoming(
         currentReplyIdRef.current = msg.status === 'running'
           ? `reply-restore-${msg.runId}`
           : null
+        return
+      case 'injected-context':
+        if (typeof msg.text === 'string' && msg.text && msg.runId) {
+          dispatch({ kind: 'INJECTED_CONTEXT', runId: msg.runId, text: msg.text })
+        }
         return
       case 'agents':
         dispatch({ kind: 'AGENTS', agents: msg.agents })

@@ -43,6 +43,22 @@ export interface ActiveRunSnapshot {
   finishedAt?: number
   durationMs?: number
   error?: string
+  /** Prompt injection snapshot (system + ephemeral) for the accordion viewer. */
+  injectedContext?: string
+}
+
+/** Soft cap so a huge AGENTS.md + skills dump cannot blow WS / session JSON. */
+export const INJECTED_CONTEXT_MAX_CHARS = 120_000
+
+export function setActiveRunInjectedContext(threadId: string, text: string): boolean {
+  const snap = runs.get(threadId)
+  if (!snap) return false
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  snap.injectedContext = trimmed.length > INJECTED_CONTEXT_MAX_CHARS
+    ? `${trimmed.slice(0, INJECTED_CONTEXT_MAX_CHARS)}\n\n…[truncated ${trimmed.length - INJECTED_CONTEXT_MAX_CHARS} chars]`
+    : trimmed
+  return true
 }
 
 /** Keep finished runs briefly so a refresh right after completion still
@@ -229,6 +245,7 @@ export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
   finishedAt?: number
   durationMs?: number
   error?: string
+  injectedContext?: string
   steps: ActiveRunStep[]
 } {
   return {
@@ -238,6 +255,7 @@ export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
     finishedAt: snap.finishedAt,
     durationMs: snap.durationMs,
     error: snap.error,
+    ...(snap.injectedContext ? { injectedContext: snap.injectedContext } : {}),
     steps: snap.steps.map((st) => ({ ...st })),
   }
 }

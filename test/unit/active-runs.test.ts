@@ -7,6 +7,9 @@ import {
   finishActiveRun,
   getActiveRun,
   clearActiveRun,
+  setActiveRunInjectedContext,
+  snapshotToPersistedActivity,
+  INJECTED_CONTEXT_MAX_CHARS,
 } from '../../src/web/active-runs.js'
 
 describe('active-runs', () => {
@@ -93,5 +96,26 @@ describe('active-runs', () => {
     })
     clearActiveRun('web-t1')
     expect(getActiveRun('web-t1')).toBeUndefined()
+  })
+
+  it('stores injected context on the run and persists it', () => {
+    startActiveRun({
+      threadId: 'web-t1', runId: 'run-1', agent: 'agim', startedAt: 1000,
+    })
+    expect(setActiveRunInjectedContext('web-t1', '## System prompt\nhello')).toBe(true)
+    expect(getActiveRun('web-t1')?.injectedContext).toContain('System prompt')
+    const persisted = snapshotToPersistedActivity(getActiveRun('web-t1')!)
+    expect(persisted.injectedContext).toContain('hello')
+  })
+
+  it('truncates oversized injected context', () => {
+    startActiveRun({
+      threadId: 'web-t1', runId: 'run-1', agent: 'agim', startedAt: 1000,
+    })
+    const huge = 'x'.repeat(INJECTED_CONTEXT_MAX_CHARS + 50)
+    setActiveRunInjectedContext('web-t1', huge)
+    const text = getActiveRun('web-t1')?.injectedContext ?? ''
+    expect(text.length).toBeLessThan(huge.length)
+    expect(text).toContain('[truncated')
   })
 })

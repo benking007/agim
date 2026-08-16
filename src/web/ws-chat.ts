@@ -203,6 +203,7 @@ export async function sendSessionHistory(
         : undefined,
       durationMs: active.durationMs,
       error: active.error,
+      ...(active.injectedContext ? { injectedContext: active.injectedContext } : {}),
       threadId,
     })
   }
@@ -326,6 +327,7 @@ export async function handleClientMessage(
         upsertActiveRunStep,
         appendActiveRunChunk,
         setActiveRunPartialText,
+        setActiveRunInjectedContext,
         finishActiveRun,
         getActiveRun,
         snapshotToPersistedActivity,
@@ -428,6 +430,17 @@ export async function handleClientMessage(
             if (snap.status !== 'running') {
               void persistFinishedActivity()
             }
+          },
+          onInjectedContext: (text) => {
+            if (!setActiveRunInjectedContext(sessionThreadId, text)) return
+            const snap = getActiveRun(sessionThreadId)
+            if (!snap?.injectedContext) return
+            emit({
+              type: 'injected-context',
+              runId: snap.runId,
+              text: snap.injectedContext,
+              threadId: sessionThreadId,
+            })
           },
         }
 

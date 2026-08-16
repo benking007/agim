@@ -102,6 +102,7 @@ export type ChatIncoming =
   | RunFinishEvent
   | ActivityStepEvent
   | ActiveRunEvent
+  | { type: 'injected-context'; runId: string; text: string; threadId?: string }
   | { type: 'error'; message: string; threadId?: string }
   /** Ack that a mid-turn supplement was persisted / handed to the harness. */
   | { type: 'steer-accepted'; text: string; mode: 'live' | 'queued'; threadId?: string }
@@ -201,6 +202,8 @@ export interface ActiveRunEvent {
   finishedAt?: string
   durationMs?: number
   error?: string
+  /** Prompt injection snapshot for the activity accordion viewer. */
+  injectedContext?: string
   threadId?: string
 }
 
@@ -299,6 +302,7 @@ export interface HistoryMessage {
     finishedAt?: number
     durationMs?: number
     error?: string
+    injectedContext?: string
     steps: ActivityStepEvent['step'][]
   }
   /** Absolute index in durable `session.messages` (feedback fallback). */

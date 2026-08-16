@@ -101,6 +101,8 @@ export interface RouteContext {
   webRunId?: string
   /** Live tool activity callback for web chat (Agim Agent harness). */
   onToolActivity?: import('./types.js').AgentSendOpts['onToolActivity']
+  /** Prompt-injection snapshot for the web activity accordion. */
+  onInjectedContext?: import('./types.js').AgentSendOpts['onInjectedContext']
   /** Portal workspace directory for this web turn. */
   workspacePath?: string
 }
@@ -913,7 +915,26 @@ export async function callAgentWithHistory(
     traceId: ctx.traceId,
     webRunId: ctx.webRunId,
     onToolActivity: ctx.onToolActivity,
+    onInjectedContext: ctx.onInjectedContext,
   })
+
+  // CLI / non-Agim adapters: system prompt is opaque to us, but ephemeral
+  // headers (skills / focus / loop / persona) are already in wirePrompt —
+  // surface that snapshot for the web inject viewer.
+  if (
+    ctx.onInjectedContext
+    && ephemeralContext
+    && !agent.handlesEphemeralContext
+  ) {
+    try {
+      ctx.onInjectedContext(
+        [
+          '## Ephemeral context (this turn)',
+          ephemeralContext,
+        ].join('\n\n'),
+      )
+    } catch { /* viewer is best-effort */ }
+  }
 
   return (async function* (): AsyncGenerator<string> {
     let fullResponse = ''

@@ -47,7 +47,8 @@ export function slimActivitySteps<T extends { preview?: string }>(steps: T[]): T
 
 export function slimHistoryMessage(message: ChatMessage): ChatMessage {
   const activity = message.activity
-  if (!activity?.steps?.length) return message
+  if (!activity) return message
+  if (!activity.steps?.length) return message
   const steps = slimActivitySteps(activity.steps)
   if (steps === activity.steps) return message
   const nextActivity: PersistedChatActivity = { ...activity, steps }

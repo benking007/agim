@@ -439,6 +439,7 @@ export async function handleClientMessage(
               type: 'injected-context',
               runId: snap.runId,
               text: snap.injectedContext,
+              threadId: sessionThreadId,
             })
           },
         }

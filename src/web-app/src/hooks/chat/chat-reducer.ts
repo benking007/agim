@@ -926,6 +926,9 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
             status: 'running',
             startedAt: a.startedAt,
             steps: msg.activity?.steps ?? [],
+            ...(msg.activity?.injectedContext
+              ? { injectedContext: msg.activity.injectedContext }
+              : {}),
           })
           if (currentReplyId == null) currentReplyId = msg.id
         }
@@ -1061,9 +1064,11 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         runId: a.runId,
         replyId: s.currentReplyId,
       })
+      if (idx < 0) idx = findRunningActivityIndex(messages)
       if (idx < 0 && s.currentReplyId) {
         idx = messages.findIndex((m) => m.id === s.currentReplyId)
       }
+      if (idx < 0) idx = lastAssistantIndex(messages)
       if (idx < 0) return s
       const msg = messages[idx]
       if (!msg) return s

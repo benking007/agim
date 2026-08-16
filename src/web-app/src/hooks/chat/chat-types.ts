@@ -81,6 +81,8 @@ export interface ChatActivity {
   durationMs?: number
   outputChars?: number
   error?: string
+  /** Prompt injection snapshot (system + ephemeral) for the accordion viewer. */
+  injectedContext?: string
   steps: ChatActivityStep[]
 }
 

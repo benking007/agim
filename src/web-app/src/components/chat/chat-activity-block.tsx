@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { ActivityStepIcon } from '@/components/chat/activity-step-icon'
+import { InjectedContextDetails } from '@/components/chat/injected-context-details'
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
 import { formatCollapsedRunSummary } from '@/lib/collapsed-run-summary'
 import { isTodoActivityStep } from '@/lib/activity-todo'
@@ -255,7 +256,10 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
 
       {open && (
         <div className="mt-1.5 space-y-1 border-l border-border/80 pl-3">
-          {stepCount === 0 && (
+          {activity.injectedContext?.trim() ? (
+            <InjectedContextDetails text={activity.injectedContext} />
+          ) : null}
+          {stepCount === 0 && !activity.injectedContext?.trim() && (
             <p className="text-xs text-text-muted">
               {running
                 ? t('chat.activityWaitingSteps', {

@@ -99,6 +99,7 @@ export type ChatAction =
       finishedAt?: number
       durationMs?: number
       error?: string
+      injectedContext?: string
       threadId?: string
     }
   | { kind: 'AGENTS'; agents: string[] }
@@ -127,6 +128,7 @@ export type ChatAction =
       error?: string
     }
   | { kind: 'ACTIVITY_STEP'; runId: string; step: ChatActivityStep }
+  | { kind: 'INJECTED_CONTEXT'; runId: string; text: string }
   | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
 
@@ -541,6 +543,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         finishedAt,
         durationMs: a.durationMs ?? (finishedAt != null ? Math.max(0, finishedAt - startedAt) : undefined),
         error: a.error,
+        ...(a.injectedContext ? { injectedContext: a.injectedContext } : {}),
         steps: a.steps,
       }
       let messages = [...s.messages]
@@ -1049,6 +1052,31 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         runId: a.runId || base.runId,
         status: base.status === 'running' ? 'running' : base.status,
         steps,
+      })
+      return { ...s, messages }
+    }
+    case 'INJECTED_CONTEXT': {
+      let messages = s.messages
+      let idx = findActivityMessageIndex(messages, {
+        runId: a.runId,
+        replyId: s.currentReplyId,
+      })
+      if (idx < 0 && s.currentReplyId) {
+        idx = messages.findIndex((m) => m.id === s.currentReplyId)
+      }
+      if (idx < 0) return s
+      const msg = messages[idx]
+      if (!msg) return s
+      const base: ChatActivity = msg.activity ?? {
+        runId: a.runId,
+        status: 'running',
+        startedAt: Date.now(),
+        steps: [],
+      }
+      messages = withActivityAt(messages, idx, {
+        ...base,
+        runId: a.runId || base.runId,
+        injectedContext: a.text,
       })
       return { ...s, messages }
     }

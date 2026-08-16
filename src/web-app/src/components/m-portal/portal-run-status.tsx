@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { ActivityStepIcon } from '@/components/chat/activity-step-icon'
+import { InjectedContextDetails } from '@/components/chat/injected-context-details'
 import type { ChatActivity, ChatActivityStep } from '@/hooks/use-chat'
 import { formatCollapsedRunSummary } from '@/lib/collapsed-run-summary'
 import { isTodoActivityStep } from '@/lib/activity-todo'
@@ -113,6 +114,8 @@ export function PortalRunStatus({
   const running = streaming || activity?.status === 'running'
   const failed = activity?.status === 'error'
   const hasSteps = (activity?.steps.length ?? 0) > 0
+  const hasInjected = !!(activity?.injectedContext?.trim())
+  const hasDetails = hasSteps || hasInjected
   // Auto-hint expand when there are steps to inspect; default collapsed.
   const [open, setOpen] = useState(false)
 
@@ -151,8 +154,8 @@ export function PortalRunStatus({
     doneSummary = `${t('chat.activityWorked', { defaultValue: 'Worked' })} · ${duration}`
   }
 
-  const canExpandWhileRunning = running && hasSteps
-  const showDoneSummary = !running && !!activity && (hasSteps || failed)
+  const canExpandWhileRunning = running && hasDetails
+  const showDoneSummary = !running && !!activity && (hasDetails || failed)
   const collapsedSummary = activity ? formatCollapsedRunSummary(activity) : ''
   const runningLabel = collapsedSummary
     || `${t('chat.activityRunning', { defaultValue: 'Running' })}...`
@@ -255,7 +258,13 @@ export function PortalRunStatus({
           'ml-1 space-y-1.5 border-l pl-3',
           dark ? 'border-zinc-800' : 'border-zinc-200',
         )}>
-          {activity.steps.length === 0 && (
+          {activity.injectedContext?.trim() ? (
+            <InjectedContextDetails
+              text={activity.injectedContext}
+              dark={dark}
+            />
+          ) : null}
+          {activity.steps.length === 0 && !activity.injectedContext?.trim() && (
             <p className="text-[11px] text-zinc-500">
               {running
                 ? t('chat.portal.waitingSteps')

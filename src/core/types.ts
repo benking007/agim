@@ -44,6 +44,11 @@ export interface PersistedChatActivity {
   finishedAt?: number
   durationMs?: number
   error?: string
+  /**
+   * Wire-only prompt injection snapshot for this turn (system + ephemeral
+   * headers). Shown in the activity accordion; not part of chat history.
+   */
+  injectedContext?: string
   steps: Array<{
     id: string
     kind: 'tool' | 'skill' | 'status' | 'approval' | 'ask' | 'agent' | 'reflect'
@@ -598,6 +603,11 @@ export interface AgentSendOpts {
   /** Live tool / skill activity for the web chat accordion. Fired by adapters
    *  that observe tool dispatch (currently Agim Agent / native harness). */
   onToolActivity?: (step: ToolActivityStep) => void
+  /**
+   * Snapshot of prompt injection for this turn (system prompt + ephemeral
+   * headers). Web chat stores it on the run accordion for operator inspection.
+   */
+  onInjectedContext?: (text: string) => void
 }
 
 /** One live activity step pushed to the web chat UI (P1 activity-step). */

@@ -938,6 +938,22 @@ export class NativeAgentAdapter implements AgentAdapter {
       ),
       { enabled: !!opts?.stepReflect, modelReasoning: !!binding.model.reasoning },
     )
+    const ephemeralContext = opts?.ephemeralContext?.trim() ?? ''
+    // Web accordion: dump system + ephemeral injection once per turn.
+    if (opts?.onInjectedContext) {
+      const parts: string[] = []
+      if (systemPrompt?.trim()) {
+        parts.push('## System prompt', systemPrompt.trim())
+      }
+      if (ephemeralContext) {
+        parts.push('## Ephemeral context (this turn)', ephemeralContext)
+      }
+      if (parts.length > 0) {
+        try {
+          opts.onInjectedContext(parts.join('\n\n'))
+        } catch { /* viewer is best-effort */ }
+      }
+    }
     const harness = new AgentHarness({
       env,
       session,
@@ -948,7 +964,6 @@ export class NativeAgentAdapter implements AgentAdapter {
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(this.deps.streamOptions ? { streamOptions: this.deps.streamOptions } : {}),
     })
-    const ephemeralContext = opts?.ephemeralContext?.trim() ?? ''
     /** Mid-turn soft steers (goal critic) — injected only via the context hook,
      *  never appended as durable user messages. */
     let ephemeralSteer = opts?.stepReflect ? formatStepReflectSteer() : ''

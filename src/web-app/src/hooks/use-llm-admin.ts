@@ -285,3 +285,11 @@ export function useMcpHealth() {
     onSuccess: () => qc.invalidateQueries({ queryKey: mcpKeys.all }),
   })
 }
+
+export function useMcpReload() {
+  const qc = useQueryClient()
+  return useMutation<{ connected: number }, Error, void>({
+    mutationFn: () => client.post('/api/mcp/reload'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: mcpKeys.all }),
+  })
+}

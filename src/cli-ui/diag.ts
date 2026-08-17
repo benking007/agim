@@ -115,7 +115,7 @@ export async function runDiagMcp(): Promise<number> {
   }
   const { loadFromConfig: loadMcp, connectAll, describeRegistry, closeAll } =
     await import('../core/llm/mcp-registry.js')
-  loadMcp(cfg)
+  await loadMcp(cfg)
   try {
     const r = await connectAll()
     const snap = describeRegistry()

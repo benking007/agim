@@ -27,6 +27,7 @@
     "stt": "Speech-to-text",
     "mobile": "Mobile",
     "agimSkills": "agim Skills",
+    "tools": "Tools & Plugins",
     "advanced": "Advanced",
     "observability": "Observability",
     "policy": "Policy",
@@ -818,14 +819,14 @@
     "removeGroup": "Remove provider \"{{title}}\"",
     "pinging": "pinging…",
     "setKeyFirst": "set API key first",
-  "pingHint": "send a tiny chat probe",
-  "errorDialog": {
-    "title": "Probe failed",
-    "description": "Backend {{backend}} returned an error.",
-    "defaultHint": "Check the API key, Base URL, and model name. Details are below.",
-    "temperatureHint": "This model does not accept the temperature parameter. Agim now sends temperature only when you explicitly configure it; run the probe again."
-  },
-  "removeConfirm": "Remove API \"{{name}}\"? Role bindings and API key will be cleared.",
+    "pingHint": "send a tiny chat probe",
+    "errorDialog": {
+      "title": "Probe failed",
+      "description": "Backend {{backend}} returned an error.",
+      "defaultHint": "Check the API key, Base URL, and model name. Details are below.",
+      "temperatureHint": "This model does not accept the temperature parameter. Agim now sends temperature only when you explicitly configure it; run the probe again."
+    },
+    "removeConfirm": "Remove API \"{{name}}\"? Role bindings and API key will be cleared.",
     "removeGroupConfirm": "Remove provider \"{{title}}\" and its {{count}} model(s)? Role bindings and API keys will be cleared.",
     "removedToast": "Removed (also cleared {{count}} role binding(s)).",
     "removedGroupToast": "Removed \"{{title}}\" ({{count}} model(s), cleared {{roles}} role binding(s)).",
@@ -1196,5 +1197,44 @@
     "binsLabel": "Required bins:",
     "envLabel": "Required env:",
     "none": "none"
+  },
+  "tools": {
+    "title": "Tools & Plugins",
+    "subtitle": "Only checked packs are injected into Agim Agent turns (tool list + system prompt). Core tools stay always on.",
+    "savedToast": "Tool packs saved — takes effect on the next turn",
+    "mcpSavedToast": "Plugin state updated and reloaded",
+    "mcpReloaded": "MCP registry reloaded",
+    "alwaysOn": "Always on",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "coreHeading": "Core (locked)",
+    "coreTitle": "Filesystem / web / exec / Agim built-ins",
+    "coreHint": "Read/write/edit files, web fetch/search, agim_exec, Skills/memos/subagents, and related base tools.",
+    "core": {
+      "fs": "agim_read_file / write / edit / list / glob / grep",
+      "web": "agim_web_fetch / web_search",
+      "exec": "agim_exec (approval-gated)",
+      "agim": "mcp__agim__* (Skills / memory / subagents / Loop)",
+      "todo": "agim_todo_write / plan-exit"
+    },
+    "packsHeading": "Optional tool packs",
+    "packsHint": "Enable as needed. Unchecked packs are omitted from the model tool list and system prompt.",
+    "packs": {
+      "git": {
+        "label": "Git",
+        "desc": "Structured git status / diff / commit (no force-push)."
+      },
+      "codingGate": {
+        "label": "Quality gate",
+        "desc": "Biome diagnostics, test suites, lint+typecheck+test gate. Best for Node repos like this one."
+      }
+    },
+    "mcpHeading": "External MCP plugins",
+    "mcpHint": "Shares config with the MCP Servers page. Checking sets enabled=true and reloads immediately.",
+    "mcpEmpty": "No external MCP servers configured yet.",
+    "manageMcp": "Manage MCP servers",
+    "reloadMcp": "Reload",
+    "mcpConnected": "Connected · {{count}} tools",
+    "mcpRuntimeUnknown": "Enabled (runtime not connected)"
   }
 }

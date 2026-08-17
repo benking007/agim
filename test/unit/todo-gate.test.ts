@@ -38,8 +38,12 @@ describe('todo-gate', () => {
     expect(isTodoGateExemptTool('native_read_file')).toBe(true)
     expect(isTodoGateExemptTool('agim_todo_write')).toBe(true)
     expect(isTodoGateExemptTool('mcp__agim__ask_user')).toBe(true)
+    expect(isTodoGateExemptTool('agim_git_status')).toBe(true)
+    expect(isTodoGateExemptTool('agim_diagnostics')).toBe(true)
     expect(isTodoGateExemptTool('agim_exec')).toBe(false)
     expect(isTodoGateExemptTool('agim_write_file')).toBe(false)
+    expect(isTodoGateExemptTool('agim_git_commit')).toBe(false)
+    expect(isTodoGateExemptTool('agim_quality_gate')).toBe(false)
   })
 
   it('blocks mutations without a checklist and allows after write', async () => {

@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Native `agim_edit_file`**: Agim Agent FS tools now include exact
+  string replace (same semantics as CLI `agim_edit` / MCP edit). Prefer
+  it over whole-file `agim_write_file` for small surgical changes. Plan
+  mode denies edit alongside write/exec.
+- **Tools & Plugins settings** (`/settings/tools`): checkbox-enable
+  optional packs (`git`, `codingGate`) and MCP plugins; enabled ones
+  are injected into Agim Agent tool lists + system prompt on the next
+  turn. Core fs / web (`agim_web_fetch` / `agim_web_search`) / exec /
+  agim tools stay always on (`toolPacks.web` in older configs is ignored).
+- **Coding tools**: `agim_git_{status,diff,log,add,commit}`,
+  `agim_diagnostics` (Biome JSON), `agim_test_run`, `agim_quality_gate`
+  (lint/typecheck/test or full `verify:release`). Read git + diagnostics
+  are plan/HITL-safe; mutations stay approval-gated.
+- **Coding-ops builtin skills**: `git-workflow`, `coding-verify`,
+  `systemd-ops`, `python-ruff`, `playwright-mcp`, and `exec-sandbox`
+  for host/git/systemd/Python/UI/sandbox workflows (see AGENTS.md).
+- **`agim setup mcp` Playwright preset** plus
+  `scripts/coding-env-host-bootstrap.sh` (uv, ruff, bwrap, Chromium,
+  wire `mcpServers.playwright`).
+- **Fix `agim setup mcp health` / diag MCP**: await `loadFromConfig`
+  before `connectAll` (was a fire-and-forget race that reported
+  Connected: no / 0 tools).
 - **Scheduled Loop wake-ups (R6 minimal)**: a `/cron` prompt starting with
   `loop:` starts or resumes a Loop on a dedicated `cron:<id>` thread
   (Job Board + optional webhook). Both hard fields are required — the

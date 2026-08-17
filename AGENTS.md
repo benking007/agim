@@ -62,3 +62,46 @@ Web-console-only is valid — empty `messengers` no longer blocks `agim start`. 
 ### Native addon
 
 `better-sqlite3` requires a C++ build toolchain (gcc/g++, make, python3). These are typically pre-installed on the VM.
+
+### Coding-environment skills (Agim Agent)
+
+Builtin skills under `src/core/skills/builtin/` for AI coding ops (activate via skill discovery / `read_skill` when relevant):
+
+| Skill | Purpose |
+|------|---------|
+| `git-workflow` | status/diff baseline, conventional commits, safe rollback; no force-push |
+| `coding-verify` | edit → diagnostics → test → quality_gate → git commit loop |
+| `systemd-ops` | `systemctl` / `journalctl`, restart + `/health`, hung PID handling |
+| `python-ruff` | Ruff check/format gate for **Python** host projects (not this TS repo) |
+| `playwright-mcp` | Wire `@playwright/mcp` into `~/.agim` MCP config for UI smoke tests |
+| `exec-sandbox` | bubblewrap / `AGIM_EXEC_SANDBOX` defaults and smoke checks |
+
+Native Agim filesystem tools include `agim_edit_file` (exact string replace) in addition to `agim_write_file`. Prefer edit for small surgical changes.
+
+Coding tools (first-class, prefer over `agim_exec`):
+
+| Tool | Role |
+|------|------|
+| `agim_git_status` / `diff` / `log` | read-only git |
+| `agim_git_add` / `commit` | staged commit (no push; approval-gated) |
+| `agim_diagnostics` | Biome JSON findings for a path |
+| `agim_test_run` | structured `npm test` / web / node / sqlite |
+| `agim_quality_gate` | lint + typecheck + test (or `full` → verify:release) |
+
+Operators enable optional packs (`git`, `codingGate`) under **Settings → Tools & Plugins** (`/settings/tools`). Unchecked packs are omitted from the Agim Agent tool list and system prompt. Core fs / web (`agim_web_fetch` / `agim_web_search`) / exec / `mcp__agim__*` stay always on.
+
+Exec isolation: when bubblewrap is installed, unset `AGIM_EXEC_SANDBOX` defaults toward sandbox-on for `agim_exec` / writes; set `AGIM_EXEC_SANDBOX=off` only when intentionally unconfined. See builtin skill `exec-sandbox`.
+
+### Host bootstrap (P0/P1 tools)
+
+On a coding host (or this Cloud VM), install uv/ruff/bwrap + wire Playwright MCP:
+
+```bash
+bash scripts/coding-env-host-bootstrap.sh
+# restart agim, then: agim setup mcp health playwright
+```
+
+- Does **not** overwrite an existing `git config --global user.*` (Cloud Agents keep signed identity). On a blank Agim box you may set `Agim Agent` / `agim@local`.
+- `agim setup mcp add` now offers a **Playwright** preset.
+- systemd ops skill applies on real systemd hosts; this Cloud container often has no PID 1 systemd bus.
+- This repo already has `.github/workflows/ci.yml` (Biome/Bun), not a Python Ruff CI.

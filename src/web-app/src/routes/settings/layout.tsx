@@ -54,6 +54,7 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     tabs: [
       // P1 follow-up — agim SKILL.md editor.
       { to: 'agim-skills', i18nKey: 'tabs.agimSkills', mounted: true },
+      { to: 'tools',       i18nKey: 'tabs.tools',      mounted: true },
       { to: 'mcp',         i18nKey: 'tabs.mcp',        mounted: true },
       { to: 'advanced',    i18nKey: 'tabs.advanced',   mounted: true },
     ],

@@ -30,9 +30,10 @@ describe('setup-mcp — internal helpers', () => {
     expect(slug.length).toBeGreaterThan(0)
   })
 
-  it('PRESETS includes filesystem / github / postgres / brave + 2 custom', () => {
+  it('PRESETS includes filesystem / playwright / github / postgres / brave + 2 custom', () => {
     const labels = _internal.PRESETS.map((p) => p.label.toLowerCase())
     expect(labels.some((l) => l.startsWith('filesystem'))).toBe(true)
+    expect(labels.some((l) => l.startsWith('playwright'))).toBe(true)
     expect(labels.some((l) => l.startsWith('github'))).toBe(true)
     expect(labels.some((l) => l.startsWith('postgres'))).toBe(true)
     expect(labels.some((l) => l.startsWith('custom http'))).toBe(true)

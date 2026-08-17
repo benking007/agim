@@ -14,10 +14,11 @@
 //
 // Tools shipped here:
 //   * agim_read_file(path, max_bytes?)
-//   * native_write_file(path, content, mode?)
-//   * native_list_dir(path, max_entries?)
-//   * native_glob(pattern, root?, max_results?)
-//   * native_grep(pattern, path?, glob?, output_mode?, max_matches?, case_insensitive?)
+//   * agim_write_file(path, content, mode?)
+//   * agim_edit_file(path, old_string, new_string, replace_all?)
+//   * agim_list_dir(path, max_entries?)
+//   * agim_glob(pattern, root?, max_results?)
+//   * agim_grep(pattern, path?, glob?, output_mode?, max_matches?, case_insensitive?)
 //
 // Per-tool wall-clock: each handler races against AGIM_NATIVE_FS_TIMEOUT_MS
 // (default 60_000). Honors the loop AbortSignal too.
@@ -49,6 +50,7 @@ const DEFAULT_GREP_MAX_MATCHES = 200
 const FS_TOOL_NAMES = [
   'agim_read_file',
   'agim_write_file',
+  'agim_edit_file',
   'agim_list_dir',
   'agim_glob',
   'agim_grep',
@@ -82,7 +84,7 @@ export function getFsTools(): ToolDef[] {
         'Write or overwrite a UTF-8 text file. Default max 1MB. When the exec sandbox is on, ' +
         'writes stay inside the workspace unless AGIM_NATIVE_FS_RESTRICT=0. Set ' +
         'AGIM_NATIVE_FS_RESTRICT=1 to also confine reads. Sensitive paths are always denied. ' +
-        'Creates parent directories as needed.',
+        'Creates parent directories as needed. Prefer agim_edit_file for small surgical changes.',
       parameters: {
         type: 'object',
         properties: {
@@ -91,6 +93,27 @@ export function getFsTools(): ToolDef[] {
           mode: { type: 'string', enum: ['overwrite', 'append'], description: 'overwrite (default) or append.' },
         },
         required: ['path', 'content'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'agim_edit_file',
+      description:
+        'Edit a UTF-8 text file by exact string replacement (old_string → new_string). Prefer this ' +
+        'over agim_write_file for small surgical changes. Fails if old_string is missing or appears ' +
+        'more than once unless replace_all=true. Same path/sandbox rules as agim_write_file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'File path.' },
+          old_string: { type: 'string', description: 'Exact text to replace (must match file contents).' },
+          new_string: { type: 'string', description: 'Replacement text.' },
+          replace_all: {
+            type: 'boolean',
+            description: 'Replace every occurrence. Default false; repeated matches require this or more context.',
+          },
+        },
+        required: ['path', 'old_string', 'new_string'],
         additionalProperties: false,
       },
     },
@@ -182,6 +205,7 @@ async function runOne(
   switch (name) {
     case 'agim_read_file': return runReadFile(args, ctx)
     case 'agim_write_file': return runWriteFile(args, ctx)
+    case 'agim_edit_file': return runEditFile(args, ctx)
     case 'agim_list_dir': return runListDir(args, ctx)
     case 'agim_glob': return runGlob(args, ctx, signal)
     case 'agim_grep': return runGrep(args, ctx, signal)
@@ -343,6 +367,56 @@ async function runWriteFile(args: Record<string, unknown>, ctx: FsContext): Prom
     }
   } catch (err) {
     return { text: `write_file failed: ${errMsg(err)}`, isError: true, source: 'fs' }
+  }
+}
+
+async function runEditFile(args: Record<string, unknown>, ctx: FsContext): Promise<DispatcherResult> {
+  warnWriteUnconfinedIfSandbox()
+  const path = typeof args.path === 'string' ? args.path : ''
+  const oldString = typeof args.old_string === 'string' ? args.old_string : ''
+  const newString = typeof args.new_string === 'string' ? args.new_string : ''
+  if (!path) return { text: 'path required', isError: true, source: 'fs' }
+  if (!oldString) return { text: 'old_string required', isError: true, source: 'fs' }
+
+  const read = await runReadFile({ path, max_bytes: 8 * 1024 * 1024 }, ctx)
+  if (read.isError) return read
+  if (read.text.startsWith('[truncated:')) {
+    return { text: 'edit refused: file is too large for exact replacement', isError: true, source: 'fs' }
+  }
+
+  const occurrences = countOccurrences(read.text, oldString)
+  if (occurrences === 0) {
+    return { text: 'edit failed: old_string not found', isError: true, source: 'fs' }
+  }
+  const replaceAll = args.replace_all === true
+  if (occurrences > 1 && !replaceAll) {
+    return {
+      text: `edit failed: old_string appears ${occurrences} times; provide more context or set replace_all=true`,
+      isError: true,
+      source: 'fs',
+    }
+  }
+  const content = replaceAll
+    ? read.text.split(oldString).join(newString)
+    : read.text.replace(oldString, newString)
+  const wrote = await runWriteFile({ path, content }, ctx)
+  if (wrote.isError) return wrote
+  return {
+    text: `edited ${path} (${replaceAll ? occurrences : 1} replacement${(replaceAll ? occurrences : 1) === 1 ? '' : 's'})`,
+    isError: false,
+    source: 'fs',
+  }
+}
+
+function countOccurrences(value: string, needle: string): number {
+  if (!needle) return 0
+  let count = 0
+  let start = 0
+  while (true) {
+    const idx = value.indexOf(needle, start)
+    if (idx === -1) return count
+    count += 1
+    start = idx + needle.length
   }
 }
 

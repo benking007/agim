@@ -100,9 +100,8 @@ async function dispatchNative(
     case 'bash':
       return execDispatcher(opts)(call, signal, { traceId: opts.reqId })
     case 'write':
-      return fsDispatcher(opts)(call, signal, { traceId: opts.reqId })
     case 'edit':
-      return runEditFile(args, opts, signal)
+      return fsDispatcher(opts)(call, signal, { traceId: opts.reqId })
   }
 }
 
@@ -123,47 +122,6 @@ function execDispatcher(opts: NativeToolRpcOptions): ToolDispatcher {
 
 function fsDispatcher(opts: NativeToolRpcOptions): ToolDispatcher {
   return buildFsDispatcher({ cwd: cwdFor(opts) })
-}
-
-async function runEditFile(
-  args: JsonObject,
-  opts: NativeToolRpcOptions,
-  signal: AbortSignal,
-): Promise<DispatcherResult> {
-  const path = stringArg(args.path)
-  const oldString = stringArg(args.old_string)
-  const newString = stringArg(args.new_string)
-  if (!path) return { text: 'path required', isError: true, source: 'fs' }
-  if (!oldString) return { text: 'old_string required', isError: true, source: 'fs' }
-  const d = fsDispatcher(opts)
-  const read = await d(
-    { id: `${opts.reqId ?? 'native-tool'}:read`, name: 'agim_read_file', arguments: { path, max_bytes: 8 * 1024 * 1024 } },
-    signal,
-    { traceId: opts.reqId },
-  )
-  if (read.isError) return read
-  if (read.text.startsWith('[truncated:')) {
-    return { text: 'edit refused: file is too large for exact replacement', isError: true, source: 'fs' }
-  }
-
-  const occurrences = countOccurrences(read.text, oldString)
-  if (occurrences === 0) return { text: 'edit failed: old_string not found', isError: true, source: 'fs' }
-  const replaceAll = args.replace_all === true
-  if (occurrences > 1 && !replaceAll) {
-    return {
-      text: `edit failed: old_string appears ${occurrences} times; provide more context or set replace_all=true`,
-      isError: true,
-      source: 'fs',
-    }
-  }
-  const content = replaceAll
-    ? read.text.split(oldString).join(newString)
-    : read.text.replace(oldString, newString)
-  return d(
-    { id: `${opts.reqId ?? 'native-tool'}:write`, name: 'agim_write_file', arguments: { path, content } },
-    signal,
-    { traceId: opts.reqId },
-  )
 }
 
 function dispatchResult(result: DispatcherResult): NativeToolRpcResult {
@@ -232,18 +190,6 @@ function cwdFor(opts: NativeToolRpcOptions): string {
 
 function stringArg(value: unknown): string {
   return typeof value === 'string' ? value : ''
-}
-
-function countOccurrences(value: string, needle: string): number {
-  if (!needle) return 0
-  let count = 0
-  let start = 0
-  while (true) {
-    const idx = value.indexOf(needle, start)
-    if (idx === -1) return count
-    count += 1
-    start = idx + needle.length
-  }
 }
 
 function isJsonObject(value: unknown): value is JsonObject {

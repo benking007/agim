@@ -63,6 +63,7 @@ export function assembleToolsForPi(opts: AgentSendOpts | undefined, sessionId: s
     },
     advertisePlanExit: !!(planThreadKey && effectivePlanModeOn(planThreadKey)),
     agimCtx,
+    // Packs resolved inside assembleNativeTools from live config when omitted.
   })
 
   let tools = assembled.tools

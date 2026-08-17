@@ -88,6 +88,8 @@ Coding tools (first-class, prefer over `agim_exec`):
 | `agim_test_run` | structured `npm test` / web / node / sqlite |
 | `agim_quality_gate` | lint + typecheck + test (or `full` → verify:release) |
 
+Operators enable optional packs under **Settings → Tools & Plugins** (`/settings/tools`). Unchecked packs are omitted from the Agim Agent tool list and system prompt. Core fs/exec/`mcp__agim__*` stay always on.
+
 Exec isolation: when bubblewrap is installed, unset `AGIM_EXEC_SANDBOX` defaults toward sandbox-on for `agim_exec` / writes; set `AGIM_EXEC_SANDBOX=off` only when intentionally unconfined. See builtin skill `exec-sandbox`.
 
 ### Host bootstrap (P0/P1 tools)

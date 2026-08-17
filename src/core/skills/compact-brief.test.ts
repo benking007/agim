@@ -51,5 +51,6 @@ describe('shippedSkillBrief', () => {
     expect(shippedSkillBrief('agim-memory')).toBe('长期事实记忆(5W1H)')
     expect(shippedSkillBrief('coding-verify')).toBe('编码循环(编辑→诊断→测试→门禁)')
     expect(shippedSkillBrief('tdd-workflow')).toBe('TDD工作流(新功能/修复/重构)')
+    expect(shippedSkillBrief('fin-data-dossier')).toBe('综合查询入口("看看X")')
   })
 })

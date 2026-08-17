@@ -719,6 +719,19 @@ body
     expect(summary).not.toContain('Third sentence')
   })
 
+  it('known-name table briefs workspace skills without frontmatter brief', () => {
+    writeSkill(wsRoot, 'fin-data-dossier', `---
+name: fin-data-dossier
+description: 综述类查询的统一入口——很长的触发说明不应出现在注入行。
+---
+body
+`)
+    invalidateSkillsCache()
+    const summary = buildSkillsSummary()
+    expect(summary).toContain('- fin-data-dossier: 综合查询入口("看看X")')
+    expect(summary).not.toContain('很长的触发说明')
+  })
+
   it('frontmatter brief wins over description heuristic', () => {
     writeSkill(wsRoot, 'briefed', `---
 name: briefed

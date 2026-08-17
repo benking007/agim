@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **config-store multi-process lock reclaim**: stale-lock cleanup no longer
+  blind-deletes a lock another waiter just acquired (compare-and-rename),
+  which could drop concurrent `updateConfigObject` fields and flake the
+  publish gate (`serializes updates from independent processes`).
+
 ### Added
 
 - **Native `agim_edit_file`**: Agim Agent FS tools now include exact

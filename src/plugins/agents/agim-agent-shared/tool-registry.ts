@@ -42,6 +42,8 @@ import {
   getCodingGateTools,
   CODING_READ_SAFE,
 } from '../../../core/llm/coding-gate-dispatcher.js'
+import type { ResolvedToolPacks } from '../../../core/llm/tool-packs.js'
+import { resolveToolPacksFromLiveConfig } from '../../../core/llm/tool-packs.js'
 
 /** One tool source: defs advertised + dispatcher + concurrency-safe names.
  *  `parallelSafe` lists ONLY genuinely read-only / pure / order-independent
@@ -68,6 +70,11 @@ export interface AssembleOpts {
   advertisePlanExit: boolean
   /** agim (mcp__agim__*) dispatcher context. */
   agimCtx: Parameters<typeof buildAgimDispatcher>[0]
+  /**
+   * Optional native tool packs. When omitted, resolved from live config
+   * (`toolPacks`) so Settings toggles apply on the next turn.
+   */
+  toolPacks?: ResolvedToolPacks
 }
 
 export interface AssembledTools {
@@ -137,16 +144,33 @@ export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
   // Source order == dispatch precedence. Built-ins first so a stray MCP tool
   // sharing a native name can't shadow it; external MCP is appended last
   // (below, separately) so it never wins a collision against a first-party tool.
+  const packs = opts.toolPacks ?? resolveToolPacksFromLiveConfig()
   const sources: ToolSource[] = [
     { tools: getBuiltinTools(), dispatch: buildBuiltinDispatcher(), parallelSafe: BUILTIN_SAFE },
     { tools: getFsTools(), dispatch: buildFsDispatcher({ cwd: opts.cwd }), parallelSafe: FS_SAFE },
-    { tools: getGitTools(), dispatch: buildGitDispatcher({ cwd: opts.cwd }), parallelSafe: GIT_SAFE },
-    {
+  ]
+  if (packs.git) {
+    sources.push({
+      tools: getGitTools(),
+      dispatch: buildGitDispatcher({ cwd: opts.cwd }),
+      parallelSafe: GIT_SAFE,
+    })
+  }
+  if (packs.codingGate) {
+    sources.push({
       tools: getCodingGateTools(),
       dispatch: buildCodingGateDispatcher({ cwd: opts.cwd }),
       parallelSafe: CODING_SAFE,
-    },
-    { tools: getWebTools(), dispatch: buildWebDispatcher(), parallelSafe: WEB_SAFE },
+    })
+  }
+  if (packs.web) {
+    sources.push({
+      tools: getWebTools(),
+      dispatch: buildWebDispatcher(),
+      parallelSafe: WEB_SAFE,
+    })
+  }
+  sources.push(
     { tools: getExecTools(), dispatch: buildExecDispatcher({ cwd: opts.cwd, rpcCtx: opts.rpcCtx }), parallelSafe: EMPTY },
     { tools: getTodoTools(), dispatch: buildTodoDispatcher(opts.todoThreadKey), parallelSafe: EMPTY },
     // Plan-exit: dispatcher ALWAYS wired (self-refuses off plan mode); tool
@@ -157,7 +181,7 @@ export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
       parallelSafe: EMPTY,
     },
     { tools: getAgimTools(), dispatch: buildAgimDispatcher(opts.agimCtx), parallelSafe: AGIM_SAFE },
-  ]
+  )
 
   // External MCP — a dynamic partition. Always serial (unknown side effects),
   // sorted by name for prefix-cache stability across server-set changes.

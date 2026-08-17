@@ -158,6 +158,7 @@ const router = createBrowserRouter([
       { path: 'admins',     lazy: lazy(() => import('@/routes/settings/admins')) },
       { path: 'workspaces', lazy: lazy(() => import('@/routes/settings/workspaces')) },
       { path: 'llm',          lazy: lazy(() => import('@/routes/settings/llm')) },
+      { path: 'tools',        lazy: lazy(() => import('@/routes/settings/tools')) },
       { path: 'mcp',          lazy: lazy(() => import('@/routes/settings/mcp')) },
       { path: 'native-agent', element: <Navigate to="/settings/llm" replace /> },
       // v1.2.126 — web_search provider chain + per-provider API keys.

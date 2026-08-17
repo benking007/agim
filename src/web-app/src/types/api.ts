@@ -851,6 +851,24 @@ export interface AppConfig {
     financeAgent?: string
     dataAgent?: string
   }
+  /**
+   * Optional Agim Agent tool packs (Settings → Tools & Plugins).
+   * Absent → legacy all-on. Per-key defaults when present: git/web on, codingGate off.
+   */
+  toolPacks?: {
+    git?: boolean
+    codingGate?: boolean
+    web?: boolean
+  }
+  /** External MCP servers (also toggled on Tools & Plugins). */
+  mcpServers?: Array<{
+    name: string
+    command?: string
+    args?: string[]
+    url?: string
+    enabled?: boolean
+    [key: string]: unknown
+  }>
   webPort?: number
   /** First-run wizard: operator chose "skip for now". */
   setupSkipped?: boolean

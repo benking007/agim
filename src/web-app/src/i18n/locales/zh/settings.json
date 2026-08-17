@@ -27,6 +27,7 @@
     "stt": "语音转写",
     "mobile": "手机端",
     "agimSkills": "agim Skills",
+    "tools": "工具与插件",
     "advanced": "高级",
     "observability": "观测",
     "policy": "策略",
@@ -818,14 +819,14 @@
     "removeGroup": "删除供应商「{{title}}」",
     "pinging": "探测中…",
     "setKeyFirst": "请先设置 API Key",
-  "pingHint": "发送一次小型 chat 探测",
-  "errorDialog": {
-    "title": "探测失败",
-    "description": "后端 {{backend}} 返回了错误。",
-    "defaultHint": "请检查 API Key、Base URL 与模型名称；错误详情如下。",
-    "temperatureHint": "该模型不接受 temperature 参数。Agim 现在只会在你显式配置 temperature 时发送它；请重新探测一次。"
-  },
-  "removeConfirm": "删除 API \"{{name}}\"？角色绑定与 API Key 将被清除。",
+    "pingHint": "发送一次小型 chat 探测",
+    "errorDialog": {
+      "title": "探测失败",
+      "description": "后端 {{backend}} 返回了错误。",
+      "defaultHint": "请检查 API Key、Base URL 与模型名称；错误详情如下。",
+      "temperatureHint": "该模型不接受 temperature 参数。Agim 现在只会在你显式配置 temperature 时发送它；请重新探测一次。"
+    },
+    "removeConfirm": "删除 API \"{{name}}\"？角色绑定与 API Key 将被清除。",
     "removeGroupConfirm": "删除供应商「{{title}}」及其 {{count}} 个模型？角色绑定与 API Key 将被清除。",
     "removedToast": "已删除（同时清除 {{count}} 个角色绑定）。",
     "removedGroupToast": "已删除「{{title}}」（{{count}} 个模型，清除 {{roles}} 个角色绑定）。",
@@ -1196,5 +1197,47 @@
     "binsLabel": "依赖二进制：",
     "envLabel": "依赖环境变量：",
     "none": "无"
+  },
+  "tools": {
+    "title": "工具与插件",
+    "subtitle": "勾选后才会注入 Agim Agent 对话（工具表 + 系统提示）。核心工具始终开启。",
+    "savedToast": "工具包已保存，下一轮对话生效",
+    "mcpSavedToast": "插件状态已更新并重新加载",
+    "mcpReloaded": "MCP 已重新加载",
+    "alwaysOn": "始终开启",
+    "enabled": "已启用",
+    "disabled": "未启用",
+    "coreHeading": "核心（不可关闭）",
+    "coreTitle": "文件系统 / 执行 / Agim 内置",
+    "coreHint": "读写改文件、agim_exec、Skills/备忘/子代理等底座能力。",
+    "core": {
+      "fs": "agim_read_file / write / edit / list / glob / grep",
+      "exec": "agim_exec（审批）",
+      "agim": "mcp__agim__*（Skills / 记忆 / 子代理 / Loop）",
+      "todo": "agim_todo_write / plan-exit"
+    },
+    "packsHeading": "可选工具包",
+    "packsHint": "按需开启。未勾选的工具不会出现在模型工具表，也不会写入系统提示。",
+    "packs": {
+      "git": {
+        "label": "Git",
+        "desc": "结构化 git 状态 / diff / 提交（不含 force-push）。"
+      },
+      "codingGate": {
+        "label": "质量门禁",
+        "desc": "Biome 诊断、测试套件、lint+typecheck+test 门禁。适合本仓库式 Node 项目。"
+      },
+      "web": {
+        "label": "Web",
+        "desc": "网页抓取与搜索（搜索需在「高级 → Web 搜索」配置密钥）。"
+      }
+    },
+    "mcpHeading": "外部 MCP 插件",
+    "mcpHint": "与「MCP 服务器」页共用配置。勾选即 enabled=true，并立刻 reload。",
+    "mcpEmpty": "尚未配置外部 MCP。",
+    "manageMcp": "管理 MCP 服务器",
+    "reloadMcp": "重新加载",
+    "mcpConnected": "已连接 · {{count}} 工具",
+    "mcpRuntimeUnknown": "已启用（运行时未连接）"
   }
 }

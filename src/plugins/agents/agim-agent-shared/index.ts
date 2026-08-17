@@ -14,6 +14,11 @@ import { AGIM_BGJOB_WRAPPER_EXPR } from '../../../core/agent-cwd.js'
 import { type LlmProvider, getAnyProvider, getProvider } from '../../../core/llm/index.js'
 import { describeRegistry as describeMcpRegistry } from '../../../core/llm/mcp-registry.js'
 import {
+  describeEnabledToolPacks,
+  planModeReadToolsHint,
+  resolveToolPacksFromLiveConfig,
+} from '../../../core/llm/tool-packs.js'
+import {
   describePolicy,
   type ApprovalMode,
   type PolicyApprovalGateConfig,
@@ -106,11 +111,20 @@ export function buildSystemPrompt(
   runtimeLines.push('')
   lines.push(...runtimeLines)
 
+  const packs = resolveToolPacksFromLiveConfig()
+  const packLines = describeEnabledToolPacks(packs)
+
   if (isPlanModeOn(threadKey)) {
+    const denyExtra = [
+      packs.git ? 'agim_git_add/commit' : null,
+      packs.codingGate ? 'agim_test_run and agim_quality_gate' : null,
+    ].filter(Boolean).join(', ')
     lines.push(
       '⚠ Plan mode is ACTIVE',
-      '  - You MUST produce a read-only plan; agim_write_file, agim_edit_file, agim_exec, agim_git_add/commit, agim_test_run and agim_quality_gate are HARD-BLOCKED.',
-      '  - Use read tools freely: agim_read_file / agim_list_dir / agim_glob / agim_grep / agim_git_status / agim_git_diff / agim_diagnostics / agim_web_fetch / agim_web_search.',
+      `  - You MUST produce a read-only plan; agim_write_file, agim_edit_file, agim_exec`
+        + (denyExtra ? `, ${denyExtra}` : '')
+        + ' are HARD-BLOCKED.',
+      `  - Use read tools freely: ${planModeReadToolsHint(packs)}.`,
       '  - When the plan is ready, call agim_exit_plan_mode({ plan }) so the user can approve or reject it.',
       '',
     )
@@ -120,10 +134,9 @@ export function buildSystemPrompt(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
     '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict',
     '  - native filesystem tools: agim_read_file, agim_write_file, agim_edit_file, agim_list_dir, agim_glob, agim_grep — prefer agim_edit_file for small surgical edits; reads may use absolute paths by default; writes/edits stay in the workspace when the exec sandbox is on (set AGIM_NATIVE_FS_RESTRICT=1 to confine reads too, or =0 to unconfine writes; sensitive paths always denied)',
-    '  - coding tools: agim_git_status/diff/log (read), agim_git_add/commit (approval); agim_diagnostics (Biome); agim_test_run; agim_quality_gate (lint+typecheck+test). Prefer these over raw agim_exec for git/verify.',
-    '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
+    ...packLines,
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
-    '  - External MCP servers configured by the operator:',
+    '  - External MCP servers (enabled in Settings → Tools & Plugins / MCP):',
     externalMcp,
     '',
     'Agim Skills system-prompt injection:',

@@ -268,6 +268,16 @@ export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
    *  to the native agent. */
   mcpServers: z.array(mcpServerSchema).optional(),
   /**
+   * Optional Agim Agent tool packs (Settings → Tools & Plugins).
+   * Absent object → legacy all-on. Per-key defaults when object exists:
+   * git/web on, codingGate off.
+   */
+  toolPacks: z.object({
+    git: z.boolean().optional(),
+    codingGate: z.boolean().optional(),
+    web: z.boolean().optional(),
+  }).passthrough().optional(),
+  /**
    * Specialty profiles for non-Agim CLI agents (call_agents routing).
    * Sparse overrides of builtin defaults — see `src/core/agent-profiles.ts`.
    */

@@ -73,7 +73,22 @@ Builtin skills under `src/core/skills/builtin/` for AI coding ops (activate via 
 | `systemd-ops` | `systemctl` / `journalctl`, restart + `/health`, hung PID handling |
 | `python-ruff` | Ruff check/format gate for **Python** host projects (not this TS repo) |
 | `playwright-mcp` | Wire `@playwright/mcp` into `~/.agim` MCP config for UI smoke tests |
+| `exec-sandbox` | bubblewrap / `AGIM_EXEC_SANDBOX` defaults and smoke checks |
 
 Native Agim filesystem tools include `agim_edit_file` (exact string replace) in addition to `agim_write_file`. Prefer edit for small surgical changes.
 
-Exec isolation: when bubblewrap is installed, unset `AGIM_EXEC_SANDBOX` defaults toward sandbox-on for `agim_exec` / writes; set `AGIM_EXEC_SANDBOX=off` only when intentionally unconfined. Playwright MCP, ruff/uv installs, and host systemd units are **operator host** concerns — this repo already has `.github/workflows/ci.yml` (Biome/Bun), not a Python Ruff CI.
+Exec isolation: when bubblewrap is installed, unset `AGIM_EXEC_SANDBOX` defaults toward sandbox-on for `agim_exec` / writes; set `AGIM_EXEC_SANDBOX=off` only when intentionally unconfined. See builtin skill `exec-sandbox`.
+
+### Host bootstrap (P0/P1 tools)
+
+On a coding host (or this Cloud VM), install uv/ruff/bwrap + wire Playwright MCP:
+
+```bash
+bash scripts/coding-env-host-bootstrap.sh
+# restart agim, then: agim setup mcp health playwright
+```
+
+- Does **not** overwrite an existing `git config --global user.*` (Cloud Agents keep signed identity). On a blank Agim box you may set `Agim Agent` / `agim@local`.
+- `agim setup mcp add` now offers a **Playwright** preset.
+- systemd ops skill applies on real systemd hosts; this Cloud container often has no PID 1 systemd bus.
+- This repo already has `.github/workflows/ci.yml` (Biome/Bun), not a Python Ruff CI.

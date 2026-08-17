@@ -35,6 +35,12 @@ const PRESETS: ServerPreset[] = [
     hint: 'Will prompt for the directory to expose.',
   },
   {
+    label: 'Playwright (browser navigate/click/assert; needs Chromium via playwright install)',
+    transport: 'stdio',
+    command: 'npx', args: ['-y', '@playwright/mcp@latest'],
+    hint: 'Run `npx playwright install chromium` once if browsers are missing.',
+  },
+  {
     label: 'GitHub (issues, PRs, code search; needs GITHUB_PERSONAL_ACCESS_TOKEN env)',
     transport: 'stdio',
     command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'],
@@ -288,7 +294,7 @@ async function healthAction(maybeName?: string): Promise<number> {
   const {
     loadFromConfig: loadMcp, connectAll, describeRegistry, closeAll,
   } = await import('../core/llm/mcp-registry.js')
-  loadMcp(cfg)
+  await loadMcp(cfg)
   try {
     await connectAll()
     const snap = describeRegistry()

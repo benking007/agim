@@ -11,8 +11,14 @@ All notable changes to this project will be documented in this file.
   it over whole-file `agim_write_file` for small surgical changes. Plan
   mode denies edit alongside write/exec.
 - **Coding-ops builtin skills**: `git-workflow`, `systemd-ops`,
-  `python-ruff`, and `playwright-mcp` for host/git/systemd/Python UI
-  quality workflows (see AGENTS.md).
+  `python-ruff`, `playwright-mcp`, and `exec-sandbox` for host/git/
+  systemd/Python/UI/sandbox workflows (see AGENTS.md).
+- **`agim setup mcp` Playwright preset** plus
+  `scripts/coding-env-host-bootstrap.sh` (uv, ruff, bwrap, Chromium,
+  wire `mcpServers.playwright`).
+- **Fix `agim setup mcp health` / diag MCP**: await `loadFromConfig`
+  before `connectAll` (was a fire-and-forget race that reported
+  Connected: no / 0 tools).
 - **Scheduled Loop wake-ups (R6 minimal)**: a `/cron` prompt starting with
   `loop:` starts or resumes a Loop on a dedicated `cron:<id>` thread
   (Job Board + optional webhook). Both hard fields are required — the

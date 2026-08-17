@@ -21,19 +21,17 @@ import { describeError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
 import type { AppConfig } from '@/types/api'
 
-type PackId = 'git' | 'codingGate' | 'web'
+type PackId = 'git' | 'codingGate'
 
 const PACKS: Array<{ id: PackId; tools: string }> = [
   { id: 'git', tools: 'agim_git_status / diff / log / add / commit' },
   { id: 'codingGate', tools: 'agim_diagnostics / test_run / quality_gate' },
-  { id: 'web', tools: 'agim_web_fetch / web_search' },
 ]
 
 /** UI defaults when toolPacks exists but a key is missing. */
 const PACK_DEFAULTS: Record<PackId, boolean> = {
   git: true,
   codingGate: false,
-  web: true,
 }
 
 function resolvePack(cfg: AppConfig | undefined, id: PackId): boolean {
@@ -59,6 +57,7 @@ export default function SettingsToolsRoute(): JSX.Element {
   const coreTools = useMemo(
     () => [
       t('tools.core.fs'),
+      t('tools.core.web'),
       t('tools.core.exec'),
       t('tools.core.agim'),
       t('tools.core.todo'),
@@ -70,13 +69,12 @@ export default function SettingsToolsRoute(): JSX.Element {
     const prev = cfg?.toolPacks && typeof cfg.toolPacks === 'object' ? { ...cfg.toolPacks } : {
       git: true,
       codingGate: true,
-      web: true,
     }
-    // First explicit edit: materialize all keys so defaults stick.
+    // First explicit edit: materialize optional pack keys so defaults stick.
+    // Do not persist deprecated `web` — web tools are always on.
     const next = {
       git: typeof prev.git === 'boolean' ? prev.git : PACK_DEFAULTS.git,
       codingGate: typeof prev.codingGate === 'boolean' ? prev.codingGate : PACK_DEFAULTS.codingGate,
-      web: typeof prev.web === 'boolean' ? prev.web : PACK_DEFAULTS.web,
       [id]: enabled,
     }
     try {

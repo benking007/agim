@@ -1208,10 +1208,11 @@
     "enabled": "已启用",
     "disabled": "未启用",
     "coreHeading": "核心（不可关闭）",
-    "coreTitle": "文件系统 / 执行 / Agim 内置",
-    "coreHint": "读写改文件、agim_exec、Skills/备忘/子代理等底座能力。",
+    "coreTitle": "文件系统 / Web / 执行 / Agim 内置",
+    "coreHint": "读写改文件、网页抓取与搜索、agim_exec、Skills/备忘/子代理等底座能力。",
     "core": {
       "fs": "agim_read_file / write / edit / list / glob / grep",
+      "web": "agim_web_fetch / web_search",
       "exec": "agim_exec（审批）",
       "agim": "mcp__agim__*（Skills / 记忆 / 子代理 / Loop）",
       "todo": "agim_todo_write / plan-exit"
@@ -1226,10 +1227,6 @@
       "codingGate": {
         "label": "质量门禁",
         "desc": "Biome 诊断、测试套件、lint+typecheck+test 门禁。适合本仓库式 Node 项目。"
-      },
-      "web": {
-        "label": "Web",
-        "desc": "网页抓取与搜索（搜索需在「高级 → Web 搜索」配置密钥）。"
       }
     },
     "mcpHeading": "外部 MCP 插件",

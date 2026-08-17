@@ -270,11 +270,12 @@ export const configSchema = z.preprocess(stripRetiredAcpKeys, z.object({
   /**
    * Optional Agim Agent tool packs (Settings → Tools & Plugins).
    * Absent object → legacy all-on. Per-key defaults when object exists:
-   * git/web on, codingGate off.
+   * git on, codingGate off. `web` is deprecated/ignored (web tools always on).
    */
   toolPacks: z.object({
     git: z.boolean().optional(),
     codingGate: z.boolean().optional(),
+    /** @deprecated Ignored — web tools are always enabled. */
     web: z.boolean().optional(),
   }).passthrough().optional(),
   /**

@@ -163,13 +163,12 @@ export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
       parallelSafe: CODING_SAFE,
     })
   }
-  if (packs.web) {
-    sources.push({
-      tools: getWebTools(),
-      dispatch: buildWebDispatcher(),
-      parallelSafe: WEB_SAFE,
-    })
-  }
+  // Web is core (always on) — not gated by toolPacks.
+  sources.push({
+    tools: getWebTools(),
+    dispatch: buildWebDispatcher(),
+    parallelSafe: WEB_SAFE,
+  })
   sources.push(
     { tools: getExecTools(), dispatch: buildExecDispatcher({ cwd: opts.cwd, rpcCtx: opts.rpcCtx }), parallelSafe: EMPTY },
     { tools: getTodoTools(), dispatch: buildTodoDispatcher(opts.todoThreadKey), parallelSafe: EMPTY },

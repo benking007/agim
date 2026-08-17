@@ -858,6 +858,7 @@ export interface AppConfig {
   toolPacks?: {
     git?: boolean
     codingGate?: boolean
+    /** @deprecated Ignored — web tools are always enabled. */
     web?: boolean
   }
   /** External MCP servers (also toggled on Tools & Plugins). */

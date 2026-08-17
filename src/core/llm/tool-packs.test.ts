@@ -19,30 +19,30 @@ describe('tool-packs', () => {
     expect(resolveToolPacks(null)).toEqual({ ...TOOL_PACK_LEGACY_ALL_ON })
   })
 
-  it('partial object fills defaults (codingGate off)', () => {
+  it('partial object fills defaults (codingGate off); deprecated web ignored', () => {
     expect(resolveToolPacks({})).toEqual({ ...TOOL_PACK_DEFAULTS })
-    expect(resolveToolPacks({ git: false })).toEqual({
+    expect(resolveToolPacks({ git: false, web: false })).toEqual({
       git: false,
       codingGate: false,
-      web: true,
     })
   })
 
-  it('describeEnabledToolPacks omits disabled packs', () => {
-    const lines = describeEnabledToolPacks({ git: true, codingGate: false, web: false })
+  it('describeEnabledToolPacks omits disabled packs (web is core, not listed)', () => {
+    const lines = describeEnabledToolPacks({ git: true, codingGate: false })
     expect(lines.some((l) => l.includes('git'))).toBe(true)
     expect(lines.some((l) => l.includes('quality_gate') || l.includes('diagnostics'))).toBe(false)
     expect(lines.some((l) => l.includes('web_fetch'))).toBe(false)
   })
 
-  it('planModeReadToolsHint follows packs', () => {
-    const hint = planModeReadToolsHint({ git: false, codingGate: true, web: false })
+  it('planModeReadToolsHint always includes web; follows optional packs', () => {
+    const hint = planModeReadToolsHint({ git: false, codingGate: true })
     expect(hint).toContain('agim_diagnostics')
+    expect(hint).toContain('agim_web_fetch')
+    expect(hint).toContain('agim_web_search')
     expect(hint).not.toContain('agim_git_status')
-    expect(hint).not.toContain('agim_web_fetch')
   })
 
-  it('assembleNativeTools respects toolPacks filter', () => {
+  it('assembleNativeTools respects toolPacks filter; web always on', () => {
     const base = {
       cwd: '/tmp',
       todoThreadKey: 't',
@@ -55,18 +55,19 @@ describe('tool-packs', () => {
     }
     const off = assembleNativeTools({
       ...base,
-      toolPacks: { git: false, codingGate: false, web: false },
+      toolPacks: { git: false, codingGate: false },
     })
     const names = new Set(off.tools.map((t) => t.name))
     expect(names.has('agim_read_file')).toBe(true)
     expect(names.has('agim_exec')).toBe(true)
+    expect(names.has('agim_web_fetch')).toBe(true)
+    expect(names.has('agim_web_search')).toBe(true)
     expect(names.has('agim_git_status')).toBe(false)
     expect(names.has('agim_diagnostics')).toBe(false)
-    expect(names.has('agim_web_fetch')).toBe(false)
 
     const on = assembleNativeTools({
       ...base,
-      toolPacks: { git: true, codingGate: true, web: true },
+      toolPacks: { git: true, codingGate: true },
     })
     const onNames = new Set(on.tools.map((t) => t.name))
     expect(onNames.has('agim_git_status')).toBe(true)
@@ -74,7 +75,7 @@ describe('tool-packs', () => {
     expect(onNames.has('agim_web_search')).toBe(true)
   })
 
-  it('live config drives assemble when toolPacks omitted', () => {
+  it('live config drives assemble when toolPacks omitted; web ignores false', () => {
     setLiveConfig({
       messengers: [],
       agents: ['agim'],
@@ -94,6 +95,6 @@ describe('tool-packs', () => {
     const names = new Set(assembled.tools.map((t) => t.name))
     expect(names.has('agim_git_status')).toBe(true)
     expect(names.has('agim_diagnostics')).toBe(false)
-    expect(names.has('agim_web_fetch')).toBe(false)
+    expect(names.has('agim_web_fetch')).toBe(true)
   })
 })

@@ -1208,10 +1208,11 @@
     "enabled": "Enabled",
     "disabled": "Disabled",
     "coreHeading": "Core (locked)",
-    "coreTitle": "Filesystem / exec / Agim built-ins",
-    "coreHint": "Read/write/edit files, agim_exec, Skills/memos/subagents, and related base tools.",
+    "coreTitle": "Filesystem / web / exec / Agim built-ins",
+    "coreHint": "Read/write/edit files, web fetch/search, agim_exec, Skills/memos/subagents, and related base tools.",
     "core": {
       "fs": "agim_read_file / write / edit / list / glob / grep",
+      "web": "agim_web_fetch / web_search",
       "exec": "agim_exec (approval-gated)",
       "agim": "mcp__agim__* (Skills / memory / subagents / Loop)",
       "todo": "agim_todo_write / plan-exit"
@@ -1226,10 +1227,6 @@
       "codingGate": {
         "label": "Quality gate",
         "desc": "Biome diagnostics, test suites, lint+typecheck+test gate. Best for Node repos like this one."
-      },
-      "web": {
-        "label": "Web",
-        "desc": "Fetch and search (search keys under Advanced → Web search)."
       }
     },
     "mcpHeading": "External MCP plugins",

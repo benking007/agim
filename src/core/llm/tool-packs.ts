@@ -1,22 +1,26 @@
 // tool-packs — optional Agim Agent tool/plugin packs toggled from Settings.
 //
-// Core surface (builtin / fs / exec / todo / plan-exit / mcp__agim__*) stays
-// always on. Optional packs are filtered out of advertise + dispatch when
-// disabled so the model cannot call them. Defaults preserve pre-pack
+// Core surface (builtin / fs / web / exec / todo / plan-exit / mcp__agim__*)
+// stays always on. Optional packs are filtered out of advertise + dispatch
+// when disabled so the model cannot call them. Defaults preserve pre-pack
 // behavior when `toolPacks` is absent from config.json.
+//
+// Note: `toolPacks.web` in older configs is ignored — web tools are always on.
 
 import { getLiveConfig } from '../live-config.js'
 
-export const TOOL_PACK_IDS = ['git', 'codingGate', 'web'] as const
+export const TOOL_PACK_IDS = ['git', 'codingGate'] as const
 export type ToolPackId = (typeof TOOL_PACK_IDS)[number]
 
-export type ToolPacksConfig = Partial<Record<ToolPackId, boolean>>
+export type ToolPacksConfig = Partial<Record<ToolPackId, boolean>> & {
+  /** @deprecated Ignored — web tools are always enabled. */
+  web?: boolean
+}
 
 /** Defaults when a key is missing but `toolPacks` object exists. */
 export const TOOL_PACK_DEFAULTS: Readonly<Record<ToolPackId, boolean>> = {
   git: true,
   codingGate: false,
-  web: true,
 }
 
 /**
@@ -26,13 +30,11 @@ export const TOOL_PACK_DEFAULTS: Readonly<Record<ToolPackId, boolean>> = {
 export const TOOL_PACK_LEGACY_ALL_ON: Readonly<Record<ToolPackId, boolean>> = {
   git: true,
   codingGate: true,
-  web: true,
 }
 
 export interface ResolvedToolPacks {
   git: boolean
   codingGate: boolean
-  web: boolean
 }
 
 export function resolveToolPacks(raw: ToolPacksConfig | null | undefined): ResolvedToolPacks {
@@ -42,7 +44,6 @@ export function resolveToolPacks(raw: ToolPacksConfig | null | undefined): Resol
   return {
     git: typeof raw.git === 'boolean' ? raw.git : TOOL_PACK_DEFAULTS.git,
     codingGate: typeof raw.codingGate === 'boolean' ? raw.codingGate : TOOL_PACK_DEFAULTS.codingGate,
-    web: typeof raw.web === 'boolean' ? raw.web : TOOL_PACK_DEFAULTS.web,
   }
 }
 
@@ -65,11 +66,6 @@ export function describeEnabledToolPacks(packs: ResolvedToolPacks): string[] {
       '  - coding tools (gate): agim_diagnostics (Biome), agim_test_run, agim_quality_gate (lint+typecheck+test). Prefer these over raw agim_exec for verify.',
     )
   }
-  if (packs.web) {
-    lines.push(
-      '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
-    )
-  }
   return lines
 }
 
@@ -79,9 +75,10 @@ export function planModeReadToolsHint(packs: ResolvedToolPacks): string {
     'agim_list_dir',
     'agim_glob',
     'agim_grep',
+    'agim_web_fetch',
+    'agim_web_search',
   ]
   if (packs.git) parts.push('agim_git_status', 'agim_git_diff')
   if (packs.codingGate) parts.push('agim_diagnostics')
-  if (packs.web) parts.push('agim_web_fetch', 'agim_web_search')
   return parts.join(' / ')
 }

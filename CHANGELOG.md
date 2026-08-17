@@ -11,9 +11,10 @@ All notable changes to this project will be documented in this file.
   it over whole-file `agim_write_file` for small surgical changes. Plan
   mode denies edit alongside write/exec.
 - **Tools & Plugins settings** (`/settings/tools`): checkbox-enable
-  optional packs (`git`, `codingGate`, `web`) and MCP plugins; enabled
-  ones are injected into Agim Agent tool lists + system prompt on the
-  next turn. Core fs/exec/agim tools stay always on.
+  optional packs (`git`, `codingGate`) and MCP plugins; enabled ones
+  are injected into Agim Agent tool lists + system prompt on the next
+  turn. Core fs / web (`agim_web_fetch` / `agim_web_search`) / exec /
+  agim tools stay always on (`toolPacks.web` in older configs is ignored).
 - **Coding tools**: `agim_git_{status,diff,log,add,commit}`,
   `agim_diagnostics` (Biome JSON), `agim_test_run`, `agim_quality_gate`
   (lint/typecheck/test or full `verify:release`). Read git + diagnostics

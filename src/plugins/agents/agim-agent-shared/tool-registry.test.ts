@@ -27,10 +27,10 @@ function baseOpts(overrides: Partial<AssembleOpts> = {}): AssembleOpts {
 describe('assembleNativeTools — single source of truth', () => {
   it('advertises every native source plus the agim tools', () => {
     const { tools } = assembleNativeTools(baseOpts({
-      toolPacks: { git: true, codingGate: true, web: true },
+      toolPacks: { git: true, codingGate: true },
     }))
     const names = new Set(tools.map((t) => t.name))
-    // built-in / fs / git / coding / web / exec / todo / agim representatives
+    // built-in / fs / git / coding / web(core) / exec / todo / agim representatives
     for (const n of [
       'agim_echo', 'agim_now', 'agim_random_uuid',
       'agim_read_file', 'agim_write_file', 'agim_edit_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
@@ -66,7 +66,7 @@ describe('assembleNativeTools — single source of truth', () => {
 describe('assembleNativeTools — per-call concurrency classifier (fail-closed)', () => {
   it('marks read-only / pure tools safe and everything else serial', () => {
     const { isParallelSafe } = assembleNativeTools(baseOpts({
-      toolPacks: { git: true, codingGate: true, web: true },
+      toolPacks: { git: true, codingGate: true },
     }))
     const safe = ['agim_echo', 'agim_now', 'agim_random_uuid',
       'agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep',

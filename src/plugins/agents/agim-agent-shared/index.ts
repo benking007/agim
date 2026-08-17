@@ -134,6 +134,7 @@ export function buildSystemPrompt(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
     '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict',
     '  - native filesystem tools: agim_read_file, agim_write_file, agim_edit_file, agim_list_dir, agim_glob, agim_grep — prefer agim_edit_file for small surgical edits; reads may use absolute paths by default; writes/edits stay in the workspace when the exec sandbox is on (set AGIM_NATIVE_FS_RESTRICT=1 to confine reads too, or =0 to unconfine writes; sensitive paths always denied)',
+    '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
     ...packLines,
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
     '  - External MCP servers (enabled in Settings → Tools & Plugins / MCP):',

@@ -190,10 +190,9 @@ async function acquireConfigLock(
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
-      if (await canReclaimLock(lockPath, staleLockMs)) {
-        await rm(lockPath, { force: true }).catch(() => {})
-        continue
-      }
+      // Compare-and-reclaim (rename snapshot) — never blind-rm a live lock that
+      // another waiter acquired between our stale check and the delete.
+      await tryReclaimLock(lockPath, staleLockMs)
       if (Date.now() >= deadline) throw new ConfigLockTimeoutError(lockPath, timeoutMs)
       await sleep(delayMs)
       delayMs = Math.min(delayMs + 10, 100)
@@ -201,18 +200,54 @@ async function acquireConfigLock(
   }
 }
 
-async function canReclaimLock(lockPath: string, staleLockMs: number): Promise<boolean> {
+/**
+ * Atomically take a reclaimable lock out of the way via rename, then delete.
+ * If another process replaced the lock between snapshot and rename, put it back.
+ */
+async function tryReclaimLock(lockPath: string, staleLockMs: number): Promise<void> {
+  let raw: string
+  let mtimeMs: number
   try {
     const info = await stat(lockPath)
-    if (Date.now() - info.mtimeMs >= staleLockMs) return true
-    const owner = JSON.parse(await readFile(lockPath, 'utf-8')) as { pid?: unknown }
-    return typeof owner.pid === 'number' && !isProcessAlive(owner.pid)
+    mtimeMs = info.mtimeMs
+    raw = await readFile(lockPath, 'utf-8')
   } catch (err) {
-    // The owner may release the lock between our failed open and this check.
-    // There is nothing to reclaim in that case; loop and acquire it normally.
-    // Treating ENOENT as reclaimable can delete a lock created by another waiter.
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
-    return false
+    // Owner released between our failed wx and this check — nothing to reclaim.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    return
+  }
+  if (!isLockReclaimable(raw, mtimeMs, staleLockMs)) return
+
+  const tomb = `${lockPath}.reclaim.${process.pid}.${randomUUID()}`
+  try {
+    await rename(lockPath, tomb)
+  } catch {
+    // Lost the reclaim race (ENOENT) or FS glitch — retry acquire loop.
+    return
+  }
+
+  try {
+    const moved = await readFile(tomb, 'utf-8')
+    if (moved !== raw) {
+      // We picked up a newer lock that appeared under the same path — restore it.
+      await rename(tomb, lockPath).catch(() => {})
+      return
+    }
+  } catch {
+    // Tomb unreadable; drop it so waiters are not wedged.
+  }
+  await rm(tomb, { force: true }).catch(() => {})
+}
+
+function isLockReclaimable(raw: string, mtimeMs: number, staleLockMs: number): boolean {
+  if (Date.now() - mtimeMs >= staleLockMs) return true
+  try {
+    if (!raw.trim()) return true
+    const owner = JSON.parse(raw) as { pid?: unknown }
+    return typeof owner.pid === 'number' && !isProcessAlive(owner.pid)
+  } catch {
+    // Corrupt / partial lock JSON — safe to reclaim.
+    return true
   }
 }
 

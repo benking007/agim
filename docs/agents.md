@@ -69,6 +69,8 @@ For CLI agents, tool calls must carry a live `runId` and `RunContext` so Agim ca
 
 Those proxy tools render an approval card before running the native dispatcher. They also reuse sensitive-path checks, audit records, auto-allow rules, and timeout behavior.
 
+The in-process Agim Agent advertises the same capabilities as native tools: `agim_write_file` and `agim_edit_file` (exact string replace; prefer edit for small changes).
+
 ## Session continuity
 
 Agents with native sessions store one session id per Agim conversation. `/new` clears those native session ids and starts fresh.

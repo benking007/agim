@@ -60,10 +60,11 @@ describe('PlanMode (v1.2.119)', () => {
       }
     })
 
-    it('plan mode ON: agim_write_file + agim_exec appended to denyList', () => {
+    it('plan mode ON: agim_write_file + agim_edit_file + agim_exec appended to denyList', () => {
       process.env.AGIM_NATIVE_PLAN_MODE = '1'
       const p = resolvePolicy()
       expect(p.denyList).toContain('agim_write_file')
+      expect(p.denyList).toContain('agim_edit_file')
       expect(p.denyList).toContain('agim_exec')
     })
 

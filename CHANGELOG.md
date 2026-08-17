@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Native `agim_edit_file`**: Agim Agent FS tools now include exact
+  string replace (same semantics as CLI `agim_edit` / MCP edit). Prefer
+  it over whole-file `agim_write_file` for small surgical changes. Plan
+  mode denies edit alongside write/exec.
+- **Coding-ops builtin skills**: `git-workflow`, `systemd-ops`,
+  `python-ruff`, and `playwright-mcp` for host/git/systemd/Python UI
+  quality workflows (see AGENTS.md).
 - **Scheduled Loop wake-ups (R6 minimal)**: a `/cron` prompt starting with
   `loop:` starts or resumes a Loop on a dedicated `cron:<id>` thread
   (Job Board + optional webhook). Both hard fields are required — the

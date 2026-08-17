@@ -31,7 +31,7 @@ describe('assembleNativeTools — single source of truth', () => {
     // built-in / fs / web / exec / todo / agim representatives
     for (const n of [
       'agim_echo', 'agim_now', 'agim_random_uuid',
-      'agim_read_file', 'agim_write_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
+      'agim_read_file', 'agim_write_file', 'agim_edit_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
       'agim_web_fetch', 'agim_web_search',
       'agim_exec', 'agim_todo_write',
       'mcp__agim__read_skill', 'mcp__agim__save_memo', 'mcp__agim__call_agent',
@@ -70,7 +70,7 @@ describe('assembleNativeTools — per-call concurrency classifier (fail-closed)'
     for (const n of safe) {
       expect(isParallelSafe({ id: 'x', name: n, arguments: {} })).toBe(true)
     }
-    const serial = ['agim_write_file', 'agim_exec', 'agim_sleep_ms', 'agim_todo_write',
+    const serial = ['agim_write_file', 'agim_edit_file', 'agim_exec', 'agim_sleep_ms', 'agim_todo_write',
       'mcp__agim__save_memo', 'mcp__agim__push_message', 'mcp__agim__call_agent',
       'agim_exit_plan_mode']
     for (const n of serial) {

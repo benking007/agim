@@ -29,17 +29,20 @@ describe('fs-dispatcher', () => {
   })
 
   describe('getFsTools / isFsToolName', () => {
-    it('exposes 5 tools with stable names', () => {
+    it('exposes 6 tools with stable names', () => {
       const tools = getFsTools()
       const names = tools.map((t) => t.name).sort()
       expect(names).toEqual([
-        'agim_glob', 'agim_grep', 'agim_list_dir',
+        'agim_edit_file', 'agim_glob', 'agim_grep', 'agim_list_dir',
         'agim_read_file', 'agim_write_file',
       ])
     })
 
-    it('isFsToolName matches the 5 tools', () => {
-      for (const n of ['agim_read_file', 'agim_write_file', 'agim_list_dir', 'agim_glob', 'agim_grep']) {
+    it('isFsToolName matches the 6 tools', () => {
+      for (const n of [
+        'agim_read_file', 'agim_write_file', 'agim_edit_file',
+        'agim_list_dir', 'agim_glob', 'agim_grep',
+      ]) {
         expect(isFsToolName(n)).toBe(true)
       }
       expect(isFsToolName('agim_echo')).toBe(false)
@@ -202,6 +205,78 @@ describe('fs-dispatcher', () => {
         expect(r.isError).toBe(false)
         await rm(outside, { force: true })
       }
+    })
+  })
+
+  describe('edit_file', () => {
+    it('replaces a unique old_string', async () => {
+      const d = buildFsDispatcher({ cwd: workspace })
+      await d(
+        { id: 't', name: 'agim_write_file', arguments: { path: 'edit-me.txt', content: 'hello old world' } },
+        NEVER_ABORT,
+      )
+      const r = await d(
+        {
+          id: 't',
+          name: 'agim_edit_file',
+          arguments: { path: 'edit-me.txt', old_string: 'old', new_string: 'new' },
+        },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(false)
+      expect(r.text).toMatch(/edited/)
+      const readBack = await d(
+        { id: 't', name: 'agim_read_file', arguments: { path: 'edit-me.txt' } },
+        NEVER_ABORT,
+      )
+      expect(readBack.text).toBe('hello new world')
+    })
+
+    it('refuses ambiguous matches unless replace_all', async () => {
+      const d = buildFsDispatcher({ cwd: workspace })
+      await d(
+        { id: 't', name: 'agim_write_file', arguments: { path: 'dup.txt', content: 'aa aa' } },
+        NEVER_ABORT,
+      )
+      const denied = await d(
+        {
+          id: 't',
+          name: 'agim_edit_file',
+          arguments: { path: 'dup.txt', old_string: 'aa', new_string: 'bb' },
+        },
+        NEVER_ABORT,
+      )
+      expect(denied.isError).toBe(true)
+      expect(denied.text).toMatch(/appears 2 times/i)
+      const ok = await d(
+        {
+          id: 't',
+          name: 'agim_edit_file',
+          arguments: { path: 'dup.txt', old_string: 'aa', new_string: 'bb', replace_all: true },
+        },
+        NEVER_ABORT,
+      )
+      expect(ok.isError).toBe(false)
+      const readBack = await d({ id: 't', name: 'agim_read_file', arguments: { path: 'dup.txt' } }, NEVER_ABORT)
+      expect(readBack.text).toBe('bb bb')
+    })
+
+    it('fails when old_string is missing', async () => {
+      const d = buildFsDispatcher({ cwd: workspace })
+      await d(
+        { id: 't', name: 'agim_write_file', arguments: { path: 'miss.txt', content: 'only this' } },
+        NEVER_ABORT,
+      )
+      const r = await d(
+        {
+          id: 't',
+          name: 'agim_edit_file',
+          arguments: { path: 'miss.txt', old_string: 'absent', new_string: 'x' },
+        },
+        NEVER_ABORT,
+      )
+      expect(r.isError).toBe(true)
+      expect(r.text).toMatch(/not found/i)
     })
   })
 

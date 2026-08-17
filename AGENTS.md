@@ -62,3 +62,18 @@ Web-console-only is valid — empty `messengers` no longer blocks `agim start`. 
 ### Native addon
 
 `better-sqlite3` requires a C++ build toolchain (gcc/g++, make, python3). These are typically pre-installed on the VM.
+
+### Coding-environment skills (Agim Agent)
+
+Builtin skills under `src/core/skills/builtin/` for AI coding ops (activate via skill discovery / `read_skill` when relevant):
+
+| Skill | Purpose |
+|------|---------|
+| `git-workflow` | status/diff baseline, conventional commits, safe rollback; no force-push |
+| `systemd-ops` | `systemctl` / `journalctl`, restart + `/health`, hung PID handling |
+| `python-ruff` | Ruff check/format gate for **Python** host projects (not this TS repo) |
+| `playwright-mcp` | Wire `@playwright/mcp` into `~/.agim` MCP config for UI smoke tests |
+
+Native Agim filesystem tools include `agim_edit_file` (exact string replace) in addition to `agim_write_file`. Prefer edit for small surgical changes.
+
+Exec isolation: when bubblewrap is installed, unset `AGIM_EXEC_SANDBOX` defaults toward sandbox-on for `agim_exec` / writes; set `AGIM_EXEC_SANDBOX=off` only when intentionally unconfined. Playwright MCP, ruff/uv installs, and host systemd units are **operator host** concerns — this repo already has `.github/workflows/ci.yml` (Biome/Bun), not a Python Ruff CI.

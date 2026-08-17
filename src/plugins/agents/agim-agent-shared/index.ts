@@ -109,7 +109,7 @@ export function buildSystemPrompt(
   if (isPlanModeOn(threadKey)) {
     lines.push(
       '⚠ Plan mode is ACTIVE',
-      '  - You MUST produce a read-only plan; agim_write_file and agim_exec are HARD-BLOCKED.',
+      '  - You MUST produce a read-only plan; agim_write_file, agim_edit_file and agim_exec are HARD-BLOCKED.',
       '  - Use read tools freely: agim_read_file / agim_list_dir / agim_glob / agim_grep / agim_web_fetch / agim_web_search.',
       '  - When the plan is ready, call agim_exit_plan_mode({ plan }) so the user can approve or reject it.',
       '',
@@ -119,7 +119,7 @@ export function buildSystemPrompt(
   lines.push(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
     '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict',
-    '  - native filesystem tools: agim_read_file, agim_write_file, agim_list_dir, agim_glob, agim_grep — reads may use absolute paths by default; writes stay in the workspace when the exec sandbox is on (set AGIM_NATIVE_FS_RESTRICT=1 to confine reads too, or =0 to unconfine writes; sensitive paths always denied)',
+    '  - native filesystem tools: agim_read_file, agim_write_file, agim_edit_file, agim_list_dir, agim_glob, agim_grep — prefer agim_edit_file for small surgical edits; reads may use absolute paths by default; writes/edits stay in the workspace when the exec sandbox is on (set AGIM_NATIVE_FS_RESTRICT=1 to confine reads too, or =0 to unconfine writes; sensitive paths always denied)',
     '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
     '  - External MCP servers configured by the operator:',
@@ -132,7 +132,7 @@ export function buildSystemPrompt(
     '  - Lead with the conclusion; add steps only when needed. Prefer tool use over guessing.',
     '  - When you need a tool, emit the tool call directly — do not preface with “我将要…”.',
     '  - Never claim “已写好/已执行/已保存” until this turn has received the tool result.',
-    '  - Side-effect tools (agim_write_file / agim_exec / …): pass complete args in one call.',
+    '  - Side-effect tools (agim_write_file / agim_edit_file / agim_exec / …): pass complete args in one call.',
     '  - When uncertain as the parent: call mcp__agim__ask_user(question, choices[]); do not pretend work is done.',
     '  - Subagents must NOT call ask_user / loop_verdict — escalate via FINAL message to the parent.',
     '  - Destructive ops (delete/overwrite/outbound send): state impact, get confirmation first.',
@@ -251,6 +251,7 @@ function splitEnvList(raw: string | undefined): string[] {
  * Exported so the pi-native hard gate and policy gate cannot drift apart. */
 export const PLAN_MODE_DENY_TOOLS: ReadonlySet<string> = new Set([
   'agim_write_file',
+  'agim_edit_file',
   'agim_exec',
 ])
 

@@ -36,6 +36,12 @@ import { buildExecDispatcher, getExecTools } from '../../../core/llm/exec-dispat
 import { buildTodoDispatcher, getTodoTools } from '../../../core/llm/todo-dispatcher.js'
 import { buildPlanExitDispatcher, getPlanExitTools } from '../../../core/llm/plan-exit-dispatcher.js'
 import { buildAgimDispatcher, getAgimTools } from '../../../core/llm/agim-dispatcher.js'
+import { buildGitDispatcher, getGitTools, GIT_READ_SAFE } from '../../../core/llm/git-dispatcher.js'
+import {
+  buildCodingGateDispatcher,
+  getCodingGateTools,
+  CODING_READ_SAFE,
+} from '../../../core/llm/coding-gate-dispatcher.js'
 
 /** One tool source: defs advertised + dispatcher + concurrency-safe names.
  *  `parallelSafe` lists ONLY genuinely read-only / pure / order-independent
@@ -82,6 +88,10 @@ export interface AssembledTools {
 export const BUILTIN_SAFE = new Set(['agim_echo', 'agim_now', 'agim_random_uuid'])
 /** Local read-only FS tools (parallel-safe + HITL-exempt under allow-list). */
 export const FS_SAFE = new Set(['agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep'])
+/** Git read tools (status/diff/log). */
+export const GIT_SAFE = GIT_READ_SAFE
+/** Coding diagnostics (Biome). Test/quality-gate stay serial + approval-gated. */
+export const CODING_SAFE = CODING_READ_SAFE
 /**
  * Outbound web tools. Parallel-safe + HITL-exempt under allow-list.
  * SSRF still denied at the dispatcher (private/link-local/localhost blocked
@@ -100,6 +110,8 @@ const EMPTY: ReadonlySet<string> = new Set()
 export const NATIVE_HITL_EXEMPT: ReadonlySet<string> = new Set([
   ...BUILTIN_SAFE,
   ...FS_SAFE,
+  ...GIT_SAFE,
+  ...CODING_SAFE,
   ...WEB_SAFE,
 ])
 
@@ -110,6 +122,8 @@ export const AGIM_PLAN_MODE_ALLOWED_TOOLS: ReadonlySet<string> = new Set([
   ...BUILTIN_SAFE,
   'agim_sleep_ms',
   ...FS_SAFE,
+  ...GIT_SAFE,
+  ...CODING_SAFE,
   ...WEB_SAFE,
   ...AGIM_SAFE,
   'agim_todo_write',
@@ -126,6 +140,12 @@ export function assembleNativeTools(opts: AssembleOpts): AssembledTools {
   const sources: ToolSource[] = [
     { tools: getBuiltinTools(), dispatch: buildBuiltinDispatcher(), parallelSafe: BUILTIN_SAFE },
     { tools: getFsTools(), dispatch: buildFsDispatcher({ cwd: opts.cwd }), parallelSafe: FS_SAFE },
+    { tools: getGitTools(), dispatch: buildGitDispatcher({ cwd: opts.cwd }), parallelSafe: GIT_SAFE },
+    {
+      tools: getCodingGateTools(),
+      dispatch: buildCodingGateDispatcher({ cwd: opts.cwd }),
+      parallelSafe: CODING_SAFE,
+    },
     { tools: getWebTools(), dispatch: buildWebDispatcher(), parallelSafe: WEB_SAFE },
     { tools: getExecTools(), dispatch: buildExecDispatcher({ cwd: opts.cwd, rpcCtx: opts.rpcCtx }), parallelSafe: EMPTY },
     { tools: getTodoTools(), dispatch: buildTodoDispatcher(opts.todoThreadKey), parallelSafe: EMPTY },

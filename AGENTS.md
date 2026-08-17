@@ -70,12 +70,23 @@ Builtin skills under `src/core/skills/builtin/` for AI coding ops (activate via 
 | Skill | Purpose |
 |------|---------|
 | `git-workflow` | status/diff baseline, conventional commits, safe rollback; no force-push |
+| `coding-verify` | edit → diagnostics → test → quality_gate → git commit loop |
 | `systemd-ops` | `systemctl` / `journalctl`, restart + `/health`, hung PID handling |
 | `python-ruff` | Ruff check/format gate for **Python** host projects (not this TS repo) |
 | `playwright-mcp` | Wire `@playwright/mcp` into `~/.agim` MCP config for UI smoke tests |
 | `exec-sandbox` | bubblewrap / `AGIM_EXEC_SANDBOX` defaults and smoke checks |
 
 Native Agim filesystem tools include `agim_edit_file` (exact string replace) in addition to `agim_write_file`. Prefer edit for small surgical changes.
+
+Coding tools (first-class, prefer over `agim_exec`):
+
+| Tool | Role |
+|------|------|
+| `agim_git_status` / `diff` / `log` | read-only git |
+| `agim_git_add` / `commit` | staged commit (no push; approval-gated) |
+| `agim_diagnostics` | Biome JSON findings for a path |
+| `agim_test_run` | structured `npm test` / web / node / sqlite |
+| `agim_quality_gate` | lint + typecheck + test (or `full` → verify:release) |
 
 Exec isolation: when bubblewrap is installed, unset `AGIM_EXEC_SANDBOX` defaults toward sandbox-on for `agim_exec` / writes; set `AGIM_EXEC_SANDBOX=off` only when intentionally unconfined. See builtin skill `exec-sandbox`.
 

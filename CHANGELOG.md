@@ -10,9 +10,13 @@ All notable changes to this project will be documented in this file.
   string replace (same semantics as CLI `agim_edit` / MCP edit). Prefer
   it over whole-file `agim_write_file` for small surgical changes. Plan
   mode denies edit alongside write/exec.
-- **Coding-ops builtin skills**: `git-workflow`, `systemd-ops`,
-  `python-ruff`, `playwright-mcp`, and `exec-sandbox` for host/git/
-  systemd/Python/UI/sandbox workflows (see AGENTS.md).
+- **Coding tools**: `agim_git_{status,diff,log,add,commit}`,
+  `agim_diagnostics` (Biome JSON), `agim_test_run`, `agim_quality_gate`
+  (lint/typecheck/test or full `verify:release`). Read git + diagnostics
+  are plan/HITL-safe; mutations stay approval-gated.
+- **Coding-ops builtin skills**: `git-workflow`, `coding-verify`,
+  `systemd-ops`, `python-ruff`, `playwright-mcp`, and `exec-sandbox`
+  for host/git/systemd/Python/UI/sandbox workflows (see AGENTS.md).
 - **`agim setup mcp` Playwright preset** plus
   `scripts/coding-env-host-bootstrap.sh` (uv, ruff, bwrap, Chromium,
   wire `mcpServers.playwright`).

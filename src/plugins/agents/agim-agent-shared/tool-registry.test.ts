@@ -32,6 +32,8 @@ describe('assembleNativeTools — single source of truth', () => {
     for (const n of [
       'agim_echo', 'agim_now', 'agim_random_uuid',
       'agim_read_file', 'agim_write_file', 'agim_edit_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
+      'agim_git_status', 'agim_git_diff', 'agim_git_log', 'agim_git_add', 'agim_git_commit',
+      'agim_diagnostics', 'agim_test_run', 'agim_quality_gate',
       'agim_web_fetch', 'agim_web_search',
       'agim_exec', 'agim_todo_write',
       'mcp__agim__read_skill', 'mcp__agim__save_memo', 'mcp__agim__call_agent',
@@ -64,13 +66,16 @@ describe('assembleNativeTools — per-call concurrency classifier (fail-closed)'
     const { isParallelSafe } = assembleNativeTools(baseOpts())
     const safe = ['agim_echo', 'agim_now', 'agim_random_uuid',
       'agim_read_file', 'agim_list_dir', 'agim_glob', 'agim_grep',
+      'agim_git_status', 'agim_git_diff', 'agim_git_log', 'agim_diagnostics',
       'agim_web_fetch', 'agim_web_search',
       'mcp__agim__read_skill', 'mcp__agim__list_skills', 'mcp__agim__search_memos',
       'mcp__agim__memory_list', 'mcp__agim__memory_query']
     for (const n of safe) {
       expect(isParallelSafe({ id: 'x', name: n, arguments: {} })).toBe(true)
     }
-    const serial = ['agim_write_file', 'agim_edit_file', 'agim_exec', 'agim_sleep_ms', 'agim_todo_write',
+    const serial = ['agim_write_file', 'agim_edit_file', 'agim_git_add', 'agim_git_commit',
+      'agim_test_run', 'agim_quality_gate',
+      'agim_exec', 'agim_sleep_ms', 'agim_todo_write',
       'mcp__agim__save_memo', 'mcp__agim__push_message', 'mcp__agim__call_agent',
       'agim_exit_plan_mode']
     for (const n of serial) {

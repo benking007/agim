@@ -109,8 +109,8 @@ export function buildSystemPrompt(
   if (isPlanModeOn(threadKey)) {
     lines.push(
       '⚠ Plan mode is ACTIVE',
-      '  - You MUST produce a read-only plan; agim_write_file, agim_edit_file and agim_exec are HARD-BLOCKED.',
-      '  - Use read tools freely: agim_read_file / agim_list_dir / agim_glob / agim_grep / agim_web_fetch / agim_web_search.',
+      '  - You MUST produce a read-only plan; agim_write_file, agim_edit_file, agim_exec, agim_git_add/commit, agim_test_run and agim_quality_gate are HARD-BLOCKED.',
+      '  - Use read tools freely: agim_read_file / agim_list_dir / agim_glob / agim_grep / agim_git_status / agim_git_diff / agim_diagnostics / agim_web_fetch / agim_web_search.',
       '  - When the plan is ready, call agim_exit_plan_mode({ plan }) so the user can approve or reject it.',
       '',
     )
@@ -120,6 +120,7 @@ export function buildSystemPrompt(
     'Tools available beyond the four native built-ins (echo / now / sleep / random_uuid):',
     '  - agim built-in MCP tools (mcp__agim__*): read_skill, list_skills, save_memo, search_memos, update_memo, delete_memo, push_message, ask_user, call_agent, call_agents, focus_set, focus_on, focus_off, focus_clear, loop_verdict',
     '  - native filesystem tools: agim_read_file, agim_write_file, agim_edit_file, agim_list_dir, agim_glob, agim_grep — prefer agim_edit_file for small surgical edits; reads may use absolute paths by default; writes/edits stay in the workspace when the exec sandbox is on (set AGIM_NATIVE_FS_RESTRICT=1 to confine reads too, or =0 to unconfine writes; sensitive paths always denied)',
+    '  - coding tools: agim_git_status/diff/log (read), agim_git_add/commit (approval); agim_diagnostics (Biome); agim_test_run; agim_quality_gate (lint+typecheck+test). Prefer these over raw agim_exec for git/verify.',
     '  - native web tools: agim_web_fetch, agim_web_search. Private IPs blocked by default.',
     '  - agim_exec(command, timeout_ms?, cwd?): run shell commands. Always approval-gated.',
     '  - External MCP servers configured by the operator:',
@@ -253,6 +254,10 @@ export const PLAN_MODE_DENY_TOOLS: ReadonlySet<string> = new Set([
   'agim_write_file',
   'agim_edit_file',
   'agim_exec',
+  'agim_git_add',
+  'agim_git_commit',
+  'agim_test_run',
+  'agim_quality_gate',
 ])
 
 export function resolvePolicy(threadKey?: string): PolicyApprovalGateConfig {

@@ -10,10 +10,9 @@
 //
 // Three-tier progressive disclosure (modelled on nanobot):
 //
-//   tier 1: name + first-sentence description, injected into every
-//           system prompt as a "skills available" block. Cheap
-//           (~15-30 tokens per skill; full description opt-in via
-//           AGIM_SKILLS_FULL_DESCRIPTIONS=1).
+//   tier 1: name + compact brief, injected into every system prompt
+//           as a "skills available" block. Cheap (~8-15 tokens per
+//           skill; full description opt-in via AGIM_SKILLS_FULL_DESCRIPTIONS=1).
 //   tier 2: full SKILL.md body, fetched on-demand via the
 //           mcp__agim__read_skill MCP tool when the agent decides the
 //           description matches the user's intent.
@@ -46,6 +45,10 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logger as rootLogger } from '../logger.js'
 import { AGIM_HOME } from '../agim-paths.js'
+import { compactSkillBrief, SHORT_ROW_DESCRIPTION_CHARS } from './compact-brief.js'
+import { shippedSkillBrief } from './skill-briefs.js'
+
+export { compactSkillBrief, oneLineDescription, SHORT_ROW_DESCRIPTION_CHARS } from './compact-brief.js'
 
 const log = rootLogger.child({ component: 'skills-loader' })
 
@@ -67,6 +70,8 @@ export const MAX_INJECTED_SKILLS = 32
 export interface SkillMeta {
   name: string
   description: string
+  /** Optional frontmatter `brief:` — wins over shipped/heuristic compact row. */
+  brief?: string
   /** Source: 'workspace' wins shadowing over 'builtin' with the same name. */
   source: 'workspace' | 'builtin'
   /** Absolute path of the skill's directory (parent of SKILL.md). */
@@ -675,13 +680,13 @@ function extractTriggerHint(skills: ReadonlyArray<SkillMeta>): string {
   return parts.join(' · ').slice(0, 240)
 }
 
-/** v1.2.150 — heading text for each cluster bucket. */
+/** Compact section titles: `## Framework (4)`. */
 const BUCKET_HEADINGS: Record<number, string> = {
-  0: 'Framework (agim-* — 长期事实 / 提醒 / 自检 / skill 发现)',
-  1: 'Agim builtin',
-  2: 'ECC harness + methodology picks (recommended)',
-  3: 'Workspace skills (operator-installed business)',
-  4: 'ECC remainder (read full description via mcp__agim__read_skill)',
+  0: 'Framework',
+  1: 'Agim Builtin',
+  2: 'ECC Harness',
+  3: 'Workspace Skills',
+  4: 'ECC Remainder',
 }
 
 /**
@@ -706,57 +711,32 @@ const SKILLS_ROUTING_HEADER: string = [
 ].join('\n')
 
 /**
- * v1.2.151 — Render one skill as a tier-1 row. The body is defensive
- * against malformed YAML block-scalar leakage.
+ * Render one skill as a compact tier-1 row:
+ *   - name: 短标签(可选括号)
  *
- * v1.6.1 — Row descriptions are condensed to the first sentence
- * (SHORT_ROW_DESCRIPTION_CHARS cap) so the injected block stays small
- * even with many skills: a 38-skill install went from ~9 KB to ~3 KB.
- * The full description is still available via mcp__agim__read_skill.
- * Operators who need full descriptions inline can set
- * AGIM_SKILLS_FULL_DESCRIPTIONS=1 to restore the previous behaviour.
+ * Priority: frontmatter `brief` → shipped brief table → compactSkillBrief
+ * heuristic on `description`. Full description via AGIM_SKILLS_FULL_DESCRIPTIONS=1
+ * or mcp__agim__read_skill.
  */
 function renderSkillRow(s: SkillMeta): string {
   const reason = s.available ? '' : ` (unavailable: ${s.unavailableReason ?? 'requires not met'})`
   const flag = s.always ? ' [always]' : ''
   const descClean = (s.description || '').trim()
-  const description = descClean && descClean !== '>-' && descClean !== '|'
-    ? (fullDescriptionsEnabled() ? descClean : oneLineDescription(descClean))
-    : '(no description in SKILL.md — read body via mcp__agim__read_skill)'
+  let description: string
+  if (!descClean || descClean === '>-' || descClean === '|') {
+    description = '(no description in SKILL.md — read body via mcp__agim__read_skill)'
+  } else if (fullDescriptionsEnabled()) {
+    description = descClean
+  } else {
+    description = compactSkillBrief(descClean, s.brief ?? shippedSkillBrief(s.name))
+  }
   return `- ${s.name}: ${description}${reason}${flag}`
 }
-
-/** Hard cap for one-line row descriptions in the injected skills block.
- *  Long descriptions inflate the system-prompt budget for every turn;
- *  the full text stays reachable via mcp__agim__read_skill. */
-export const SHORT_ROW_DESCRIPTION_CHARS = 120
 
 /** Operators with a large skill install can opt back into full inline
  *  descriptions (token cost is theirs to own). */
 export function fullDescriptionsEnabled(): boolean {
   return (process.env.AGIM_SKILLS_FULL_DESCRIPTIONS || '').trim() === '1'
-}
-
-/** Condense a description to its first sentence, capped at
- *  SHORT_ROW_DESCRIPTION_CHARS. Handles Chinese (。！？) and English
- *  (.!?) sentence terminators, then hard-truncates with "…". Never
- *  returns an empty string when the input is non-empty. */
-export function oneLineDescription(desc: string): string {
-  const clean = (desc || '').trim().replace(/\s+/g, ' ')
-  if (!clean) return ''
-  // First sentence. Chinese terminators (。！？) end a sentence with no
-  // following whitespace; English ones (.!?) must be followed by
-  // whitespace/EOF so "v1.2.151" or "e.g." keep going. Take whichever
-  // match ends earliest (a Chinese terminator may appear inside an
-  // English sentence and vice versa).
-  const zh = clean.match(/^.*?[。！？]/)
-  const en = clean.match(/^.*?[.!?](?=\s|$)/)
-  const candidates = [zh?.[0], en?.[0]].filter((m): m is string => Boolean(m))
-  const first = candidates.length > 0
-    ? candidates.sort((a, b) => a.length - b.length)[0].trim()
-    : clean
-  if (first.length <= SHORT_ROW_DESCRIPTION_CHARS) return first
-  return `${first.slice(0, SHORT_ROW_DESCRIPTION_CHARS).trimEnd()}…`
 }
 
 /** Inline `always: true` skill bodies. Shared between override + auto. */
@@ -994,9 +974,12 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
       unavailableReason = `missing env ${missingEnv.map((e) => `\`${e}\``).join(', ')}`
     }
   }
+  const briefRaw = (front.brief || '').trim()
+  const brief = briefRaw ? briefRaw.slice(0, SHORT_ROW_DESCRIPTION_CHARS + 8) : undefined
   return {
     name,
     description,
+    brief,
     source: d.source,
     dir: d.dir,
     always,
@@ -1011,6 +994,8 @@ function parseSkill(d: SkillDiscovered): SkillMeta | null {
 interface Frontmatter {
   name?: string
   description?: string
+  /** Compact inject row; optional. */
+  brief?: string
   always?: string
   /** v1.2.148 — ECC origin tag. Used by the bundled ECC pack so the
    *  `AGIM_INCLUDE_ECC_SKILLS=off` switch can drop them in one place
@@ -1080,6 +1065,7 @@ function extractFrontmatter(body: string): Frontmatter | null {
     }
     if (key === 'name') front.name = value
     else if (key === 'description') front.description = value
+    else if (key === 'brief') front.brief = value
     else if (key === 'always') front.always = value
     else if (key === 'origin') front.origin = value
     else if (key === 'metadata') front.metadataJson = value

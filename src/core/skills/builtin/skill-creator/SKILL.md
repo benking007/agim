@@ -20,7 +20,7 @@ A skill in agim is a directory shipped under one of these roots (workspace shado
 
 ## Core principles (adapted from Anthropic + nanobot)
 
-1. **Be concise.** The summary block (frontmatter `name` + `description`) is injected into **every** turn. Burn that token budget honestly.
+1. **Be concise.** Every turn injects `name` + a compact brief (auto from `description`, or frontmatter `brief:`). Put trigger detail in `description`; keep `brief` ≤ ~36 chars if you set one.
 2. **Trigger phrases in the description.** Write the description so a model can decide whether to load the body without seeing the body. Phrase as "Use when the user asks …".
 3. **Body is read on demand.** Put procedural detail, examples, edge cases, references in the body. The model fetches it via `mcp__agim__read_skill("<name>")` only when the description matched.
 4. **Match degrees of freedom to the task.** High-freedom text (heuristics) for fuzzy tasks; concrete commands / pseudocode for rigid pipelines.
@@ -32,6 +32,7 @@ A skill in agim is a directory shipped under one of these roots (workspace shado
 ---
 name: <kebab-case>
 description: <one-paragraph trigger description. Mention concrete user phrases that should activate this skill. End with key constraints.>
+brief: <optional compact inject row, e.g. A股个股巨潮公告>
 always: false
 metadata:
   agim:

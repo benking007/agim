@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Skills inject rows are compact**: auto system-prompt block now uses
+  short headings (`## Framework (n)` / `Agim Builtin` / `Workspace Skills`
+  / `ECC Harness`) and `name: 短标签` briefs (~36 chars). Shipped
+  framework/builtin/ECC names have curated Chinese briefs; workspace
+  skills compress from `description` (optional frontmatter `brief:`
+  overrides). Full text still via `read_skill` or
+  `AGIM_SKILLS_FULL_DESCRIPTIONS=1`.
+
 ### Fixed
 
 - **config-store multi-process lock reclaim**: stale-lock cleanup no longer

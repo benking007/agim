@@ -21,8 +21,11 @@ import {
 } from '@/lib/api/loop'
 import { openChatWs } from '@/lib/api/ws'
 import { usePortalLoop } from './use-portal-loop'
-import { buildAlignPayload } from './portal-loop-align-payload'
+import { buildAlignPayload, buildAlignStartFollowUp } from './portal-loop-align-payload'
 import { buildLoopReportPrompt } from './portal-loop-report-prompt'
+
+/** Optional follow-up after the current turn becomes idle (e.g. Align → Act Now). */
+export type LoopDockSendOpts = { afterIdle?: string }
 
 /** Max height for the confirm-met summary so long Markdown scrolls inside the dock. */
 export const CONFIRM_MET_SUMMARY_MAX_CLASS = 'max-h-56'
@@ -48,8 +51,12 @@ export interface PortalLoopDockProps {
   /** Approval/Ask dock already open — don't stack Act Now on top. */
   hasBlockingDock?: boolean
   flush?: boolean
-  /** Send a chat/slash message on the user's behalf. */
-  onSend: (text: string) => void
+  /**
+   * Send a chat/slash message on the user's behalf.
+   * `afterIdle` is queued and flushed when the in-flight turn ends
+   * (Align 「确定并开始」uses this to kick call_agents).
+   */
+  onSend: (text: string, opts?: LoopDockSendOpts) => void
   className?: string
 }
 
@@ -71,15 +78,7 @@ function actNowPrompt(loop: LoopStatusDto, zh: boolean, preferredWorker?: string
       ? '请对照目标调用 loop_verdict 完成本轮验收（给出 met / summary；未达标则 gaps + nextDirection）。'
       : 'Call loop_verdict against the objective (met / summary; if unmet: gaps + nextDirection).'
   }
-  const worker = (preferredWorker || '').trim()
-  if (worker) {
-    return zh
-      ? `开始：请拆解任务并用 call_agents 派子代理（优先 agent:"${worker}"），不要自己做调研。`
-      : `Start: decompose and call_agents (prefer agent:"${worker}") this round — do not research alone.`
-  }
-  return zh
-    ? '开始：请拆解任务并用 call_agents 派子代理推进本轮，不要自己做调研。'
-    : 'Start: decompose and call_agents to dispatch Subagents this round — do not research alone.'
+  return buildAlignStartFollowUp({ zh, preferredWorker })
 }
 
 /** Memoized: composer typing must not re-reconcile AligningDock's long Focus body. */
@@ -473,7 +472,7 @@ function AligningDock({
   dark?: boolean
   flush?: boolean
   zh: boolean
-  onSend: (text: string) => void
+  onSend: (text: string, opts?: LoopDockSendOpts) => void
   parentOk?: boolean
   agentId?: string
   workerHint?: string
@@ -500,6 +499,14 @@ function AligningDock({
       ? 'border-zinc-700 bg-zinc-900 text-zinc-100 placeholder:text-zinc-500'
       : 'border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400',
   )
+
+  function confirmAndStart(): void {
+    onSend(buildAlignPayload(objective, exit, body), {
+      // `/loop …` only confirms → planning; queue the Act Now nudge so the
+      // parent turn starts without a second click (button says 并开始).
+      afterIdle: buildAlignStartFollowUp({ zh, preferredWorker: workerHint }),
+    })
+  }
 
   return (
     <div className={cn('relative z-20 pb-1 pt-0', flush ? 'px-0' : 'px-3 sm:px-4', className)}>
@@ -529,7 +536,7 @@ function AligningDock({
               {zh ? '待对焦 — 补充目标与退出条件' : 'Aligning — set objective & exit'}
             </p>
             <p className={cn('truncate text-[11px]', dark ? 'text-zinc-400' : 'text-zinc-500')}>
-              {zh ? '正文可选；确认后才会派子代理' : 'Body optional; Subagents blocked until confirmed'}
+              {zh ? '正文可选；确定后自动开始派工' : 'Body optional; confirm starts dispatch'}
             </p>
           </div>
         </div>
@@ -619,7 +626,7 @@ function AligningDock({
               type="button"
               size="sm"
               disabled={!canConfirm}
-              onClick={() => onSend(buildAlignPayload(objective, exit, body))}
+              onClick={confirmAndStart}
               className="gap-1.5"
             >
               <Compass className="h-3.5 w-3.5" />

@@ -23,6 +23,12 @@ export interface PetTaskItem {
   detail?: string
   /** 0–100 for bgjob progress bar; omit when unknown. */
   progressPct?: number | null
+  /** Chat message id to scroll/evoke when kind=run. */
+  messageId?: string
+  /** ActiveRun id when kind=run. */
+  runId?: string
+  /** Bgjob id when kind=bgjob. */
+  bgjobId?: string
 }
 
 export interface PetAnnounce {
@@ -40,6 +46,8 @@ export interface PortalPetProps {
   /** One-shot completion toast; floats left then clears. */
   announce?: PetAnnounce | null
   onAnnounceDone?: (id: string) => void
+  /** Click a row to surface it in chat / docks / tasks. */
+  onTaskActivate?: (task: PetTaskItem) => void
 }
 
 type Mood = 'idle' | 'busy' | 'happy'
@@ -190,6 +198,7 @@ export function PortalPet({
   tasks = [],
   announce = null,
   onAnnounceDone,
+  onTaskActivate,
 }: PortalPetProps): JSX.Element {
   const { t } = useTranslation()
   const panelId = useId()
@@ -356,34 +365,50 @@ export function PortalPet({
                   )}
                   <ul className="space-y-1">
                     {sec.items.map((item) => (
-                      <li
-                        key={item.id}
-                        className={cn(
-                          'flex items-start gap-2 rounded-xl px-2 py-1.5 text-[11px]',
-                          dark ? 'bg-zinc-900/80' : 'bg-zinc-50',
-                        )}
-                      >
-                        <KindIcon
-                          kind={item.kind}
-                          className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', kindTone(item.kind))}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold">{item.label}</p>
-                          {item.detail && (
-                            <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-400">{item.detail}</p>
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onTaskActivate?.(item)
+                            setOpen(false)
+                          }}
+                          className={cn(
+                            'flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left text-[11px] transition',
+                            dark
+                              ? 'bg-zinc-900/80 hover:bg-zinc-800'
+                              : 'bg-zinc-50 hover:bg-zinc-100',
+                            onTaskActivate && 'cursor-pointer',
                           )}
-                          {item.progressPct != null && item.progressPct >= 0 && (
-                            <div className={cn(
-                              'mt-1.5 h-1 overflow-hidden rounded-full',
-                              dark ? 'bg-zinc-800' : 'bg-zinc-200',
-                            )}>
-                              <div
-                                className="h-full rounded-full bg-violet-500 transition-[width] duration-500"
-                                style={{ width: `${Math.min(100, Math.max(0, item.progressPct))}%` }}
-                              />
-                            </div>
-                          )}
-                        </div>
+                        >
+                          <KindIcon
+                            kind={item.kind}
+                            className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', kindTone(item.kind))}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold">{item.label}</p>
+                            {item.detail && (
+                              <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-400">{item.detail}</p>
+                            )}
+                            {item.progressPct != null && item.progressPct >= 0 && (
+                              <div className={cn(
+                                'mt-1.5 h-1 overflow-hidden rounded-full',
+                                dark ? 'bg-zinc-800' : 'bg-zinc-200',
+                              )}>
+                                <div
+                                  className="h-full rounded-full bg-violet-500 transition-[width] duration-500"
+                                  style={{ width: `${Math.min(100, Math.max(0, item.progressPct))}%` }}
+                                />
+                              </div>
+                            )}
+                            {onTaskActivate && (
+                              <p className="mt-1 text-[9px] font-medium text-teal-500/90">
+                                {t('chat.portal.pet.evokeHint', {
+                                  defaultValue: 'Tap to show in chat',
+                                })}
+                              </p>
+                            )}
+                          </div>
+                        </button>
                       </li>
                     ))}
                   </ul>

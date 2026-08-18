@@ -104,6 +104,12 @@ export type ChatIncoming =
   | ActiveRunEvent
   | { type: 'injected-context'; runId: string; text: string; threadId?: string }
   | { type: 'error'; message: string; threadId?: string }
+  /**
+   * Replayed after history when this thread has no ActiveRun snapshot.
+   * SPA clears stuck currentReplyId / activeRunId so the pet "Running"
+   * badge cannot outlive a factually finished turn.
+   */
+  | { type: 'active-run-gone'; threadId?: string }
   /** Ack that a mid-turn supplement was persisted / handed to the harness. */
   | { type: 'steer-accepted'; text: string; mode: 'live' | 'queued'; threadId?: string }
   /**

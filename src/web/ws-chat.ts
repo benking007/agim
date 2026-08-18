@@ -225,6 +225,11 @@ export async function sendSessionHistory(
       })
     }
   } catch { /* ask bus optional during early boot */ }
+  // Explicit "no live run" so SPA can drop a ghost Running badge / pet
+  // task when the server snapshot was cleared or never existed.
+  if (!active) {
+    sendToClient(ws, { type: 'active-run-gone', threadId })
+  }
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────

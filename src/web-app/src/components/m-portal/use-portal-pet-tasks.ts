@@ -10,6 +10,7 @@ interface UsePortalPetTasksOptions {
   chatMessages: ChatMessage[]
   isTyping: boolean
   currentReplyId: string | null | undefined
+  activeRunId?: string | null
   agentId: string
   pendingApprovals: PendingApproval[]
   pendingAsks: PendingAsk[]
@@ -28,6 +29,7 @@ export function usePortalPetTasks({
   chatMessages,
   isTyping,
   currentReplyId,
+  activeRunId,
   agentId,
   pendingApprovals,
   pendingAsks,
@@ -89,14 +91,28 @@ export function usePortalPetTasks({
         label: msg.agent ? displayAgentName(msg.agent) : t('chat.portal.pet.runLabel'),
         detail: live?.label
           || t('chat.activityRunning', { defaultValue: 'Running' }),
+        messageId: msg.id,
+        runId: msg.activity.runId || undefined,
       })
     }
     if (isTyping && !items.some((i) => i.kind === 'run')) {
       items.push({
-        id: `run-${currentReplyId ?? 'streaming'}`,
+        id: `run-${currentReplyId ?? activeRunId ?? 'streaming'}`,
         kind: 'run',
         label: displayAgentName(agentId),
         detail: t('chat.activityRunning', { defaultValue: 'Running' }),
+        messageId: currentReplyId || undefined,
+        runId: activeRunId || undefined,
+      })
+    } else if (activeRunId && !items.some((i) => i.kind === 'run')) {
+      // Ghost busy: SPA still holds activeRunId but no running accordion
+      // in the transcript — keep a pet row so the user can evoke / resync.
+      items.push({
+        id: `run-${activeRunId}`,
+        kind: 'run',
+        label: displayAgentName(agentId),
+        detail: t('chat.activityRunning', { defaultValue: 'Running' }),
+        runId: activeRunId,
       })
     }
     for (const ap of pendingApprovals) {
@@ -137,6 +153,7 @@ export function usePortalPetTasks({
         label: job.name || job.id,
         detail,
         progressPct,
+        bgjobId: job.id,
       })
     }
     if (demoPet) {
@@ -167,6 +184,7 @@ export function usePortalPetTasks({
     chatMessages,
     isTyping,
     currentReplyId,
+    activeRunId,
     pendingApprovals,
     pendingAsks,
     threadBgjobs,

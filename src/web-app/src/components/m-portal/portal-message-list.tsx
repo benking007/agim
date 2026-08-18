@@ -93,6 +93,8 @@ export const PortalMessageList = memo(function PortalMessageList({
                 key={msg.id}
                 className="mx-auto flex w-[95%] max-w-[95%] min-w-0 flex-col self-center overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
                 data-testid="portal-ai-reply"
+                data-message-id={msg.id}
+                data-run-id={msg.activity?.runId || undefined}
               >
                 <div className="w-full min-w-0 space-y-1.5 overflow-x-auto">
                   {(() => {
@@ -161,7 +163,12 @@ export const PortalMessageList = memo(function PortalMessageList({
         ))}
 
         {streamingFallback && (
-          <div className="mx-auto w-[95%] max-w-[95%] min-w-0 self-center" data-testid="portal-ai-reply-streaming">
+          <div
+            className="mx-auto w-[95%] max-w-[95%] min-w-0 self-center"
+            data-testid="portal-ai-reply-streaming"
+            data-run-fallback="1"
+            data-message-id={currentReplyId || undefined}
+          >
             <PortalRunStatus
               dark={dark}
               agentName={displayAgentName(agentId)}

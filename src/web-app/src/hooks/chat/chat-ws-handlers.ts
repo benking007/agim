@@ -31,6 +31,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'history',
   'history-prepend',
   'active-run',
+  'active-run-gone',
   'chunk',
   'done',
   'run-start',
@@ -286,6 +287,13 @@ export function makeOnIncoming(
         currentReplyIdRef.current = msg.status === 'running'
           ? `reply-restore-${msg.runId}`
           : null
+        return
+      case 'active-run-gone':
+        dispatch({
+          kind: 'ACTIVE_RUN_GONE',
+          ...(msg.threadId ? { threadId: msg.threadId } : {}),
+        })
+        currentReplyIdRef.current = null
         return
       case 'injected-context':
         if (typeof msg.text === 'string' && msg.text && msg.runId) {

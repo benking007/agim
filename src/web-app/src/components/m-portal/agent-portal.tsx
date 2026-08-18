@@ -17,6 +17,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, Mic, Square } from 'lucide-react'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router-dom'
 
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
@@ -94,7 +95,7 @@ import {
 import { PortalSidePanel } from './portal-side-panel'
 import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
 import { PortalWorkspacePicker } from './portal-workspace-picker'
-import { PortalPet } from './portal-pet'
+import { PortalPet, type PetTaskItem } from './portal-pet'
 import {
   skillMarker,
   workspaceFileMarker,
@@ -112,6 +113,7 @@ import { PortalEmptyChat } from './portal-empty-chat'
 import { PortalMessageList } from './portal-message-list'
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const prefs = usePrefs()
   const theme = resolveTheme(prefs.theme)
   const setTheme = (next: Theme): void => {
@@ -123,7 +125,7 @@ export function AgentPortal(): JSX.Element {
   }
 
   const {
-    state, send, steer, stop, stopSubagent, switchAgent, approvalClick, choiceSubmit,
+    state, send, steer, stop, stopSubagent, refreshHistory, switchAgent, approvalClick, choiceSubmit,
     newConversation, switchSession, archiveSession, archiveWorkspace, syncWorkspace, createWorkspace,
     sessions, activeSessionId, clearError,
   } = useChat()
@@ -341,12 +343,36 @@ export function AgentPortal(): JSX.Element {
     chatMessages,
     isTyping,
     currentReplyId: state.currentReplyId,
+    activeRunId: state.activeRunId,
     agentId,
     pendingApprovals: state.pendingApprovals,
     pendingAsks: state.pendingAsks,
     portalThreadId,
     demoPet,
   })
+
+  const highlightRunEl = useCallback((el: HTMLElement): void => {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('ring-2', 'ring-teal-500/70', 'ring-offset-2')
+    window.setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-teal-500/70', 'ring-offset-2')
+    }, 1600)
+  }, [])
+
+  const findRunEl = useCallback((task: PetTaskItem): HTMLElement | null => {
+    const root = messagesListRef.current
+    if (!root) return null
+    if (task.runId) {
+      const byRun = root.querySelector(`[data-run-id="${CSS.escape(task.runId)}"]`)
+      if (byRun instanceof HTMLElement) return byRun
+    }
+    if (task.messageId) {
+      const byMsg = root.querySelector(`[data-message-id="${CSS.escape(task.messageId)}"]`)
+      if (byMsg instanceof HTMLElement) return byMsg
+    }
+    const fallback = root.querySelector('[data-run-fallback="1"]')
+    return fallback instanceof HTMLElement ? fallback : null
+  }, [])
 
   // Lock document scroll so WKWebView / mobile Safari rubber-band the
   // message list only — not the whole portal chrome.
@@ -369,6 +395,48 @@ export function AgentPortal(): JSX.Element {
     followSignal: activityFollowSignal(chatMessages[chatMessages.length - 1]?.activity),
     threadKey: state.clientId,
   })
+
+  const onPetTaskActivate = useCallback((task: PetTaskItem): void => {
+    if (task.kind === 'approval' || task.kind === 'ask') {
+      composerFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      stickToBottom()
+      return
+    }
+    if (task.kind === 'bgjob' && task.bgjobId) {
+      navigate(`/tasks/bgjobs?id=${encodeURIComponent(task.bgjobId)}`)
+      return
+    }
+    // kind=run — surface in the chat stream (scroll, or resync ActiveRun).
+    const el = findRunEl(task)
+    if (el) {
+      highlightRunEl(el)
+      return
+    }
+    toast.message(t('chat.portal.pet.evoking', {
+      defaultValue: 'Restoring in-progress run…',
+    }))
+    refreshHistory()
+    window.setTimeout(() => {
+      const again = findRunEl(task)
+        || messagesListRef.current?.querySelector('[data-run-fallback="1"]')
+        || messagesListRef.current?.querySelector('[data-testid="portal-ai-reply"]:last-of-type')
+      if (again instanceof HTMLElement) {
+        highlightRunEl(again)
+        return
+      }
+      stickToBottom()
+      toast.message(t('chat.portal.pet.evokeMiss', {
+        defaultValue: 'No live run on the server — cleared stuck status if any.',
+      }))
+    }, 450)
+  }, [
+    findRunEl,
+    highlightRunEl,
+    navigate,
+    refreshHistory,
+    stickToBottom,
+    t,
+  ])
 
   const agentsCatalog = useMemo((): AgentCatalogEntry[] => {
     return state.agents.map((id) => {
@@ -904,6 +972,7 @@ export function AgentPortal(): JSX.Element {
                   busy={canStop || threadBgjobs.length > 0 || demoPet}
                   tasks={petTasks}
                   announce={petAnnounce}
+                  onTaskActivate={onPetTaskActivate}
                   onAnnounceDone={(id) => {
                     setPetAnnounce((cur) => (cur?.id === id ? null : cur))
                   }}

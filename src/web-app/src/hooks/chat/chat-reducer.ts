@@ -131,6 +131,8 @@ export type ChatAction =
   | { kind: 'INJECTED_CONTEXT'; runId: string; text: string }
   | { kind: 'RESET_CONVERSATION' }
   | { kind: 'CLEAR_ERROR' }
+  /** Server has no ActiveRun for this thread — drop ghost Running UI. */
+  | { kind: 'ACTIVE_RUN_GONE'; threadId?: string }
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -1108,5 +1110,43 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }
+    case 'ACTIVE_RUN_GONE': {
+      if (!historyBelongsToClient(a.threadId, s.clientId)) return s
+      if (s.currentReplyId == null && s.activeRunId == null) {
+        let touched = false
+        let messages = s.messages
+        for (let i = 0; i < messages.length; i++) {
+          const msg = messages[i]
+          if (msg?.role !== 'assistant' || msg.activity?.status !== 'running') continue
+          messages = withActivityAt(messages, i, finalizeRunningActivity(msg.activity, {
+            status: 'error',
+            error: 'run ended',
+          }))
+          touched = true
+        }
+        return touched ? { ...s, messages } : s
+      }
+      let messages = s.messages
+      const idx = findActivityMessageIndex(messages, {
+        replyId: s.currentReplyId,
+        runId: s.activeRunId,
+      })
+      const targetIdx = idx >= 0 ? idx : findRunningActivityIndex(messages)
+      if (targetIdx >= 0) {
+        const msg = messages[targetIdx]
+        if (msg?.activity && msg.activity.status === 'running') {
+          messages = withActivityAt(messages, targetIdx, finalizeRunningActivity(msg.activity, {
+            status: 'error',
+            error: 'run ended',
+          }))
+        }
+      }
+      return {
+        ...s,
+        messages,
+        currentReplyId: null,
+        activeRunId: null,
+      }
+    }
   }
 }

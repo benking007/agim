@@ -187,6 +187,8 @@ export interface UseChat {
   stop: () => void
   /** Cancel one live Subagent/A2A job; parent turn continues with partial. */
   stopSubagent: (jobId: number) => boolean
+  /** Re-fetch history + ActiveRun (pet evoke / clear ghost Running). */
+  refreshHistory: () => boolean
   switchAgent: (name: string) => void
   /** Approval card button click. The hook composes the
    *  `apv:<reqId>:<y|n|a>` callback_data that approval-router expects;

@@ -486,12 +486,20 @@ export function useChat(): UseChat {
     return true
   }
 
+  /** Re-fetch history + active-run so a ghost pet "Running" can be restored or cleared. */
+  function refreshHistory(): boolean {
+    const threadId = threadIdRef.current
+    if (!threadId) return false
+    return wsRef.current.send({ type: 'get-history', threadId })
+  }
+
   return {
     state,
     send,
     steer,
     stop,
     stopSubagent,
+    refreshHistory,
     switchAgent,
     approvalClick,
     choiceSubmit,

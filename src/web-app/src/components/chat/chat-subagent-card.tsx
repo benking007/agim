@@ -23,7 +23,7 @@ import {
   resolveSubagentJobId,
 } from '@/lib/activity-subagent'
 import { isAgimFamilyLabel } from '@/lib/step-reflect'
-import { formatSubagentInnerSummary } from '@/lib/subagent-inner-summary'
+import { formatSubagentHeartbeatLine, formatSubagentInnerSummary } from '@/lib/subagent-inner-summary'
 import { cn } from '@/lib/utils'
 import { SubagentDetailDialog } from './subagent-detail-dialog'
 
@@ -204,7 +204,7 @@ function SubagentRow({
   stopping?: boolean
   stepReflectEnabled?: boolean
 }): JSX.Element {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const live = isSubagentLive(step)
   const now = useNow(live)
   // Live rows: tick elapsed next to the SUBAGENT badge. Completed rows already
@@ -259,6 +259,24 @@ function SubagentRow({
             </span>
           )}
         </div>
+        {live ? (
+          <p
+            data-testid="subagent-heartbeat"
+            className={cn(
+              'truncate pl-5 text-[11px] leading-snug',
+              dark ? 'text-teal-300/90' : 'text-teal-800',
+            )}
+          >
+            {formatSubagentHeartbeatLine({
+              zh: i18n.language?.startsWith('zh') ?? true,
+              label: step.label,
+              lastTool: step.lastTool,
+              startedAt: step.startedAt,
+              heartbeatAt: step.heartbeatAt,
+              now,
+            })}
+          </p>
+        ) : null}
         {detail && (
           <p className={cn(
             // Wrap inside the content column (left of Stop); do not single-line truncate.

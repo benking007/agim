@@ -1048,6 +1048,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           jobId: a.step.jobId ?? prev.jobId,
           reflects: mergeStepReflects(prev.reflects, a.step.reflects) ?? prev.reflects,
           lastTool: a.step.lastTool ?? prev.lastTool,
+          heartbeatAt: a.step.heartbeatAt ?? prev.heartbeatAt,
         }
       } else {
         steps.push(a.step)

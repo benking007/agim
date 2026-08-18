@@ -27,4 +27,18 @@ describe('normalizeActivityStep', () => {
     expect(step.reflects).toEqual([{ stance: 'keep', next: 'Query capital flows', at: 10 }])
     expect(step.lastTool).toEqual({ label: 'agim_web_search', status: 'running', at: 11 })
   })
+
+  it('forwards heartbeatAt onto the card', () => {
+    const step = normalizeActivityStep({
+      id: 'a2a-2',
+      kind: 'agent',
+      label: 'cursor',
+      status: 'running',
+      startedAt: 10,
+      heartbeatAt: 46_000,
+      lastTool: { label: 'agim_exec', status: 'running', at: 11 },
+    })
+    expect(step.heartbeatAt).toBe(46_000)
+    expect(step.lastTool?.label).toBe('agim_exec')
+  })
 })

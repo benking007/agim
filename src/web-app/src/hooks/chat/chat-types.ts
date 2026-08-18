@@ -70,6 +70,7 @@ export interface ChatActivityStep {
     status: 'pending' | 'running' | 'success' | 'error' | 'denied'
     at: number
   }
+  heartbeatAt?: number
 }
 
 /** Cursor-style "Worked ›" block bound to an assistant reply. */

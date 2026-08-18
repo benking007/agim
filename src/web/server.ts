@@ -54,6 +54,7 @@ import {
   sendSessionHistory,
   handleClientMessage,
 } from './ws-chat.js'
+import { unregisterClientIfCurrent } from './unregister-client.js'
 import { serveStatic, servePageHtml, PUBLIC_DIR } from './static-serve.js'
 
 const webLog = rootLogger.child({ component: 'web' })
@@ -884,12 +885,12 @@ export async function startWebServer(options: {
 
     ws.on('close', () => {
       // Use `client.id` rather than the closure-captured `clientId` so
-      // we delete whichever key the map is actually using after a
-      // potential rekey. The map maintenance on rekey deletes the old
-      // key, so this just covers the live one.
+      // we target whichever key the map uses after a potential rekey.
+      // Identity check: a reconnect may already own this threadId —
+      // never delete the live peer when the old socket closes.
       const liveId = client.id
       webLog.info({ clientId: liveId }, 'Client disconnected')
-      clients.delete(liveId)
+      unregisterClientIfCurrent(clients, liveId, client)
       recordWsIpClose(req)  // R13 A4
       // R9: drop the ownership entry only for server-generated ids that
       // were never rekeyed to a persistent client-side threadId. Rekeyed
@@ -901,7 +902,7 @@ export async function startWebServer(options: {
     ws.on('error', (err) => {
       const liveId = client.id
       webLog.error({ clientId: liveId, err: err instanceof Error ? err.message : String(err) }, 'Client WebSocket error')
-      clients.delete(liveId)
+      unregisterClientIfCurrent(clients, liveId, client)
       recordWsIpClose(req)  // R13 A4
       if (liveId === clientId) threadOwners.delete(liveId)
     })

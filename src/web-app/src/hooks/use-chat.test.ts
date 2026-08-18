@@ -812,13 +812,14 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.status).toBe('success')
   })
 
-  it('ERROR records the message + clears currentReplyId', () => {
+  it('ERROR records the message + clears currentReplyId and activeRunId', () => {
     const after = reduce(
-      { ...initialChatState, currentReplyId: 'p-1' },
+      { ...initialChatState, currentReplyId: 'p-1', activeRunId: 'run-1' },
       { kind: 'ERROR', message: 'WS closed' },
     )
     expect(after.error).toBe('WS closed')
     expect(after.currentReplyId).toBeNull()
+    expect(after.activeRunId).toBeNull()
   })
 
   it('ERROR closes open activity steps on the in-flight reply', () => {
@@ -840,6 +841,8 @@ describe('chatReducer', () => {
       { kind: 'ERROR', message: 'agent crashed' },
     )
     expect(after.error).toBe('agent crashed')
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
     expect(after.messages[1]?.activity).toMatchObject({
       status: 'error',
       error: 'agent crashed',

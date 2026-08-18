@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Web chat “stuck Running” after reconnect**: closing the old WebSocket
+  no longer deletes a newer peer that rekeyed the same `threadId`, so
+  terminal `done` / `run-finish` frames reach the SPA. Streaming no longer
+  aborts the agent producer when briefly peer-less; `ERROR` clears
+  `activeRunId` so the UI cannot stay live-busy after a transport error.
 - **config-store multi-process lock reclaim**: stale-lock cleanup no longer
   blind-deletes a lock another waiter just acquired (compare-and-rename),
   which could drop concurrent `updateConfigObject` fields and flake the

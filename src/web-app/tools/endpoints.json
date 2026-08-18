@@ -29,6 +29,7 @@
     "src/web/server.ts",
     "src/web/service-api.ts",
     "src/web/static-serve.ts",
+    "src/web/unregister-client.ts",
     "src/web/viewer-api.ts",
     "src/web/viewer-render.ts",
     "src/web/workspace-cwd-api.ts",

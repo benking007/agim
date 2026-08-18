@@ -975,9 +975,18 @@ export async function startWebServer(options: {
     async sendChoiceCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
-      if (c && c.ws.readyState === c.ws.OPEN) {
-        sendToClient(c.ws, { type: 'choice-card', messageId, prompt, threadId })
+      if (!c || c.ws.readyState !== c.ws.OPEN) {
+        // Must throw so ask-user-rpc does NOT mark cardSent=true and skip the
+        // text fallback — otherwise the agent waits with no Portal AskDock.
+        webLog.warn({
+          event: 'ask.card_undelivered',
+          threadId,
+          hasClient: Boolean(c),
+          readyState: c?.ws.readyState,
+        }, 'web choice-card undelivered — no OPEN WS client')
+        throw new Error(`web choice-card undelivered: no OPEN client for thread ${threadId}`)
       }
+      sendToClient(c.ws, { type: 'choice-card', messageId, prompt, threadId })
       return { messageId }
     },
     async editChoiceCard(threadId, messageId, finalText) {

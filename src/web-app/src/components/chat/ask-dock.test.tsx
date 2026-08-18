@@ -61,4 +61,24 @@ describe('AskDock', () => {
     render(<AskDock asks={[ask()]} onSubmit={() => true} />)
     expect(screen.queryByText('📖 查看详情')).toBeNull()
   })
+
+  it('wraps long single-select labels with multi-line button classes', () => {
+    const long =
+      '继续推进本轮：先核对子代理交付物，再对照退出条件给出 verdict，必要时补充一次 ask'
+    render(
+      <AskDock
+        asks={[ask({
+          choices: [
+            { label: `1. ${long}`, data: 'ask:r:1' },
+            { label: '2. 暂停', data: 'ask:r:2' },
+          ],
+        })]}
+        onSubmit={() => true}
+      />,
+    )
+    const btn = screen.getByRole('button', { name: new RegExp(long.slice(0, 12)) })
+    expect(btn.className).toMatch(/whitespace-normal/)
+    expect(btn.className).toMatch(/break-words/)
+    expect(btn.className).toMatch(/h-auto/)
+  })
 })

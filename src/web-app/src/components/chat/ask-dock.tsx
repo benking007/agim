@@ -181,18 +181,21 @@ function AskRow({ entry, onSubmit, stacked = false }: AskRowProps): JSX.Element 
                 <label
                   key={c.data}
                   className={cn(
-                    'flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition',
+                    'flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 text-sm transition',
                     on ? 'border-info bg-info-bg/50' : 'border-border hover:bg-surface-2',
                     submitting && 'pointer-events-none opacity-60',
                   )}
                 >
                   <input
                     type="checkbox"
+                    className="mt-0.5 shrink-0"
                     checked={on}
                     disabled={submitting}
                     onChange={() => toggle(idx)}
                   />
-                  <span>{c.label}</span>
+                  <span className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
+                    {c.label}
+                  </span>
                 </label>
               )
             })}
@@ -213,7 +216,10 @@ function AskRow({ entry, onSubmit, stacked = false }: AskRowProps): JSX.Element 
             <Button
               key={c.data}
               variant="secondary"
-              className="min-h-12 w-full justify-start px-4 text-left text-sm"
+              className={cn(
+                'h-auto min-h-12 w-full justify-start px-4 py-2.5 text-left text-sm',
+                'whitespace-normal break-words leading-snug',
+              )}
               disabled={submitting}
               onClick={() => submit(c.data)}
             >

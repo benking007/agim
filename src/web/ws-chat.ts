@@ -210,6 +210,21 @@ export async function sendSessionHistory(
   // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
   // get-history (chat bootstrap does not carry the Loop DTO).
   sendToClient(ws, { type: 'loop-changed', threadId })
+  // Re-emit unresolved ask_user cards. choice-card is ephemeral (not in
+  // history); without replay, refresh / sleep-wake leaves the agent blocked
+  // on PENDING while AskDock stays empty.
+  try {
+    const { listPendingAskCards } = await import('../core/ask-user-rpc.js')
+    for (const card of listPendingAskCards({ platform: 'web', threadId })) {
+      if (ws.readyState !== ws.OPEN) break
+      sendToClient(ws, {
+        type: 'choice-card',
+        messageId: card.messageId,
+        prompt: card.prompt,
+        threadId,
+      })
+    }
+  } catch { /* ask bus optional during early boot */ }
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────

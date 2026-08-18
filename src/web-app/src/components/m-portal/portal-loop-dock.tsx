@@ -131,6 +131,9 @@ export const PortalLoopDock = memo(function PortalLoopDock({
   }
 
   if (!loop?.active) return null
+  // Approval / ask_user docks own the composer strip — hide Aligning /
+  // Confirm / Act Now so mcp__agim__ask_user can surface AskDock.
+  if (hasBlockingDock) return null
   if (loop.bucket === 'aligning') {
     return (
       <AligningDock
@@ -167,7 +170,7 @@ export const PortalLoopDock = memo(function PortalLoopDock({
       />
     )
   }
-  if (busy || hasBlockingDock) return null
+  if (busy) return null
   // HARD: while Subagents are live this round, do not nudge verify.
   if ((loop.liveSubagents ?? 0) > 0) return null
   if (loop.bucket === 'dispatch' || loop.bucket === 'verify') {

@@ -663,6 +663,44 @@ export function listPendingAsks(): Array<{
   return out
 }
 
+/**
+ * Rebuild choice-card payloads for unresolved asks — used by the web
+ * messenger to re-emit AskDock frames after get-history / reconnect
+ * (choice-card is not persisted in chat history).
+ */
+export function listPendingAskCards(filter?: {
+  platform?: string
+  threadId?: string
+}): Array<{
+  reqId: string
+  platform: string
+  threadId: string
+  messageId: string
+  prompt: ChoiceCardPrompt
+}> {
+  const out: Array<{
+    reqId: string
+    platform: string
+    threadId: string
+    messageId: string
+    prompt: ChoiceCardPrompt
+  }> = []
+  for (const p of PENDING.values()) {
+    if (filter?.platform && p.platform !== filter.platform) continue
+    if (filter?.threadId && p.threadId !== filter.threadId) continue
+    const messenger = resolveMessenger(p.platform)
+    const serverSideToggle = Boolean(messenger?.updateChoiceCard)
+    out.push({
+      reqId: p.reqId,
+      platform: p.platform,
+      threadId: p.threadId,
+      messageId: p.cardMessageId || `ask-pending-${p.reqId}`,
+      prompt: buildAskCard(p, serverSideToggle),
+    })
+  }
+  return out
+}
+
 /** True while this thread has an unresolved ask_user (awaiting user reply). */
 export function threadHasPendingAsk(
   platform: string,

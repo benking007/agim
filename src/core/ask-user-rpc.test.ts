@@ -12,6 +12,7 @@ import {
   tryResolvePendingAskByButton,
   handleAskButton,
   listPendingAsks,
+  listPendingAskCards,
   threadHasPendingAsk,
   _resetAskBusForTests,
   type AskResult,
@@ -587,5 +588,29 @@ describe('listPendingAsks', () => {
     await p
     expect(listPendingAsks().length).toBe(0)
     expect(threadHasPendingAsk(ctx.platform, ctx.channelId, ctx.threadId)).toBe(false)
+  })
+
+  it('listPendingAskCards rebuilds prompts for web replay', async () => {
+    const m = makeFakeMessenger('list-cards')
+    register(m)
+    const ctx = { ...CTX, platform: 'list-cards', threadId: 'web-t1' }
+    const p = handleAskOp({
+      question: 'Which path?',
+      choices: ['keep going', 'stop here'],
+      timeoutSec: 30,
+    }, ctx)
+    await new Promise<void>((r) => setImmediate(r))
+    const cards = listPendingAskCards({ platform: 'list-cards', threadId: 'web-t1' })
+    expect(cards).toHaveLength(1)
+    expect(cards[0].prompt.body).toBe('Which path?')
+    expect(cards[0].prompt.choices.map((c) => c.label)).toEqual([
+      '1. keep going',
+      '2. stop here',
+    ])
+    expect(cards[0].messageId).toBeTruthy()
+    expect(listPendingAskCards({ platform: 'list-cards', threadId: 'other' })).toHaveLength(0)
+    tryResolvePendingAskByButton(`ask:${cards[0].reqId}:1`)
+    await p
+    expect(listPendingAskCards({ platform: 'list-cards' })).toHaveLength(0)
   })
 })

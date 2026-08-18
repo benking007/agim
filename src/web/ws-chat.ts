@@ -252,9 +252,24 @@ export async function handleClientMessage(
    *  get-history rekey cannot paint this run onto another session. */
   const emit = (data: Record<string, unknown>): void => {
     const live = clients?.get(clientId)
-    sendToClient(live?.ws ?? ws, typeof data.threadId === 'string' && data.threadId
+    const target = live?.ws ?? ws
+    const frame = typeof data.threadId === 'string' && data.threadId
       ? data
-      : { ...data, threadId: clientId })
+      : { ...data, threadId: clientId }
+    if (target.readyState !== target.OPEN) {
+      const t = String(data.type ?? '')
+      if (t === 'done' || t === 'run-finish' || t === 'error') {
+        webLog.warn({
+          event: 'web.ws.emit_dropped',
+          type: t,
+          threadId: clientId,
+          runId: typeof data.runId === 'string' ? data.runId : undefined,
+          hasPeer: Boolean(live),
+        }, 'terminal WS frame dropped — peer not OPEN (SPA may stay Running until catch-up)')
+      }
+      return
+    }
+    sendToClient(target, frame)
   }
 
   switch (msg.type) {
@@ -541,20 +556,17 @@ export async function handleClientMessage(
           if (runAbort.signal.aborted) break
           fullText += chunk
           appendActiveRunChunk(sessionThreadId, chunk)
-          // L1: defer when the per-socket send buffer is full. Without
-          // this, a slow client lets the chunk producer keep allocating
-          // frames into the kernel + ws-internal queue, which can grow
-          // to GBs for a long agent response.
-          const liveWs = clients?.get(sessionThreadId)?.ws ?? ws
-          await awaitWsDrain(liveWs)
-          // Keep producing even if the original socket died — a reconnect
-          // may have registered under sessionThreadId. Only stop if there
-          // is still no live peer AND the original is closed (avoid
-          // unbounded buffering into ActiveRun alone for hours).
+          // Prefer the live peer after reconnect; keep draining the agent
+          // into ActiveRun when nobody is connected (catch-up via
+          // get-history + active-run). Do NOT break the producer — that
+          // used to finalize a partial turn when a stale close wiped the
+          // rekeyed clients map entry.
           const peer = clients?.get(sessionThreadId)
-          if (!peer && liveWs.readyState !== liveWs.OPEN) break
-          if (peer) emit({ type: 'chunk', text: chunk, runId })
-          else if (liveWs.readyState === liveWs.OPEN) emit({ type: 'chunk', text: chunk, runId })
+          const liveWs = peer?.ws ?? ws
+          if (peer || liveWs.readyState === liveWs.OPEN) {
+            await awaitWsDrain(liveWs)
+            emit({ type: 'chunk', text: chunk, runId })
+          }
         }
 
         if (runAbort.signal.aborted) {

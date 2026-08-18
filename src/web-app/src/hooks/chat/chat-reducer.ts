@@ -708,7 +708,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           })
         }
       }
-      return { ...s, messages, error: a.message, currentReplyId: null }
+      return { ...s, messages, error: a.message, currentReplyId: null, activeRunId: null }
     }
     case 'APPROVAL_CARD': {
       // v1.2.115 — dock-only. Don't pollute the chat stream; the dock

@@ -275,6 +275,36 @@ skipIfNoDb('retention split by kind', () => {
     }
   })
 
+  it('abandons stale web/cron pending parent anchors; leaves IM queued pending', () => {
+    const webId = jb.createInlineJob({
+      agent: 'agim', prompt: 'portal turn', threadKey: 'web:web:web-abc',
+    })
+    const cronId = jb.createInlineJob({
+      agent: 'agim', prompt: 'cron wake', threadKey: 'cron:default:cron:1',
+    })
+    const imId = jb.createInlineJob({
+      agent: 'agim', prompt: 'queued IM', threadKey: 'wechat:c:t',
+    })
+    jb._backdateForTests(webId, '-20 minutes')
+    jb._backdateForTests(cronId, '-20 minutes')
+    jb._backdateForTests(imId, '-20 minutes')
+    const n = jb.reapOrphanPendingInlineJobs(10)
+    expect(n).toBeGreaterThanOrEqual(2)
+    expect(jb.getJob(webId)?.status).toBe('abandoned')
+    expect(jb.getJob(cronId)?.status).toBe('abandoned')
+    expect(jb.getJob(imId)?.status).toBe('pending')
+  })
+
+  it('finalizeOwnedParentJob completes a running parent without touching others', () => {
+    const id = jb.createInlineJob({
+      agent: 'agim', prompt: 'portal turn', threadKey: 'web:web:web-fin',
+    })
+    expect(jb.markJobRunning(id)).toBe(true)
+    jb.finalizeOwnedParentJob(id, { ok: true, result: 'done' })
+    expect(jb.getJob(id)?.status).toBe('completed')
+    expect(jb.getJob(id)?.result).toBe('done')
+  })
+
   it("kind='job' rows survive the inline window — use the days knob instead", () => {
     const id = jb.createJob('a', 'p')  // kind='job' (default)
     // No markRunning/markCompleted — pending rows are NEVER pruned regardless

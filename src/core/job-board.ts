@@ -99,9 +99,76 @@ function reapStaleRunning(d: Database.Database): void {
       rootLogger.warn({ event: 'job-board.reap', stale: jobs.changes },
         `Marked ${jobs.changes} stale running job(s) as failed`)
     }
+    reapOrphanPendingInline(d)
   } catch {
     // best-effort; missing table is fine on first start
   }
+}
+
+/**
+ * Web / cron parent anchors created by callAgentWithHistory used to stay
+ * `pending` forever (no markJobRunning). IM inbound rows stay pending on
+ * purpose while they wait on runOnThread — do not touch those.
+ */
+function reapOrphanPendingInline(
+  d: Database.Database,
+  olderThanMinutes = 10,
+): number {
+  const minutes = Number.isFinite(olderThanMinutes)
+    ? Math.max(1, Math.floor(olderThanMinutes))
+    : 10
+  try {
+    const info = d.prepare(
+      `UPDATE jobs
+          SET status = 'abandoned',
+              error = 'orphan pending: never started (web/cron parent anchor)',
+              completed_at = datetime('now')
+        WHERE status = 'pending'
+          AND kind = 'inline'
+          AND started_at IS NULL
+          AND created_at < datetime('now', ?)
+          AND (thread_key LIKE 'web:%' OR thread_key LIKE 'cron:%')`,
+    ).run(`-${minutes} minutes`)
+    if (info.changes > 0) {
+      rootLogger.warn({
+        event: 'job-board.reap_orphan_pending',
+        abandoned: info.changes,
+        olderThanMinutes: minutes,
+      }, `Abandoned ${info.changes} orphan pending inline job(s)`)
+    }
+    return info.changes
+  } catch {
+    return 0
+  }
+}
+
+/** Test / ops hook: abandon stale web/cron parent rows that never started. */
+export function reapOrphanPendingInlineJobs(olderThanMinutes = 10): number {
+  const d = getDb()
+  if (!d) return 0
+  return reapOrphanPendingInline(d, olderThanMinutes)
+}
+
+/**
+ * Close a parent inline job that callAgentWithHistory created (web / cron /
+ * invoke). IM handle-message owns its own rows — do not call this on those.
+ */
+export function finalizeOwnedParentJob(
+  id: number,
+  outcome: { ok: boolean; aborted?: boolean; result?: string; error?: string },
+): void {
+  if (id <= 0) return
+  const job = getJob(id)
+  if (!job || (job.status !== 'pending' && job.status !== 'running')) return
+  if (outcome.aborted) {
+    cancelJob(id, { result: outcome.result ?? null })
+    return
+  }
+  if (outcome.ok) {
+    markJobCompleted(id, outcome.result ?? '')
+    return
+  }
+  markJobFailed(id, outcome.error || 'failed')
 }
 
 export type JobKind = 'job' | 'inline'
@@ -1027,6 +1094,7 @@ export function setJobResult(id: number, result: string | null): void {
  */
 export function pruneOldJobs(d: Database.Database | null = getDb(), daysRetention: number = resolveRetentionDays()): number {
   if (!d) return 0
+  reapOrphanPendingInline(d)
   const inlineHours = resolveInlineRetentionHours()
   // Terminal statuses across both kinds. 'delivered' is inline-only.
   // 'interrupted' / 'replaced' / 'abandoned' are Phase 3 statuses — pre-

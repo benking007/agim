@@ -56,7 +56,12 @@ import { classifyIntent } from './intent.js'
 import { classifyWithLLM, getLLMJudge } from './intent-llm.js'
 import { userLimiter } from './rate-limiter.js'
 import { workspaceRegistry } from './workspace.js'
-import { createInlineJob, getJob } from './job-board.js'
+import {
+  createInlineJob,
+  finalizeOwnedParentJob,
+  getJob,
+  markJobRunning,
+} from './job-board.js'
 
 /** Route context passed through the routing pipeline */
 export interface RouteContext {
@@ -873,6 +878,11 @@ export async function callAgentWithHistory(
   // gets parent_id=NULL and is invisible in the web A2A views. Create one here
   // when missing so no channel silently drops A2A records. Idempotent (skips
   // when already set) and best-effort (a failed insert never blocks the turn).
+  //
+  // When we create the row, we also own its lifecycle (running → completed /
+  // failed / cancelled). IM handle-message already mark*s its own row — do
+  // not double-finalize those.
+  let ownedParentJobId = 0
   if (typeof ctx.parentJobId !== 'number') {
     try {
       const pj = createInlineJob({
@@ -881,7 +891,11 @@ export async function callAgentWithHistory(
         threadKey: `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`,
         creatorId: ctx.userId ?? '',
       })
-      if (pj > 0) ctx.parentJobId = pj
+      if (pj > 0) {
+        ctx.parentJobId = pj
+        ownedParentJobId = pj
+        markJobRunning(pj)
+      }
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }
 
@@ -1079,6 +1093,15 @@ export async function callAgentWithHistory(
         } catch (err) {
           ctx.logger.debug({ event: 'memory.distill.schedule_failed', err: String(err) })
         }
+      }
+
+      if (ownedParentJobId > 0) {
+        finalizeOwnedParentJob(ownedParentJobId, {
+          ok: successful,
+          aborted,
+          result: fullResponse,
+          error: effectiveError,
+        })
       }
     }
   })()

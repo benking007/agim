@@ -36,6 +36,7 @@ import {
   markJobRunning,
   markJobCompleted,
   markJobFailed,
+  maybeFinalizePendingWebParentAfterChildren,
   setJobResult,
 } from './job-board.js'
 import { logInvocation } from './audit-log.js'
@@ -75,7 +76,7 @@ const log = rootLogger.child({ component: 'a2a' })
 async function resyncLoopAfterJobTerminal(
   ctx: RouteContext,
   jobId: number,
-  opts: { outcome: string; agent?: string },
+  opts: { outcome: string; agent?: string; parentJobId?: number | null },
 ): Promise<void> {
   if (jobId <= 0) return
   try {
@@ -91,6 +92,13 @@ async function resyncLoopAfterJobTerminal(
     maybeReapIdleLoopVerify(ctx.platform, ctx.channelId, ctx.threadId)
   } catch {
     /* optional */
+  }
+  // Tasks list: pending web/cron parent anchors left after children settle.
+  const parentId = typeof opts.parentJobId === 'number' && opts.parentJobId > 0
+    ? opts.parentJobId
+    : (getJob(jobId)?.parent_id ?? 0)
+  if (parentId > 0) {
+    maybeFinalizePendingWebParentAfterChildren(parentId)
   }
 }
 
@@ -467,9 +475,14 @@ export async function callAgentByName(
   if (opts.signal?.aborted) onOuterAbort()
   if (!markJobRunning(jobId)) {
     cleanupController()
+    // Ensure roundJobIds cannot keep a zombie pending row forever.
+    if (getJob(jobId)?.status === 'pending') {
+      cancelJob(jobId, { result: 'cancelled: markJobRunning refused' })
+    }
     await resyncLoopAfterJobTerminal(ctx, jobId, {
       outcome: 'cancelled',
       agent: target.name,
+      parentJobId: opts.parentJobId ?? null,
     })
     emitEarlyAgentFailure(opts, ctx, target.name, 'a2a cancelled before start')
     return { ok: false, error: 'a2a cancelled before start', jobId, agent: target.name }
@@ -512,6 +525,7 @@ export async function callAgentByName(
     await resyncLoopAfterJobTerminal(ctx, jobId, {
       outcome: 'failed',
       agent: target.name,
+      parentJobId: opts.parentJobId ?? null,
     })
     emitEarlyAgentFailure(opts, ctx, target.name, msg)
     return { ok: false, error: msg, jobId, agent: target.name }
@@ -703,6 +717,7 @@ export async function callAgentByName(
   await resyncLoopAfterJobTerminal(ctx, jobId, {
     outcome,
     agent: target.name,
+    parentJobId: opts.parentJobId ?? null,
   })
 
   // Audit. Same shape as the normal callAgentWithHistory invocations so

@@ -171,6 +171,51 @@ export function finalizeOwnedParentJob(
   markJobFailed(id, outcome.error || 'failed')
 }
 
+/**
+ * When every child of a web/cron parent anchor is terminal but the parent
+ * row is still `pending` (never markJobRunning / finalize missed), close it
+ * so Tasks does not show a permanent「等待中」while Loop/cards move on.
+ * No-op for IM queued parents, running parents (turn may still be synthesizing),
+ * or when any child is still live / there were no children.
+ */
+export function maybeFinalizePendingWebParentAfterChildren(parentId: number): boolean {
+  if (parentId <= 0) return false
+  const parent = getJob(parentId)
+  if (!parent || parent.status !== 'pending') return false
+  const tk = parent.thread_key || ''
+  if (!tk.startsWith('web:') && !tk.startsWith('cron:')) return false
+  const d = getDb()
+  if (!d) return false
+  try {
+    const kids = d.prepare(
+      `SELECT status FROM jobs WHERE parent_id = ?`,
+    ).all(parentId) as Array<{ status: string }>
+    if (kids.length === 0) return false
+    for (const k of kids) {
+      if (k.status === 'pending' || k.status === 'running') return false
+    }
+    finalizeOwnedParentJob(parentId, {
+      ok: true,
+      result: parent.result ?? '',
+    })
+    rootLogger.info({
+      event: 'job-board.finalize_pending_parent_after_children',
+      parentId,
+      childCount: kids.length,
+      threadKey: tk,
+    }, `Finalized pending web/cron parent #${parentId} after ${kids.length} child job(s) settled`)
+    return getJob(parentId)?.status === 'completed'
+  } catch (err) {
+    rootLogger.debug({
+      component: 'job-board',
+      event: 'finalize_pending_parent_failed',
+      parentId,
+      err: String(err),
+    })
+    return false
+  }
+}
+
 export type JobKind = 'job' | 'inline'
 
 /** Lifecycle states.

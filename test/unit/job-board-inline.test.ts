@@ -305,6 +305,58 @@ skipIfNoDb('retention split by kind', () => {
     expect(jb.getJob(id)?.result).toBe('done')
   })
 
+  it('maybeFinalizePendingWebParentAfterChildren closes pending web parent when kids settled', () => {
+    const parent = jb.createInlineJob({
+      agent: 'agim', prompt: 'portal turn', threadKey: 'web:web:web-kids',
+    })
+    const child = jb.createInlineJob({
+      agent: 'codex',
+      prompt: 'child',
+      threadKey: 'web:web:web-kids',
+      parentId: parent,
+      callDepth: 1,
+    })
+    expect(jb.markJobRunning(child)).toBe(true)
+    jb.markJobCompleted(child, 'ok')
+    // Parent never markJobRunning → stuck「等待中」
+    expect(jb.getJob(parent)?.status).toBe('pending')
+    expect(jb.maybeFinalizePendingWebParentAfterChildren(parent)).toBe(true)
+    expect(jb.getJob(parent)?.status).toBe('completed')
+  })
+
+  it('maybeFinalizePendingWebParentAfterChildren no-ops while a child is live', () => {
+    const parent = jb.createInlineJob({
+      agent: 'agim', prompt: 'portal turn', threadKey: 'web:web:web-live',
+    })
+    const child = jb.createInlineJob({
+      agent: 'codex',
+      prompt: 'child',
+      threadKey: 'web:web:web-live',
+      parentId: parent,
+      callDepth: 1,
+    })
+    expect(jb.markJobRunning(child)).toBe(true)
+    expect(jb.maybeFinalizePendingWebParentAfterChildren(parent)).toBe(false)
+    expect(jb.getJob(parent)?.status).toBe('pending')
+  })
+
+  it('maybeFinalizePendingWebParentAfterChildren ignores IM parents', () => {
+    const parent = jb.createInlineJob({
+      agent: 'agim', prompt: 'im', threadKey: 'wechat:c:t',
+    })
+    const child = jb.createInlineJob({
+      agent: 'codex',
+      prompt: 'child',
+      threadKey: 'wechat:c:t',
+      parentId: parent,
+      callDepth: 1,
+    })
+    jb.markJobRunning(child)
+    jb.markJobCompleted(child, 'ok')
+    expect(jb.maybeFinalizePendingWebParentAfterChildren(parent)).toBe(false)
+    expect(jb.getJob(parent)?.status).toBe('pending')
+  })
+
   it("kind='job' rows survive the inline window — use the days knob instead", () => {
     const id = jb.createJob('a', 'p')  // kind='job' (default)
     // No markRunning/markCompleted — pending rows are NEVER pruned regardless

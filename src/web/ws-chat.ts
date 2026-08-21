@@ -375,6 +375,20 @@ export async function handleClientMessage(
         snapshotToPersistedActivity,
       } = await import('./active-runs.js')
 
+      /** Push server-closed Subagent cards to the SPA before run-finish. */
+      const emitFinishedAgentSteps = (): void => {
+        const snap = getActiveRun(sessionThreadId)
+        if (!snap) return
+        for (const step of snap.steps) {
+          if (step.kind !== 'agent') continue
+          if (
+            step.status !== 'success'
+            && step.status !== 'error'
+            && step.status !== 'denied'
+          ) continue
+          emit({ type: 'activity-step', runId: snap.runId, step })
+        }
+      }
       const persistFinishedActivity = async (matchContent?: string): Promise<void> => {
         const snap = getActiveRun(sessionThreadId)
         if (!snap || snap.status === 'running') return
@@ -496,6 +510,7 @@ export async function handleClientMessage(
           finishActiveRun(sessionThreadId, {
             status: 'error', finishedAt, durationMs, error: USER_INTERRUPTED_TEXT,
           })
+          emitFinishedAgentSteps()
           try {
             await sessionManager.addMessage('web', 'web', sessionThreadId, {
               role: 'assistant',
@@ -530,6 +545,7 @@ export async function handleClientMessage(
           finishActiveRun(sessionThreadId, {
             status: 'success', finishedAt, durationMs, finalText: result,
           })
+          emitFinishedAgentSteps()
           await persistFinishedActivity(result)
           emit({
             type: 'done',
@@ -606,6 +622,7 @@ export async function handleClientMessage(
           finishActiveRun(sessionThreadId, {
             status: 'error', finishedAt, durationMs, error: USER_INTERRUPTED_TEXT, finalText: text,
           })
+          emitFinishedAgentSteps()
           await persistFinishedActivity(text)
           emit({
             type: 'done',
@@ -643,6 +660,7 @@ export async function handleClientMessage(
         finishActiveRun(sessionThreadId, {
           status: 'success', finishedAt, durationMs, finalText: deliveredText,
         })
+        emitFinishedAgentSteps()
         await persistFinishedActivity(deliveredText)
         emit({
           type: 'done',
@@ -680,6 +698,7 @@ export async function handleClientMessage(
         finishActiveRun(sessionThreadId, {
           status: 'error', finishedAt, durationMs, error: errorMsg,
         })
+        emitFinishedAgentSteps()
         if (aborted) {
           try {
             await sessionManager.addMessage('web', 'web', sessionThreadId, {

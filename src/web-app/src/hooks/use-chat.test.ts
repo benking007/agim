@@ -374,6 +374,199 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.status).toBe('success')
   })
 
+  it('HISTORY same-id finished tail clears ghost 执行中 (missed done/run-finish)', () => {
+    // Reconnect / contentAhead already remapped local ids to server ids.
+    // Mid-flight guard then hits the same-last-id identity path — must still
+    // clear busy and overlay finished activity (Tasks already COMPLETED).
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1', 'go'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-same', agent: 'agim', startedAt: 1_000 },
+    )
+    // Simulate id remap: local bubbles already use server ids, activity still running.
+    const aligned: typeof mid = {
+      ...mid,
+      currentReplyId: 'hist-1',
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: '',
+          timestamp: 2,
+          agent: 'agim',
+          activity: {
+            runId: 'run-same',
+            status: 'running',
+            startedAt: 1_000,
+            steps: [],
+          },
+        },
+      ],
+    }
+    const after = reduce(aligned, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      updatedAt: Date.now(),
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: '债券看板未实施项：…',
+          timestamp: 2,
+          activity: {
+            runId: 'run-same',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
+    expect(after.messages[1]?.activity?.status).toBe('success')
+    expect(after.messages[1]?.content).toContain('债券看板')
+  })
+
+  it('HISTORY same-id finished by shared reply id clears busy without activeRunId match', () => {
+    const aligned = {
+      ...initialChatState,
+      currentReplyId: 'hist-1',
+      activeRunId: 'run-orphan',
+      messages: [
+        { id: 'hist-0', role: 'user' as const, content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant' as const,
+          content: '',
+          timestamp: 2,
+          activity: {
+            runId: 'run-orphan',
+            status: 'running' as const,
+            startedAt: 1_000,
+            steps: [],
+          },
+        },
+      ],
+    }
+    const after = reduce(aligned, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: 'done',
+          timestamp: 2,
+          activity: {
+            runId: 'run-server',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
+    expect(after.messages[1]?.activity?.status).toBe('success')
+  })
+
+  it('HISTORY refuse mid-flight does not stamp historyRevisionAt (no poison)', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-2', 'new turn'), placeholder: asstMsg('p-2') },
+      { kind: 'RUN_START', runId: 'run-new', agent: 'agim', startedAt: 3_000 },
+    )
+    const serverUpdatedAt = 1_700_000_000_000
+    const afterRefuse = reduce(mid, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 10,
+      updatedAt: serverUpdatedAt,
+      messages: [
+        // Prior finished turn only — not the in-flight run.
+        { id: 'hist-0', role: 'user', content: 'old', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: 'old reply long enough to look ahead '.repeat(5),
+          timestamp: 2,
+          activity: {
+            runId: 'run-old',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(afterRefuse.currentReplyId).toBe('p-2')
+    expect(afterRefuse.activeRunId).toBe('run-new')
+    expect(afterRefuse.historyRevisionAt).toBeNull()
+  })
+
+  it('HISTORY rescues empty placeholder after poisoned revision (half-open done miss)', () => {
+    // Simulate: first catch-up stamped revision without painting; busy cleared
+    // elsewhere; local still empty Running bubble; disk has finished body.
+    const poisoned = {
+      ...initialChatState,
+      historyRevisionAt: 1_700_000_000_000,
+      currentReplyId: null as string | null,
+      activeRunId: null as string | null,
+      messages: [
+        { id: 'hist-0', role: 'user' as const, content: '回到债券看板建设需求，还有哪些未实施的？', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant' as const,
+          content: '',
+          timestamp: 2,
+          activity: {
+            runId: 'run-mt30yuxr-8787feba',
+            status: 'running' as const,
+            startedAt: 1_000,
+            steps: [],
+          },
+        },
+      ],
+    }
+    const body = '可落地：资金面扩 DR001/DR014；卡点：股债性价比 PE 源未定。'
+    const after = reduce(poisoned, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 16,
+      updatedAt: 1_700_000_000_000,
+      messages: [
+        { id: 'hist-0', role: 'user', content: '回到债券看板建设需求，还有哪些未实施的？', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: body,
+          timestamp: 2,
+          activity: {
+            runId: 'run-mt30yuxr-8787feba',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.messages[1]?.content).toBe(body)
+    expect(after.messages[1]?.activity?.status).toBe('success')
+    expect(after.currentReplyId).toBeNull()
+    expect(after.activeRunId).toBeNull()
+  })
+
   it('HISTORY adopts when summary text is ahead (no activity runId match)', () => {
     const mid = reduce(
       initialChatState,

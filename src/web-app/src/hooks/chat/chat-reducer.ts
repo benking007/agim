@@ -238,7 +238,59 @@ function assistantContentAhead(local: ChatMessage[], hist: ChatMessage[]): boole
   }
   const localAsst = li >= 0 ? local[li] : undefined
   if (!localAsst) return false
+  // Different runIds → prior finished turn must not look "ahead" of a new
+  // empty placeholder (equal-length transcripts after SEND_USER).
+  if (
+    localAsst.activity?.runId
+    && h.activity?.runId
+    && localAsst.activity.runId !== h.activity.runId
+  ) {
+    return false
+  }
   return h.content.length > localAsst.content.length + 40
+}
+
+/**
+ * Disk already has a finished assistant body, but the SPA still shows an
+ * empty / Running placeholder (missed done on a half-open socket). Force
+ * HISTORY rescue even when historyRevisionAt was poisoned by a prior refuse.
+ */
+function localNeedsHistoryRescue(local: ChatMessage[], hist: ChatMessage[]): boolean {
+  const hi = lastAssistantIndex(hist)
+  if (hi < 0) return false
+  const h = hist[hi]
+  if (!h?.activity) return false
+  if (h.activity.status !== 'success' && h.activity.status !== 'error') return false
+  if (!h.content.trim()) return false
+  let li = h.id ? local.findIndex((m) => m.id === h.id) : -1
+  if (li < 0 && h.activity.runId) {
+    li = local.findIndex((m) => m.activity?.runId === h.activity?.runId)
+  }
+  // Require shared id / runId — never paste a prior finished turn onto a
+  // brand-new empty placeholder (that is the contentAhead false-positive).
+  if (li < 0) return false
+  const localAsst = local[li]
+  if (!localAsst) return false
+  // ChatActivity.status has no "pending" — stuck UI is running or empty body.
+  if (localAsst.activity?.status === 'running') return true
+  if (!localAsst.content.trim()) return true
+  return h.content.length > localAsst.content.length + 40
+}
+
+function historyShowsActiveRunFinished(
+  s: ChatState,
+  hist: ChatMessage[],
+): boolean {
+  if (!s.activeRunId && !s.currentReplyId) return false
+  for (const m of hist) {
+    if (m.role !== 'assistant' || !m.activity) continue
+    if (m.activity.status !== 'success' && m.activity.status !== 'error') continue
+    if (s.activeRunId && m.activity.runId === s.activeRunId) return true
+    // Ids already aligned (contentAhead remap / reconnect): finished
+    // activity on the shared bubble must clear ghost「执行中」.
+    if (s.currentReplyId && m.id === s.currentReplyId) return true
+  }
+  return false
 }
 
 function historyMeta(s: ChatState, a: Extract<ChatAction, { kind: 'HISTORY' }>): Pick<
@@ -446,75 +498,98 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       }
       const inFlight = s.currentReplyId != null || s.activeRunId != null
       const cloudNewer = isCloudHistoryNewer(s.historyRevisionAt, a.updatedAt)
+      const needsRescue = localNeedsHistoryRescue(s.messages, a.messages)
       // Same or older cloud revision than the last sync — keep the local
       // (cached) bubbles so markdown does not remount. Still prepend older
       // turns when the server sent a fuller complete snapshot.
-      if (!inFlight && cloudNewer === false && s.messages.length > 0) {
+      // Exception: revision was stamped while mid-flight refused to adopt
+      // (poisoned historyRevisionAt) — empty/Running local vs finished disk
+      // must still rescue.
+      if (!inFlight && cloudNewer === false && s.messages.length > 0 && !needsRescue) {
         const messages = complete ? mergeOlderPrefix(s.messages, a.messages) : s.messages
         return stamp({ ...s, ...meta, messages })
       }
       if (!complete && s.messages.length > 0) {
         if (inFlight) {
-          const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
-            m.activity?.runId === s.activeRunId
-            && (m.activity.status === 'success' || m.activity.status === 'error')
-          ))
+          const finishedInHistory = historyShowsActiveRunFinished(s, a.messages)
           const contentAhead = assistantContentAhead(s.messages, a.messages)
-          if (finishedInHistory || contentAhead) {
+          if (finishedInHistory || contentAhead || needsRescue) {
             return stamp({
               ...s,
               ...meta,
               messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
-              currentReplyId: finishedInHistory ? null : s.currentReplyId,
-              activeRunId: finishedInHistory ? null : s.activeRunId,
+              currentReplyId: (finishedInHistory || needsRescue) ? null : s.currentReplyId,
+              activeRunId: (finishedInHistory || needsRescue) ? null : s.activeRunId,
             })
           }
+          // Refuse without stamping revision — otherwise later HISTORY sees
+          // cloudNewer===false and permanently keeps the empty placeholder.
+          return { ...s, ...meta }
         }
         const localHasServerLast = hasMessageId(s.messages, lastMessageId(a.messages))
         // Cached / reconnect transcript is stale vs the server tail.
-        if (!inFlight && !localHasServerLast) {
-          return stamp({
-            ...s,
-            ...meta,
-            messages: a.messages,
-            currentReplyId: null,
-            activeRunId: null,
-          })
+        if (!localHasServerLast || needsRescue) {
+          if (needsRescue && localHasServerLast) {
+            return stamp({
+              ...s,
+              ...meta,
+              messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
+              currentReplyId: null,
+              activeRunId: null,
+            })
+          }
+          if (!localHasServerLast) {
+            return stamp({
+              ...s,
+              ...meta,
+              messages: a.messages,
+              currentReplyId: null,
+              activeRunId: null,
+            })
+          }
         }
-        if (!inFlight && localHasServerLast && assistantContentAhead(s.messages, a.messages)) {
+        if (localHasServerLast && assistantContentAhead(s.messages, a.messages)) {
           return stamp({
             ...s,
             ...meta,
             messages: patchAssistantFromHistory(s.messages, a.messages, s.activeRunId),
           })
         }
-        return stamp({ ...s, ...meta })
+        return { ...s, ...meta }
       }
       if (inFlight) {
         const localAhead = s.messages.length > a.messages.length
-        const finishedInHistory = !localAhead && !!s.activeRunId && a.messages.some((m) => (
-          m.activity?.runId === s.activeRunId
-          && (m.activity.status === 'success' || m.activity.status === 'error')
-        ))
+        const finishedInHistory = !localAhead && historyShowsActiveRunFinished(s, a.messages)
         const histAhead = a.messages.length > s.messages.length
         let contentAhead = false
         if (!localAhead && !finishedInHistory && !histAhead) {
-          contentAhead = assistantContentAhead(s.messages, a.messages)
+          contentAhead = assistantContentAhead(s.messages, a.messages) || needsRescue
         }
-        if (localAhead || (!finishedInHistory && !histAhead && !contentAhead)) {
-          return stamp({ ...s, ...meta })
+        if (localAhead || (!finishedInHistory && !histAhead && !contentAhead && !needsRescue)) {
+          // Do not stamp revision on refuse (see incomplete path above).
+          return { ...s, ...meta }
         }
       }
       // Same tail already on screen (localStorage cache / reconnect): keep
       // those bubbles so markdown does not remount, and only prepend older.
       // A newer cloud revision with the same last id still keeps identity
-      // unless the last assistant body is actually ahead.
+      // unless the last assistant body is actually ahead — or history shows
+      // this in-flight run already finished (missed done/run-finish).
       if (s.messages.length > 0 && hasMessageId(s.messages, lastMessageId(a.messages))) {
         let messages = mergeOlderPrefix(s.messages, a.messages)
-        if (assistantContentAhead(s.messages, a.messages)) {
+        const finishedInHistory = inFlight && historyShowsActiveRunFinished(s, a.messages)
+        const rescue = finishedInHistory || needsRescue || assistantContentAhead(s.messages, a.messages)
+        if (rescue) {
           messages = patchAssistantFromHistory(messages, a.messages, s.activeRunId)
         }
-        return stamp({ ...s, ...meta, messages })
+        return stamp({
+          ...s,
+          ...meta,
+          messages,
+          ...((finishedInHistory || needsRescue)
+            ? { currentReplyId: null, activeRunId: null }
+            : {}),
+        })
       }
       return stamp({
         ...s,

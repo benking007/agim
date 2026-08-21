@@ -47,6 +47,40 @@ export const webRunAborts = new Map<string, AbortController>()
 
 export const USER_INTERRUPTED_TEXT = '用户打断了执行'
 
+/**
+ * Terminal WS frames (`done` / `run-finish` / `error`).
+ * Always stash a copy — half-open sockets can still report readyState=OPEN
+ * (no emit_dropped) while the browser is already gone. Flush on the next
+ * get-history so SPA catch-up is not lost. DONE/RUN_FINISH are idempotent.
+ */
+const pendingTerminalByThread = new Map<string, Array<Record<string, unknown>>>()
+
+function stashTerminalFrame(threadId: string, frame: Record<string, unknown>): void {
+  if (!threadId) return
+  const t = String(frame.type ?? '')
+  const runId = typeof frame.runId === 'string' ? frame.runId : ''
+  const prev = pendingTerminalByThread.get(threadId) ?? []
+  const next = prev.filter((f) => !(String(f.type) === t && f.runId === runId))
+  next.push(frame)
+  if (next.length > 8) next.splice(0, next.length - 8)
+  pendingTerminalByThread.set(threadId, next)
+}
+
+function flushPendingTerminal(
+  threadId: string,
+  send: (data: Record<string, unknown>) => void,
+): void {
+  const list = pendingTerminalByThread.get(threadId)
+  if (!list?.length) return
+  pendingTerminalByThread.delete(threadId)
+  for (const frame of list) send(frame)
+}
+
+/** Test helper. */
+export function _resetPendingTerminalForTests(): void {
+  pendingTerminalByThread.clear()
+}
+
 export function formatWebAgentUnavailableMessage(agentName: string): string {
   if ((agentName === 'native' || agentName === 'agim')) {
     return [
@@ -240,6 +274,8 @@ export async function sendSessionHistory(
   if (!active) {
     sendToClient(ws, { type: 'active-run-gone', threadId })
   }
+  // Replay terminal frames that were dropped while the peer was offline.
+  flushPendingTerminal(threadId, (data) => sendToClient(ws, data))
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────
@@ -286,16 +322,24 @@ export async function handleClientMessage(
     const frame = typeof data.threadId === 'string' && data.threadId
       ? data
       : { ...data, threadId: clientId }
-    if (target.readyState !== target.OPEN) {
-      const t = String(data.type ?? '')
-      if (t === 'done' || t === 'run-finish' || t === 'error') {
+    const t = String(data.type ?? '')
+    const terminal = t === 'done' || t === 'run-finish' || t === 'error'
+    // Always stash terminal frames. Half-open peers still look OPEN (no
+    // emit_dropped) — browser already left; next get-history flushes these.
+    if (terminal) stashTerminalFrame(clientId, frame)
+    const sock = target as WebSocket & { isAlive?: boolean }
+    const zombie = sock.isAlive === false
+    if (target.readyState !== target.OPEN || zombie) {
+      if (terminal) {
         webLog.warn({
           event: 'web.ws.emit_dropped',
           type: t,
           threadId: clientId,
           runId: typeof data.runId === 'string' ? data.runId : undefined,
           hasPeer: Boolean(live),
-        }, 'terminal WS frame dropped — peer not OPEN (SPA may stay Running until catch-up)')
+          readyState: target.readyState,
+          zombie,
+        }, 'terminal WS frame dropped — stashed for next get-history catch-up')
       }
       return
     }

@@ -80,6 +80,8 @@ export type ChatAction =
       thinkVariant?: string
       sessionModel?: string
       compactRate?: string
+      /** Server-measured Agim Agent context tokens. */
+      contextTokens?: number
       historyComplete?: boolean
       olderCount?: number
       /** Server session revision (epoch ms). */
@@ -93,6 +95,7 @@ export type ChatAction =
   | { kind: 'THINK_MODE'; variant: string }
   | { kind: 'SESSION_MODEL'; model: string }
   | { kind: 'COMPACT_RATE'; rate: string }
+  | { kind: 'CONTEXT_TOKENS'; tokens: number }
   | {
       kind: 'ACTIVE_RUN'
       runId: string
@@ -123,7 +126,7 @@ export type ChatAction =
   | { kind: 'CHOICE_EDIT'; messageId: string; finalText: string }
   | { kind: 'CHOICE_DISMISS'; messageId: string }
   | { kind: 'RUN_START'; runId: string; agent: string; startedAt: number }
-  | { kind: 'RUN_USAGE'; runId: string; durationMs: number; outputChars: number }
+  | { kind: 'RUN_USAGE'; runId: string; durationMs: number; outputChars: number; contextTokens?: number }
   | {
       kind: 'RUN_FINISH'
       runId: string
@@ -163,6 +166,7 @@ export const initialChatState: ChatState = {
   thinkVariant: 'auto',
   sessionModel: '',
   compactRate: 'auto',
+  contextTokensMeasured: null,
   clientId: null,
   historyRevisionAt: null,
 }
@@ -239,7 +243,15 @@ function assistantContentAhead(local: ChatMessage[], hist: ChatMessage[]): boole
 
 function historyMeta(s: ChatState, a: Extract<ChatAction, { kind: 'HISTORY' }>): Pick<
   ChatState,
-  'agent' | 'preferredWorkerAgent' | 'planMode' | 'stepReflect' | 'stepReflectDisabled' | 'thinkVariant' | 'sessionModel' | 'compactRate'
+  | 'agent'
+  | 'preferredWorkerAgent'
+  | 'planMode'
+  | 'stepReflect'
+  | 'stepReflectDisabled'
+  | 'thinkVariant'
+  | 'sessionModel'
+  | 'compactRate'
+  | 'contextTokensMeasured'
 > {
   return {
     agent: a.agent || s.agent,
@@ -250,6 +262,9 @@ function historyMeta(s: ChatState, a: Extract<ChatAction, { kind: 'HISTORY' }>):
     thinkVariant: a.thinkVariant ?? s.thinkVariant,
     sessionModel: a.sessionModel ?? s.sessionModel,
     compactRate: a.compactRate ?? s.compactRate,
+    contextTokensMeasured: typeof a.contextTokens === 'number' && a.contextTokens > 0
+      ? Math.floor(a.contextTokens)
+      : s.contextTokensMeasured,
   }
 }
 
@@ -537,6 +552,11 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       return { ...s, sessionModel: a.model || '' }
     case 'COMPACT_RATE':
       return { ...s, compactRate: a.rate || 'auto' }
+    case 'CONTEXT_TOKENS': {
+      const tokens = Math.floor(a.tokens)
+      if (!(tokens > 0)) return s
+      return { ...s, contextTokensMeasured: tokens }
+    }
     case 'ACTIVE_RUN': {
       if (!historyBelongsToClient(a.threadId, s.clientId)) return s
       // Replayed after HISTORY on reconnect/refresh. Bind the snapshot
@@ -963,6 +983,9 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         }
         runActivities = next
       }
+      const measured = typeof a.contextTokens === 'number' && a.contextTokens > 0
+        ? Math.floor(a.contextTokens)
+        : undefined
       let messages = s.messages
       const msgIdx = findActivityMessageIndex(messages, { runId: a.runId, replyId: s.currentReplyId })
       if (msgIdx >= 0) {
@@ -975,7 +998,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           })
         }
       }
-      return { ...s, runActivities, messages }
+      return { ...s, runActivities, messages, ...(measured != null ? { contextTokensMeasured: measured } : {}) }
     }
     case 'RUN_FINISH': {
       const idx = s.runActivities.findIndex((r) => r.runId === a.runId)
@@ -1116,6 +1139,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         thinkVariant: 'auto',
         sessionModel: '',
         compactRate: 'auto',
+        contextTokensMeasured: null,
         preferredWorkerAgent: '',
         historyRevisionAt: null,
       }

@@ -199,6 +199,9 @@ export function makeOnIncoming(
           thinkVariant: msg.thinkVariant,
           sessionModel: msg.sessionModel,
           compactRate: msg.compactRate,
+          ...(typeof msg.contextTokens === 'number' && msg.contextTokens > 0
+            ? { contextTokens: msg.contextTokens }
+            : {}),
           historyComplete: complete,
           olderCount: msg.olderCount ?? 0,
           updatedAt: typeof msg.updatedAt === 'number' ? msg.updatedAt : undefined,
@@ -326,6 +329,9 @@ export function makeOnIncoming(
           runId: msg.runId,
           durationMs: msg.durationMs,
           outputChars: msg.outputChars,
+          ...(typeof msg.contextTokens === 'number' && msg.contextTokens > 0
+            ? { contextTokens: msg.contextTokens }
+            : {}),
         })
         return
       case 'run-finish':

@@ -63,6 +63,8 @@ export interface ComposerStatusBarProps {
   breakdown?: ContextBreakdownItem[]
   /** Session-scoped compression rate (`auto` | `full` | `balanced` | `frequent`). */
   compactRate?: string
+  /** True when contextUsed is from server-measured pi context. */
+  contextMeasured?: boolean
   disabled?: boolean
   onSelectModel?: (backendName: string) => void
   onConfigureModel: () => void
@@ -141,6 +143,7 @@ export function ComposerStatusBar({
   contextWindow,
   breakdown = [],
   compactRate = 'auto',
+  contextMeasured = false,
   disabled = false,
   onSelectModel,
   onConfigureModel,
@@ -327,6 +330,7 @@ export function ComposerStatusBar({
             contextWindow={windowSize}
             breakdown={breakdown}
             compactRate={compactRate}
+            contextMeasured={contextMeasured}
             onSendCommand={onSendCommand}
             onClose={() => setContextOpen(false)}
           />

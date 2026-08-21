@@ -157,6 +157,11 @@ function deserializeSession(value: unknown): Session | null {
     model: parsed.model,
     variant: parsed.variant,
     compactRate: normalizePersistedCompactRate(parsed.compactRate),
+    contextTokens: typeof parsed.contextTokens === 'number'
+      && Number.isFinite(parsed.contextTokens)
+      && parsed.contextTokens > 0
+      ? Math.floor(parsed.contextTokens)
+      : undefined,
     usage: parsed.usage,
     createdAt,
     lastActivity,
@@ -826,6 +831,24 @@ class SessionManager {
     })
   }
 
+  async recordContextTokens(
+    platform: string,
+    channelId: string,
+    threadId: string,
+    tokens: number,
+  ): Promise<void> {
+    if (!(Number.isFinite(tokens) && tokens > 0)) return
+    const key = `${platform}:${channelId}:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) return
+      session.contextTokens = Math.floor(tokens)
+      session.lastActivity = new Date()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+    })
+  }
+
   /**
    * Increment the per-session usage roll-up after a successful agent
    * invocation. Used by router.callAgentWithHistory to power /stats.
@@ -914,6 +937,7 @@ class SessionManager {
         delete session.stepReflect
         // Compression rate is also per-conversation; /new returns to auto.
         delete session.compactRate
+        delete session.contextTokens
         // Preferred Loop worker is conversation-scoped.
         delete session.preferredWorkerAgent
         clearPlanModeForThread(key)
@@ -1200,6 +1224,9 @@ class SessionManager {
         model: session.model,
         variant: session.variant,
         compactRate: session.compactRate,
+        ...(typeof session.contextTokens === 'number' && session.contextTokens > 0
+          ? { contextTokens: session.contextTokens }
+          : {}),
         usage: session.usage,
         createdAt: session.createdAt,
         lastActivity: session.lastActivity,

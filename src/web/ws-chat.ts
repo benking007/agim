@@ -157,6 +157,10 @@ export async function sendSessionHistory(
       thinkVariant: history.session.variant || 'auto',
       sessionModel: history.session.model || '',
       compactRate: history.session.compactRate || 'auto',
+      ...(typeof history.session.contextTokens === 'number'
+        && history.session.contextTokens > 0
+        ? { contextTokens: history.session.contextTokens }
+        : {}),
       updatedAt: historyUpdatedAt({
         lastActivity: history.session.lastActivity,
         messages: history.messages,
@@ -566,6 +570,10 @@ export async function handleClientMessage(
             runId,
             durationMs,
             outputChars: result.length,
+            ...(typeof routeCtx.agentOutcome?.contextTokens === 'number'
+              && routeCtx.agentOutcome.contextTokens > 0
+              ? { contextTokens: routeCtx.agentOutcome.contextTokens }
+              : {}),
           })
           emit({
             type: 'run-finish',
@@ -655,6 +663,10 @@ export async function handleClientMessage(
           runId,
           durationMs,
           outputChars: deliveredText.length,
+          ...(typeof routeCtx.agentOutcome?.contextTokens === 'number'
+            && routeCtx.agentOutcome.contextTokens > 0
+            ? { contextTokens: routeCtx.agentOutcome.contextTokens }
+            : {}),
         })
         emit({
           type: 'run-finish',

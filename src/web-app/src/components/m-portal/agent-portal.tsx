@@ -153,7 +153,12 @@ export function AgentPortal(): JSX.Element {
   const [thinkBaseline, setThinkBaseline] = useState(state.thinkVariant)
   const [optimisticStepReflect, setOptimisticStepReflect] = useState<boolean | null>(null)
   const [stepReflectBaseline, setStepReflectBaseline] = useState(state.stepReflect)
-  const modelStatus = useComposerModelStatus(state.agent, state.messages, state.sessionModel)
+  const modelStatus = useComposerModelStatus(
+    state.agent,
+    state.messages,
+    state.sessionModel,
+    state.contextTokensMeasured,
+  )
   const thinkVariant = optimisticThink ?? state.thinkVariant
   const stepReflect = optimisticStepReflect ?? state.stepReflect
   const [optimisticModel, setOptimisticModel] = useState<string | null>(null)
@@ -1144,6 +1149,7 @@ export function AgentPortal(): JSX.Element {
                   contextUsed={modelStatus.contextUsed}
                   contextWindow={modelStatus.contextWindow}
                   breakdown={modelStatus.breakdown}
+                  contextMeasured={modelStatus.contextMeasured}
                   compactRate={compactRate}
                   disabled={state.status !== 'open'}
                   onConfigureModel={() => setLlmSettingsOpen(true)}

@@ -167,6 +167,11 @@ export interface Session {
    * Omitted / auto = window-scaled global defaults. Cleared by /new.
    */
   compactRate?: 'auto' | 'full' | 'balanced' | 'frequent'
+  /**
+   * Latest measured Agim Agent context size (tokens) after a turn.
+   * Powers the Usage popover; cleared by /new.
+   */
+  contextTokens?: number
   /** Per-session usage roll-up. Updated by callAgentWithHistory after every
    *  successful agent invocation. Persisted with the session metadata so
    *  /stats survives restart. */
@@ -495,6 +500,11 @@ export interface AgentTurnOutcome {
     /** tokensBefore from the last successful compaction this turn. */
     tokensBefore?: number
   }
+  /**
+   * Measured context size after this turn (pi usage + estimate of live
+   * messages). Used by the Web Usage popover; omitted when measurement fails.
+   */
+  contextTokens?: number
 }
 
 /**

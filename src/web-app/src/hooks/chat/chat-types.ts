@@ -167,6 +167,11 @@ export interface ChatState {
   sessionModel: string
   /** Live session `/ctx` compression rate (`auto` | `full` | `balanced` | `frequent`). */
   compactRate: string
+  /**
+   * Latest server-measured Agim Agent context tokens (pi usage + estimate).
+   * Null until history/usage reports a value; cleared on /new.
+   */
+  contextTokensMeasured: number | null
   /** WebSocket thread id (web-…). Used for media upload subdir. */
   clientId: string | null
   /**

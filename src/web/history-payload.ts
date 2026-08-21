@@ -4,12 +4,12 @@
  * Agent prompts still read the full on-disk `.log`. This module only shapes
  * what the SPA receives so a large transcript does not stall first paint:
  *   1. Cap `activity.steps[].preview` (tool dumps dwarf the reply).
- *   2. Send the newest messages first (count + byte budget).
- *   3. Follow with `history-prepend` chunks of older turns.
+ *   2. Drop historical `injectedContext` (live run keeps its own copy).
+ *   3. Send the newest messages first (count + byte budget).
+ *   4. Follow with `history-prepend` chunks of older turns.
  */
 
 import type { ChatMessage, PersistedChatActivity } from '../core/types.js'
-import { expandInjectedContextsInMessages } from '../core/injected-context-dedupe.js'
 
 /** Tool-step previews in history / active-run replay. Disk `.log` is unchanged. */
 export const HISTORY_PREVIEW_MAX_CHARS = 500
@@ -49,10 +49,13 @@ export function slimActivitySteps<T extends { preview?: string }>(steps: T[]): T
 export function slimHistoryMessage(message: ChatMessage): ChatMessage {
   const activity = message.activity
   if (!activity) return message
-  if (!activity.steps?.length) return message
-  const steps = slimActivitySteps(activity.steps)
-  if (steps === activity.steps) return message
+  const steps = activity.steps?.length ? slimActivitySteps(activity.steps) : activity.steps
+  const dropIc = !!activity.injectedContext
+  if (steps === activity.steps && !dropIc) return message
   const nextActivity: PersistedChatActivity = { ...activity, steps }
+  // Historical injectedContext is live-only (active-run / injected-context).
+  // Expanding it on HISTORY copied ~30KB per assistant and blew the first frame.
+  delete nextActivity.injectedContext
   return { ...message, activity: nextActivity }
 }
 
@@ -62,7 +65,10 @@ export function slimHistoryMessages(messages: ChatMessage[]): ChatMessage[] {
 
 export function estimateHistoryMessageBytes(message: ChatMessage): number {
   let n = (message.content?.length ?? 0) + 80
-  const steps = message.activity?.steps
+  const activity = message.activity
+  if (!activity) return n
+  n += activity.injectedContext?.length ?? 0
+  const steps = activity.steps
   if (!steps) return n
   for (const st of steps) {
     n += (st.preview?.length ?? 0) + (st.label?.length ?? 0) + 64
@@ -111,10 +117,8 @@ export interface HistoryDelivery {
  * without leaving a gap in the SPA transcript.
  */
 export function splitHistoryDelivery(messages: ChatMessage[]): HistoryDelivery {
-  // Disk may store «agim-ic-unchanged» stubs; expand against the full log
-  // before windowing so the SPA accordion always gets readable text.
-  const expanded = expandInjectedContextsInMessages(messages)
-  const slimmed = slimHistoryMessages(expanded)
+  // Do not expand injectedContext — HISTORY never ships historical dumps.
+  const slimmed = slimHistoryMessages(messages)
   const tailStart = historyTailStart(slimmed)
   const tail = slimmed.slice(tailStart)
   const older = slimmed.slice(0, tailStart)

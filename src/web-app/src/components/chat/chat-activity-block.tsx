@@ -256,10 +256,10 @@ export function ChatActivityBlock({ activity, className }: ChatActivityBlockProp
 
       {open && (
         <div className="mt-1.5 space-y-1 border-l border-border/80 pl-3">
-          {activity.injectedContext?.trim() ? (
+          {activity.status === 'running' && activity.injectedContext?.trim() ? (
             <InjectedContextDetails text={activity.injectedContext} />
           ) : null}
-          {stepCount === 0 && !activity.injectedContext?.trim() && (
+          {stepCount === 0 && !(activity.status === 'running' && activity.injectedContext?.trim()) && (
             <p className="text-xs text-text-muted">
               {running
                 ? t('chat.activityWaitingSteps', {

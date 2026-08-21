@@ -45,9 +45,8 @@ export interface PersistedChatActivity {
   durationMs?: number
   error?: string
   /**
-   * Prompt injection snapshot (system + ephemeral) for the accordion.
-   * Identical repeats across turns may be stored as «agim-ic-unchanged»
-   * and expanded from an earlier full copy on history load.
+   * Legacy field. New writes omit this — inject dumps stay on the live
+   * ActiveRun / `injected-context` frame, not in session JSONL or HISTORY.
    */
   injectedContext?: string
   steps: Array<{

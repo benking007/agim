@@ -167,8 +167,9 @@ export async function latestWebAssistantMessageId(threadId: string): Promise<str
  * `history-prepend` so first paint is not one giant JSON.parse + markdown
  * pass. Disk `.log` is unchanged.
  *
- * After history, replay any in-flight (or recently finished) ActiveRun so
- * tab-switch / refresh can restore the activity accordion and "接收中".
+ * Catch-up order: stashed terminal frames + active-run first, then the
+ * windowed `history` frames. A half-open reconnect must not bury `done`
+ * behind a large HISTORY payload.
  */
 export async function sendSessionHistory(
   ws: WebSocket,
@@ -178,6 +179,7 @@ export async function sendSessionHistory(
   // Capture before any await — a later get-history rekey mutates client.id.
   const threadId = client.id
   const history = await sessionManager.getSessionWithHistory('web', 'web', threadId)
+  let historyFrames: Array<Record<string, unknown>> = []
   if (history) {
     if (history.session.agent) {
       client.agent = history.session.agent
@@ -217,9 +219,7 @@ export async function sendSessionHistory(
         }),
       })
     } catch { /* feedback sidecar optional */ }
-    for (const frame of buildHistoryWireFrames(history.messages, meta, decorate)) {
-      sendToClient(ws, frame)
-    }
+    historyFrames = buildHistoryWireFrames(history.messages, meta, decorate)
   }
   const { getActiveRun, rememberFullInjectedContext } = await import('./active-runs.js')
   if (history?.messages?.length) {
@@ -229,6 +229,9 @@ export async function sendSessionHistory(
     } catch { /* optional */ }
   }
   const active = getActiveRun(threadId)
+  // Small catch-up first: half-open reconnects die while a ~800KB HISTORY
+  // is still in the kernel. done / run-finish / active-run must go first.
+  flushPendingTerminal(threadId, (data) => sendToClient(ws, data))
   if (active) {
     // Always replay — including finished runs. Sleep/wake often misses
     // `done` while the SPA mid-flight guard also refuses HISTORY; skipping
@@ -250,6 +253,11 @@ export async function sendSessionHistory(
       ...(active.injectedContext ? { injectedContext: active.injectedContext } : {}),
       threadId,
     })
+  } else {
+    sendToClient(ws, { type: 'active-run-gone', threadId })
+  }
+  for (const frame of historyFrames) {
+    sendToClient(ws, frame)
   }
   // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
   // get-history (chat bootstrap does not carry the Loop DTO).
@@ -269,13 +277,6 @@ export async function sendSessionHistory(
       })
     }
   } catch { /* ask bus optional during early boot */ }
-  // Explicit "no live run" so SPA can drop a ghost Running badge / pet
-  // task when the server snapshot was cleared or never existed.
-  if (!active) {
-    sendToClient(ws, { type: 'active-run-gone', threadId })
-  }
-  // Replay terminal frames that were dropped while the peer was offline.
-  flushPendingTerminal(threadId, (data) => sendToClient(ws, data))
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────

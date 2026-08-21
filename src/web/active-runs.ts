@@ -54,7 +54,7 @@ export interface ActiveRunSnapshot {
 /** Soft cap so a huge AGENTS.md + skills dump cannot blow WS / session JSON. */
 export const INJECTED_CONTEXT_MAX_CHARS = 120_000
 
-/** Last full injectedContext persisted per thread (for session-level dedupe). */
+/** Last full injectedContext seen on this thread (live-wire dedupe only). */
 const lastFullInjectedByThread = new Map<string, string>()
 
 export function setActiveRunInjectedContext(threadId: string, text: string): boolean {
@@ -263,13 +263,13 @@ export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
   finishedAt?: number
   durationMs?: number
   error?: string
-  injectedContext?: string
   steps: ActiveRunStep[]
 } {
-  const prior = lastFullInjectedByThread.get(snap.threadId)
-  const persisted = dedupeInjectedContextForPersist(snap.injectedContext, prior)
-  if (persisted && !isInjectedContextUnchangedMarker(persisted)) {
-    lastFullInjectedByThread.set(snap.threadId, persisted)
+  // Keep live-wire dedupe cache; do not write injectedContext into .log.
+  // Historical accordion no longer shows the inject card.
+  const full = snap.injectedContext?.trim()
+  if (full && !isInjectedContextUnchangedMarker(full)) {
+    lastFullInjectedByThread.set(snap.threadId, full)
   }
   return {
     runId: snap.runId,
@@ -278,7 +278,6 @@ export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
     finishedAt: snap.finishedAt,
     durationMs: snap.durationMs,
     error: snap.error,
-    ...(persisted ? { injectedContext: persisted } : {}),
     steps: snap.steps.map((st) => ({ ...st })),
   }
 }

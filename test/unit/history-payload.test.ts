@@ -159,7 +159,7 @@ describe('history-payload', () => {
     expect(historyUpdatedAt({ lastActivity: '1970-01-01T00:00:03.000Z', messages: [] })).toBe(3_000)
   })
 
-  it('expands injectedContext unchanged markers before windowing', () => {
+  it('strips injectedContext from HISTORY instead of expanding markers', () => {
     const full = '## System prompt\nskills'
     const messages = [
       msg({
@@ -180,6 +180,10 @@ describe('history-payload', () => {
       }),
     ]
     const { tail } = splitHistoryDelivery(messages)
-    expect(tail[1]?.activity?.injectedContext).toBe(full)
+    expect(tail[0]?.activity?.injectedContext).toBeUndefined()
+    expect(tail[1]?.activity?.injectedContext).toBeUndefined()
+    const frames = buildHistoryWireFrames(messages, { agent: 'agim' }, (m) => m)
+    const histMsgs = frames[0]?.messages as typeof messages
+    expect(histMsgs.every((m) => !m.activity?.injectedContext)).toBe(true)
   })
 })

@@ -108,9 +108,6 @@ export function normalizeHistoryMessage(h: HistoryMessage, i: number): ChatMessa
         finishedAt: h.activity.finishedAt,
         durationMs: h.activity.durationMs,
         error: h.activity.error,
-        ...(h.activity.injectedContext
-          ? { injectedContext: h.activity.injectedContext }
-          : {}),
         steps: h.activity.steps.map(normalizeActivityStep),
       }
     : undefined

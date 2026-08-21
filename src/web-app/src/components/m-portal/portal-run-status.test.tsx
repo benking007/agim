@@ -100,6 +100,26 @@ describe('PortalRunStatus', () => {
     expect(screen.getByText(/Worked|已完成/i)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: /Worked|已完成/i }))
     expect(screen.getByText('web_search')).toBeTruthy()
+    expect(screen.queryByText(/Injected context|注入内容/)).toBeNull()
+  })
+
+  it('does not treat leftover injectedContext as expandable details when finished', () => {
+    render(
+      <PortalRunStatus
+        dark
+        agentName="Agim"
+        agentColor="from-blue-500 to-cyan-600"
+        AgentIcon={Brain}
+        activity={activity({
+          status: 'success',
+          durationMs: 1000,
+          steps: [],
+          injectedContext: '## leftover dump',
+        })}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /Worked|已完成/i })).toBeNull()
+    expect(screen.queryByText(/Injected context|注入内容/)).toBeNull()
   })
 
   it('shows inline Subagent card for multiple waiting agents', async () => {

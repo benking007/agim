@@ -1203,7 +1203,18 @@ class SessionManager {
     // is far cheaper for the hot path.
     const logPath = sessionLogPath(key)
     try {
-      const lines = session.messages.map((m) => JSON.stringify(m)).join('\n')
+      // Historical inject dumps stay out of JSONL; live run keeps them in RAM.
+      let stripped = false
+      const rows = session.messages.map((m) => {
+        const act = m.activity
+        if (!act?.injectedContext) return m
+        stripped = true
+        const activity = { ...act }
+        delete activity.injectedContext
+        return { ...m, activity }
+      })
+      if (stripped) session.messages = rows
+      const lines = rows.map((m) => JSON.stringify(m)).join('\n')
       await this.atomicWrite(logPath, lines + (lines ? '\n' : ''))
     } catch {
       // disk failure — in-memory state is still authoritative

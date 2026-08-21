@@ -985,6 +985,8 @@ export class NativeAgentAdapter implements AgentAdapter {
     let ctxCompactSuccess = 0
     let ctxCompactFail = 0
     let ctxTokensBefore: number | undefined
+    /** Post-turn measured context (for Usage UI). */
+    let measuredContextTokens: number | undefined
     harness.on('context', (event) => {
       let messages = event.messages
       const combined = [ephemeralContext, ephemeralSteer].filter((part) => part.trim()).join('\n\n')
@@ -1117,6 +1119,7 @@ export class NativeAgentAdapter implements AgentAdapter {
         auxModelCalls: compactionCalls + criticCallsFired,
         ...(usage ? { usage } : {}),
         ...(contextBudget ? { contextBudget } : {}),
+        ...(measuredContextTokens != null ? { contextTokens: measuredContextTokens } : {}),
       })
     }
 
@@ -2099,6 +2102,12 @@ export class NativeAgentAdapter implements AgentAdapter {
         }
       }
     }
+
+    // Snapshot context size for Usage UI (includes tool results in the pi
+    // session — not just web chat bubbles).
+    try {
+      measuredContextTokens = await measureContextTokens(session)
+    } catch { /* best-effort */ }
 
     if (opts?.onUsage && sawUsage) {
       const usage = resolvedUsage()

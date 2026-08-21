@@ -1075,6 +1075,17 @@ export async function callAgentWithHistory(
           durationMs,
         })
       }
+      const measuredCtx = adapterOutcome?.contextTokens
+      if (typeof measuredCtx === 'number' && Number.isFinite(measuredCtx) && measuredCtx > 0) {
+        try {
+          await sessionManager.recordContextTokens(
+            ctx.platform,
+            ctx.channelId,
+            storageThreadId,
+            measuredCtx,
+          )
+        } catch { /* best-effort */ }
+      }
 
       if (outcome.status === 'success') {
         // v1.5 — memory distillation. Fire-and-forget post-reply hook.

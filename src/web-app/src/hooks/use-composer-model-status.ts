@@ -18,8 +18,9 @@ import type { AgimSkillsInjectionResponse } from '@/hooks/use-agim-skills'
 import { client } from '@/lib/api/client'
 import { api } from '@/lib/api/endpoints'
 import {
+  applyMeasuredContextTokens,
   buildContextBreakdown,
-  sumBreakdownTokens,
+  resolveContextUsedTokens,
 } from '@/lib/context-breakdown'
 import type { WorkspaceFilesResponse } from '@/types/api'
 
@@ -66,6 +67,7 @@ export function useComposerModelStatus(
   agent: string,
   messages: ChatMessage[],
   sessionModel = '',
+  contextTokensMeasured: number | null = null,
 ) {
   const { t, i18n } = useTranslation()
   const llm = useLlmList()
@@ -162,14 +164,17 @@ export function useComposerModelStatus(
   const zh = (i18n.language || '').startsWith('zh')
 
   const buckets = useMemo(
-    () => buildContextBreakdown({
-      isAgim,
-      messages,
-      rulesChars,
-      skillsChars,
-      mcpToolCount,
-    }),
-    [isAgim, messages, rulesChars, skillsChars, mcpToolCount],
+    () => applyMeasuredContextTokens(
+      buildContextBreakdown({
+        isAgim,
+        messages,
+        rulesChars,
+        skillsChars,
+        mcpToolCount,
+      }),
+      contextTokensMeasured,
+    ),
+    [isAgim, messages, rulesChars, skillsChars, mcpToolCount, contextTokensMeasured],
   )
 
   const breakdown = useMemo((): ContextBreakdownItem[] => {
@@ -196,7 +201,9 @@ export function useComposerModelStatus(
             defaultValue: zh ? '已压缩对话' : 'Summarized conversation',
           })
         case 'conversation':
-          return t('chat.statusBar.conversation', { defaultValue: zh ? '对话' : 'Conversation' })
+          return t('chat.statusBar.conversation', {
+            defaultValue: zh ? '对话（含工具结果）' : 'Conversation (incl. tools)',
+          })
         default:
           return key
       }
@@ -209,7 +216,10 @@ export function useComposerModelStatus(
     }))
   }, [buckets, t, zh])
 
-  const contextUsed = useMemo(() => sumBreakdownTokens(buckets), [buckets])
+  const contextUsed = useMemo(
+    () => resolveContextUsedTokens(buckets, contextTokensMeasured),
+    [buckets, contextTokensMeasured],
+  )
 
   return {
     isAgim,
@@ -221,6 +231,7 @@ export function useComposerModelStatus(
     contextUsed,
     contextWindow,
     breakdown,
+    contextMeasured: typeof contextTokensMeasured === 'number' && contextTokensMeasured > 0,
     refreshLlm: () => { void llm.refetch() },
   }
 }

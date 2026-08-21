@@ -97,8 +97,12 @@ projected > 硬线
 
 - Agim Agent 实际 `contextWindow` / `maxTokens` 来自 pi catalog（如 DeepSeek V4 → **1M / 384K**），可被 backend 显式 `contextWindow` 覆盖。
 - `GET /api/llm` 会在未手动配置时回填 catalog，供 Usage 状态条显示。
-- SPA 本地启发式仅作 fallback；以 API 回填为准。
-- Usage 拆分（近似，对齐 Cursor 颗粒度）：系统提示 / 工具定义 / 规则 / 技能 / MCP / 子代理 / 已压缩对话 / 对话。规则与技能尽量读 workspace / injection API；其余为常量或字符估算。实时 tool 结果与压缩后 pi 会话尚未精确计量。
+- SPA 本地启发式仅作 fallback；有实测 `contextTokens` 时 Usage 环与总量优先用实测。
+- Usage 拆分：系统提示 / 工具定义 / 规则 / 技能 / MCP / 子代理 / 已压缩对话 / **对话（含工具结果）**。
+  - 每轮结束后 Agim Agent 测量 pi 会话（`measureContextTokens`）→ 写入 `session.contextTokens` → WS `history` / `usage` 下发。
+  - 有实测时：固定桶保留估算，残差进「对话」；总量 = 实测。
+  - 无实测时：气泡 + activity 预览的字符/4 估算（仍可能偏低）。
+- 有效压缩线展示：`min(window−reserve, AGIM_CTX_COMPACT_AT_TOKENS≈200k)`。
 
 ## 6. 运维速查
 
@@ -159,4 +163,4 @@ AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS=64000
 | **7** | 设置页关键旋钮 | **已做** | 「晚压」卡片（compact / reserve / keepRecent） |
 | **8** | 会话压缩率 | **已做** | Usage：自动 / 满压 / 均衡 / 频繁 |
 
-可选后续（不挡发版）：单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留 env 别名、Usage 接入真实 measured usage。
+可选后续（不挡发版）：单次 tool 硬上限联动、Portal 对齐、L3 memory promote、退役遗留 env 别名。

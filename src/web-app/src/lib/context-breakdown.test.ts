@@ -3,9 +3,11 @@ import type { ChatMessage } from '@/hooks/use-chat'
 import {
   EST_NATIVE_TOOL_DEF_TOKENS,
   EST_SYSTEM_BASE_TOKENS,
+  applyMeasuredContextTokens,
   buildContextBreakdown,
   estimateConversationTokens,
   estimateSummarizedTokens,
+  resolveContextUsedTokens,
   sumBreakdownTokens,
 } from './context-breakdown'
 
@@ -73,5 +75,40 @@ describe('context-breakdown', () => {
       }),
     ]
     expect(estimateSummarizedTokens(messages)).toBe(400)
+  })
+
+  it('includes activity preview in conversation heuristic', () => {
+    const messages = [
+      msg('assistant', 'ok', {
+        runId: 'r1',
+        status: 'success',
+        startedAt: 1,
+        steps: [{
+          id: 't1',
+          kind: 'tool',
+          label: 'read',
+          status: 'success',
+          startedAt: 1,
+          preview: 'x'.repeat(400),
+        }],
+      }),
+    ]
+    const { conversation } = estimateConversationTokens(messages)
+    expect(conversation).toBeGreaterThan(1) // "ok" alone is 1 token
+    expect(conversation).toBeGreaterThanOrEqual(100)
+  })
+
+  it('applies measured context by expanding the conversation bucket', () => {
+    const base = buildContextBreakdown({
+      isAgim: true,
+      messages: [msg('user', 'hi')],
+      rulesChars: 0,
+      skillsChars: 0,
+    })
+    const fixed = sumBreakdownTokens(base.filter((b) => b.labelKey !== 'conversation'))
+    const measured = fixed + 50_000
+    const next = applyMeasuredContextTokens(base, measured)
+    expect(resolveContextUsedTokens(next, measured)).toBe(measured)
+    expect(next.find((b) => b.labelKey === 'conversation')?.tokens).toBe(50_000)
   })
 })

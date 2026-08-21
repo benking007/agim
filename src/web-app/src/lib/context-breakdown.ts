@@ -55,7 +55,16 @@ export function estimateConversationTokens(messages: ChatMessage[]): {
   let user = 0
   let assistant = 0
   for (const m of messages) {
-    const n = tokensFromChars((m.content || '').length)
+    let n = tokensFromChars((m.content || '').length)
+    // Soft floor: activity previews + injected context are part of what the
+    // model often saw (tool dumps), even when measured context is unavailable.
+    const activity = m.activity
+    if (activity) {
+      n += tokensFromChars(activity.injectedContext?.length ?? 0)
+      for (const st of activity.steps ?? []) {
+        n += tokensFromChars(st.preview?.length ?? 0)
+      }
+    }
     if (m.role === 'user') user += n
     else if (m.role === 'assistant') assistant += n
     else user += n
@@ -184,4 +193,49 @@ export function buildContextBreakdown(input: BuildContextBreakdownInput): Breakd
 
 export function sumBreakdownTokens(buckets: BreakdownBucket[]): number {
   return buckets.reduce((n, b) => n + b.tokens, 0)
+}
+
+/**
+ * Reconcile heuristic buckets with a server-measured context size.
+ * Fixed buckets (system/tools/rules/skills/mcp/subagents/summarized) stay;
+ * the residual goes into `conversation` (includes tool results in practice).
+ * When measured is missing/invalid, returns buckets unchanged.
+ */
+export function applyMeasuredContextTokens(
+  buckets: BreakdownBucket[],
+  measured: number | undefined | null,
+): BreakdownBucket[] {
+  if (!(typeof measured === 'number' && Number.isFinite(measured) && measured > 0)) {
+    return buckets
+  }
+  const fixed = buckets
+    .filter((b) => b.labelKey !== 'conversation')
+    .reduce((n, b) => n + b.tokens, 0)
+  const conversationTokens = Math.max(0, Math.floor(measured) - fixed)
+  const next = buckets.map((b) => (
+    b.labelKey === 'conversation'
+      ? { ...b, tokens: conversationTokens }
+      : b
+  ))
+  if (!next.some((b) => b.labelKey === 'conversation') && conversationTokens > 0) {
+    next.push({
+      key: 'conversation',
+      labelKey: 'conversation',
+      tokens: conversationTokens,
+      color: BREAKDOWN_COLORS.conversation,
+    })
+  }
+  // Drop zero conversation after reconcile only if it was empty.
+  return next.filter((b) => b.tokens > 0 || b.labelKey !== 'conversation')
+}
+
+/** Prefer measured total; fall back to sum of heuristic buckets. */
+export function resolveContextUsedTokens(
+  buckets: BreakdownBucket[],
+  measured: number | undefined | null,
+): number {
+  if (typeof measured === 'number' && Number.isFinite(measured) && measured > 0) {
+    return Math.floor(measured)
+  }
+  return sumBreakdownTokens(buckets)
 }

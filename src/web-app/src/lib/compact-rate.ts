@@ -16,6 +16,9 @@ export const COMPACT_RATE_OPTIONS: readonly {
   { id: 'frequent', labelKey: 'frequent' },
 ] as const
 
+/** Mirror of DEFAULT_COMPACT_AT_TOKENS — absolute L2 line when env unset. */
+export const DEFAULT_COMPACT_AT_TOKENS = 200_000
+
 const RESERVE_SHARE: Record<Exclude<CompactRate, 'auto'>, number> = {
   full: 0.048,
   balanced: 0.12,
@@ -40,6 +43,20 @@ export function reserveForCompactRate(contextWindow: number, rate: CompactRate):
 
 export function hardLineForCompactRate(contextWindow: number, rate: CompactRate): number {
   return Math.max(0, contextWindow - reserveForCompactRate(contextWindow, rate))
+}
+
+/**
+ * Effective L2 trigger shown in Usage: min(window−reserve, absoluteAt).
+ * Pass compactAtTokens=0 to show pure late-only hard line.
+ */
+export function effectiveCompactLineForRate(
+  contextWindow: number,
+  rate: CompactRate,
+  compactAtTokens: number = DEFAULT_COMPACT_AT_TOKENS,
+): number {
+  const hard = hardLineForCompactRate(contextWindow, rate)
+  if (!(compactAtTokens > 0)) return hard
+  return Math.min(hard, compactAtTokens)
 }
 
 /** Hide/disable rates whose hard line would sit below current used (+ margin). */

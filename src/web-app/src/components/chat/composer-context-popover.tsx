@@ -4,7 +4,7 @@ import { X } from 'lucide-react'
 
 import {
   COMPACT_RATE_OPTIONS,
-  hardLineForCompactRate,
+  effectiveCompactLineForRate,
   isCompactRateSafe,
   normalizeCompactRate,
   type CompactRate,
@@ -19,6 +19,8 @@ export interface ComposerContextPopoverProps {
   contextWindow: number
   breakdown: ContextBreakdownItem[]
   compactRate: string
+  /** True when contextUsed comes from server-measured pi session size. */
+  contextMeasured?: boolean
   onSendCommand: (cmd: string) => void
   onClose: () => void
 }
@@ -38,6 +40,7 @@ export function ComposerContextPopover({
   contextWindow,
   breakdown,
   compactRate,
+  contextMeasured = false,
   onSendCommand,
   onClose,
 }: ComposerContextPopoverProps): JSX.Element {
@@ -47,7 +50,7 @@ export function ComposerContextPopover({
   const pctLabel = Math.min(100, Math.round((used / windowSize) * 100))
   const rate = normalizeCompactRate(compactRate)
   const zh = (i18n.language || '').startsWith('zh')
-  const hardLine = hardLineForCompactRate(windowSize, rate)
+  const hardLine = effectiveCompactLineForRate(windowSize, rate)
 
   function compactRateLabel(id: CompactRate): string {
     if (zh) {
@@ -161,7 +164,7 @@ export function ComposerContextPopover({
           </span>
           <span className={cn('text-[10px] tabular-nums', dark ? 'text-zinc-500' : 'text-zinc-400')}>
             {t('chat.statusBar.hardLine', {
-              defaultValue: zh ? '硬线' : 'Hard line',
+              defaultValue: zh ? '有效线' : 'Effective line',
             })}
             {' ~'}
             {formatTokens(hardLine)}
@@ -216,9 +219,13 @@ export function ComposerContextPopover({
 
       <p className={cn('mt-2 text-[10px]', dark ? 'text-zinc-500' : 'text-zinc-400')}>
         {t('chat.statusBar.contextApprox', {
-          defaultValue: zh
-            ? '近似拆分（字符/4 + 规则/技能/工具估算）；实时 tool 结果与压缩后会话可能未完全计入。'
-            : 'Approximate breakdown (chars/4 + rules/skills/tools estimates). Live tool results and post-compact session size may not be fully reflected.',
+          defaultValue: contextMeasured
+            ? (zh
+              ? '总量为服务端实测（含工具结果）；分项中规则/技能/工具定义为估算，对话桶吸收其余。'
+              : 'Total is server-measured (incl. tool results). Rules/skills/tools are estimates; conversation absorbs the rest.')
+            : (zh
+              ? '尚无实测：按气泡+activity 预览估算；下一轮 Agim 回复后会写入实测总量。'
+              : 'No measured snapshot yet — estimating from bubbles + activity. Measured total arrives after the next Agim turn.'),
         })}
       </p>
     </div>

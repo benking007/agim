@@ -53,6 +53,8 @@ export type ChatIncoming =
       sessionModel?: string
       /** Session compression rate (`auto` | `full` | `balanced` | `frequent`). */
       compactRate?: string
+      /** Measured Agim Agent context tokens (pi session). */
+      contextTokens?: number
       /**
        * Messages still older than this frame (full `.log` count − tail).
        * Omitted / 0 = this frame is the complete transcript (legacy servers).
@@ -145,13 +147,14 @@ export interface RunStartEvent {
   threadId?: string
 }
 
-/** Lightweight usage snapshot for a run. For now this is duration +
- *  output size; future server versions may add token counts. */
+/** Lightweight usage snapshot for a run. Duration + output size;
+ *  `contextTokens` is the measured Agim Agent context window fill. */
 export interface RunUsageEvent {
   type: 'usage'
   runId: string
   durationMs: number
   outputChars: number
+  contextTokens?: number
   threadId?: string
 }
 

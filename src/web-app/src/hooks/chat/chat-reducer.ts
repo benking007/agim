@@ -241,6 +241,22 @@ function assistantContentAhead(local: ChatMessage[], hist: ChatMessage[]): boole
   return h.content.length > localAsst.content.length + 40
 }
 
+function historyShowsActiveRunFinished(
+  s: ChatState,
+  hist: ChatMessage[],
+): boolean {
+  if (!s.activeRunId && !s.currentReplyId) return false
+  for (const m of hist) {
+    if (m.role !== 'assistant' || !m.activity) continue
+    if (m.activity.status !== 'success' && m.activity.status !== 'error') continue
+    if (s.activeRunId && m.activity.runId === s.activeRunId) return true
+    // Ids already aligned (contentAhead remap / reconnect): finished
+    // activity on the shared bubble must clear ghost「执行中」.
+    if (s.currentReplyId && m.id === s.currentReplyId) return true
+  }
+  return false
+}
+
 function historyMeta(s: ChatState, a: Extract<ChatAction, { kind: 'HISTORY' }>): Pick<
   ChatState,
   | 'agent'
@@ -455,10 +471,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       }
       if (!complete && s.messages.length > 0) {
         if (inFlight) {
-          const finishedInHistory = !!s.activeRunId && a.messages.some((m) => (
-            m.activity?.runId === s.activeRunId
-            && (m.activity.status === 'success' || m.activity.status === 'error')
-          ))
+          const finishedInHistory = historyShowsActiveRunFinished(s, a.messages)
           const contentAhead = assistantContentAhead(s.messages, a.messages)
           if (finishedInHistory || contentAhead) {
             return stamp({
@@ -492,10 +505,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       }
       if (inFlight) {
         const localAhead = s.messages.length > a.messages.length
-        const finishedInHistory = !localAhead && !!s.activeRunId && a.messages.some((m) => (
-          m.activity?.runId === s.activeRunId
-          && (m.activity.status === 'success' || m.activity.status === 'error')
-        ))
+        const finishedInHistory = !localAhead && historyShowsActiveRunFinished(s, a.messages)
         const histAhead = a.messages.length > s.messages.length
         let contentAhead = false
         if (!localAhead && !finishedInHistory && !histAhead) {
@@ -508,13 +518,22 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       // Same tail already on screen (localStorage cache / reconnect): keep
       // those bubbles so markdown does not remount, and only prepend older.
       // A newer cloud revision with the same last id still keeps identity
-      // unless the last assistant body is actually ahead.
+      // unless the last assistant body is actually ahead — or history shows
+      // this in-flight run already finished (missed done/run-finish).
       if (s.messages.length > 0 && hasMessageId(s.messages, lastMessageId(a.messages))) {
         let messages = mergeOlderPrefix(s.messages, a.messages)
-        if (assistantContentAhead(s.messages, a.messages)) {
+        const finishedInHistory = inFlight && historyShowsActiveRunFinished(s, a.messages)
+        if (finishedInHistory || assistantContentAhead(s.messages, a.messages)) {
           messages = patchAssistantFromHistory(messages, a.messages, s.activeRunId)
         }
-        return stamp({ ...s, ...meta, messages })
+        return stamp({
+          ...s,
+          ...meta,
+          messages,
+          ...(finishedInHistory
+            ? { currentReplyId: null, activeRunId: null }
+            : {}),
+        })
       }
       return stamp({
         ...s,

@@ -374,6 +374,109 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.status).toBe('success')
   })
 
+  it('HISTORY same-id finished tail clears ghost 执行中 (missed done/run-finish)', () => {
+    // Reconnect / contentAhead already remapped local ids to server ids.
+    // Mid-flight guard then hits the same-last-id identity path — must still
+    // clear busy and overlay finished activity (Tasks already COMPLETED).
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-1', 'go'), placeholder: asstMsg('p-1') },
+      { kind: 'RUN_START', runId: 'run-same', agent: 'agim', startedAt: 1_000 },
+    )
+    // Simulate id remap: local bubbles already use server ids, activity still running.
+    const aligned: typeof mid = {
+      ...mid,
+      currentReplyId: 'hist-1',
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: '',
+          timestamp: 2,
+          agent: 'agim',
+          activity: {
+            runId: 'run-same',
+            status: 'running',
+            startedAt: 1_000,
+            steps: [],
+          },
+        },
+      ],
+    }
+    const after = reduce(aligned, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      updatedAt: Date.now(),
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: '债券看板未实施项：…',
+          timestamp: 2,
+          activity: {
+            runId: 'run-same',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
+    expect(after.messages[1]?.activity?.status).toBe('success')
+    expect(after.messages[1]?.content).toContain('债券看板')
+  })
+
+  it('HISTORY same-id finished by shared reply id clears busy without activeRunId match', () => {
+    const aligned = {
+      ...initialChatState,
+      currentReplyId: 'hist-1',
+      activeRunId: 'run-orphan',
+      messages: [
+        { id: 'hist-0', role: 'user' as const, content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant' as const,
+          content: '',
+          timestamp: 2,
+          activity: {
+            runId: 'run-orphan',
+            status: 'running' as const,
+            startedAt: 1_000,
+            steps: [],
+          },
+        },
+      ],
+    }
+    const after = reduce(aligned, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      messages: [
+        { id: 'hist-0', role: 'user', content: 'go', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: 'done',
+          timestamp: 2,
+          activity: {
+            runId: 'run-server',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.activeRunId).toBeNull()
+    expect(after.currentReplyId).toBeNull()
+    expect(after.messages[1]?.activity?.status).toBe('success')
+  })
+
   it('HISTORY adopts when summary text is ahead (no activity runId match)', () => {
     const mid = reduce(
       initialChatState,

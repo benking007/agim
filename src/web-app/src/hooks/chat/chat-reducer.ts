@@ -339,17 +339,11 @@ function finalizeRunningActivity(
     error: opts.error ?? activity.error,
     steps: steps.map((st) => {
       if (st.status !== 'pending' && st.status !== 'running') return st
-      // Parent RUN_FINISH must not paint A2A Subagent lanes as success —
-      // those steps have jobId and close via their own activity events.
-      // Otherwise Codex can look "done" while the Loop is still waiting.
-      if (
-        opts.status === 'success'
-        && st.kind === 'agent'
-        && typeof st.jobId === 'number'
-        && st.jobId > 0
-      ) {
-        return st
-      }
+      // Align with server finishActiveRun: parent RUN_FINISH only fires after
+      // the awaited turn (including call_agent(s) join) ends. Leaving agent
+      // steps with jobId open caused permanent「等待子代理」when a late
+      // activity-step was dropped, while Tasks parent + Loop docks also
+      // looked stuck. Late A2A terminals can still overwrite via ACTIVITY_STEP.
       return {
         ...st,
         status: opts.status === 'error' ? 'error' : 'success',

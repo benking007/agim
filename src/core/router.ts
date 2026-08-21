@@ -894,7 +894,13 @@ export async function callAgentWithHistory(
       if (pj > 0) {
         ctx.parentJobId = pj
         ownedParentJobId = pj
-        markJobRunning(pj)
+        if (!markJobRunning(pj)) {
+          ctx.logger.warn({
+            event: 'agent.parent_job_mark_running_failed',
+            jobId: pj,
+            threadId: ctx.threadId,
+          }, `Parent inline job #${pj} stayed pending (markJobRunning refused)`)
+        }
       }
     } catch { /* tracking-only; the turn still runs without the anchor row */ }
   }

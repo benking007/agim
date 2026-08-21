@@ -430,7 +430,7 @@ VERIFY 结构化字段至少：`{ met, summary, gaps?, nextDirection? }`。
 API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `bucketLabel` / `liveSubagents` / `canVerify` / `minRounds` / `usage` / `lastVerification`…）。  
 轮询在 lazy chunk（`portal-loop-dock` + `use-portal-loop`），避免撑破 SPA entry 350 KiB。  
 **同步**：线程挂载期间持续轮询（不只 `active`）；WS `open` / `visibility` / `online` 与服务端 `loop-changed`（每次 `writeRun`，含 Subagent 终态的 `notifyLoopJobTerminal`，以及 `get-history` 引导）触发立刻重拉；轮询失败保留上次快照。结案后的「详细报告」询问若遇**新** Loop id 会让位给对焦/立即行动 dock。  
-聊天侧：父轮 `RUN_FINISH` **不会**把仍带 `jobId` 的 Subagent 步骤刷成 success——各车道以各自 A2A activity 终态为准，避免「卡片已绿、本轮还在等其他人」。
+聊天侧：父轮 `RUN_FINISH` 与服务端 `finishActiveRun` 对齐，会收掉仍 `pending`/`running` 的 Subagent 步骤（含带 `jobId` 的车道）。`call_agent(s)` 在父 generator 结束前已 join；若只靠迟到的 `activity-step`，丢包时会出现永久「等待子代理」。迟到的 A2A 终态仍可通过 `ACTIVITY_STEP` 覆盖。
 
 ### 6.3.1 落盘与 Tasks 审计
 
@@ -596,7 +596,7 @@ R1 对焦门禁 ──► R2 Mission 存储 ──► R3 拆解+子代理 ──
 | 2026-07-25 | **结案后可选详细报告**：确认结束后底栏询问；同意则向 Agent 发总结指令（`PROJECTS/loops/` 落盘约定），取消则关闭 |
 | 2026-07-25 | **详细报告=Agent 撰写**：移除确定性拼接 / `generate-report` API；累计 `loopJobIds` 仅用于底栏「约 N 个子代理」提示 |
 | 2026-07-27 | **文档**：交叉 [`agent-profiles.md`](./agent-profiles.md)；CLI sticky 可派工、不可当 Loop 父 → [`cli-subagent-dispatch.md`](./cli-subagent-dispatch.md) |
-| 2026-08-02 | **Subagent 终态立刻同步 dock**：`notifyLoopJobTerminal`→`loop-changed`；多子代理时仍按本轮 live 守候（单个完成 ≠ 验收）；SPA 不误标带 `jobId` 的 agent 卡 |
+| 2026-08-02 | **Subagent 终态立刻同步 dock**：`notifyLoopJobTerminal`→`loop-changed`；多子代理时仍按本轮 live 守候（单个完成 ≠ 验收）；父轮 `RUN_FINISH` 与 `finishActiveRun` 对齐收掉 Subagent 卡 |
 | 2026-08-02 | **休眠唤醒空闲验收收割**：`maybeReapIdleLoopVerify`（父轮 idle + live=0 → `verify_skipped`）；`GET /api/loop` / 子代理终态 / 父轮 finally；HISTORY 清除已结束的 stuck Running |
 | 2026-08-15 | **R6 最小刀**：`/cron` `loop:` 前缀唤醒/续跑；字段不齐回滚；`AGIM_LOOP_HEADLESS` 仅 scheduled；结案超时 opt-in；`AGIM_LOOP_AUTO_VERIFY` 读 job 证据 |
 | 2026-08-15 | **R6 NL 确认卡**：`每天凌晨2点用 Loop …；退出条件为…` 先出 y/n，确认后 `createSchedule(loop:)`；提醒句不抢 |

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { INJECTED_CONTEXT_UNCHANGED_MARKER } from '../../src/core/injected-context-dedupe.js'
 import {
   _resetActiveRunsForTests,
   startActiveRun,
@@ -8,6 +9,7 @@ import {
   getActiveRun,
   clearActiveRun,
   setActiveRunInjectedContext,
+  injectedContextForWire,
   snapshotToPersistedActivity,
   INJECTED_CONTEXT_MAX_CHARS,
 } from '../../src/web/active-runs.js'
@@ -106,6 +108,27 @@ describe('active-runs', () => {
     expect(getActiveRun('web-t1')?.injectedContext).toContain('System prompt')
     const persisted = snapshotToPersistedActivity(getActiveRun('web-t1')!)
     expect(persisted.injectedContext).toContain('hello')
+  })
+
+  it('dedupes identical injected context on later persists', () => {
+    startActiveRun({
+      threadId: 'web-t1', runId: 'run-1', agent: 'agim', startedAt: 1000,
+    })
+    const full = '## System prompt\nskills dump'
+    setActiveRunInjectedContext('web-t1', full)
+    expect(injectedContextForWire('web-t1', full)).toBe(full)
+    expect(snapshotToPersistedActivity(getActiveRun('web-t1')!).injectedContext).toBe(full)
+
+    finishActiveRun('web-t1', {
+      status: 'success', finishedAt: 2000, durationMs: 1000, finalText: 'ok',
+    })
+    startActiveRun({
+      threadId: 'web-t1', runId: 'run-2', agent: 'agim', startedAt: 3000,
+    })
+    setActiveRunInjectedContext('web-t1', full)
+    expect(injectedContextForWire('web-t1', full)).toBe(INJECTED_CONTEXT_UNCHANGED_MARKER)
+    expect(snapshotToPersistedActivity(getActiveRun('web-t1')!).injectedContext)
+      .toBe(INJECTED_CONTEXT_UNCHANGED_MARKER)
   })
 
   it('truncates oversized injected context', () => {

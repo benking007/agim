@@ -182,8 +182,8 @@ describe('history-payload', () => {
     const { tail } = splitHistoryDelivery(messages)
     expect(tail[0]?.activity?.injectedContext).toBeUndefined()
     expect(tail[1]?.activity?.injectedContext).toBeUndefined()
-    const frames = buildHistoryWireFrames(messages, { agent: 'agim' }, (m) => m)
-    const histMsgs = frames[0]?.messages as typeof messages
+    const frames = buildHistoryWireFrames(messages, { agent: 'agim' }, (m) => ({ ...m }))
+    const histMsgs = (frames[0]?.messages ?? []) as Array<{ activity?: { injectedContext?: string } }>
     expect(histMsgs.every((m) => !m.activity?.injectedContext)).toBe(true)
   })
 })

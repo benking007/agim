@@ -74,7 +74,8 @@
     "url": "https://github.com/benking007/agim/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.79.8",

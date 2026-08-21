@@ -477,6 +477,96 @@ describe('chatReducer', () => {
     expect(after.messages[1]?.activity?.status).toBe('success')
   })
 
+  it('HISTORY refuse mid-flight does not stamp historyRevisionAt (no poison)', () => {
+    const mid = reduce(
+      initialChatState,
+      { kind: 'SEND_USER', message: userMsg('u-2', 'new turn'), placeholder: asstMsg('p-2') },
+      { kind: 'RUN_START', runId: 'run-new', agent: 'agim', startedAt: 3_000 },
+    )
+    const serverUpdatedAt = 1_700_000_000_000
+    const afterRefuse = reduce(mid, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 10,
+      updatedAt: serverUpdatedAt,
+      messages: [
+        // Prior finished turn only — not the in-flight run.
+        { id: 'hist-0', role: 'user', content: 'old', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: 'old reply long enough to look ahead '.repeat(5),
+          timestamp: 2,
+          activity: {
+            runId: 'run-old',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(afterRefuse.currentReplyId).toBe('p-2')
+    expect(afterRefuse.activeRunId).toBe('run-new')
+    expect(afterRefuse.historyRevisionAt).toBeNull()
+  })
+
+  it('HISTORY rescues empty placeholder after poisoned revision (half-open done miss)', () => {
+    // Simulate: first catch-up stamped revision without painting; busy cleared
+    // elsewhere; local still empty Running bubble; disk has finished body.
+    const poisoned = {
+      ...initialChatState,
+      historyRevisionAt: 1_700_000_000_000,
+      currentReplyId: null as string | null,
+      activeRunId: null as string | null,
+      messages: [
+        { id: 'hist-0', role: 'user' as const, content: '回到债券看板建设需求，还有哪些未实施的？', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant' as const,
+          content: '',
+          timestamp: 2,
+          activity: {
+            runId: 'run-mt30yuxr-8787feba',
+            status: 'running' as const,
+            startedAt: 1_000,
+            steps: [],
+          },
+        },
+      ],
+    }
+    const body = '可落地：资金面扩 DR001/DR014；卡点：股债性价比 PE 源未定。'
+    const after = reduce(poisoned, {
+      kind: 'HISTORY',
+      agent: 'agim',
+      historyComplete: false,
+      olderCount: 16,
+      updatedAt: 1_700_000_000_000,
+      messages: [
+        { id: 'hist-0', role: 'user', content: '回到债券看板建设需求，还有哪些未实施的？', timestamp: 1 },
+        {
+          id: 'hist-1',
+          role: 'assistant',
+          content: body,
+          timestamp: 2,
+          activity: {
+            runId: 'run-mt30yuxr-8787feba',
+            status: 'success',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            steps: [],
+          },
+        },
+      ],
+    })
+    expect(after.messages[1]?.content).toBe(body)
+    expect(after.messages[1]?.activity?.status).toBe('success')
+    expect(after.currentReplyId).toBeNull()
+    expect(after.activeRunId).toBeNull()
+  })
+
   it('HISTORY adopts when summary text is ahead (no activity runId match)', () => {
     const mid = reduce(
       initialChatState,

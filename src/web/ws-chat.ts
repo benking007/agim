@@ -48,9 +48,10 @@ export const webRunAborts = new Map<string, AbortController>()
 export const USER_INTERRUPTED_TEXT = '用户打断了执行'
 
 /**
- * Terminal WS frames (`done` / `run-finish` / `error`) dropped when the peer
- * was not OPEN. Replayed on the next `get-history` / session bootstrap so the
- * SPA does not stay on「执行中」after the job board already COMPLETED.
+ * Terminal WS frames (`done` / `run-finish` / `error`).
+ * Always stash a copy — half-open sockets can still report readyState=OPEN
+ * (no emit_dropped) while the browser is already gone. Flush on the next
+ * get-history so SPA catch-up is not lost. DONE/RUN_FINISH are idempotent.
  */
 const pendingTerminalByThread = new Map<string, Array<Record<string, unknown>>>()
 
@@ -321,16 +322,23 @@ export async function handleClientMessage(
     const frame = typeof data.threadId === 'string' && data.threadId
       ? data
       : { ...data, threadId: clientId }
-    if (target.readyState !== target.OPEN) {
-      const t = String(data.type ?? '')
-      if (t === 'done' || t === 'run-finish' || t === 'error') {
-        stashTerminalFrame(clientId, frame)
+    const t = String(data.type ?? '')
+    const terminal = t === 'done' || t === 'run-finish' || t === 'error'
+    // Always stash terminal frames. Half-open peers still look OPEN (no
+    // emit_dropped) — browser already left; next get-history flushes these.
+    if (terminal) stashTerminalFrame(clientId, frame)
+    const sock = target as WebSocket & { isAlive?: boolean }
+    const zombie = sock.isAlive === false
+    if (target.readyState !== target.OPEN || zombie) {
+      if (terminal) {
         webLog.warn({
           event: 'web.ws.emit_dropped',
           type: t,
           threadId: clientId,
           runId: typeof data.runId === 'string' ? data.runId : undefined,
           hasPeer: Boolean(live),
+          readyState: target.readyState,
+          zombie,
         }, 'terminal WS frame dropped — stashed for next get-history catch-up')
       }
       return

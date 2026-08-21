@@ -5,6 +5,7 @@ import {
   applyClearingToPreparation,
   applyContextBudgetToMessages,
   clearToolResultsInMessages,
+  effectiveCompactLine,
   estimateMessagesTokens,
   isCompactRateSafe,
   isContextCompactionEnabled,
@@ -174,6 +175,7 @@ describe('resolveContextBudgetSettings', () => {
     delete process.env.AGIM_CTX_CLEAR
     delete process.env.AGIM_CTX_COMPACT
     delete process.env.AGIM_NATIVE_COMPACTION
+    delete process.env.AGIM_CTX_COMPACT_AT_TOKENS
     delete process.env.AGIM_CTX_COMPACT_RESERVE_TOKENS
     delete process.env.AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS
     delete process.env.AGIM_CTX_CLEAR_TRIGGER_TOKENS
@@ -194,10 +196,17 @@ describe('resolveContextBudgetSettings', () => {
     const s = resolveContextBudgetSettings(1_000_000)
     expect(s.compaction.reserveTokens).toBe(48_000)
     expect(s.compaction.keepRecentTokens).toBe(32_000)
+    expect(s.compactAtTokens).toBe(200_000)
     expect(s.clearing.triggerTokens).toBe(150_000)
     expect(s.clearing.keepToolUses).toBe(8)
     // Lookahead defaults to half reserve (capped at 24k) → 24k on 1M.
     expect(s.lookaheadTokens).toBe(24_000)
+  })
+
+  it('disables absolute compact line via AGIM_CTX_COMPACT_AT_TOKENS=0', () => {
+    process.env.AGIM_CTX_COMPACT_AT_TOKENS = '0'
+    const s = resolveContextBudgetSettings(1_000_000)
+    expect(s.compactAtTokens).toBe(0)
   })
 
   it('honours AGIM_CTX_LOOKAHEAD_TOKENS=0 to disable foresight', () => {
@@ -245,6 +254,18 @@ describe('resolveContextBudgetSettings', () => {
     delete process.env.AGIM_CTX_COMPACT
     process.env.AGIM_NATIVE_COMPACTION = 'off'
     expect(isContextCompactionEnabled()).toBe(false)
+  })
+})
+
+describe('effectiveCompactLine', () => {
+  it('uses window−reserve when absolute is disabled', () => {
+    expect(effectiveCompactLine(1_000_000, 48_000, 0)).toBe(952_000)
+  })
+
+  it('takes the earlier of absolute and window−reserve', () => {
+    expect(effectiveCompactLine(1_000_000, 48_000, 200_000)).toBe(200_000)
+    // Small window: absolute is higher than hard → hard wins.
+    expect(effectiveCompactLine(128_000, 32_000, 200_000)).toBe(96_000)
   })
 })
 

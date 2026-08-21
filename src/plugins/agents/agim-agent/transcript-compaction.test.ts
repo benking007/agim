@@ -4,7 +4,10 @@ import {
   resolveContextBudgetSettings,
   type ContextBudgetSettings,
 } from './context-budget.js'
-import { shouldRunMidTurnCompaction } from './transcript-compaction.js'
+import {
+  contextExceedsReserve,
+  shouldRunMidTurnCompaction,
+} from './transcript-compaction.js'
 
 function toolResult(name: string, text: string, id: string): AgentMessage {
   return {
@@ -70,5 +73,21 @@ describe('shouldRunMidTurnCompaction', () => {
     expect(shouldRunMidTurnCompaction(messages, budget, 40_000)).toBe(false)
     budget.lookaheadTokens = 16_000
     expect(shouldRunMidTurnCompaction(messages, budget, 40_000)).toBe(true)
+  })
+})
+
+describe('contextExceedsReserve', () => {
+  it('trips at absolute compactAtTokens on a 1M window', () => {
+    const budget = resolveContextBudgetSettings(1_000_000)
+    expect(budget.compactAtTokens).toBe(200_000)
+    expect(contextExceedsReserve(199_000, 1_000_000, budget.compaction, budget.compactAtTokens)).toBe(false)
+    expect(contextExceedsReserve(201_000, 1_000_000, budget.compaction, budget.compactAtTokens)).toBe(true)
+  })
+
+  it('falls back to late-only when compactAtTokens is 0', () => {
+    const budget = resolveContextBudgetSettings(1_000_000)
+    budget.compaction.reserveTokens = 48_000
+    expect(contextExceedsReserve(300_000, 1_000_000, budget.compaction, 0)).toBe(false)
+    expect(contextExceedsReserve(960_000, 1_000_000, budget.compaction, 0)).toBe(true)
   })
 })

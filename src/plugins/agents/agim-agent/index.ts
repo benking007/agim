@@ -1929,7 +1929,12 @@ export class NativeAgentAdapter implements AgentAdapter {
     ) {
       try {
         const contextTokens = await measureContextTokens(session)
-        if (contextExceedsReserve(contextTokens, binding.model.contextWindow, budget.compaction)) {
+        if (contextExceedsReserve(
+          contextTokens,
+          binding.model.contextWindow,
+          budget.compaction,
+          budget.compactAtTokens,
+        )) {
           await runCompactionCycle('pre-turn')
         }
       } catch (err) {

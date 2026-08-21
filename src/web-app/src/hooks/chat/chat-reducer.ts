@@ -271,8 +271,8 @@ function localNeedsHistoryRescue(local: ChatMessage[], hist: ChatMessage[]): boo
   if (li < 0) return false
   const localAsst = local[li]
   if (!localAsst) return false
-  const st = localAsst.activity?.status
-  if (st === 'running' || st === 'pending') return true
+  // ChatActivity.status has no "pending" — stuck UI is running or empty body.
+  if (localAsst.activity?.status === 'running') return true
   if (!localAsst.content.trim()) return true
   return h.content.length > localAsst.content.length + 40
 }

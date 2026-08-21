@@ -299,4 +299,15 @@ describe('ChatActivityBlock', () => {
     expect(screen.getByTestId('activity-icon-reflect')).toBeInTheDocument()
     expect(screen.queryByText(/一步一想|执行过程 ·|Execution ·|Step reflect/)).not.toBeInTheDocument()
   })
+
+  it('hides injected-context card on finished historical turns', async () => {
+    const user = userEvent.setup()
+    render(<ChatActivityBlock activity={activity({
+      injectedContext: '## System prompt\nskills dump',
+    })}
+    />)
+    await user.click(screen.getByRole('button', { name: /Worked|已完成/ }))
+    expect(screen.queryByText(/Injected context|注入内容/)).not.toBeInTheDocument()
+    expect(screen.getByText('agim_read')).toBeInTheDocument()
+  })
 })

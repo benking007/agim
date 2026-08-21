@@ -45,8 +45,9 @@ export interface PersistedChatActivity {
   durationMs?: number
   error?: string
   /**
-   * Wire-only prompt injection snapshot for this turn (system + ephemeral
-   * headers). Shown in the activity accordion; not part of chat history.
+   * Prompt injection snapshot (system + ephemeral) for the accordion.
+   * Identical repeats across turns may be stored as «agim-ic-unchanged»
+   * and expanded from an earlier full copy on history load.
    */
   injectedContext?: string
   steps: Array<{

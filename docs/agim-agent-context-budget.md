@@ -29,7 +29,7 @@
 | 参数 | 1M 窗口生效 | 128K 窗口生效（clamp 后） |
 |------|-------------|---------------------------|
 | `reserveTokens` | **48,000** | **32,000**（25% 上限） |
-| 压缩触发 | `tokens > 1M − 48k` ≈ **952k** | `tokens > 128k − 32k` ≈ **96k** |
+| 压缩触发 | `tokens > min(1M − 48k, **200k**)` ≈ **200k**（绝对线） | `tokens > 128k − 32k` ≈ **96k**（窗口更紧时仍跟窗口） |
 | `keepRecentTokens` | **32,000** | **25,600**（20% 上限） |
 | L1 clear 触发 | **≤150k**（15%，cap） | **50k**（floor） |
 | keep tool uses | **8** | **8** |
@@ -52,8 +52,8 @@ L2 压缩**不是结束任务**。流程是：
 
 | 线 | 公式 | 用途 |
 |----|------|------|
-| **硬线** | `window − reserve` | 预轮 `shouldCompact`；中途「投影」对比目标 |
-| **软线** | `硬线 − lookahead` | 紧急清理更早触发 |
+| **有效线** | `min(window − reserve, compactAtTokens)` | 预轮 / 中途 L2 触发（默认 compactAt=200k） |
+| **软线** | `有效线 − lookahead` | 紧急清理更早触发 |
 
 ```text
 lookahead ≈ min(24k, reserve/2)   # AGIM_CTX_LOOKAHEAD_TOKENS，0=关闭前瞻
@@ -75,6 +75,7 @@ projected > 硬线
 | 变量 | 默认 / 含义 |
 |------|-------------|
 | `AGIM_CTX_COMPACT` | 开；`off` 关闭 L2 压缩 |
+| `AGIM_CTX_COMPACT_AT_TOKENS` | 绝对 L2 线，默认 **200000**；`0`/`off` 关闭（纯晚压 = 仅 window−reserve） |
 | `AGIM_CTX_COMPACT_RESERVE_TOKENS` | 默认随窗口（1M→48k）；env 上限 256k |
 | `AGIM_CTX_COMPACT_KEEP_RECENT_TOKENS` | 默认随窗口（1M→32k） |
 | `AGIM_CTX_COMPACT_INSTRUCTIONS` | 非空则替换默认 summary 说明 |

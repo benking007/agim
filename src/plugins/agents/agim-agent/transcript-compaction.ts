@@ -11,7 +11,6 @@ import {
   estimateContextTokens,
   getLastAssistantUsage,
   prepareCompaction,
-  shouldCompact,
   type CompactionSettings,
 } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
@@ -20,8 +19,8 @@ import {
   applyClearingToPreparation,
   applyContextBudgetToMessages,
   COMPACTION_ACTIVITY_LABEL,
+  effectiveCompactLine,
   estimateMessagesTokens,
-  hardBudgetLine,
   projectNextHopTokens,
   type ContextBudgetSettings,
   type ToolClearingSettings,
@@ -72,20 +71,23 @@ export interface RunTranscriptCompactionResult {
   estimatedCostUsd?: number
 }
 
-/** Whether context is over the late-compaction line (same as pre-turn). */
+/** Whether context is over the effective L2 line (late and/or absolute). */
 export function contextExceedsReserve(
   contextTokens: number,
   contextWindow: number,
   compaction: CompactionSettings,
+  compactAtTokens = 0,
 ): boolean {
-  return shouldCompact(contextTokens, contextWindow, compaction)
+  if (!compaction.enabled) return false
+  const line = effectiveCompactLine(contextWindow, compaction.reserveTokens, compactAtTokens)
+  return line <= 0 ? contextTokens > 0 : contextTokens > line
 }
 
 /**
  * Mid-turn gate (with foresight): after tools land, project the next hop
  * (`current + lookahead`). If emergency clearing still cannot bring the
- * *projected* total under the hard line (`window − reserve`), run transcript
- * compact before the next model call.
+ * *projected* total under the effective L2 line, run transcript compact
+ * before the next model call.
  */
 export function shouldRunMidTurnCompaction(
   messages: import('@earendil-works/pi-agent-core').AgentMessage[],
@@ -95,13 +97,17 @@ export function shouldRunMidTurnCompaction(
   if (!budget.compaction.enabled || !Number.isFinite(contextWindow) || contextWindow <= 0) {
     return false
   }
-  const hardLine = hardBudgetLine(contextWindow, budget.compaction.reserveTokens)
-  const overHard = (tokens: number): boolean => (
-    hardLine <= 0 ? tokens > 0 : projectNextHopTokens(tokens, budget.lookaheadTokens) > hardLine
+  const line = effectiveCompactLine(
+    contextWindow,
+    budget.compaction.reserveTokens,
+    budget.compactAtTokens,
+  )
+  const overLine = (tokens: number): boolean => (
+    line <= 0 ? tokens > 0 : projectNextHopTokens(tokens, budget.lookaheadTokens) > line
   )
 
   if (!budget.clearing.enabled) {
-    return overHard(estimateMessagesTokens(messages))
+    return overLine(estimateMessagesTokens(messages))
   }
   const { messages: afterClear, emergency } = applyContextBudgetToMessages(
     messages,
@@ -109,9 +115,9 @@ export function shouldRunMidTurnCompaction(
     contextWindow,
   )
   // Only compact when foresight already raised the emergency soft line
-  // (or we're past the hard line). Avoid summarizing on every quiet turn.
+  // (or we're past the effective line). Avoid summarizing on every quiet turn.
   if (!emergency) return false
-  return overHard(estimateMessagesTokens(afterClear))
+  return overLine(estimateMessagesTokens(afterClear))
 }
 
 export async function measureContextTokens(

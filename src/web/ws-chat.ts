@@ -183,7 +183,13 @@ export async function sendSessionHistory(
       sendToClient(ws, frame)
     }
   }
-  const { getActiveRun } = await import('./active-runs.js')
+  const { getActiveRun, rememberFullInjectedContext } = await import('./active-runs.js')
+  if (history?.messages?.length) {
+    try {
+      const { findLastFullInjectedContext } = await import('../core/injected-context-dedupe.js')
+      rememberFullInjectedContext(threadId, findLastFullInjectedContext(history.messages))
+    } catch { /* optional */ }
+  }
   const active = getActiveRun(threadId)
   if (active) {
     // Always replay — including finished runs. Sleep/wake often misses
@@ -363,6 +369,7 @@ export async function handleClientMessage(
         appendActiveRunChunk,
         setActiveRunPartialText,
         setActiveRunInjectedContext,
+        injectedContextForWire,
         finishActiveRun,
         getActiveRun,
         snapshotToPersistedActivity,
@@ -473,7 +480,7 @@ export async function handleClientMessage(
             emit({
               type: 'injected-context',
               runId: snap.runId,
-              text: snap.injectedContext,
+              text: injectedContextForWire(sessionThreadId, snap.injectedContext),
               threadId: sessionThreadId,
             })
           },

@@ -1,4 +1,8 @@
 import { mergeStepReflects } from '../core/llm/step-reflect.js'
+import {
+  dedupeInjectedContextForPersist,
+  isInjectedContextUnchangedMarker,
+} from '../core/injected-context-dedupe.js'
 
 /**
  * In-flight web chat run snapshots.
@@ -50,6 +54,9 @@ export interface ActiveRunSnapshot {
 /** Soft cap so a huge AGENTS.md + skills dump cannot blow WS / session JSON. */
 export const INJECTED_CONTEXT_MAX_CHARS = 120_000
 
+/** Last full injectedContext persisted per thread (for session-level dedupe). */
+const lastFullInjectedByThread = new Map<string, string>()
+
 export function setActiveRunInjectedContext(threadId: string, text: string): boolean {
   const snap = runs.get(threadId)
   if (!snap) return false
@@ -59,6 +66,16 @@ export function setActiveRunInjectedContext(threadId: string, text: string): boo
     ? `${trimmed.slice(0, INJECTED_CONTEXT_MAX_CHARS)}\n\n…[truncated ${trimmed.length - INJECTED_CONTEXT_MAX_CHARS} chars]`
     : trimmed
   return true
+}
+
+/**
+ * Wire text for the live `injected-context` WS event: full on first/changed
+ * turn, unchanged marker when equal to the last persisted full copy.
+ */
+export function injectedContextForWire(threadId: string, text: string): string {
+  const trimmed = text.trim()
+  const prior = lastFullInjectedByThread.get(threadId)
+  return dedupeInjectedContextForPersist(trimmed, prior) ?? trimmed
 }
 
 /** Keep finished runs briefly so a refresh right after completion still
@@ -235,6 +252,7 @@ export function getActiveRun(threadId: string): ActiveRunSnapshot | undefined {
 export function clearActiveRun(threadId: string): void {
   clearFinishTimer(threadId)
   runs.delete(threadId)
+  lastFullInjectedByThread.delete(threadId)
 }
 
 /** Convert a snapshot into the durable ChatMessage.activity shape. */
@@ -248,6 +266,11 @@ export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
   injectedContext?: string
   steps: ActiveRunStep[]
 } {
+  const prior = lastFullInjectedByThread.get(snap.threadId)
+  const persisted = dedupeInjectedContextForPersist(snap.injectedContext, prior)
+  if (persisted && !isInjectedContextUnchangedMarker(persisted)) {
+    lastFullInjectedByThread.set(snap.threadId, persisted)
+  }
   return {
     runId: snap.runId,
     status: snap.status,
@@ -255,9 +278,21 @@ export function snapshotToPersistedActivity(snap: ActiveRunSnapshot): {
     finishedAt: snap.finishedAt,
     durationMs: snap.durationMs,
     error: snap.error,
-    ...(snap.injectedContext ? { injectedContext: snap.injectedContext } : {}),
+    ...(persisted ? { injectedContext: persisted } : {}),
     steps: snap.steps.map((st) => ({ ...st })),
   }
+}
+
+/** Seed / refresh the per-thread last-full cache (e.g. after loading history). */
+export function rememberFullInjectedContext(threadId: string, text: string | undefined): void {
+  const trimmed = text?.trim()
+  if (!trimmed || isInjectedContextUnchangedMarker(trimmed)) return
+  lastFullInjectedByThread.set(threadId, trimmed)
+}
+
+/** Drop thread cache (new conversation / clear). */
+export function clearInjectedContextCache(threadId: string): void {
+  lastFullInjectedByThread.delete(threadId)
 }
 
 /** Test helper. */
@@ -265,4 +300,5 @@ export function _resetActiveRunsForTests(): void {
   for (const t of finishTimers.values()) clearTimeout(t)
   finishTimers.clear()
   runs.clear()
+  lastFullInjectedByThread.clear()
 }

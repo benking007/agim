@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { INJECTED_CONTEXT_UNCHANGED_MARKER } from '../../src/core/injected-context-dedupe.js'
 import type { ChatMessage } from '../../src/core/types.js'
 import {
   HISTORY_PREPEND_CHUNK,
@@ -156,5 +157,29 @@ describe('history-payload', () => {
       messages: [msg({ role: 'user', content: 'a', timestamp: new Date(100) })],
     })).toBe(100)
     expect(historyUpdatedAt({ lastActivity: '1970-01-01T00:00:03.000Z', messages: [] })).toBe(3_000)
+  })
+
+  it('expands injectedContext unchanged markers before windowing', () => {
+    const full = '## System prompt\nskills'
+    const messages = [
+      msg({
+        role: 'assistant',
+        content: 'a',
+        activity: {
+          runId: 'r1', status: 'success', startedAt: 1, steps: [],
+          injectedContext: full,
+        },
+      }),
+      msg({
+        role: 'assistant',
+        content: 'b',
+        activity: {
+          runId: 'r2', status: 'success', startedAt: 2, steps: [],
+          injectedContext: INJECTED_CONTEXT_UNCHANGED_MARKER,
+        },
+      }),
+    ]
+    const { tail } = splitHistoryDelivery(messages)
+    expect(tail[1]?.activity?.injectedContext).toBe(full)
   })
 })

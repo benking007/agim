@@ -6,8 +6,9 @@
 //     Durable JSONL is left intact — re-open / UI history stay complete.
 //   - Compaction knobs: env-tunable reserve / keepRecent.
 //
-// Default preset = late compaction (prefer raw context; pay for summary late):
-//   L1 clear ~100–150k, L2 compact near full window (1M → ~952k with 48k reserve).
+// Default preset = late compaction with an absolute safety net:
+//   L1 clear ~100–150k, L2 at min(window−reserve, 200k) so ~1M windows
+//   still compact around 200k (set AGIM_CTX_COMPACT_AT_TOKENS=0 for pure late).
 
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import {
@@ -23,6 +24,13 @@ export const DEFAULT_CLEAR_KEEP_TOOL_USES = 8
 /** Soft ceiling for the auto clear-trigger (15% of window, bounded below). */
 export const DEFAULT_CLEAR_TRIGGER_CAP = 150_000
 export const DEFAULT_CLEAR_TRIGGER_FLOOR = 50_000
+/**
+ * Absolute L2 compact line (tokens). On ~1M windows, late compaction alone
+ * waits until ~952k — long sessions (~200–300k body) never fire. Default
+ * 200k so those sessions compact earlier; `AGIM_CTX_COMPACT_AT_TOKENS=0`
+ * restores pure late-only. Effective line = min(window−reserve, this).
+ */
+export const DEFAULT_COMPACT_AT_TOKENS = 200_000
 /**
  * Lookahead pad: assume one more hop may grow context by this many tokens
  * (assistant prose + follow-up tools). Mid-turn clear/compact fire earlier by
@@ -67,6 +75,11 @@ export interface ContextBudgetSettings {
   clearing: ToolClearingSettings
   compaction: CompactionSettings
   /**
+   * Absolute token ceiling for L2 compact (0 = disabled / late-only).
+   * Combined with window−reserve via {@link effectiveCompactLine}.
+   */
+  compactAtTokens: number
+  /**
    * Extra tokens assumed for the *next* model hop when deciding mid-turn
    * emergency clear / compact. Softens the late-compaction line without
    * changing pre-turn shouldCompact.
@@ -102,6 +115,20 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
   const n = Number.parseInt(raw, 10)
   if (!Number.isFinite(n)) return fallback
   return Math.min(max, Math.max(min, n))
+}
+
+/**
+ * Absolute L2 line from env. Empty → default 200k. Explicit 0 / off / false
+ * disables the absolute ceiling (pure window−reserve late compaction).
+ */
+export function resolveCompactAtTokens(): number {
+  const raw = (process.env.AGIM_CTX_COMPACT_AT_TOKENS || '').trim().toLowerCase()
+  if (!raw) return DEFAULT_COMPACT_AT_TOKENS
+  if (raw === 'off' || raw === 'false' || raw === 'no') return 0
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n)) return DEFAULT_COMPACT_AT_TOKENS
+  if (n <= 0) return 0
+  return Math.min(2_000_000, Math.max(10_000, n))
 }
 
 function parseExcludeList(raw: string | undefined): string[] {
@@ -260,6 +287,7 @@ export function resolveContextBudgetSettings(
 
   const instructionsRaw = (process.env.AGIM_CTX_COMPACT_INSTRUCTIONS || '').trim()
   const compactInstructions = instructionsRaw || DEFAULT_AGIM_COMPACT_INSTRUCTIONS
+  const compactAtTokens = resolveCompactAtTokens()
 
   return {
     clearing: {
@@ -274,6 +302,7 @@ export function resolveContextBudgetSettings(
       reserveTokens,
       keepRecentTokens,
     },
+    compactAtTokens,
     lookaheadTokens,
     compactInstructions,
   }
@@ -285,15 +314,31 @@ export function hardBudgetLine(contextWindow: number, reserveTokens: number): nu
 }
 
 /**
- * Soft line used for mid-turn foresight: hard line minus lookahead pad.
- * When lookahead is 0, soft === hard.
+ * Effective L2 trigger line: earlier of (window−reserve) and absolute
+ * `compactAtTokens` when the absolute ceiling is enabled (>0).
+ */
+export function effectiveCompactLine(
+  contextWindow: number,
+  reserveTokens: number,
+  compactAtTokens: number,
+): number {
+  const hard = hardBudgetLine(contextWindow, reserveTokens)
+  if (!(compactAtTokens > 0)) return hard
+  return Math.min(hard, compactAtTokens)
+}
+
+/**
+ * Soft line used for mid-turn foresight: effective compact line minus
+ * lookahead pad. When lookahead is 0, soft === effective.
  */
 export function softBudgetLine(
   contextWindow: number,
   reserveTokens: number,
   lookaheadTokens: number,
+  compactAtTokens = 0,
 ): number {
-  return hardBudgetLine(contextWindow, reserveTokens) - Math.max(0, lookaheadTokens)
+  return effectiveCompactLine(contextWindow, reserveTokens, compactAtTokens)
+    - Math.max(0, lookaheadTokens)
 }
 
 /** Projected tokens for the next hop = current estimate + lookahead pad. */
@@ -468,12 +513,13 @@ export function applyContextBudgetToMessages(
 
   const window = Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : 1_000_000
   const estimated = estimateMessagesTokens(messages)
-  // Soft line (lookahead): clear urgently before the hard late-compaction line
-  // so the *next* hop still has room. Hard line remains window − reserve.
+  // Soft line (lookahead): clear urgently before the effective L2 line
+  // (min(window−reserve, compactAtTokens)) so the *next* hop still has room.
   const emergencyLine = softBudgetLine(
     window,
     budget.compaction.reserveTokens,
     budget.lookaheadTokens,
+    budget.compactAtTokens,
   )
   // When the soft/hard line is non-positive (tiny / misconfigured window),
   // treat any non-empty context as already past budget.

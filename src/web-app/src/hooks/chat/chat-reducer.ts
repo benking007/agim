@@ -8,6 +8,11 @@
  */
 
 import { mergeStepReflects } from '@/lib/step-reflect'
+import {
+  findLastFullInjectedContext,
+  isInjectedContextUnchangedMarker,
+  resolveInjectedContextText,
+} from '@/lib/injected-context-dedupe'
 import type { ApprovalCardOutcome, ApprovalCardPrompt, ChoiceCardPrompt } from '@/types/ws'
 import type {
   ChatActivity,
@@ -1080,10 +1085,16 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         startedAt: Date.now(),
         steps: [],
       }
+      const prior = findLastFullInjectedContext(
+        idx > 0 ? messages.slice(0, idx) : [],
+      )
+      const resolved = resolveInjectedContextText(a.text, prior)
+        ?? (isInjectedContextUnchangedMarker(a.text) ? prior : a.text)
+      if (!resolved) return s
       messages = withActivityAt(messages, idx, {
         ...base,
         runId: a.runId || base.runId,
-        injectedContext: a.text,
+        injectedContext: resolved,
       })
       return { ...s, messages }
     }

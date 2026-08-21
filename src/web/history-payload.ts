@@ -9,6 +9,7 @@
  */
 
 import type { ChatMessage, PersistedChatActivity } from '../core/types.js'
+import { expandInjectedContextsInMessages } from '../core/injected-context-dedupe.js'
 
 /** Tool-step previews in history / active-run replay. Disk `.log` is unchanged. */
 export const HISTORY_PREVIEW_MAX_CHARS = 500
@@ -110,7 +111,10 @@ export interface HistoryDelivery {
  * without leaving a gap in the SPA transcript.
  */
 export function splitHistoryDelivery(messages: ChatMessage[]): HistoryDelivery {
-  const slimmed = slimHistoryMessages(messages)
+  // Disk may store «agim-ic-unchanged» stubs; expand against the full log
+  // before windowing so the SPA accordion always gets readable text.
+  const expanded = expandInjectedContextsInMessages(messages)
+  const slimmed = slimHistoryMessages(expanded)
   const tailStart = historyTailStart(slimmed)
   const tail = slimmed.slice(tailStart)
   const older = slimmed.slice(0, tailStart)

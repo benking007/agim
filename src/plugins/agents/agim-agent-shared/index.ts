@@ -458,9 +458,62 @@ export function parsePromptMedia(prompt: string): Array<{ path: string; mime?: s
       if (!fsStatSync(normalised).isFile()) continue
     } catch { continue }
     if (!/\.(jpg|jpeg|png|webp|gif)$/i.test(normalised)) continue
-    out.push({ path: normalised })
+    out.push({ path: normalised, mime: sniffImageMime(normalised) })
   }
   return out
+}
+
+/** DeepSeek vision inline cap is 32 MiB; keep the same for other vendors. */
+const PROMPT_IMAGE_MAX_BYTES = 32 * 1024 * 1024
+
+export interface PromptImageContent {
+  type: 'image'
+  data: string
+  mimeType: string
+}
+
+function sniffImageMime(filePath: string): string {
+  const lower = filePath.toLowerCase()
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  return 'application/octet-stream'
+}
+
+/** Read `[图片附件]` paths into pi-ai ImageContent (base64, no data: prefix). */
+export function encodePromptImages(prompt: string): PromptImageContent[] {
+  const out: PromptImageContent[] = []
+  for (const item of parsePromptMedia(prompt)) {
+    try {
+      const stat = fsStatSync(item.path)
+      if (!stat.isFile() || stat.size <= 0 || stat.size > PROMPT_IMAGE_MAX_BYTES) continue
+      const mimeType = item.mime || sniffImageMime(item.path)
+      if (!/^image\/(jpeg|png|gif|webp)$/i.test(mimeType)) continue
+      const data = fsReadFileSync(item.path).toString('base64')
+      if (!data) continue
+      out.push({ type: 'image', data, mimeType })
+    } catch { /* skip unreadable attachment */ }
+  }
+  return out
+}
+
+/** True when any user / tool-result content block is a pi-ai image. */
+export function agentMessagesHaveImages(
+  messages: ReadonlyArray<{ role?: string; content?: unknown }>,
+): boolean {
+  for (const m of messages) {
+    const content = m.content
+    if (!Array.isArray(content)) continue
+    if (content.some((block) => (
+      !!block
+      && typeof block === 'object'
+      && (block as { type?: unknown }).type === 'image'
+    ))) {
+      return true
+    }
+  }
+  return false
 }
 
 export function describeNativeAgent(): string {

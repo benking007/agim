@@ -387,6 +387,11 @@ describe('handleLlmApi — presets + quick-enable', () => {
     expect(body.defaultPreset).toBe('deepseek')
     expect(body.presets[0]?.key).toBe('deepseek')
     expect(body.presets[0]?.model).toBe('deepseek-v4-pro')
+    expect(body.presets[0]?.models).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
     const kimi = body.presets.find((p) => p.key === 'moonshot')
     expect(kimi?.model).toBe('kimi-k3')
     expect(kimi?.cheapModel).toBe('kimi-k2.6')
@@ -419,7 +424,11 @@ describe('handleLlmApi — presets + quick-enable', () => {
       defaultAgent: string
     }
     expect(body.model).toBe('deepseek-v4-pro')
-    expect(body.backends?.map((b) => b.model)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
+    expect(body.backends?.map((b) => b.model)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
     expect(body.roles['native-chat']).toBeTruthy()
     expect(body.backends?.[1]?.name).toBeTruthy()
     expect(body.roles.cheap).toBe(body.backends![1]!.name)

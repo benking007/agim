@@ -3,7 +3,9 @@ import {
   DEFAULT_LLM_PRESET,
   builtinPresetKeyForBaseUrl,
   getLlmPreset,
+  DEEPSEEK_VISION_MODEL,
   isDeepSeekBaseUrl,
+  isDeepSeekVisionModel,
   isGlm52Model,
   isKimiBaseUrl,
   isKimiK2Model,
@@ -23,9 +25,16 @@ describe('llm presets', () => {
     expect(DEFAULT_LLM_PRESET.key).toBe('deepseek')
     expect(DEFAULT_LLM_PRESET.model).toBe('deepseek-v4-pro')
     expect(DEFAULT_LLM_PRESET.cheapModel).toBe('deepseek-v4-flash')
-    expect(presetModels(DEFAULT_LLM_PRESET)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
+    expect(presetModels(DEFAULT_LLM_PRESET)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
     expect(presetBackendStem('deepseek-agim', 'deepseek-v4-pro', 0)).toBe('deepseek-v4-pro')
     expect(presetBackendStem('deepseek-agim', 'deepseek-v4-flash', 1)).toBe('deepseek-v4-flash')
+    expect(presetBackendStem('deepseek-agim', DEEPSEEK_VISION_MODEL, 2)).toBe(DEEPSEEK_VISION_MODEL)
+    expect(isDeepSeekVisionModel(DEEPSEEK_VISION_MODEL)).toBe(true)
+    expect(isDeepSeekVisionModel('deepseek-v4-pro')).toBe(false)
     expect(DEFAULT_LLM_PRESET.baseUrl).toBe('https://api.deepseek.com')
   })
 

@@ -53,7 +53,9 @@ import {
   type DeepSeekResponsesResult,
 } from './deepseek-api.js'
 import {
+  DEEPSEEK_VISION_MODEL,
   isDeepSeekBaseUrl,
+  isDeepSeekVisionModel,
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
@@ -372,9 +374,15 @@ export class OpenAICompatProvider extends LlmProvider {
     opts: NormalizedOptions,
     stream: boolean,
   ): Record<string, unknown> {
-    const body: Record<string, unknown> = {
+    const vision = resolveOpenAiVisionMode({
+      configuredVision: this.vision,
+      baseUrl: this.baseUrl,
       model: opts.model,
-      messages: messages.map((m) => serializeMessage(m, { vision: this.vision })),
+      messages,
+    })
+    const body: Record<string, unknown> = {
+      model: vision.model,
+      messages: messages.map((m) => serializeMessage(m, { vision: vision.enabled })),
       [this.maxTokensField]: opts.maxTokens,
     }
     if (opts.temperature !== undefined) body.temperature = opts.temperature
@@ -661,6 +669,24 @@ function isAbortError(err: unknown): boolean {
 
 // ─── Stage 2 — tool-call serialization / deserialization ─────────────
 
+/** DeepSeek text SKUs 400 on images — swap to the vision model for that request. */
+function resolveOpenAiVisionMode(opts: {
+  configuredVision: boolean
+  baseUrl?: string
+  model: string
+  messages: LlmMessage[]
+}): { enabled: boolean; model: string } {
+  const hasUserMedia = opts.messages.some(
+    (m) => m.role === 'user' && Array.isArray(m.media) && m.media.length > 0,
+  )
+  if (!hasUserMedia) return { enabled: opts.configuredVision, model: opts.model }
+  const deepseek = isDeepSeekBaseUrl(opts.baseUrl) || /^deepseek/i.test(opts.model)
+  if (deepseek && !isDeepSeekVisionModel(opts.model)) {
+    return { enabled: true, model: DEEPSEEK_VISION_MODEL }
+  }
+  return { enabled: opts.configuredVision, model: opts.model }
+}
+
 function serializeMessage(m: LlmMessage, opts: { vision: boolean }): Record<string, unknown> {
   // OpenAI's wire-format expects either:
   //   - {role:'system'|'user', content}
@@ -724,12 +750,11 @@ function serializeMessage(m: LlmMessage, opts: { vision: boolean }): Record<stri
 
 /** Read a local file and inline-base64 it as a data URL. Returns null
  *  on read failure so the caller can fall back to text-only. Capped at
- *  20MB — most IM attachments are well under, and oversize files would
- *  blow past most providers' request-size limits anyway. */
+ *  32MB to match DeepSeek vision's inline / URL image limit. */
 function mediaToDataUrl(path: string, mimeHint?: string): string | null {
   try {
     const stat = fsStatSync(path)
-    if (stat.size > 20 * 1024 * 1024) return null
+    if (stat.size > 32 * 1024 * 1024) return null
     const buf = fsReadFileSync(path)
     const mime = mimeHint || sniffMime(path)
     return `data:${mime};base64,${buf.toString('base64')}`

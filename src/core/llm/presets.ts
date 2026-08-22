@@ -46,7 +46,9 @@ export const LLM_PRESETS: readonly LlmPresetDef[] = [
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
     cheapModel: 'deepseek-v4-flash',
-    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+    // Vision is a separate model id — pro/flash 400 on images
+    // ("This model does not support image"). See DeepSeek vision guide.
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'],
     baseName: 'deepseek-agim',
     apiKeyDoc: 'platform.deepseek.com → API Keys',
     defaultThinking: 'high',
@@ -147,6 +149,15 @@ export function suggestLlmBackendName(base: string, existing: string[]): string 
     if (!used.has(candidate.toLowerCase())) return candidate
   }
   return `${base}-${Date.now()}`
+}
+
+/** Official DeepSeek vision model (images on user turns only). */
+export const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'
+
+/** True when the model id is a DeepSeek vision / multimodal SKU. */
+export function isDeepSeekVisionModel(model: string | undefined | null): boolean {
+  const id = (model ?? '').trim()
+  return /^deepseek/i.test(id) && /vision/i.test(id)
 }
 
 /** Detect DeepSeek endpoints (official + common proxies that keep the hostname). */

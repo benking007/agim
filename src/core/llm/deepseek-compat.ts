@@ -2,6 +2,11 @@
 // Official docs: https://api-docs.deepseek.com/
 
 import { createHash } from 'node:crypto'
+import {
+  DEEPSEEK_VISION_MODEL,
+  isDeepSeekBaseUrl,
+  isDeepSeekVisionModel,
+} from './presets.js'
 
 export const DEEPSEEK_OPENAI_BASE = 'https://api.deepseek.com'
 export const DEEPSEEK_ANTHROPIC_BASE = 'https://api.deepseek.com/anthropic'
@@ -192,6 +197,30 @@ export function normalizeDeepSeekAnthropicThinkingPayload(
     next.output_config = { effort }
   }
   return next
+}
+
+/**
+ * DeepSeek only accepts images on the vision SKU (other models 400).
+ * Same API key / host — swap `id` + advertise image input so pi-ai
+ * does not strip the blocks.
+ */
+export function applyDeepSeekVisionModel<M extends {
+  id: string
+  name: string
+  baseUrl?: string
+  input: Array<'text' | 'image'>
+}>(model: M, hasImages: boolean): M {
+  if (!hasImages) return model
+  const deepseek = isDeepSeekBaseUrl(model.baseUrl) || /^deepseek/i.test(model.id)
+  if (!deepseek) return model
+  if (isDeepSeekVisionModel(model.id) && model.input.includes('image')) return model
+  const visionId = isDeepSeekVisionModel(model.id) ? model.id : DEEPSEEK_VISION_MODEL
+  return {
+    ...model,
+    id: visionId,
+    name: visionId,
+    input: ['text', 'image'],
+  }
 }
 
 /** Env / config: enable DeepSeek beta strict tools. */

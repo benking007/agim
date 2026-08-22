@@ -23,8 +23,16 @@ describe('quickEnableLlmPreset', () => {
     expect(result.preset).toBe('deepseek')
     expect(result.name).toBe('deepseek-v4-pro')
     expect(result.model).toBe('deepseek-v4-pro')
-    expect(result.backends?.map((b) => b.model)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
-    expect(result.backends?.map((b) => b.name)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
+    expect(result.backends?.map((b) => b.model)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
+    expect(result.backends?.map((b) => b.name)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
     expect(result.roles['native-chat']).toBe(result.name)
     expect(result.defaultAgent).toBe('agim')
     expect(result.dialect).toBe('openai')
@@ -35,7 +43,11 @@ describe('quickEnableLlmPreset', () => {
       defaultAgent?: string
       agents?: string[]
     }
-    expect(cfg.llmBackends?.map((b) => b.model)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash'])
+    expect(cfg.llmBackends?.map((b) => b.model)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
     expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://api.deepseek.com')
     expect(cfg.llmBackends?.every((b) => b.label === 'deepseek')).toBe(true)
     expect(cfg.llmRoles?.['native-chat']).toBe(result.name)

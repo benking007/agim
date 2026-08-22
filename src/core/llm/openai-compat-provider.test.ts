@@ -5,6 +5,9 @@
 // request body / headers the provider sends.
 
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { OpenAICompatProvider } from './openai-compat-provider.js'
 import { LlmProviderError } from './provider-base.js'
 
@@ -587,5 +590,42 @@ describe('OpenAICompatProvider — tool calls (Stage 2)', () => {
       toolChoice: { type: 'tool', name: 'pick' },
     })
     expect(sentBody.tool_choice).toEqual({ type: 'function', function: { name: 'pick' } })
+  })
+
+  it('routes DeepSeek pro + user media onto the vision model with image_url blocks', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agim-ds-vision-'))
+    const img = join(dir, 'shot.png')
+    writeFileSync(img, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    let sentBody: Record<string, unknown> = {}
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sentBody = JSON.parse(init.body as string) as Record<string, unknown>
+      return makeJsonResponse({
+        model: 'deepseek-v4-flash-vision-exp',
+        choices: [{ message: { content: 'a cat' }, finish_reason: 'stop' }],
+      })
+    }) as unknown as typeof fetch
+    try {
+      const p = new OpenAICompatProvider({
+        name: 'deepseek-v4-pro',
+        model: 'deepseek-v4-pro',
+        apiKey: 'sk-ds',
+        baseUrl: 'https://api.deepseek.com',
+      })
+      const result = await p.chat([{
+        role: 'user',
+        content: 'what is in this image?',
+        media: [{ path: img, mime: 'image/png' }],
+      }])
+      expect(result.text).toBe('a cat')
+      expect(sentBody.model).toBe('deepseek-v4-flash-vision-exp')
+      const msgs = sentBody.messages as Array<{ role: string; content: unknown }>
+      expect(msgs[0]?.role).toBe('user')
+      const blocks = msgs[0]?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
+      expect(blocks.some((b) => b.type === 'text' && b.text === 'what is in this image?')).toBe(true)
+      const image = blocks.find((b) => b.type === 'image_url')
+      expect(image?.image_url?.url.startsWith('data:image/png;base64,')).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

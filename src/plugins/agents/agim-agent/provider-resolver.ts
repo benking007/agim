@@ -20,12 +20,14 @@ import {
   type LlmRole,
 } from '../../../core/llm/registry.js'
 import {
+  applyDeepSeekVisionModel,
   DEEPSEEK_BETA_BASE,
   DEEPSEEK_THINKING_LEVEL_MAP,
   isDeepSeekStrictToolsEnabled,
 } from '../../../core/llm/deepseek-compat.js'
 import {
   isDeepSeekBaseUrl,
+  isDeepSeekVisionModel,
   isGlm52Model,
   isGlmModel,
   isKimiBaseUrl,
@@ -305,9 +307,13 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     provider: b.name,
     baseUrl,
     reasoning,
-    input: (catalogModel?.input?.length
-      ? [...catalogModel.input]
-      : (kimi || zhipu || mimo ? ['text', 'image'] : ['text'])) as ('text' | 'image')[],
+    input: resolvePiInputModalities({
+      catalogInput: catalogModel?.input,
+      kimi,
+      zhipu,
+      mimo,
+      modelId: b.model,
+    }),
     cost: catalogModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // Explicit contextWindow wins; else catalog / vendor / conservative default.
     contextWindow: b.contextWindow
@@ -322,6 +328,38 @@ export function bindingToPiModel(b: LlmBackendBinding): NativeModelBinding | nul
     model,
     costKnown: catalogModel !== null,
     getApiKeyAndHeaders: async () => ({ apiKey: b.apiKey ?? '', headers: b.extraHeaders ?? {} }),
+  }
+}
+
+function resolvePiInputModalities(opts: {
+  catalogInput?: readonly string[]
+  kimi: boolean
+  zhipu: boolean
+  mimo: boolean
+  modelId: string
+}): ('text' | 'image')[] {
+  const catalog = opts.catalogInput?.length
+    ? [...opts.catalogInput] as ('text' | 'image')[]
+    : undefined
+  if (isDeepSeekVisionModel(opts.modelId)) {
+    return catalog?.includes('image') ? catalog : ['text', 'image']
+  }
+  if (catalog) return catalog
+  return opts.kimi || opts.zhipu || opts.mimo ? ['text', 'image'] : ['text']
+}
+
+/**
+ * DeepSeek only accepts images on `deepseek-v4-flash-vision-exp` (other
+ * SKUs 400 with "This model does not support image"). When this turn
+ * has images, reuse the same key/host and swap the model id.
+ */
+export function applyDeepSeekVisionRoute(
+  binding: NativeModelBinding,
+  hasImages: boolean,
+): NativeModelBinding {
+  return {
+    ...binding,
+    model: applyDeepSeekVisionModel(binding.model, hasImages),
   }
 }
 

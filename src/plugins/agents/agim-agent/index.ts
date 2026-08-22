@@ -91,6 +91,7 @@ import {
   shouldHardStopOnOffTrack,
 } from '../../../core/llm/goal-critic.js'
 import {
+  applyDeepSeekVisionModel,
   applyStrictToolsToOpenAiPayload,
   DEEPSEEK_THINKING_LEVEL_MAP,
   hashDeepSeekUserId,
@@ -110,6 +111,11 @@ import {
   resolveSemanticStuckLoopOn,
 } from '../../../core/llm/agent-loop.js'
 import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
+import {
+  agentMessagesHaveImages,
+  encodePromptImages,
+  parsePromptMedia,
+} from '../agim-agent-shared/index.js'
 import { AGIM_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
 import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { bindNativeSession } from '../../../core/agim-session-bind.js'
@@ -639,7 +645,12 @@ function composeRunTimeoutNotice(timeoutMs: number): string {
 }
 
 function seedUserMessage(text: string) {
-  return { role: 'user' as const, content: [{ type: 'text' as const, text }], timestamp: Date.now() }
+  const images = encodePromptImages(text)
+  return {
+    role: 'user' as const,
+    content: [{ type: 'text' as const, text }, ...images],
+    timestamp: Date.now(),
+  }
 }
 function seedAssistantMessage(text: string) {
   return {
@@ -803,7 +814,7 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     const overrideModel = opts?.model || this.sessionModelOverrides.get(sessionId)
     const effectiveOpts = overrideModel ? { ...(opts ?? {}), model: overrideModel } : opts
-    const binding = await this.deps.resolveModel(effectiveOpts)
+    let binding = await this.deps.resolveModel(effectiveOpts)
     if (opts?.signal?.aborted) {
       opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
@@ -879,6 +890,24 @@ export class NativeAgentAdapter implements AgentAdapter {
       opts.onOutcome?.({ status: 'aborted', providerFailure: false })
       yield composeProviderErrorNotice('aborted')
       return
+    }
+
+    // DeepSeek: only the vision SKU accepts images. Route this turn (same
+    // key/host) when the prompt, seeded history, or durable session has any.
+    const promptImages = encodePromptImages(prompt)
+    const historyHasImageMarkers = (history ?? []).some(
+      (m) => m.role === 'user' && parsePromptMedia(m.content).length > 0,
+    )
+    let sessionHasImages = false
+    try {
+      sessionHasImages = agentMessagesHaveImages((await session.buildContext()).messages)
+    } catch { /* empty or unreadable session */ }
+    binding = {
+      ...binding,
+      model: applyDeepSeekVisionModel(
+        binding.model,
+        promptImages.length > 0 || historyHasImageMarkers || sessionHasImages,
+      ),
     }
 
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
@@ -2029,7 +2058,9 @@ export class NativeAgentAdapter implements AgentAdapter {
       markLoopParentTurnActive(loopScope.platform, loopScope.channelId, loopScope.threadId)
     }
     try {
-      const promptPromise = harness.prompt(prompt)
+      const promptPromise = promptImages.length > 0
+        ? harness.prompt(prompt, { images: promptImages })
+        : harness.prompt(prompt)
       // prompt() flips phase to `turn` synchronously — steer() is legal now.
       const steerKey = opts?.platform && opts?.threadId
         ? threadSteerKey(opts.platform, opts.channelId ?? '', opts.threadId)

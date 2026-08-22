@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { LlmBackendBinding } from '../../../core/llm/registry.js'
 import { lookupModelMeta } from '../../../core/llm/model-catalog.js'
-import { bindingToPiModel } from './provider-resolver.js'
+import { applyDeepSeekVisionRoute, bindingToPiModel } from './provider-resolver.js'
 
 /** pi-ai Model.compat is a narrow/empty type in some builds — read as a bag. */
 function compatOf(model: { compat?: unknown }): Record<string, unknown> | undefined {
@@ -250,6 +250,28 @@ describe('Agim Agent provider-resolver (agim binding → pi-ai model)', () => {
       if (prev === undefined) delete process.env.AGIM_NATIVE_UNKNOWN_CONTEXT_WINDOW
       else process.env.AGIM_NATIVE_UNKNOWN_CONTEXT_WINDOW = prev
     }
+  })
+
+  it('marks DeepSeek vision SKU as image-capable without routing pro/flash', () => {
+    const vision = bindingToPiModel({
+      name: 'deepseek-v4-flash-vision-exp',
+      providerType: 'openai-compat',
+      model: 'deepseek-v4-flash-vision-exp',
+      baseUrl: 'https://api.deepseek.com',
+    })!
+    expect(vision.model.input).toEqual(['text', 'image'])
+
+    const pro = bindingToPiModel({
+      name: 'deepseek-v4-pro',
+      providerType: 'openai-compat',
+      model: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
+    })!
+    expect(pro.model.input).toEqual(['text'])
+    const routed = applyDeepSeekVisionRoute(pro, true)
+    expect(routed.model.id).toBe('deepseek-v4-flash-vision-exp')
+    expect(routed.model.input).toEqual(['text', 'image'])
+    expect(applyDeepSeekVisionRoute(pro, false).model.id).toBe('deepseek-v4-pro')
   })
 
   it('copies catalog modalities for known vision models', () => {

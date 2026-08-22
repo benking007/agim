@@ -64,4 +64,13 @@ describe('subagent heuristics (Phase A3)', () => {
     expect(g).toMatch(/finance/)
     expect(g).toMatch(/zhWriting/)
   })
+
+  it('steers image/OCR onto the DeepSeek vision backend', () => {
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/Image\/OCR/)
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/deepseek-v4-flash-vision-exp/)
+    expect(CALL_AGENTS_TOOL_DESCRIPTION).toMatch(/deepseek-v4-flash-vision-exp/)
+    const g = buildSubagentDelegationGuidance()
+    expect(g).toMatch(/image\/OCR/i)
+    expect(g).toMatch(/deepseek-v4-flash-vision-exp/)
+  })
 })

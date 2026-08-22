@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { parsePromptMedia } from './index.js'
+import { agentMessagesHaveImages, encodePromptImages, parsePromptMedia } from './index.js'
 
 const root = mkdtempSync(join(tmpdir(), 'agim-media-test-'))
 const goodDir = join(root, 'media')
@@ -69,5 +69,23 @@ describe('parsePromptMedia path safety', () => {
   it('returns empty array on no markers', () => {
     expect(parsePromptMedia('plain text, nothing to see')).toEqual([])
     expect(parsePromptMedia('')).toEqual([])
+  })
+
+  it('encodes accepted images as pi-ai ImageContent', () => {
+    const encoded = encodePromptImages(`see [图片附件：${goodFile}]`)
+    expect(encoded).toHaveLength(1)
+    expect(encoded[0]?.type).toBe('image')
+    expect(encoded[0]?.mimeType).toBe('image/jpeg')
+    expect(encoded[0]?.data).toBe(Buffer.from('JFIF-bytes').toString('base64'))
+    expect(parsePromptMedia(`see [图片附件：${goodFile}]`)[0]?.mime).toBe('image/jpeg')
+  })
+
+  it('detects image blocks on user / tool-result messages', () => {
+    expect(agentMessagesHaveImages([
+      { role: 'user', content: 'plain' },
+    ])).toBe(false)
+    expect(agentMessagesHaveImages([
+      { role: 'user', content: [{ type: 'text', text: 'x' }, { type: 'image', data: 'YQ==', mimeType: 'image/png' }] },
+    ])).toBe(true)
   })
 })

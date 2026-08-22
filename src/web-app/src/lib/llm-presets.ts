@@ -32,7 +32,7 @@ export const LLM_PRESETS: LlmPresetDef[] = [
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
     cheapModel: 'deepseek-v4-flash',
-    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'],
     baseName: 'deepseek-agim',
     defaultThinking: 'high',
   },

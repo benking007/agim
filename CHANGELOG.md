@@ -18,6 +18,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **DeepSeek vision**: built-in DeepSeek preset now registers
+  `deepseek-v4-flash-vision-exp`. Agim Agent encodes `[图片附件]`
+  markers as OpenAI `image_url` / pi-ai image blocks (user turns
+  only). Text SKUs (`deepseek-v4-pro` / `flash`) auto-route that
+  request onto the vision model with the same API key — other
+  DeepSeek models 400 with "This model does not support image".
+  See https://api-docs.deepseek.com/zh-cn/guides/vision
+- **Subagent vision dispatch**: `call_agent` / `call_agents` can
+  `backend=deepseek-v4-flash-vision-exp` (or `vision`) even when
+  config.json only has pro/flash — registry clones the DeepSeek
+  key in-memory. Heuristics + backend catalog steer OCR/screenshot
+  work onto that backend (text SKUs still 400 on images).
 - **Native `agim_edit_file`**: Agim Agent FS tools now include exact
   string replace (same semantics as CLI `agim_edit` / MCP edit). Prefer
   it over whole-file `agim_write_file` for small surgical changes. Plan

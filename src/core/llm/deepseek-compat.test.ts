@@ -3,6 +3,7 @@ import {
   DEEPSEEK_ANTHROPIC_BASE,
   DEEPSEEK_BETA_BASE,
   DEEPSEEK_THINKING_LEVEL_MAP,
+  applyDeepSeekVisionModel,
   applyStrictToolsToOpenAiPayload,
   hashDeepSeekUserId,
   isDeepSeekAnthropicBaseUrl,
@@ -92,6 +93,37 @@ describe('deepseek-compat', () => {
     const fn = (out.tools as Array<{ function: Record<string, unknown> }>)[0]!.function
     expect(fn.strict).toBe(true)
     expect((fn.parameters as { required: string[] }).required).toEqual(['decision', 'met'])
+  })
+
+  it('routes DeepSeek text SKUs onto the vision model when images are present', () => {
+    const pro = {
+      id: 'deepseek-v4-pro',
+      name: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
+      input: ['text'] as Array<'text' | 'image'>,
+    }
+    expect(applyDeepSeekVisionModel(pro, false)).toEqual(pro)
+    const routed = applyDeepSeekVisionModel(pro, true)
+    expect(routed.id).toBe('deepseek-v4-flash-vision-exp')
+    expect(routed.name).toBe('deepseek-v4-flash-vision-exp')
+    expect(routed.input).toEqual(['text', 'image'])
+    expect(routed.baseUrl).toBe('https://api.deepseek.com')
+
+    const kimi = {
+      id: 'kimi-k3',
+      name: 'kimi-k3',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      input: ['text', 'image'] as Array<'text' | 'image'>,
+    }
+    expect(applyDeepSeekVisionModel(kimi, true)).toEqual(kimi)
+
+    const already = {
+      id: 'deepseek-v4-flash-vision-exp',
+      name: 'deepseek-v4-flash-vision-exp',
+      baseUrl: 'https://api.deepseek.com',
+      input: ['text', 'image'] as Array<'text' | 'image'>,
+    }
+    expect(applyDeepSeekVisionModel(already, true)).toBe(already)
   })
 
   it('rewrites Anthropic thinking to enabled + output_config.effort', () => {

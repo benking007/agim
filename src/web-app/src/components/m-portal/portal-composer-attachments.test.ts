@@ -1,4 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+
+beforeAll(() => {
+  if (typeof URL.createObjectURL !== 'function') {
+    URL.createObjectURL = () => 'blob:agim-test'
+  }
+  if (typeof URL.revokeObjectURL !== 'function') {
+    URL.revokeObjectURL = () => {}
+  }
+})
 import {
   appendPendingFiles,
   consumeClipboardImages,

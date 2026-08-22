@@ -18,6 +18,7 @@ import {
   loadSecretsFile,
   envKeyForBackend,
   describeSecretSource,
+  secretHintForBackend,
   LLM_SECRETS_PATH,
 } from './secrets.js'
 import { existsSync, statSync, unlinkSync } from 'node:fs'
@@ -87,6 +88,63 @@ describe('secrets layer', () => {
     expect(describeSecretSource('only-env').source).toBe('file')
     process.env[envKeyForBackend('only-env')] = 'envval'
     expect(describeSecretSource('only-env').source).toBe('env')
+  })
+
+  it('resolves a hand-added sibling from the vendor slot without copying keys', () => {
+    saveSecret('deepseek', 'sk-shared')
+    const backends = [
+      {
+        name: 'deepseek-v4-pro',
+        provider: 'openai-compat',
+        baseUrl: 'https://api.deepseek.com',
+        label: 'deepseek',
+      },
+      {
+        name: 'deepseek-v4-flash-vision-exp',
+        provider: 'openai-compat',
+        baseUrl: 'https://api.deepseek.com',
+        label: 'deepseek',
+      },
+    ]
+    const hint = secretHintForBackend(backends[1]!, backends)
+    expect(resolveSecret('deepseek-v4-flash-vision-exp', undefined, hint)).toBe('sk-shared')
+    expect(describeSecretSource('deepseek-v4-flash-vision-exp', hint).source).toBe('file')
+    expect(loadSecretsFile().keys['deepseek-v4-flash-vision-exp']).toBeUndefined()
+  })
+
+  it('reads a legacy per-model key for a sibling without writing a new slot', () => {
+    saveSecret('deepseek-v4-pro', 'sk-legacy')
+    const backends = [
+      {
+        name: 'deepseek-v4-pro',
+        provider: 'openai-compat',
+        baseUrl: 'https://api.deepseek.com',
+        label: 'deepseek',
+      },
+      {
+        name: 'deepseek-v4-flash-vision-exp',
+        provider: 'openai-compat',
+        baseUrl: 'https://api.deepseek.com',
+        label: 'deepseek',
+      },
+    ]
+    const hint = secretHintForBackend(backends[1]!, backends)
+    expect(resolveSecret('deepseek-v4-flash-vision-exp', undefined, hint)).toBe('sk-legacy')
+    expect(describeSecretSource('deepseek-v4-flash-vision-exp', hint).source).toBe('file')
+    expect(loadSecretsFile().keys['deepseek-v4-flash-vision-exp']).toBeUndefined()
+    expect(loadSecretsFile().keys.deepseek).toBeUndefined()
+  })
+
+  it('does not share a DeepSeek file key with a different host', () => {
+    saveSecret('deepseek-v4-pro', 'sk-ds')
+    const hint = secretHintForBackend(
+      { name: 'other-model', provider: 'openai-compat', baseUrl: 'https://api.openai.com/v1' },
+      [
+        { name: 'deepseek-v4-pro', provider: 'openai-compat', baseUrl: 'https://api.deepseek.com' },
+        { name: 'other-model', provider: 'openai-compat', baseUrl: 'https://api.openai.com/v1' },
+      ],
+    )
+    expect(resolveSecret('other-model', undefined, hint)).toBeUndefined()
   })
 })
 
@@ -239,6 +297,32 @@ describe('LLM registry', () => {
     expect(getProvider('native-chat')).toBeNull()
     expect(getAnyProvider()?.name).toBe('test-cheap')
     expect(getAnyBackendBinding()?.name).toBe('test-cheap')
+  })
+
+  it('loads a hand-added vision backend from the sibling DeepSeek FILE key', () => {
+    saveSecret('deepseek-v4-pro', 'sk-pro')
+    loadFromConfig({
+      llmBackends: [
+        {
+          name: 'deepseek-v4-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+          label: 'deepseek',
+        },
+        {
+          name: 'deepseek-v4-flash-vision-exp',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash-vision-exp',
+          label: 'deepseek',
+        },
+      ],
+      llmRoles: { 'native-chat': 'deepseek-v4-pro' },
+    })
+    expect(getProviderByName('deepseek-v4-flash-vision-exp')).not.toBeNull()
+    expect(describeRegistry().unconfigured).not.toContain('deepseek-v4-flash-vision-exp')
+    expect(loadSecretsFile().keys['deepseek-v4-flash-vision-exp']).toBeUndefined()
   })
 
   it('clones a virtual DeepSeek vision backend from an existing DeepSeek key', () => {

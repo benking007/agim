@@ -158,6 +158,20 @@ export function useLlmQuickEnable() {
   })
 }
 
+export interface LlmSyncPresetResult {
+  preset: string
+  added: Array<{ name: string; model: string }>
+}
+
+/** Add catalog models that an already-installed vendor group is missing. */
+export function useLlmSyncPreset() {
+  const qc = useQueryClient()
+  return useMutation<LlmSyncPresetResult, Error, { preset: string }>({
+    mutationFn: (body) => client.post('/api/llm/presets/sync', { body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: llmKeys.all }),
+  })
+}
+
 export function useLlmRemoveBackend() {
   const qc = useQueryClient()
   return useMutation<{ removedRoles: number }, Error, string>({

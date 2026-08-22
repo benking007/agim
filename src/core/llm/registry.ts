@@ -25,7 +25,7 @@ import type { ValidatedConfig } from '../config-schema.js'
 import { OpenAICompatProvider } from './openai-compat-provider.js'
 import { AnthropicProvider } from './anthropic-provider.js'
 import type { LlmProvider } from './provider-base.js'
-import { resolveSecret, loadSecretsFile } from './secrets.js'
+import { loadSecretsFile, resolveSecret, secretHintForBackend } from './secrets.js'
 import {
   DEEPSEEK_VISION_MODEL,
   isDeepSeekBaseUrl,
@@ -95,6 +95,10 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
     ? (cfg as { llmBackends: unknown[] }).llmBackends
     : []
 
+  const listed = backends.filter((raw): raw is BackendConfig =>
+    !!raw && typeof raw === 'object' && typeof (raw as BackendConfig).name === 'string',
+  )
+
   // Pre-load secrets file once so each provider construction doesn't
   // re-read it from disk.
   const secrets = loadSecretsFile()
@@ -111,15 +115,8 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
       log.warn({ event: 'llm-registry.duplicate_name', name: cfg.name },
         `Duplicate llmBackends entry "${cfg.name}"; last wins`)
     }
-    // v1.2.141 — pass backend hint so resolveSecret can fall back to
-    // vendor-standard envs (DEEPSEEK_API_KEY / OPENAI_API_KEY / …) when
-    // neither AGIM_LLM_SECRET_<NAME> nor llm-secrets.json carries the
-    // key. Hint is best-effort — keys missing from cfg leave the hint
-    // empty and the vendor fallback simply yields null.
-    const apiKey = resolveSecret(cfg.name, secrets, {
-      provider: cfg.provider,
-      baseUrl: cfg.baseUrl,
-    })
+    // Vendor slot (`keys.deepseek`) + legacy per-model names + vendor env.
+    const apiKey = resolveSecret(cfg.name, secrets, secretHintForBackend(cfg, listed))
     const provider = buildProvider(cfg, apiKey)
     if (!provider) continue
     if (!provider.isConfigured()) {

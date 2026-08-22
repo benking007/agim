@@ -9,6 +9,8 @@
 //   GET    /api/llm/presets              → curated vendor presets (DeepSeek default)
 //   POST   /api/llm/quick-enable         body { apiKey, preset?, model?, baseUrl?, name? }
 //                                        → 201 Created (backend + roles + defaultAgent)
+//   POST   /api/llm/presets/sync         body { preset } → add missing preset models
+//                                        (reuse the vendor API key; 200 { added })
 //   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey }
 //                                        → 201 Created or 409 Conflict / 400 Validation
 //   DELETE /api/llm/backends/:name       → 200 OK { removedRoles }
@@ -27,13 +29,19 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { configSchema } from '../core/config-schema.js'
 import { readConfigObject, updateConfigObject } from '../core/config-store.js'
 import {
-  saveSecret, removeSecret, describeSecretSource,
+  saveSecretForBackend,
+  clearSecretForBackend,
+  removeSecret,
+  removeSecretsForRemovedBackends,
+  describeSecretSource,
+  secretHintForBackend,
 } from '../core/llm/secrets.js'
 import { clearAgentCache } from '../core/onboarding.js'
 import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/llm/registry.js'
 import { lookupModelMeta } from '../core/llm/model-catalog.js'
 import { DEFAULT_LLM_PRESET, LLM_PRESETS } from '../core/llm/presets.js'
 import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
+import { SyncPresetError, syncMissingPresetModels } from '../core/llm/sync-preset.js'
 
 interface RawBackend {
   name: string
@@ -106,6 +114,9 @@ export async function handleLlmApi(
   }
   if (p === '/api/llm/quick-enable' && m === 'POST') {
     await handleQuickEnable(req, res); return true
+  }
+  if (p === '/api/llm/presets/sync' && m === 'POST') {
+    await handleSyncPreset(req, res); return true
   }
   if (p === '/api/llm/backends' && m === 'POST') {
     await handleAddBackend(req, res); return true
@@ -204,13 +215,35 @@ async function handleQuickEnable(req: IncomingMessage, res: ServerResponse): Pro
   }
 }
 
+async function handleSyncPreset(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody<{ preset?: unknown }>(req)
+  if (!body || typeof body !== 'object') {
+    send(res, 400, { error: 'request body must be a JSON object' })
+    return
+  }
+  if (typeof body.preset !== 'string' || !body.preset.trim()) {
+    send(res, 400, { error: 'preset is required' })
+    return
+  }
+  try {
+    const result = await syncMissingPresetModels(body.preset.trim())
+    send(res, 200, result)
+  } catch (err) {
+    if (err instanceof SyncPresetError) {
+      const status = err.code === 'not_found' ? 404 : 400
+      send(res, status, { error: err.message })
+      return
+    }
+    throw err
+  }
+}
+
 async function handleList(res: ServerResponse): Promise<void> {
   const cfg = await readConfig()
-  const backends = (cfg.llmBackends ?? []).map((b) => {
-    // v1.2.141 — pass backend hint so describeSecretSource can report
-    // vendor-env fallback (source='vendor') and surface candidate envs
-    // when nothing is configured ('vendorCandidates').
-    const src = describeSecretSource(b.name, { provider: b.provider, baseUrl: b.baseUrl })
+  const listed = cfg.llmBackends ?? []
+  const backends = listed.map((b) => {
+    // Vendor slot + legacy per-model names + vendor-env fallback.
+    const src = describeSecretSource(b.name, secretHintForBackend(b, listed))
     // Prefer operator override; else fill from pi catalog so Usage / status
     // bar match the Agim Agent binding (e.g. deepseek-v4-pro → 1M / 384K).
     const catalog = lookupModelMeta(b.provider, b.model)
@@ -444,7 +477,7 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     })
     return
   }
-  saveSecret(name, apiKey)
+  saveSecretForBackend(name, apiKey, secretHintForBackend(next, savedConfig.llmBackends ?? [next]))
   refreshLlmRuntime(savedConfig)
   send(res, 201, { name, secretStored: true })
 }
@@ -452,10 +485,12 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
 async function handleRemoveBackend(res: ServerResponse, name: string): Promise<void> {
   let savedConfig: RawConfig
   let removedRoles = 0
+  let removedBackend: RawBackend | undefined
   try {
     const update = await updateConfigObject((current) => {
       const cfg = current as RawConfig
       const backends = cfg.llmBackends ?? []
+      removedBackend = backends.find((b) => b.name === name)
       const next = backends.filter((b) => b.name !== name)
       if (next.length === backends.length) {
         throw new LlmConfigError(404, `no backend named "${name}"`)
@@ -477,7 +512,10 @@ async function handleRemoveBackend(res: ServerResponse, name: string): Promise<v
     send(res, err.status, { error: err.message })
     return
   }
-  removeSecret(name)
+  removeSecretsForRemovedBackends(
+    removedBackend ? [removedBackend] : [{ name }],
+    savedConfig.llmBackends ?? [],
+  )
   refreshLlmRuntime(savedConfig)
   send(res, 200, { removedRoles })
 }
@@ -506,6 +544,7 @@ async function handleRemoveBackendGroup(res: ServerResponse, url: URL): Promise<
 
   let savedConfig: RawConfig
   let removedNames: string[] = []
+  let removedBackends: RawBackend[] = []
   let removedRoles = 0
   try {
     const update = await updateConfigObject((current) => {
@@ -536,6 +575,7 @@ async function handleRemoveBackendGroup(res: ServerResponse, url: URL): Promise<
         cleaned[role] = backend
       }
       removedNames = [...toRemove]
+      removedBackends = backends.filter((b) => toRemove.has(b.name))
       return {
         config: { ...cfg, llmBackends: next, llmRoles: cleaned },
         result: undefined,
@@ -547,9 +587,9 @@ async function handleRemoveBackendGroup(res: ServerResponse, url: URL): Promise<
     send(res, err.status, { error: err.message })
     return
   }
-  for (const name of removedNames) {
-    try { removeSecret(name) } catch { /* best-effort */ }
-  }
+  try {
+    removeSecretsForRemovedBackends(removedBackends, savedConfig.llmBackends ?? [])
+  } catch { /* best-effort */ }
   refreshLlmRuntime(savedConfig)
   send(res, 200, { removed: removedNames, removedRoles })
 }
@@ -618,15 +658,25 @@ async function handleSetSecret(req: IncomingMessage, res: ServerResponse, name: 
     send(res, 400, { error: 'apiKey is required (non-empty string)' })
     return
   }
-  saveSecret(name, body.apiKey.trim())
+  const backend = (cfg.llmBackends ?? []).find((b) => b.name === name)
+  const hint = backend
+    ? secretHintForBackend(backend, cfg.llmBackends ?? [])
+    : undefined
+  saveSecretForBackend(name, body.apiKey.trim(), hint)
   refreshLlmRuntime(cfg)
-  const src = describeSecretSource(name)
+  const src = describeSecretSource(name, hint)
   send(res, 200, { name, source: src.source })
 }
 
 async function handleRemoveSecret(res: ServerResponse, name: string): Promise<void> {
-  removeSecret(name)
-  refreshLlmRuntime(await readConfig())
+  const cfg = await readConfig()
+  const backend = (cfg.llmBackends ?? []).find((b) => b.name === name)
+  if (backend) {
+    clearSecretForBackend(name, secretHintForBackend(backend, cfg.llmBackends ?? []))
+  } else {
+    removeSecret(name)
+  }
+  refreshLlmRuntime(cfg)
   send(res, 200, { name })
 }
 

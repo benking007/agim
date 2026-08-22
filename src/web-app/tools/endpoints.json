@@ -38,7 +38,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 130,
+  "count": 131,
   "endpoints": [
     {
       "method": "DELETE",
@@ -595,6 +595,12 @@
     {
       "method": "POST",
       "path": "/api/llm/backends",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/llm/presets/sync",
       "source": "exact",
       "authRequired": true
     },

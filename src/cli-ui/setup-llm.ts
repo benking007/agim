@@ -23,7 +23,7 @@ import { stat } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import { configSchema } from '../core/config-schema.js'
 import { CONFIG_FILE, readConfigObject, updateConfigObject } from '../core/config-store.js'
-import { saveSecret, removeSecret, listConfiguredBackends, describeSecretSource } from '../core/llm/secrets.js'
+import { saveSecretForBackend, removeSecretsForRemovedBackends, listConfiguredBackends, describeSecretSource, secretHintForBackend } from '../core/llm/secrets.js'
 import {
   DEFAULT_LLM_PRESET,
   LLM_PRESETS,
@@ -54,6 +54,7 @@ interface RawLlmBackend {
   provider: 'openai-compat' | 'anthropic'
   baseUrl: string
   model: string
+  label?: string
   apiKeyEnv?: string
   costPer1kIn?: number
   costPer1kOut?: number
@@ -253,7 +254,7 @@ async function listAction(): Promise<number> {
   } else {
     process.stdout.write('\nConfigured backends:\n')
     for (const b of backends) {
-      const src = describeSecretSource(b.name)
+      const src = describeSecretSource(b.name, secretHintForBackend(b, backends))
       const keyStr = src.source === 'none' ? 'key: ⚠️  missing' : `key: ✅ ${src.source}`
       process.stdout.write(`  · ${b.name} → ${b.provider} ${b.model} @ ${b.baseUrl}  [${keyStr}]\n`)
     }
@@ -339,7 +340,7 @@ async function addAction(): Promise<number> {
       throw err
     }
     await reportConfigWrite()
-    saveSecret(name, apiKey)
+    saveSecretForBackend(name, apiKey, { provider, baseUrl })
 
     process.stdout.write(`\n✅ Saved backend "${name}" (${provider} / ${model}).\n`)
 
@@ -419,7 +420,9 @@ async function removeAction(maybeName?: string): Promise<number> {
     throw err
   }
   await reportConfigWrite()
-  removeSecret(name)
+  const remaining = (await readConfig()).llmBackends ?? []
+  const removed = backends.find((b) => b.name === name)
+  removeSecretsForRemovedBackends(removed ? [removed] : [{ name }], remaining)
   process.stdout.write(`✅ Removed backend "${name}" (cleared ${droppedRoles} role binding(s) and the on-disk API key).\n`)
   return 0
 }
@@ -505,7 +508,8 @@ async function secretAction(maybeName?: string): Promise<number> {
   try {
     const key = (await ask(rl, `Paste API key for "${name}" (empty to abort): `, { silent: true })).trim()
     if (!key) return cancel('empty key')
-    saveSecret(name, key)
+    const target = backends.find((b) => b.name === name)
+    saveSecretForBackend(name, key, target ? secretHintForBackend(target, backends) : undefined)
     process.stdout.write(`✅ Saved API key for "${name}".\n`)
     return 0
   } finally { rl.close() }
@@ -591,7 +595,11 @@ async function nativeEnableAction(maybeBackendName?: string): Promise<number> {
   if (typeof def === 'string') {
     process.stdout.write(`   defaultAgent: ${def}\n`)
   }
-  const src = describeSecretSource(name)
+  const src = describeSecretSource(name, {
+    provider: savedConfig.llmBackends?.find((b) => b.name === name)?.provider,
+    baseUrl: savedConfig.llmBackends?.find((b) => b.name === name)?.baseUrl,
+    label: savedConfig.llmBackends?.find((b) => b.name === name)?.label,
+  })
   if (src.source === 'none') {
     process.stdout.write(`⚠️  No API key for "${name}". Run \`agim setup llm secret ${name}\` to add one.\n`)
   }

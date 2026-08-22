@@ -4,7 +4,7 @@
 
 import { loadConfig, saveConfigChanges, type Config } from './onboarding.js'
 import { checkAgentsFresh } from '../cli-ui/readiness.js'
-import { loadSecretsFile, resolveSecret } from './llm/secrets.js'
+import { loadSecretsFile, resolveSecret, secretHintForBackend } from './llm/secrets.js'
 
 export type OnboardingReason =
   | 'no-usable-agent'
@@ -25,6 +25,7 @@ interface LlmBackendRef {
   name: string
   provider?: string
   baseUrl?: string
+  label?: string
 }
 
 export function readLlmBackends(config: Config): LlmBackendRef[] {
@@ -37,10 +38,12 @@ export function readLlmBackends(config: Config): LlmBackendRef[] {
     if (typeof name !== 'string' || !name.trim()) continue
     const provider = (item as { provider?: unknown }).provider
     const baseUrl = (item as { baseUrl?: unknown }).baseUrl
+    const label = (item as { label?: unknown }).label
     out.push({
       name,
       ...(typeof provider === 'string' ? { provider } : {}),
       ...(typeof baseUrl === 'string' ? { baseUrl } : {}),
+      ...(typeof label === 'string' ? { label } : {}),
     })
   }
   return out
@@ -52,10 +55,7 @@ export function hasUsableLlmSecret(config: Config): boolean {
   if (backends.length === 0) return false
   const secrets = loadSecretsFile()
   return backends.some((b) => {
-    const value = resolveSecret(b.name, secrets, {
-      provider: b.provider,
-      baseUrl: b.baseUrl,
-    })
+    const value = resolveSecret(b.name, secrets, secretHintForBackend(b, backends))
     return typeof value === 'string' && value.length > 0
   })
 }

@@ -90,6 +90,20 @@ export function presetModels(preset: LlmPresetDef): string[] {
   return out.filter((m) => !!m.trim())
 }
 
+/** Preset model ids not yet present (match by model id or backend name). */
+export function missingPresetModels(
+  existing: Array<{ name?: string; model?: string }>,
+  preset: Pick<LlmPresetDef, 'models' | 'model' | 'cheapModel'>,
+): string[] {
+  const listed = preset.models?.length
+    ? [...new Set(preset.models.filter((m) => !!m.trim()))]
+    : [preset.model, preset.cheapModel].filter((m): m is string => !!m?.trim())
+  const have = new Set(
+    existing.flatMap((b) => [b.model, b.name].filter((x): x is string => !!x?.trim())),
+  )
+  return listed.filter((m) => !have.has(m))
+}
+
 export function suggestLlmBackendName(base: string, existing: string[]): string {
   const used = new Set(existing.map((n) => n.toLowerCase()))
   if (!used.has(base.toLowerCase())) return base

@@ -18,6 +18,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **LLM settings “Fill preset”**: an already-added vendor group
+  (e.g. DeepSeek with only pro/flash) can add newer catalog models
+  such as `deepseek-v4-flash-vision-exp` in one click, reusing the
+  existing API key. Upgrading the app does not rewrite `config.json`.
+- **Vendor-scoped LLM secrets**: builtin providers store one key
+  (`keys.deepseek`, `keys.moonshot`, …) instead of one entry per
+  model name. A renamed / new catalog SKU reuses the same slot.
+  Older per-model keys remain readable so existing installs keep FILE.
 - **Portal composer paste-to-attach**: screenshot / copied images
   pasted into the `/m/chat` input become pending attachments
   (preview strip + send-time upload), same path as the "+" photo

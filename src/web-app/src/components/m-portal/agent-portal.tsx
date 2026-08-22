@@ -499,7 +499,8 @@ export function AgentPortal(): JSX.Element {
   }
 
   function onComposerPaste(e: ClipboardEvent<HTMLFormElement>): void {
-    if (uploading || state.status !== 'open') return
+    // Attachments are local until send; only block while an upload is in flight.
+    if (uploading) return
     const { next, overflowed, consumed } = consumeClipboardImages(e.clipboardData, attachments)
     if (!consumed) return
     e.preventDefault()

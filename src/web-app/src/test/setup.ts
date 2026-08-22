@@ -16,6 +16,22 @@ import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { bootstrapI18n, ensureLazyNamespacesLoaded } from '@/i18n'
 
+// jsdom does not implement blob URLs; composer attachments use them for
+// image previews (same path as "+" pick and clipboard paste).
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = () => 'blob:agim-test'
+}
+if (typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = () => {}
+}
+if (typeof ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver
+}
+
 // vitest is configured with `globals: false`, so RTL's auto-cleanup
 // (which keys off a global `afterEach`) doesn't activate by default.
 // Register it explicitly so JSX renders don't leak DOM between tests

@@ -1,13 +1,6 @@
-import { beforeAll, describe, expect, it } from 'vitest'
-
-beforeAll(() => {
-  if (typeof URL.createObjectURL !== 'function') {
-    URL.createObjectURL = () => 'blob:agim-test'
-  }
-  if (typeof URL.revokeObjectURL !== 'function') {
-    URL.revokeObjectURL = () => {}
-  }
-})
+import { useState } from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 import {
   appendPendingFiles,
   consumeClipboardImages,
@@ -16,7 +9,9 @@ import {
   MAX_PENDING_ATTACHMENTS,
   normalizeClipboardImage,
   screenshotFileName,
+  type PendingAttachment,
 } from './portal-composer-attachments'
+import { AttachmentStrip } from './portal-composer-plus'
 
 function pngFile(name: string, type = 'image/png'): File {
   return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type })
@@ -146,5 +141,48 @@ describe('consumeClipboardImages', () => {
     expect(next[0]?.kind).toBe('image')
     expect(next[0]?.name).toMatch(/^screenshot-\d{8}-\d{6}\.png$/)
     if (next[0]?.previewUrl) URL.revokeObjectURL(next[0].previewUrl)
+  })
+})
+
+function PasteComposer(): JSX.Element {
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  return (
+    <form
+      onPaste={(e) => {
+        const { next, consumed } = consumeClipboardImages(e.clipboardData, attachments)
+        if (!consumed) return
+        e.preventDefault()
+        setAttachments(next)
+      }}
+    >
+      <textarea aria-label="message" />
+      <AttachmentStrip dark={false} attachments={attachments} onRemove={() => {}} />
+    </form>
+  )
+}
+
+describe('composer paste → attachment strip', () => {
+  it('shows a preview thumb after pasting a screenshot blob', () => {
+    render(<PasteComposer />)
+    const ta = screen.getByRole('textbox', { name: 'message' })
+    fireEvent.paste(ta, {
+      clipboardData: clipboard({
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => pngFile('image.png') }],
+      }),
+    })
+    const img = screen.getByRole('img')
+    expect(img.getAttribute('alt')).toMatch(/^screenshot-\d{8}-\d{6}\.png$/)
+  })
+
+  it('leaves the textarea empty when only an image is pasted', () => {
+    render(<PasteComposer />)
+    const ta = screen.getByRole('textbox', { name: 'message' }) as HTMLTextAreaElement
+    fireEvent.paste(ta, {
+      clipboardData: clipboard({
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => pngFile('image.png') }],
+      }),
+    })
+    expect(ta.value).toBe('')
+    expect(screen.getByRole('img')).toBeInTheDocument()
   })
 })

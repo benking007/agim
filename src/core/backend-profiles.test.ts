@@ -21,6 +21,17 @@ describe('backend-profiles', () => {
     expect(p.capabilityNotes?.zhWriting).toMatch(/母语/)
   })
 
+  it('infers DeepSeek vision as OCR/screenshot specialist', () => {
+    const p = inferBackendProfile({
+      name: 'deepseek-v4-flash-vision-exp',
+      model: 'deepseek-v4-flash-vision-exp',
+    })
+    expect(p.summary).toMatch(/识图|OCR/)
+    expect(p.capabilities.reasoning).toBe('strong')
+    expect(p.capabilityNotes?.reasoning).toMatch(/识图/)
+    expect(p.capabilities.coding).toBe('weak')
+  })
+
   it('infers openai/claude-ish coding strong', () => {
     const gpt = inferBackendProfile({ name: 'gpt-5', model: 'gpt-5.2' })
     expect(gpt.capabilities.coding).toBe('strong')

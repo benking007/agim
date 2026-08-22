@@ -11,6 +11,7 @@ import {
   getProviderByName,
   listProviders,
 } from './llm/registry.js'
+import { DEEPSEEK_VISION_MODEL } from './llm/presets.js'
 import { canonicalizeToolName, expandToolNameList } from './llm/tool-names.js'
 
 export interface ParsedCallAgentTarget {
@@ -314,14 +315,20 @@ export function isSameAgent(callerAgent: string, targetAgent: string): boolean {
   return !!(a && b && a.name === b.name)
 }
 
-/** Case-insensitive backend name lookup → canonical name. */
+/** Case-insensitive backend name / model-id lookup → canonical name. */
 export function resolveBackendName(name: string): string | null {
   const trimmed = name.trim()
   if (!trimmed) return null
-  if (getBackendBindingByName(trimmed) || getProviderByName(trimmed)) return trimmed
+  const binding = getBackendBindingByName(trimmed)
+  if (binding) return binding.name
+  if (getProviderByName(trimmed)) return trimmed
   const lower = trimmed.toLowerCase()
+  if (lower === 'vision' || lower === 'deepseek-vision') {
+    const vision = getBackendBindingByName(DEEPSEEK_VISION_MODEL)
+    if (vision) return vision.name
+  }
   for (const p of listProviders()) {
-    if (p.name.toLowerCase() === lower) return p.name
+    if (p.name.toLowerCase() === lower || p.model.toLowerCase() === lower) return p.name
   }
   return null
 }

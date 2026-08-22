@@ -26,6 +26,11 @@ import { OpenAICompatProvider } from './openai-compat-provider.js'
 import { AnthropicProvider } from './anthropic-provider.js'
 import type { LlmProvider } from './provider-base.js'
 import { resolveSecret, loadSecretsFile } from './secrets.js'
+import {
+  DEEPSEEK_VISION_MODEL,
+  isDeepSeekBaseUrl,
+  isDeepSeekVisionModel,
+} from './presets.js'
 
 const log = rootLogger.child({ component: 'llm-registry' })
 
@@ -153,6 +158,7 @@ export function loadFromConfig(cfg: ValidatedConfig | { llmBackends?: unknown; l
     }
   }
 
+  ensureVirtualDeepSeekVision(next)
   state = next
   log.info({
     event: 'llm-registry.loaded',
@@ -205,7 +211,16 @@ export function getAnyBackendBinding(): LlmBackendBinding | null {
 
 /** Resolved backend binding by backend name. */
 export function getBackendBindingByName(name: string): LlmBackendBinding | null {
-  return state.bindings.get(name) ?? null
+  const exact = state.bindings.get(name)
+  if (exact) return exact
+  const lower = name.trim().toLowerCase()
+  if (!lower) return null
+  for (const [key, binding] of state.bindings) {
+    if (key.toLowerCase() === lower || binding.model.toLowerCase() === lower) {
+      return binding
+    }
+  }
+  return null
 }
 
 /** List all configured backends — handy for the web UI roster. */
@@ -256,6 +271,52 @@ interface BackendConfig {
   apiSurface?: 'chat' | 'responses'
   retryOnTransient?: number
   enabled?: boolean
+}
+
+/**
+ * Existing DeepSeek installs only have pro/flash rows. Parent
+ * `call_agent({ backend })` must name a live registry backend, so clone
+ * the first usable DeepSeek key onto the official vision SKU (in-memory,
+ * not written to config.json).
+ */
+function ensureVirtualDeepSeekVision(next: RegistryState): void {
+  const hasVision = [...next.bindings.values()].some(
+    (b) => isDeepSeekVisionModel(b.model) || isDeepSeekVisionModel(b.name),
+  )
+  if (hasVision) return
+  if (next.bindings.has(DEEPSEEK_VISION_MODEL) || next.providers.has(DEEPSEEK_VISION_MODEL)) {
+    return
+  }
+  let donor: LlmBackendBinding | undefined
+  for (const b of next.bindings.values()) {
+    if (isDeepSeekBaseUrl(b.baseUrl) || /^deepseek/i.test(b.model) || /^deepseek/i.test(b.name)) {
+      donor = b
+      break
+    }
+  }
+  if (!donor?.apiKey) return
+  const cfg: BackendConfig = {
+    name: DEEPSEEK_VISION_MODEL,
+    provider: donor.providerType,
+    model: DEEPSEEK_VISION_MODEL,
+    baseUrl: donor.baseUrl,
+    extraHeaders: donor.extraHeaders,
+    temperature: donor.temperature,
+    maxTokens: donor.maxTokens,
+    contextWindow: donor.contextWindow,
+    thinkingFormat: donor.thinkingFormat,
+    maxTokensField: donor.maxTokensField,
+    strictTools: donor.strictTools,
+    apiSurface: donor.apiSurface,
+  }
+  const provider = buildProvider(cfg, donor.apiKey)
+  if (!provider?.isConfigured()) return
+  next.providers.set(DEEPSEEK_VISION_MODEL, provider)
+  next.bindings.set(DEEPSEEK_VISION_MODEL, {
+    ...donor,
+    name: DEEPSEEK_VISION_MODEL,
+    model: DEEPSEEK_VISION_MODEL,
+  })
 }
 
 function buildProvider(cfg: BackendConfig, apiKey: string | undefined): LlmProvider | null {

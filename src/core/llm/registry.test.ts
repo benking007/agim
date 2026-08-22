@@ -240,4 +240,22 @@ describe('LLM registry', () => {
     expect(getAnyProvider()?.name).toBe('test-cheap')
     expect(getAnyBackendBinding()?.name).toBe('test-cheap')
   })
+
+  it('clones a virtual DeepSeek vision backend from an existing DeepSeek key', () => {
+    saveSecret('deepseek-v4-pro', 'sk-pro')
+    loadFromConfig({
+      llmBackends: [{
+        name: 'deepseek-v4-pro',
+        provider: 'openai-compat',
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-v4-pro',
+      }],
+      llmRoles: { 'native-chat': 'deepseek-v4-pro' },
+    })
+    const vision = getProviderByName('deepseek-v4-flash-vision-exp')
+    expect(vision).not.toBeNull()
+    expect(vision?.model).toBe('deepseek-v4-flash-vision-exp')
+    expect(getAnyBackendBinding()?.name).toBe('deepseek-v4-pro')
+    expect(listProviders().some((p) => p.name === 'deepseek-v4-flash-vision-exp')).toBe(true)
+  })
 })

@@ -250,6 +250,34 @@ describe('resolveSubagentSpawn', () => {
     }
   })
 
+  it('resolves DeepSeek vision backend even when only pro is configured', () => {
+    saveSecret('deepseek-v4-pro', 'sk-pro')
+    loadFromConfig({
+      llmBackends: [
+        {
+          name: 'deepseek-v4-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+        },
+      ],
+      llmRoles: { 'native-chat': 'deepseek-v4-pro' },
+    })
+    const byName = resolveSubagentSpawn(
+      { agent: 'agim', backend: 'deepseek-v4-flash-vision-exp' },
+      'agim',
+    )
+    expect(byName.ok).toBe(true)
+    if (byName.ok) {
+      expect(byName.model).toBe('deepseek-v4-flash-vision-exp')
+      expect(byName.label).toBe('agim:deepseek-v4-flash-vision-exp')
+    }
+    const alias = resolveSubagentSpawn({ agent: 'agim', backend: 'vision' }, 'agim')
+    expect(alias.ok).toBe(true)
+    if (alias.ok) expect(alias.model).toBe('deepseek-v4-flash-vision-exp')
+    expect(resolveBackendName('deepseek-v4-flash-vision-exp')).toBe('deepseek-v4-flash-vision-exp')
+  })
+
   it('cross-adapter target does not require isolate', () => {
     const r = resolveSubagentSpawn({ agent: 'claude-code' }, 'agim')
     expect(r.ok).toBe(true)

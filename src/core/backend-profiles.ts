@@ -43,6 +43,23 @@ export function inferBackendProfile(opts: {
 }): BackendProfile {
   const blob = `${opts.name} ${opts.model || ''} ${opts.provider || ''}`.toLowerCase()
 
+  if (/deepseek/.test(blob) && /vision/.test(blob)) {
+    return {
+      summary: 'DeepSeek 视觉模型：识图/OCR/截图/图表；父代理应用 backend= 派发，勿把图发给 pro/flash。',
+      capabilities: {
+        coding: 'weak',
+        finance: 'medium',
+        zhWriting: 'medium',
+        reasoning: 'strong',
+        dataCheck: 'strong',
+      },
+      capabilityNotes: {
+        reasoning: '识图/OCR',
+        dataCheck: '读图校验',
+      },
+    }
+  }
+
   if (/deepseek/.test(blob)) {
     return {
       summary: '中文与金融向强模型：长文写作、金融分析、多步推理；编码中等。',

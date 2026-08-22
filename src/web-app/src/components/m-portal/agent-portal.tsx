@@ -12,7 +12,7 @@
 import {
   lazy, Suspense,
   useCallback, useEffect, useMemo, useRef, useState,
-  type FormEvent, type KeyboardEvent,
+  type ClipboardEvent, type FormEvent, type KeyboardEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, Mic, Square } from 'lucide-react'
@@ -62,11 +62,11 @@ const PortalScheduledLoopDock = lazy(async () => {
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
+import { consumeClipboardImages, type PendingAttachment } from './portal-composer-attachments'
 import {
   AttachmentStrip,
   PortalComposerPlus,
   uploadPendingAttachments,
-  type PendingAttachment,
 } from './portal-composer-plus'
 import {
   chipsFromValue,
@@ -496,6 +496,15 @@ export function AgentPortal(): JSX.Element {
     } finally {
       setUploading(false)
     }
+  }
+
+  function onComposerPaste(e: ClipboardEvent<HTMLFormElement>): void {
+    if (uploading || state.status !== 'open') return
+    const { next, overflowed, consumed } = consumeClipboardImages(e.clipboardData, attachments)
+    if (!consumed) return
+    e.preventDefault()
+    if (overflowed) toast.error(t('chat.portal.attach.max'))
+    setAttachments(next)
   }
 
   function dismissPending(id: string): void {
@@ -1005,6 +1014,7 @@ export function AgentPortal(): JSX.Element {
                 <form
                   ref={composerFormRef}
                   onSubmit={(e) => { void onSend(e) }}
+                  onPaste={onComposerPaste}
                   className={cn(
                     'relative z-10 flex items-center justify-between rounded-[26px] border p-1 shadow-lg transition-all focus-within:border-teal-500',
                     dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white',

@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Portal composer paste-to-attach**: screenshot / copied images
+  pasted into the `/m/chat` input become pending attachments
+  (preview strip + send-time upload), same path as the "+" photo
+  picker — no need to save a file first. Text-only paste is unchanged.
 - **DeepSeek vision**: built-in DeepSeek preset now registers
   `deepseek-v4-flash-vision-exp`. Agim Agent encodes `[图片附件]`
   markers as OpenAI `image_url` / pi-ai image blocks (user turns

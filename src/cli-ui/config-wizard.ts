@@ -31,7 +31,7 @@ import {
 } from './prompts.js'
 import { t, type Lang, type Key } from './i18n.js'
 import { loadConfig, saveConfigChanges, type Config } from '../core/onboarding.js'
-import { describeSecretSource } from '../core/llm/secrets.js'
+import { describeSecretSource, secretHintForBackend } from '../core/llm/secrets.js'
 import { CONFIG_DIR } from './paths.js'
 import { ENV_FILE, readEffectiveEnv, updateEnvFile, unsetEnvKey, hasProcessEnvOverride } from './env-file.js'
 import { isGlobalImEnabled } from '../core/feature-flags.js'
@@ -654,15 +654,21 @@ async function nativeLlmConfigured(): Promise<boolean> {
   try {
     const cfg = await loadConfig()
     const raw = cfg as {
-      llmBackends?: Array<{ name?: unknown; provider?: unknown; baseUrl?: unknown }>
+      llmBackends?: Array<{ name?: unknown; provider?: unknown; baseUrl?: unknown; label?: unknown }>
     }
     if (!Array.isArray(raw.llmBackends) || raw.llmBackends.length === 0) return false
-    return raw.llmBackends.some((backend) => {
-      if (!backend || typeof backend.name !== 'string' || backend.name.trim() === '') return false
-      const provider = typeof backend.provider === 'string' ? backend.provider : undefined
-      const baseUrl = typeof backend.baseUrl === 'string' ? backend.baseUrl : undefined
-      return describeSecretSource(backend.name, { provider, baseUrl }).source !== 'none'
+    const refs = raw.llmBackends.flatMap((backend) => {
+      if (!backend || typeof backend.name !== 'string' || backend.name.trim() === '') return []
+      return [{
+        name: backend.name,
+        provider: typeof backend.provider === 'string' ? backend.provider : undefined,
+        baseUrl: typeof backend.baseUrl === 'string' ? backend.baseUrl : undefined,
+        label: typeof backend.label === 'string' ? backend.label : undefined,
+      }]
     })
+    return refs.some((backend) =>
+      describeSecretSource(backend.name, secretHintForBackend(backend, refs)).source !== 'none',
+    )
   } catch {
     return false
   }

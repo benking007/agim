@@ -276,6 +276,15 @@ export function builtinPresetKeyForBaseUrl(
   return null
 }
 
+/** True for a curated vendor id (`deepseek` / `moonshot` / …), not `custom`. */
+export function isBuiltinPresetKey(
+  key: string | undefined | null,
+): key is Exclude<LlmPresetKey, 'custom'> {
+  const id = key?.trim().toLowerCase()
+  if (!id || id === 'custom') return false
+  return LLM_PRESETS.some((p) => p.key === id)
+}
+
 /**
  * Default /think fallback for a backend URL (and optional model id).
  * DeepSeek / Kimi / GLM / MiMo default to their preset's `defaultThinking`.

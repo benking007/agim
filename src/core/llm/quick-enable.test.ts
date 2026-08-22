@@ -8,7 +8,7 @@ process.env.AGIM_HOME = TMP_OWN
 
 const { quickEnableLlmPreset, QuickEnableError } = await import('./quick-enable.js')
 const { readConfigObject } = await import('../config-store.js')
-const { describeSecretSource } = await import('./secrets.js')
+const { describeSecretSource, loadSecretsFile, secretHintForBackend } = await import('./secrets.js')
 const { AGIM_HOME } = await import('../agim-paths.js')
 const TMP = AGIM_HOME
 
@@ -54,8 +54,15 @@ describe('quickEnableLlmPreset', () => {
     expect(cfg.llmRoles?.cheap).toBe(result.backends?.[1]?.name)
     expect(cfg.defaultAgent).toBe('agim')
     expect(cfg.agents).toContain('agim')
-    expect(describeSecretSource(result.name).source).not.toBe('none')
-    expect(describeSecretSource(result.backends?.[1]?.name ?? '').source).not.toBe('none')
+    const dsHint = secretHintForBackend(
+      { name: result.name, baseUrl: 'https://api.deepseek.com', label: 'deepseek' },
+      (cfg.llmBackends ?? []).map((b) => ({ name: b.name, baseUrl: b.baseUrl, label: b.label })),
+    )
+    expect(describeSecretSource(result.name, dsHint).source).toBe('file')
+    expect(describeSecretSource(result.backends?.[1]?.name ?? '', dsHint).source).toBe('file')
+    expect(loadSecretsFile().keys.deepseek).toBe('sk-test-deepseek')
+    expect(loadSecretsFile().keys['deepseek-v4-pro']).toBeUndefined()
+    expect(loadSecretsFile().keys['deepseek-v4-flash']).toBeUndefined()
     expect(existsSync(join(TMP, 'llm-secrets.json'))).toBe(true)
   })
 
@@ -110,8 +117,11 @@ describe('quickEnableLlmPreset', () => {
     expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://api.moonshot.cn/v1')
     expect(cfg.llmBackends?.every((b) => b.label === 'moonshot')).toBe(true)
     expect(cfg.llmRoles?.['native-chat']).toBe('kimi-k3')
-    expect(describeSecretSource('kimi-k3').source).not.toBe('none')
-    expect(describeSecretSource('kimi-k2.6').source).not.toBe('none')
+    const kimiHint = { label: 'moonshot', baseUrl: 'https://api.moonshot.cn/v1' }
+    expect(describeSecretSource('kimi-k3', kimiHint).source).toBe('file')
+    expect(describeSecretSource('kimi-k2.6', kimiHint).source).toBe('file')
+    expect(loadSecretsFile().keys.moonshot).toBe('sk-test-kimi')
+    expect(loadSecretsFile().keys['kimi-k3']).toBeUndefined()
   })
 
   it('writes GLM backends (5.2 + 4.7-flash) + roles from an API key', async () => {
@@ -132,7 +142,9 @@ describe('quickEnableLlmPreset', () => {
     }
     expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://open.bigmodel.cn/api/paas/v4')
     expect(cfg.llmBackends?.every((b) => b.label === 'zhipu')).toBe(true)
-    expect(describeSecretSource('glm-5.2').source).not.toBe('none')
+    expect(describeSecretSource('glm-5.2', { label: 'zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }).source).toBe('file')
+    expect(loadSecretsFile().keys.zhipu).toBe('sk-test-glm')
+    expect(loadSecretsFile().keys['glm-5.2']).toBeUndefined()
   })
 
   it('writes MiMo backends (v2.5-pro + v2.5) + roles from an API key', async () => {
@@ -153,8 +165,11 @@ describe('quickEnableLlmPreset', () => {
     }
     expect(cfg.llmBackends?.[0]?.baseUrl).toBe('https://api.xiaomimimo.com/v1')
     expect(cfg.llmBackends?.every((b) => b.label === 'mimo')).toBe(true)
-    expect(describeSecretSource('mimo-v2.5-pro').source).not.toBe('none')
-    expect(describeSecretSource('mimo-v2.5').source).not.toBe('none')
+    const mimoHint = { label: 'mimo', baseUrl: 'https://api.xiaomimimo.com/v1' }
+    expect(describeSecretSource('mimo-v2.5-pro', mimoHint).source).toBe('file')
+    expect(describeSecretSource('mimo-v2.5', mimoHint).source).toBe('file')
+    expect(loadSecretsFile().keys.mimo).toBe('sk-test-mimo')
+    expect(loadSecretsFile().keys['mimo-v2.5-pro']).toBeUndefined()
   })
 
   it('rejects a second quick-enable for the same built-in preset', async () => {

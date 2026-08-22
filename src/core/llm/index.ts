@@ -65,7 +65,11 @@ export {
   loadSecretsFile,
   resolveSecret,
   saveSecret,
+  saveSecretForBackend,
   removeSecret,
+  clearSecretForBackend,
+  secretSlotForBackend,
+  secretHintForBackend,
   listConfiguredBackends,
   describeSecretSource,
 } from './secrets.js'

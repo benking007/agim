@@ -10,7 +10,7 @@ process.env.AGIM_HOME = TMP_OWN
 const { syncMissingPresetModels, SyncPresetError } = await import('./sync-preset.js')
 const { quickEnableLlmPreset } = await import('./quick-enable.js')
 const { readConfigObject, updateConfigObject } = await import('../config-store.js')
-const { saveSecret, describeSecretSource } = await import('./secrets.js')
+const { saveSecret, describeSecretSource, loadSecretsFile, secretHintForBackend } = await import('./secrets.js')
 const { AGIM_HOME } = await import('../agim-paths.js')
 const { DEEPSEEK_VISION_MODEL } = await import('./presets.js')
 const TMP = AGIM_HOME
@@ -21,7 +21,7 @@ describe('syncMissingPresetModels', () => {
     mkdirSync(TMP, { recursive: true })
   })
 
-  it('adds DeepSeek vision onto an older pro/flash install and copies the key', async () => {
+  it('adds DeepSeek vision onto an older pro/flash install and reuses the vendor key', async () => {
     await updateConfigObject((current) => ({
       config: {
         ...current,
@@ -62,7 +62,13 @@ describe('syncMissingPresetModels', () => {
       DEEPSEEK_VISION_MODEL,
     ])
     expect(cfg.llmBackends?.[2]?.label).toBe('deepseek')
-    expect(describeSecretSource(DEEPSEEK_VISION_MODEL).source).not.toBe('none')
+    const hint = secretHintForBackend(
+      { name: DEEPSEEK_VISION_MODEL, baseUrl: 'https://api.deepseek.com', label: 'deepseek' },
+      (cfg.llmBackends ?? []).map((b) => ({ name: b.name, label: b.label })),
+    )
+    expect(describeSecretSource(DEEPSEEK_VISION_MODEL, hint).source).toBe('file')
+    expect(loadSecretsFile().keys[DEEPSEEK_VISION_MODEL]).toBeUndefined()
+    expect(loadSecretsFile().keys['deepseek-v4-pro']).toBe('sk-existing')
   })
 
   it('is a no-op when the full catalog is already present', async () => {
@@ -82,7 +88,7 @@ describe('syncMissingPresetModels', () => {
       throw new Error('expected not_found')
     } catch (err) {
       expect(err).toBeInstanceOf(SyncPresetError)
-      expect((err as SyncPresetError).code).toBe('not_found')
+      expect((err as { code: string }).code).toBe('not_found')
     }
   })
 })

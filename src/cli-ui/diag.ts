@@ -16,12 +16,12 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AGIM_HOME } from '../core/agim-paths.js'
-import { describeSecretSource } from '../core/llm/secrets.js'
+import { describeSecretSource, secretHintForBackend } from '../core/llm/secrets.js'
 
 const CONFIG_FILE = join(AGIM_HOME, 'config.json')
 
 interface RawConfig {
-  llmBackends?: Array<{ name: string; provider: string; model: string; baseUrl?: string }>
+  llmBackends?: Array<{ name: string; provider: string; model: string; baseUrl?: string; label?: string }>
   llmRoles?: Record<string, string>
   mcpServers?: Array<{ name: string; command?: string; args?: string[]; url?: string; enabled?: boolean }>
 }
@@ -62,7 +62,7 @@ export async function runDiagLlm(): Promise<number> {
 
   const rows: string[][] = []
   for (const b of backends) {
-    const src = describeSecretSource(b.name)
+    const src = describeSecretSource(b.name, secretHintForBackend(b, backends))
     const provider = getProviderByName(b.name)
     if (!provider) {
       rows.push([b.name, b.provider, b.model, src.source, '-', `(no key: ${src.source})`])

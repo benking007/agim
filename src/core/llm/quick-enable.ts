@@ -9,7 +9,7 @@ import { configSchema } from '../config-schema.js'
 import { readConfigObject, updateConfigObject } from '../config-store.js'
 import { clearAgentCache } from '../onboarding.js'
 import { loadFromConfig as loadLlmFromConfig } from './registry.js'
-import { saveSecret } from './secrets.js'
+import { saveSecret, saveSecretForBackend } from './secrets.js'
 import {
   DEEPSEEK_ANTHROPIC_BASE,
   DEEPSEEK_OPENAI_BASE,
@@ -245,8 +245,10 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
     throw err
   }
 
-  for (const b of planned) {
-    saveSecret(b.name, apiKey)
+  if (isCustom) {
+    for (const b of planned) saveSecret(b.name, apiKey)
+  } else {
+    saveSecretForBackend(preset.key, apiKey, { label: preset.key, baseUrl })
   }
   // Reload registry so Agim Agent sees the new backends immediately.
   try {

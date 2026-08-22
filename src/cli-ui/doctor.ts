@@ -8,7 +8,7 @@ import { CONFIG_FILE, WORKSPACES_DIR } from './paths.js'
 import { detectService, readWebEndpoint } from './service.js'
 import { loadConfig } from '../core/onboarding.js'
 import { hasAnyToken, getWebBootstrapTokenFile, isAuthEnabled } from '../core/access-token.js'
-import { describeSecretSource } from '../core/llm/secrets.js'
+import { describeSecretSource, secretHintForBackend } from '../core/llm/secrets.js'
 import { checkAgentsFresh } from './readiness.js'
 import { resolveCliLang, type Lang } from './i18n.js'
 
@@ -115,7 +115,7 @@ export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<
   })
 
   const raw = config as {
-    llmBackends?: Array<{ name?: unknown; provider?: unknown; baseUrl?: unknown; model?: unknown }>
+    llmBackends?: Array<{ name?: unknown; provider?: unknown; baseUrl?: unknown; model?: unknown; label?: unknown }>
   }
   const backends = Array.isArray(raw.llmBackends) ? raw.llmBackends : []
   if (backends.length === 0) {
@@ -125,12 +125,18 @@ export async function collectDoctorRows(lang: Lang = resolveCliLang()): Promise<
       detail: text(lang, '未配置；如果已有 Claude Code / Codex CLI，可暂时不需要', 'not configured; optional when a Claude Code / Codex CLI is available'),
     })
   } else {
-    const keyed = backends.filter((b) => {
-      if (!b || typeof b.name !== 'string') return false
-      const provider = typeof b.provider === 'string' ? b.provider : undefined
-      const baseUrl = typeof b.baseUrl === 'string' ? b.baseUrl : undefined
-      return describeSecretSource(b.name, { provider, baseUrl }).source !== 'none'
+    const refs = backends.flatMap((b) => {
+      if (!b || typeof b.name !== 'string') return []
+      return [{
+        name: b.name,
+        provider: typeof b.provider === 'string' ? b.provider : undefined,
+        baseUrl: typeof b.baseUrl === 'string' ? b.baseUrl : undefined,
+        label: typeof b.label === 'string' ? b.label : undefined,
+      }]
     })
+    const keyed = refs.filter((b) =>
+      describeSecretSource(b.name, secretHintForBackend(b, refs)).source !== 'none',
+    )
     rows.push({
       level: keyed.length > 0 ? 'ok' : 'warn',
       title: text(lang, '大模型 API', 'Model API'),

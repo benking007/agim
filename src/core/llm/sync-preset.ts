@@ -8,7 +8,7 @@ import { configSchema } from '../config-schema.js'
 import { readConfigObject, updateConfigObject } from '../config-store.js'
 import { clearAgentCache } from '../onboarding.js'
 import { loadFromConfig as loadLlmFromConfig } from './registry.js'
-import { loadSecretsFile, resolveSecret, saveSecret } from './secrets.js'
+import { loadSecretsFile, resolveSecret, secretHintForBackend } from './secrets.js'
 import {
   builtinPresetKeyForBaseUrl,
   getLlmPreset,
@@ -81,7 +81,7 @@ export async function syncMissingPresetModels(presetKey: string): Promise<SyncPr
   let donor: RawBackend | undefined
   let apiKey: string | undefined
   for (const b of group) {
-    const key = resolveSecret(b.name, secrets, { provider: b.provider, baseUrl: b.baseUrl })
+    const key = resolveSecret(b.name, secrets, secretHintForBackend(b, group))
     if (key) {
       donor = b
       apiKey = key
@@ -142,9 +142,6 @@ export async function syncMissingPresetModels(presetKey: string): Promise<SyncPr
     throw err
   }
 
-  for (const b of planned) {
-    saveSecret(b.name, apiKey)
-  }
   try {
     const cfg = (await readConfigObject()) as RawConfig
     loadLlmFromConfig({

@@ -10,23 +10,22 @@
 // File format (intentionally tiny):
 //   {
 //     "version": 1,
-//     "keys": { "<backend-name>": "<api-key>" }
+//     "keys": { "<vendor-or-backend-name>": "<api-key>" }
 //   }
 //
+// Built-in vendors share one slot (`keys.deepseek`, `keys.moonshot`, …)
+// so a new catalog model does not need a new secrets entry. Custom
+// backends still use the backend name. Older installs that stored
+// `keys.deepseek-v4-pro` keep working (read-only fallback).
+//
 // Lookup precedence (callers go through `resolveSecret`):
-//   1. process.env `AGIM_LLM_SECRET_<UPPER_BACKEND_NAME>` — wins.
-//      Lets systemd unit files / CI / cloud agents inject without
-//      touching the on-disk file. Hyphens in the backend name are
-//      converted to underscores for the env var name.
-//   2. ~/.agim/llm-secrets.json `keys.<backend-name>`.
-//   3. v1.2.141 — vendor-standard env (DEEPSEEK_API_KEY / OPENAI_API_KEY /
-//      ANTHROPIC_API_KEY / …) when the caller passes a `backendHint` with
-//      provider + baseUrl. Matched by baseUrl substring against a small
-//      built-in table so a user who already exported the vendor's
-//      standard env (which DeepSeek/OpenAI/Moonshot/etc SDKs all read by
-//      default) gets agim working out of the box — no separate copy of
-//      the same secret under `AGIM_LLM_SECRET_*`.
-//   4. undefined (provider will report isConfigured()=false).
+//   1. process.env `AGIM_LLM_SECRET_<UPPER_BACKEND_NAME>` — per-backend override.
+//   2. process.env `AGIM_LLM_SECRET_<VENDOR>` (e.g. `AGIM_LLM_SECRET_DEEPSEEK`).
+//   3. ~/.agim/llm-secrets.json vendor slot, then legacy per-model names
+//      (this backend + sibling names in the same vendor group).
+//   4. Vendor-standard env (DEEPSEEK_API_KEY / OPENAI_API_KEY / …) when
+//      the caller passes a `backendHint` with provider + baseUrl.
+//   5. undefined (provider will report isConfigured()=false).
 
 import {
   existsSync,
@@ -42,6 +41,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { AGIM_HOME } from '../agim-paths.js'
 import { logger as rootLogger } from '../logger.js'
+import { builtinPresetKeyForBaseUrl, isBuiltinPresetKey } from './presets.js'
 
 const log = rootLogger.child({ component: 'llm-secrets' })
 
@@ -74,6 +74,17 @@ export function envKeyForBackend(name: string): string {
 export interface BackendHint {
   provider?: string
   baseUrl?: string
+  /** Preset / vendor id (`deepseek`, `moonshot`). One key covers every model. */
+  label?: string
+  /** Other backend names that share this vendor (legacy per-model file keys). */
+  siblingNames?: string[]
+}
+
+export interface SecretBackendRef {
+  name: string
+  provider?: string
+  baseUrl?: string
+  label?: string
 }
 
 interface VendorRule {
@@ -192,16 +203,86 @@ export function loadSecretsFile(): SecretsFile {
   }
 }
 
+function hostOf(baseUrl: string | undefined): string {
+  if (!baseUrl?.trim()) return ''
+  try {
+    return new URL(baseUrl).hostname.toLowerCase()
+  } catch {
+    return baseUrl.toLowerCase()
+  }
+}
+
+function vendorId(backend: SecretBackendRef): string | undefined {
+  const label = backend.label?.trim().toLowerCase()
+  if (label && isBuiltinPresetKey(label)) return label
+  return builtinPresetKeyForBaseUrl(backend.baseUrl) ?? undefined
+}
+
+export function sameVendorGroup(a: SecretBackendRef, b: SecretBackendRef): boolean {
+  const va = vendorId(a)
+  const vb = vendorId(b)
+  if (va && vb && va === vb) return true
+  const la = a.label?.trim().toLowerCase()
+  const lb = b.label?.trim().toLowerCase()
+  if (la && lb && la === lb) return true
+  const ha = hostOf(a.baseUrl)
+  const hb = hostOf(b.baseUrl)
+  return ha.length > 0 && ha === hb
+}
+
+function vendorSlot(_backendName: string, hint?: BackendHint): string | undefined {
+  return vendorId({
+    name: _backendName,
+    provider: hint?.provider,
+    baseUrl: hint?.baseUrl,
+    label: hint?.label,
+  })
+}
+
+/** File / env slot for a builtin vendor. Custom backends keep a per-name slot. */
+export function secretSlotForBackend(backendName: string, hint?: BackendHint): string {
+  return vendorSlot(backendName, hint) ?? backendName
+}
+
+export function secretHintForBackend(
+  backend: SecretBackendRef,
+  all: SecretBackendRef[] = [],
+): BackendHint {
+  return {
+    provider: backend.provider,
+    baseUrl: backend.baseUrl,
+    label: backend.label,
+    siblingNames: all
+      .filter((other) => other.name !== backend.name && sameVendorGroup(backend, other))
+      .map((other) => other.name),
+  }
+}
+
+function fileKeysToTry(backendName: string, hint?: BackendHint): string[] {
+  const keys: string[] = []
+  const seen = new Set<string>()
+  const add = (k: string | undefined) => {
+    const id = k?.trim()
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    keys.push(id)
+  }
+  const slot = vendorSlot(backendName, hint)
+  add(slot)
+  add(backendName)
+  if (slot) {
+    for (const sibling of hint?.siblingNames ?? []) add(sibling)
+  }
+  return keys
+}
+
 /**
  * Resolve a single secret for a backend, applying env-var precedence.
  * Returns undefined when nothing is configured — providers downstream
  * use this to flip `isConfigured()` off.
  *
- * v1.2.141 — `backendHint` enables vendor-env fallback. Callers that
- * have backend config in hand (registry.ts) should pass it so users
- * who exported `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / etc. via vendor
- * convention don't also need to copy the value into our private
- * `AGIM_LLM_SECRET_*` namespace.
+ * Pass a `backendHint` (label / baseUrl / siblings) so builtin vendors
+ * share one file slot and legacy per-model keys still resolve.
  */
 export function resolveSecret(
   backendName: string,
@@ -209,14 +290,18 @@ export function resolveSecret(
   backendHint?: BackendHint,
 ): string | undefined {
   if (!backendName) return undefined
-  const envKey = envKeyForBackend(backendName)
-  const envVal = process.env[envKey]
+  const envVal = process.env[envKeyForBackend(backendName)]
   if (envVal && envVal.length > 0) return envVal
+  const slot = vendorSlot(backendName, backendHint)
+  if (slot && slot !== backendName) {
+    const vendorEnv = process.env[envKeyForBackend(slot)]
+    if (vendorEnv && vendorEnv.length > 0) return vendorEnv
+  }
   const file = fileSecrets ?? loadSecretsFile()
-  const v = file.keys[backendName]
-  if (typeof v === 'string' && v.length > 0) return v
-  // v1.2.141 — vendor env fallback. Only consulted when both private
-  // slots came up empty so existing installs see no behavior change.
+  for (const key of fileKeysToTry(backendName, backendHint)) {
+    const v = file.keys[key]
+    if (typeof v === 'string' && v.length > 0) return v
+  }
   const vendor = resolveVendorEnv(backendHint)
   if (vendor) return vendor.value
   return undefined
@@ -233,6 +318,38 @@ export function saveSecret(backendName: string, apiKey: string): void {
   const file = loadSecretsFile()
   file.keys[backendName] = apiKey
   _writeFile(file)
+}
+
+/** Persist a key on the vendor slot for builtin presets (`keys.deepseek`). */
+export function saveSecretForBackend(
+  backendName: string,
+  apiKey: string,
+  hint?: BackendHint,
+): void {
+  saveSecret(secretSlotForBackend(backendName, hint), apiKey)
+}
+
+/** Clear the vendor slot (and leftover per-name key) for one backend. */
+export function clearSecretForBackend(backendName: string, hint?: BackendHint): void {
+  removeSecret(backendName)
+  const slot = secretSlotForBackend(backendName, hint)
+  if (slot !== backendName) removeSecret(slot)
+}
+
+/** Drop per-name leftovers; drop the vendor slot only when no sibling remains. */
+export function removeSecretsForRemovedBackends(
+  removed: SecretBackendRef[],
+  remaining: SecretBackendRef[],
+): void {
+  for (const b of removed) {
+    removeSecret(b.name)
+    const slot = secretSlotForBackend(b.name, { label: b.label, baseUrl: b.baseUrl })
+    if (slot === b.name) continue
+    const stillUsed = remaining.some((r) =>
+      secretSlotForBackend(r.name, { label: r.label, baseUrl: r.baseUrl }) === slot,
+    )
+    if (!stillUsed) removeSecret(slot)
+  }
 }
 
 /** Remove a secret entirely. Safe to call on missing names. */
@@ -299,8 +416,12 @@ export function describeSecretSource(
 } {
   const envKey = envKeyForBackend(backendName)
   if (process.env[envKey]) return { source: 'env', envKey, filePath: LLM_SECRETS_PATH }
+  const slot = vendorSlot(backendName, backendHint)
+  if (slot && slot !== backendName && process.env[envKeyForBackend(slot)]) {
+    return { source: 'env', envKey: envKeyForBackend(slot), filePath: LLM_SECRETS_PATH }
+  }
   const file = loadSecretsFile()
-  if (file.keys[backendName]) {
+  if (fileKeysToTry(backendName, backendHint).some((key) => file.keys[key])) {
     let perms: string | undefined
     try {
       const st = statSync(LLM_SECRETS_PATH)

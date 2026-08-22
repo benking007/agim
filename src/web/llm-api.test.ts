@@ -136,6 +136,11 @@ describe('handleLlmApi — add backend', () => {
     const res1 = makeRes()
     await handleLlmApi(makeReq('POST', add), res1 as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
     expect(res1.statusCode).toBe(201)
+    const secrets = JSON.parse(readFileSync(join(TMP, 'llm-secrets.json'), 'utf8')) as {
+      keys: Record<string, string>
+    }
+    expect(secrets.keys.deepseek).toBe('sk-ds')
+    expect(secrets.keys['deepseek-v4-pro']).toBeUndefined()
 
     const disk = JSON.parse(readFileSync(join(TMP, 'config.json'), 'utf8')) as {
       llmBackends: Array<Record<string, unknown>>
@@ -461,6 +466,14 @@ describe('handleLlmApi — presets + quick-enable', () => {
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.body) as { added: Array<{ model: string }> }
     expect(body.added.map((b) => b.model)).toEqual(['deepseek-v4-flash-vision-exp'])
+
+    const list = makeRes()
+    await handleLlmApi(makeReq('GET'), list as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    const listed = JSON.parse(list.body) as {
+      backends: Array<{ name: string; secret: { source: string } }>
+    }
+    const vision = listed.backends.find((b) => b.name === 'deepseek-v4-flash-vision-exp')
+    expect(vision?.secret.source).toBe('file')
   })
 })
 

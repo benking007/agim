@@ -23,7 +23,10 @@
 
 import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
+import { client } from '@/lib/api/client'
 import { openChatWs } from '@/lib/api/ws'
+import { askCardsForThread } from '@/lib/pending-ask-cards'
+import type { AsksListResponse } from '@/hooks/use-background-tasks'
 import {
   archiveSession as markSessionArchived,
   archiveSessionsForWorkspace,
@@ -195,9 +198,24 @@ export function useChat(): UseChat {
     // fresh get-history rekey, subsequent turns land under a different
     // session key and refresh cannot load the previous conversation.
     // Read threadIdRef so New conversation / switch survive reconnect.
+    async function hydrateAsks(): Promise<void> {
+      // HTTP catch-up: half-open WS can "send" choice-card without the
+      // browser ever seeing it, and no reconnect means no get-history replay.
+      try {
+        const data = await client.get<AsksListResponse>('/api/asks/pending')
+        for (const card of askCardsForThread(data.cards, threadIdRef.current)) {
+          dispatch({
+            kind: 'CHOICE_CARD',
+            messageId: card.messageId,
+            prompt: card.prompt,
+          })
+        }
+      } catch { /* best-effort */ }
+    }
     function bootstrap(): void {
       ws.send({ type: 'get-history', threadId: threadIdRef.current })
       ws.send({ type: 'get-agents' })
+      void hydrateAsks()
     }
     // subscribe() replays the current status, so an already-open socket
     // still triggers bootstrap on mount. Keep the listener for later
@@ -208,7 +226,11 @@ export function useChat(): UseChat {
         if (s === 'open') bootstrap()
       },
     })
-    return () => { off1(); off2(); off3() }
+    const askPoll = window.setInterval(() => { void hydrateAsks() }, 8_000)
+    return () => {
+      off1(); off2(); off3()
+      window.clearInterval(askPoll)
+    }
   }, [])
 
   function send(text: string): void {

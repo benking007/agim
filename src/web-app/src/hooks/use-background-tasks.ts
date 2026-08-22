@@ -11,6 +11,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { client } from '@/lib/api/client'
+import type { PendingAskCardWire } from '@/lib/pending-ask-cards'
 
 // ─── Heartbeat ──────────────────────────────────────────────────
 
@@ -76,6 +77,8 @@ export interface PendingAskRow {
 export interface AsksListResponse {
   pending: PendingAskRow[]
   count: number
+  /** Full AskDock payloads (reconnect / half-open WS catch-up). */
+  cards?: PendingAskCardWire[]
 }
 
 const askKeys = {

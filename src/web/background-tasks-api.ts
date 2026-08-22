@@ -22,6 +22,7 @@ import {
 } from '../core/heartbeat-store.js'
 import {
   listPendingAsks,
+  listPendingAskCards,
   cancelPendingAsk,
 } from '../core/ask-user-rpc.js'
 
@@ -140,7 +141,8 @@ async function handleHeartbeatInterval(
 
 async function handleAsksList(res: ServerResponse): Promise<void> {
   const rows = listPendingAsks()
-  send(res, 200, { pending: rows, count: rows.length })
+  const cards = listPendingAskCards()
+  send(res, 200, { pending: rows, count: rows.length, cards })
 }
 
 async function handleAskCancel(res: ServerResponse, rawReqId: string): Promise<void> {

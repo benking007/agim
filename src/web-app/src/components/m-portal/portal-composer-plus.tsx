@@ -14,16 +14,9 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { SUBAGENT_COMPOSER_FILL } from './portal-slash-commands'
+import { appendPendingFiles, type PendingAttachment } from './portal-composer-attachments'
 
-export interface PendingAttachment {
-  id: string
-  kind: 'image' | 'file'
-  name: string
-  mime: string
-  previewUrl?: string
-  /** Local File until uploaded at send time. */
-  file: File
-}
+export type { PendingAttachment }
 
 interface PortalComposerPlusProps {
   dark: boolean
@@ -146,24 +139,11 @@ export function PortalComposerPlus({
   }, [])
 
   function addFiles(list: FileList | null, preferImage: boolean): void {
-    if (!list || list.length === 0) return
-    const next = [...attachments]
-    for (const file of Array.from(list)) {
-      if (next.length >= 8) {
-        toast.error(t('chat.portal.attach.max', { defaultValue: '最多 8 个附件' }))
-        break
-      }
-      const isImage = preferImage || file.type.startsWith('image/')
-      const previewUrl = isImage ? URL.createObjectURL(file) : undefined
-      next.push({
-        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        kind: isImage ? 'image' : 'file',
-        name: file.name || (isImage ? 'image.jpg' : 'file'),
-        mime: file.type || 'application/octet-stream',
-        previewUrl,
-        file,
-      })
+    const { next, overflowed } = appendPendingFiles(attachments, list, preferImage)
+    if (overflowed) {
+      toast.error(t('chat.portal.attach.max'))
     }
+    if (next === attachments) return
     onAttachmentsChange(next)
     setMenuOpen(false)
   }

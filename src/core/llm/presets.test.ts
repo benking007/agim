@@ -14,6 +14,7 @@ import {
   isMimoModel,
   isZhipuBaseUrl,
   mapVariantToThinkingLevel,
+  missingPresetModels,
   presetBackendStem,
   presetModels,
   resolveDefaultThinking,
@@ -36,6 +37,21 @@ describe('llm presets', () => {
     expect(isDeepSeekVisionModel(DEEPSEEK_VISION_MODEL)).toBe(true)
     expect(isDeepSeekVisionModel('deepseek-v4-pro')).toBe(false)
     expect(DEFAULT_LLM_PRESET.baseUrl).toBe('https://api.deepseek.com')
+    expect(missingPresetModels(
+      [
+        { name: 'deepseek-v4-pro', model: 'deepseek-v4-pro' },
+        { name: 'deepseek-v4-flash', model: 'deepseek-v4-flash' },
+      ],
+      DEFAULT_LLM_PRESET,
+    )).toEqual([DEEPSEEK_VISION_MODEL])
+    expect(missingPresetModels(
+      [
+        { name: 'deepseek-v4-pro', model: 'deepseek-v4-pro' },
+        { name: 'deepseek-v4-flash', model: 'deepseek-v4-flash' },
+        { name: DEEPSEEK_VISION_MODEL, model: DEEPSEEK_VISION_MODEL },
+      ],
+      DEFAULT_LLM_PRESET,
+    )).toEqual([])
   })
 
   it('ships a built-in Kimi preset (k3 + k2.6) with thinking defaults', () => {

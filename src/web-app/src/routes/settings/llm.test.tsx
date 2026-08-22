@@ -80,7 +80,7 @@ function mockLlmFetch(opts: {
             baseUrl: 'https://api.deepseek.com',
             model: 'deepseek-v4-pro',
             cheapModel: 'deepseek-v4-flash',
-            models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+            models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'],
             baseName: 'deepseek-agim',
             defaultThinking: 'high',
           },
@@ -427,6 +427,7 @@ describe('/settings/llm quick setup', () => {
     expect(screen.getAllByText('DeepSeek').length).toBeGreaterThanOrEqual(1)
     // Delete lives on the group, not on each model row.
     expect(screen.getByRole('button', { name: /Remove provider "DeepSeek"/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Fill preset \(\+1\)/i })).toBeInTheDocument()
     // Groups start collapsed — models stay hidden until expand.
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     const groupToggle = screen.getByRole('button', { expanded: false })

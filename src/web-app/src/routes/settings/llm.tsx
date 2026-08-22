@@ -42,16 +42,18 @@ import {
 } from '@/components/ui/table'
 import {
   useLlmList, useLlmAddBackend, useLlmQuickEnable, useLlmRemoveBackendGroup, useLlmPutRoles, useLlmPing,
-  useLlmPresets,
+  useLlmPresets, useLlmSyncPreset,
   type LlmBackendRow,
   type LlmMaxTokensField,
   type LlmThinkingFormat,
 } from '@/hooks/use-llm-admin'
 import { useConfig, useUpdateConfig } from '@/hooks/use-settings'
 import {
+  builtinPresetKeyForBaseUrl,
   firstAvailablePreset,
   installedBuiltinPresetKeys,
   LLM_PRESETS,
+  missingPresetModels,
   resolvePresetCatalog,
   type LlmPresetKey,
 } from '@/lib/llm-presets'
@@ -326,9 +328,25 @@ function groupBackends(
   })
 }
 
+function presetKeyForGroup(group: BackendGroup): LlmPresetKey | null {
+  for (const b of group.backends) {
+    const label = b.label?.trim().toLowerCase()
+    if (label === 'deepseek' || label === 'moonshot' || label === 'zhipu' || label === 'mimo') {
+      return label
+    }
+  }
+  return builtinPresetKeyForBaseUrl(group.baseUrl)
+}
+
 function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] }): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const removeGroup = useLlmRemoveBackendGroup()
+  const syncPreset = useLlmSyncPreset()
+  const presetsQuery = useLlmPresets()
+  const { presets: catalog } = useMemo(
+    () => resolvePresetCatalog(presetsQuery.data),
+    [presetsQuery.data],
+  )
   const ping = useLlmPing()
   const [pingResults, setPingResults] = useState<Record<string, string>>({})
   const [probeError, setProbeError] = useState<ProbeErrorState | null>(null)
@@ -355,6 +373,24 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
         title: group.title,
         count: r.removed.length,
         roles: r.removedRoles,
+      }))
+    } catch (err) {
+      toast.error(((err as Error)?.message ?? String(err)))
+    }
+  }
+
+  async function onSyncGroup(group: BackendGroup): Promise<void> {
+    const key = presetKeyForGroup(group)
+    if (!key) return
+    try {
+      const r = await syncPreset.mutateAsync({ preset: key })
+      if (r.added.length === 0) {
+        toast.success(t('llm.syncPresetNone', { preset: t(`llm.presets.${key}`) }))
+        return
+      }
+      toast.success(t('llm.syncPresetToast', {
+        preset: t(`llm.presets.${key}`),
+        models: r.added.map((b) => b.model).join(', '),
       }))
     } catch (err) {
       toast.error(((err as Error)?.message ?? String(err)))
@@ -416,6 +452,9 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
             ? <Badge variant="outline">{t('llm.secretMissing')}</Badge>
             : <Badge variant="success">{[...secretSources].filter((s) => s !== 'none').join(' / ') || 'file'}</Badge>
           const open = expanded[group.key] === true
+          const presetKey = presetKeyForGroup(group)
+          const preset = presetKey ? catalog.find((p) => p.key === presetKey) : undefined
+          const missing = preset ? missingPresetModels(group.backends, preset) : []
           return (
             <div key={group.key} className="px-4 py-3">
               <div className="flex items-start gap-2">
@@ -448,6 +487,24 @@ function BackendsCard({ data }: { data: ReturnType<typeof useLlmList>['data'] })
                     {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </span>
                 </button>
+                {missing.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-0.5 shrink-0"
+                    disabled={syncPreset.isPending}
+                    aria-label={t('llm.syncPreset', { n: missing.length })}
+                    title={t('llm.syncPresetHint', { models: missing.join(', ') })}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void onSyncGroup(group)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">{t('llm.syncPreset', { n: missing.length })}</span>
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="ghost"

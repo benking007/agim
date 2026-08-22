@@ -9,6 +9,8 @@
 //   GET    /api/llm/presets              → curated vendor presets (DeepSeek default)
 //   POST   /api/llm/quick-enable         body { apiKey, preset?, model?, baseUrl?, name? }
 //                                        → 201 Created (backend + roles + defaultAgent)
+//   POST   /api/llm/presets/sync         body { preset } → add missing preset models
+//                                        (reuse sibling API key; 200 { added })
 //   POST   /api/llm/backends             body { name, provider, baseUrl, model, apiKey }
 //                                        → 201 Created or 409 Conflict / 400 Validation
 //   DELETE /api/llm/backends/:name       → 200 OK { removedRoles }
@@ -34,6 +36,7 @@ import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/
 import { lookupModelMeta } from '../core/llm/model-catalog.js'
 import { DEFAULT_LLM_PRESET, LLM_PRESETS } from '../core/llm/presets.js'
 import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
+import { SyncPresetError, syncMissingPresetModels } from '../core/llm/sync-preset.js'
 
 interface RawBackend {
   name: string
@@ -106,6 +109,9 @@ export async function handleLlmApi(
   }
   if (p === '/api/llm/quick-enable' && m === 'POST') {
     await handleQuickEnable(req, res); return true
+  }
+  if (p === '/api/llm/presets/sync' && m === 'POST') {
+    await handleSyncPreset(req, res); return true
   }
   if (p === '/api/llm/backends' && m === 'POST') {
     await handleAddBackend(req, res); return true
@@ -197,6 +203,29 @@ async function handleQuickEnable(req: IncomingMessage, res: ServerResponse): Pro
   } catch (err) {
     if (err instanceof QuickEnableError) {
       const status = err.code === 'conflict' ? 409 : 400
+      send(res, status, { error: err.message })
+      return
+    }
+    throw err
+  }
+}
+
+async function handleSyncPreset(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody<{ preset?: unknown }>(req)
+  if (!body || typeof body !== 'object') {
+    send(res, 400, { error: 'request body must be a JSON object' })
+    return
+  }
+  if (typeof body.preset !== 'string' || !body.preset.trim()) {
+    send(res, 400, { error: 'preset is required' })
+    return
+  }
+  try {
+    const result = await syncMissingPresetModels(body.preset.trim())
+    send(res, 200, result)
+  } catch (err) {
+    if (err instanceof SyncPresetError) {
+      const status = err.code === 'not_found' ? 404 : 400
       send(res, status, { error: err.message })
       return
     }

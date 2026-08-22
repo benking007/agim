@@ -434,6 +434,34 @@ describe('handleLlmApi — presets + quick-enable', () => {
     expect(body.roles.cheap).toBe(body.backends![1]!.name)
     expect(body.defaultAgent).toBe('agim')
   })
+
+  it('POST /api/llm/presets/sync fills missing DeepSeek vision', async () => {
+    await handleLlmApi(makeReq('POST', {
+      name: 'deepseek-v4-pro',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      apiKey: 'sk-old',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    await handleLlmApi(makeReq('POST', {
+      name: 'deepseek-v4-flash',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+      apiKey: 'sk-old',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+
+    const res = makeRes()
+    const handled = await handleLlmApi(
+      makeReq('POST', { preset: 'deepseek' }),
+      res as unknown as import('node:http').ServerResponse,
+      url('/api/llm/presets/sync'),
+    )
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as { added: Array<{ model: string }> }
+    expect(body.added.map((b) => b.model)).toEqual(['deepseek-v4-flash-vision-exp'])
+  })
 })
 
 describe('handleLlmApi — non-matching URL returns false', () => {

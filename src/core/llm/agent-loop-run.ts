@@ -20,7 +20,7 @@ import {
   resolveLengthRecoveryMax,
   resolveBlankRetryMax,
   resolveToolResultMaxChars,
-  resolveToolTimeoutMs,
+  resolveDispatchTimeoutMs,
   LENGTH_RECOVERY_MESSAGE,
   BLANK_RESPONSE_NUDGE,
 } from './agent-loop-config.js'
@@ -531,7 +531,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // and merge a per-call AbortController with the loop's outer
       // signal so cancelling either trips the underlying dispatcher.
       const toolDef = tools?.find((t) => t.name === call.name)
-      const perToolTimeoutMs = resolveToolTimeoutMs(toolDef?.timeoutMs)
+      const perToolTimeoutMs = resolveDispatchTimeoutMs(toolDef?.timeoutMs, call.arguments)
       const toolResultMaxChars = resolveToolResultMaxChars()
       const isParallel = input.parallelSafeClassifier
         ? classifyParallelSafe(input.parallelSafeClassifier, call)

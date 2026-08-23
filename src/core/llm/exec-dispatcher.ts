@@ -33,7 +33,7 @@
 //   When bwrap is NOT installed → plain spawn (no isolation available).
 //
 // Other env knobs:
-//   AGIM_EXEC_TIMEOUT_MS    default 60_000, hard cap 600_000
+//   AGIM_EXEC_TIMEOUT_MS    default 300_000 (5 min), hard cap 600_000
 //   AGIM_EXEC_MAX_OUTPUT    default 32_768 bytes per stream
 //   AGIM_EXEC_ENV_PASS      comma-separated extra env keys to forward to
 //                            the child (v1.3.7, F1 — default is a small
@@ -55,8 +55,13 @@ import { checkToolUse } from '../self-protect.js'
 
 const log = rootLogger.child({ component: 'exec-dispatcher' })
 
-const DEFAULT_TIMEOUT_MS = 60_000
-const HARD_TIMEOUT_CAP_MS = 600_000
+/** Default command wall clock. 60s was too short for npm test / tsc / builds.
+ *  The tool-bridge used to kill first at AGIM_NATIVE_TOOL_TIMEOUT_MS (60s)
+ *  even when timeout_ms asked for longer — see ToolDef.timeoutMs below. */
+export const EXEC_TIMEOUT_MS_DEFAULT = 5 * 60 * 1000  // 5 min
+export const EXEC_TIMEOUT_MS_MAX = 10 * 60 * 1000     // 10 min
+const DEFAULT_TIMEOUT_MS = EXEC_TIMEOUT_MS_DEFAULT
+const HARD_TIMEOUT_CAP_MS = EXEC_TIMEOUT_MS_MAX
 const MIN_TIMEOUT_MS = 100  // F10 — floor so timeout_ms=1 can't self-DoS
 const DEFAULT_MAX_OUTPUT = 32 * 1024
 
@@ -71,7 +76,7 @@ export function getExecTools(): ToolDef[] {
       name: 'agim_exec',
       description:
         'Execute a shell command in the agent\'s workspace. cwd defaults to the agent workspace; ' +
-        'optional timeout_ms (default 60000, max 600000). Returns stdout, stderr, exit_code. ' +
+        'optional timeout_ms (default 300000 / 5 min, max 600000). Returns stdout, stderr, exit_code. ' +
         'Each invocation is approval-gated by default — the user sees an IM card with the command ' +
         'and must allow. When AGIM_EXEC_SANDBOX=bwrap (Linux), runs under bubblewrap so the ' +
         'command can\'t touch home dirs outside cwd.',
@@ -79,7 +84,7 @@ export function getExecTools(): ToolDef[] {
         type: 'object',
         properties: {
           command: { type: 'string', description: 'Shell command. Will be invoked via /bin/sh -c.' },
-          timeout_ms: { type: 'number', description: 'Per-call timeout in ms (default 60000, max 600000).' },
+          timeout_ms: { type: 'number', description: 'Per-call timeout in ms (default 300000, max 600000).' },
           cwd: {
             type: 'string',
             description:
@@ -90,6 +95,9 @@ export function getExecTools(): ToolDef[] {
         required: ['command'],
         additionalProperties: false,
       },
+      // Outer tool-bridge default is 60s. Exec owns a longer clock — do not
+      // let the generic wall abort npm test / tsc mid-run.
+      timeoutMs: EXEC_TIMEOUT_MS_MAX,
     },
   ]
 }

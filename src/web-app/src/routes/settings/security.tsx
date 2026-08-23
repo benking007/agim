@@ -271,7 +271,7 @@ export default function SettingsSecurityRoute(): JSX.Element {
             <Input
               type="number"
               defaultValue={env.AGIM_EXEC_TIMEOUT_MS ?? ''}
-              placeholder="60000"
+              placeholder="300000"
               onBlur={(e) => {
                 const v = e.target.value.trim()
                 void setValue('AGIM_EXEC_TIMEOUT_MS', v === '' ? null : v)

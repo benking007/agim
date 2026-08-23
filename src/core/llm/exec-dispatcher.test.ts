@@ -16,6 +16,7 @@ import {
   resolveExecCwd,
   bwrapMaskedStateDirs,
 } from './exec-dispatcher.js'
+import { resolveDispatchTimeoutMs } from './agent-loop-config.js'
 
 const NEVER_ABORT = new AbortController().signal
 
@@ -119,23 +120,36 @@ describe('exec-dispatcher', () => {
       expect(clampTimeout(10_000_000)).toBe(600_000)
     })
     it('falls back to the default for non-positive / non-finite input', () => {
-      expect(clampTimeout(0)).toBe(60_000)
-      expect(clampTimeout(-5)).toBe(60_000)
-      expect(clampTimeout('nope')).toBe(60_000)
-      expect(clampTimeout(undefined)).toBe(60_000)
+      expect(clampTimeout(0)).toBe(300_000)
+      expect(clampTimeout(-5)).toBe(300_000)
+      expect(clampTimeout('nope')).toBe(300_000)
+      expect(clampTimeout(undefined)).toBe(300_000)
     })
   })
 
   describe('getExecTools / isExecToolName', () => {
-    it('exposes agim_exec', () => {
-      const names = getExecTools().map((t) => t.name)
-      expect(names).toEqual(['agim_exec'])
+    it('exposes agim_exec with a 10 min outer wall (above the 5 min command default)', () => {
+      const tools = getExecTools()
+      expect(tools.map((t) => t.name)).toEqual(['agim_exec'])
+      expect(tools[0]?.timeoutMs).toBe(600_000)
     })
 
     it('isExecToolName matches only agim_exec', () => {
       expect(isExecToolName('agim_exec')).toBe(true)
       expect(isExecToolName('agim_read_file')).toBe(false)
       expect(isExecToolName('agim_echo')).toBe(false)
+    })
+  })
+
+  describe('resolveDispatchTimeoutMs — outer wall vs timeout_ms', () => {
+    it('raises the generic 60s tool wall to the call timeout_ms', () => {
+      expect(resolveDispatchTimeoutMs(undefined, { timeout_ms: 300_000 })).toBe(300_000)
+    })
+    it('keeps a larger ToolDef cap when timeout_ms is smaller', () => {
+      expect(resolveDispatchTimeoutMs(600_000, { timeout_ms: 120_000 })).toBe(600_000)
+    })
+    it('leaves timeoutMs=0 as unlimited (A2A / ask_user)', () => {
+      expect(resolveDispatchTimeoutMs(0, { timeout_ms: 300_000 })).toBe(0)
     })
   })
 

@@ -607,7 +607,7 @@ function A2ACard({ draft, setField }: CardProps): JSX.Element {
             type="number"
             value={draft.a2aTimeoutMs}
             onChange={(e) => setField('a2aTimeoutMs', e.target.value)}
-            placeholder="1800000"
+            placeholder="7200000"
             className="font-mono text-xs"
           />
         </Field>

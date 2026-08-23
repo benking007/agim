@@ -12,7 +12,7 @@
  * the existing settings pages' shadcn look without bespoke chrome.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -972,7 +972,6 @@ function AddBackendCard(): JSX.Element {
   }
 
   function onPickPreset(next: LlmPresetKey): void {
-    if (next !== 'custom' && installedPresets.has(next)) return
     setPresetKey(next)
     const p = catalog.find((item) => item.key === next) ?? defaultPreset
     if (next !== 'deepseek') resetDeepseekOptions()
@@ -989,45 +988,9 @@ function AddBackendCard(): JSX.Element {
     }
   }
 
-  // If the selected built-in is already installed (or becomes so), jump to
-  // the next available option so the form never submits a duplicate.
-  useEffect(() => {
-    if (presetKey === 'custom' || !installedPresets.has(presetKey)) return
-    const next = firstAvailablePreset(installedPresets, catalog)
-    if (next === presetKey) return
-    const p = catalog.find((item) => item.key === next) ?? defaultPreset
-    setPresetKey(next)
-    setCompatTemplate('none')
-    setTemperature('')
-    setMaxTokens('')
-    setContextWindow('')
-    setThinkingFormat('auto')
-    setMaxTokensField('auto')
-    setExtraHeaders('')
-    setProvider('openai-compat')
-    setAdvancedOpen(false)
-    if (next !== 'deepseek') {
-      setDeepseekDialect('openai')
-      setDeepseekStrictTools(false)
-    }
-    if (next === 'custom') {
-      setBaseUrl('')
-      setModel('')
-      setName(p.baseName)
-    } else {
-      setBaseUrl(p.baseUrl)
-      setModel(p.model)
-      setName('')
-    }
-  }, [installedPresets, presetKey, catalog, defaultPreset])
-
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     if (!apiKey.trim()) { fail(t('llm.apiKeyRequired')); return }
-    if (presetAlreadyAdded) {
-      fail(t('llm.presetAlreadyAddedError', { preset: t(`llm.presets.${presetKey}`) }))
-      return
-    }
     try {
       if (isCustom) {
         if (!name.trim()) { fail(t('llm.nameRequired')); return }
@@ -1079,10 +1042,12 @@ function AddBackendCard(): JSX.Element {
         const models = (enabled.backends ?? [{ name: enabled.name, model: enabled.model }])
           .map((b) => b.model)
           .join(', ')
-        toast.success(t('llm.addedPresetModels', {
+        toast.success(t(enabled.rebound ? 'llm.reboundPresetModels' : 'llm.addedPresetModels', {
           preset: t(`llm.presets.${presetKey}`),
           models,
-          defaultValue: 'Added {{preset}}: {{models}}',
+          defaultValue: enabled.rebound
+            ? 'Updated {{preset}}: {{models}}'
+            : 'Added {{preset}}: {{models}}',
         }))
       }
       setFormError(null)
@@ -1110,7 +1075,7 @@ function AddBackendCard(): JSX.Element {
                 {catalog.map((p) => {
                   const added = p.key !== 'custom' && installedPresets.has(p.key)
                   return (
-                    <SelectItem key={p.key} value={p.key} disabled={added}>
+                    <SelectItem key={p.key} value={p.key}>
                       {added
                         ? t('llm.presetAlreadyAdded', { preset: t(`llm.presets.${p.key}`) })
                         : t(`llm.presets.${p.key}`)}
@@ -1131,9 +1096,11 @@ function AddBackendCard(): JSX.Element {
             />
             {!isCustom && (
               <p className="mt-1 text-xs text-text-dim">
-                {t('llm.addPresetHint', {
+                {t(presetAlreadyAdded ? 'llm.rebindPresetHint' : 'llm.addPresetHint', {
                   models: (selected.models ?? [selected.model, selected.cheapModel].filter(Boolean)).join(', '),
-                  defaultValue: 'Will register: {{models}}',
+                  defaultValue: presetAlreadyAdded
+                    ? 'Updates the vendor key and fills missing models: {{models}}'
+                    : 'Will register: {{models}}',
                 })}
               </p>
             )}
@@ -1319,9 +1286,9 @@ function AddBackendCard(): JSX.Element {
           {formError && (
             <p className="text-xs text-danger">{formError}</p>
           )}
-          <Button type="submit" disabled={busy || presetAlreadyAdded} className="sm:ml-auto">
+          <Button type="submit" disabled={busy} className="sm:ml-auto">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {t('llm.addBackend')}
+            {t(presetAlreadyAdded ? 'llm.rebindBackend' : 'llm.addBackend')}
           </Button>
         </div>
       </form>

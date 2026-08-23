@@ -4,7 +4,7 @@
  * configuration stay on one code path.
  */
 
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -159,7 +159,6 @@ export function QuickAgentSetupCard({
   const isWizard = variant === 'wizard'
 
   function applyPreset(next: LlmPresetKey): void {
-    if (next !== 'custom' && installedPresets.has(next)) return
     const p = catalog.find((item) => item.key === next) ?? defaultPreset
     setLocalOllama(false)
     setPresetKey(next)
@@ -182,18 +181,6 @@ export function QuickAgentSetupCard({
     setDeepseekStrictTools(false)
   }
 
-  useEffect(() => {
-    if (localOllama) return
-    if (presetKey === 'custom' || !installedPresets.has(presetKey)) return
-    const next = firstAvailablePreset(installedPresets, catalog)
-    if (next === presetKey) return
-    const p = catalog.find((item) => item.key === next) ?? defaultPreset
-    setPresetKey(next)
-    setBaseUrl(p.baseUrl)
-    setModel(p.model)
-    setName(suggestLlmBackendName(p.baseName, existingNames))
-  }, [installedPresets, presetKey, existingNames, catalog, defaultPreset, localOllama])
-
   async function enableExistingBackend(backendName: string): Promise<void> {
     try {
       await putRoles.mutateAsync({ 'native-chat': backendName })
@@ -214,10 +201,6 @@ export function QuickAgentSetupCard({
     e?.preventDefault()
     const keyToSend = apiKey.trim() || (allowEmptyKey ? 'local' : '')
     if (!keyToSend) { toast.error(t('llm.apiKeyRequired')); return }
-    if (!isCustom && installedPresets.has(presetKey)) {
-      toast.error(t('llm.presetAlreadyAddedError', { preset: t(`llm.presets.${presetKey}`) }))
-      return
-    }
     if (isCustom) {
       if (!name.trim()) { toast.error(t('llm.nameRequired')); return }
       if (!baseUrl.trim() || !/^https?:\/\//i.test(baseUrl.trim())) {
@@ -420,12 +403,10 @@ export function QuickAgentSetupCard({
                     <button
                       key={p.key}
                       type="button"
-                      disabled={added}
                       onClick={() => applyPreset(p.key)}
                       className={cn(
                         'rounded-md border px-3 py-3 text-left text-sm transition-colors',
                         selected ? 'border-accent bg-accent-bg' : 'border-border bg-surface hover:bg-surface-2',
-                        added && 'cursor-not-allowed opacity-50',
                       )}
                     >
                       <div className="flex items-center gap-2">
@@ -584,7 +565,7 @@ export function QuickAgentSetupCard({
                 {catalog.map((p) => {
                   const added = p.key !== 'custom' && installedPresets.has(p.key)
                   return (
-                    <SelectItem key={p.key} value={p.key} disabled={added}>
+                    <SelectItem key={p.key} value={p.key}>
                       {added
                         ? t('llm.presetAlreadyAdded', { preset: t(`llm.presets.${p.key}`) })
                         : t(`llm.presets.${p.key}`)}

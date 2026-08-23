@@ -172,18 +172,52 @@ describe('quickEnableLlmPreset', () => {
     expect(loadSecretsFile().keys['mimo-v2.5-pro']).toBeUndefined()
   })
 
-  it('rejects a second quick-enable for the same built-in preset', async () => {
-    await quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-1' })
-    await expect(
-      quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-2' }),
-    ).rejects.toMatchObject({
-      name: 'QuickEnableError',
-      code: 'conflict',
-      message: expect.stringMatching(/already configured/i),
-    })
+  it('rebinds an already-installed preset: updates the vendor key and fills missing models', async () => {
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(join(TMP, 'config.json'), JSON.stringify({
+      messengers: [],
+      agents: ['agim'],
+      llmBackends: [
+        {
+          name: 'deepseek-v4-pro',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+          label: 'deepseek',
+        },
+        {
+          name: 'deepseek-v4-flash',
+          provider: 'openai-compat',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+          label: 'deepseek',
+        },
+      ],
+    }), 'utf8')
+    const { saveSecret } = await import('./secrets.js')
+    saveSecret('deepseek-v4-pro', 'sk-old')
+
+    const result = await quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-2' })
+    expect(result.rebound).toBe(true)
+    expect(result.added?.map((b) => b.model)).toEqual(['deepseek-v4-flash-vision-exp'])
+    expect(result.backends.map((b) => b.model)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
+    expect(loadSecretsFile().keys.deepseek).toBe('sk-2')
+
+    const cfg = await readConfigObject() as {
+      llmBackends?: Array<{ model: string }>
+    }
+    expect(cfg.llmBackends?.map((b) => b.model)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
   })
 
-  it('rejects quick-enable when the same hostname exists without label', async () => {
+  it('rebinds when the same hostname exists without label', async () => {
     const { writeFileSync } = await import('node:fs')
     writeFileSync(join(TMP, 'config.json'), JSON.stringify({
       messengers: [],
@@ -197,16 +231,13 @@ describe('quickEnableLlmPreset', () => {
         },
       ],
     }), 'utf8')
-    await expect(
-      quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-host' }),
-    ).rejects.toMatchObject({
-      name: 'QuickEnableError',
-      code: 'conflict',
-      message: expect.stringMatching(/already configured/i),
-    })
+    const result = await quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-host' })
+    expect(result.rebound).toBe(true)
+    expect(result.backends.some((b) => b.model === 'deepseek-v4-flash-vision-exp')).toBe(true)
+    expect(loadSecretsFile().keys.deepseek).toBe('sk-host')
   })
 
-  it('rejects quick-enable when an intl vendor host family is already present', async () => {
+  it('rebinds when an intl vendor host family is already present', async () => {
     const { writeFileSync } = await import('node:fs')
     writeFileSync(join(TMP, 'config.json'), JSON.stringify({
       messengers: [],
@@ -220,13 +251,19 @@ describe('quickEnableLlmPreset', () => {
         },
       ],
     }), 'utf8')
-    await expect(
-      quickEnableLlmPreset({ preset: 'moonshot', apiKey: 'sk-kimi' }),
-    ).rejects.toMatchObject({
-      name: 'QuickEnableError',
-      code: 'conflict',
-      message: expect.stringMatching(/already configured/i),
-    })
+    const result = await quickEnableLlmPreset({ preset: 'moonshot', apiKey: 'sk-kimi' })
+    expect(result.rebound).toBe(true)
+    expect(result.backends.map((b) => b.model)).toContain('kimi-k2.6')
+    expect(loadSecretsFile().keys.moonshot).toBe('sk-kimi')
+  })
+
+  it('second quick-enable on a full catalog is a no-op rebind (key only)', async () => {
+    await quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-1' })
+    const again = await quickEnableLlmPreset({ preset: 'deepseek', apiKey: 'sk-2' })
+    expect(again.rebound).toBe(true)
+    expect(again.added).toEqual([])
+    expect(again.backends).toHaveLength(3)
+    expect(loadSecretsFile().keys.deepseek).toBe('sk-2')
   })
 
   it('rejects empty api keys', async () => {

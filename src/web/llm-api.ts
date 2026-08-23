@@ -41,7 +41,8 @@ import { getProviderByName, loadFromConfig as loadLlmFromConfig } from '../core/
 import { lookupModelMeta } from '../core/llm/model-catalog.js'
 import { DEFAULT_LLM_PRESET, LLM_PRESETS } from '../core/llm/presets.js'
 import { QuickEnableError, quickEnableLlmPreset } from '../core/llm/quick-enable.js'
-import { SyncPresetError, syncMissingPresetModels } from '../core/llm/sync-preset.js'
+import { SyncPresetError, syncInstalledPresetGaps, syncMissingPresetModels } from '../core/llm/sync-preset.js'
+import { builtinPresetKeyForBaseUrl, isBuiltinPresetKey } from '../core/llm/presets.js'
 
 interface RawBackend {
   name: string
@@ -239,6 +240,11 @@ async function handleSyncPreset(req: IncomingMessage, res: ServerResponse): Prom
 }
 
 async function handleList(res: ServerResponse): Promise<void> {
+  try {
+    await syncInstalledPresetGaps()
+  } catch {
+    /* GET must still return the current list */
+  }
   const cfg = await readConfig()
   const listed = cfg.llmBackends ?? []
   const backends = listed.map((b) => {
@@ -663,7 +669,19 @@ async function handleSetSecret(req: IncomingMessage, res: ServerResponse, name: 
     ? secretHintForBackend(backend, cfg.llmBackends ?? [])
     : undefined
   saveSecretForBackend(name, body.apiKey.trim(), hint)
-  refreshLlmRuntime(cfg)
+  const label = (backend?.label ?? '').trim().toLowerCase()
+  const preset = isBuiltinPresetKey(label)
+    ? label
+    : builtinPresetKeyForBaseUrl(backend?.baseUrl)
+  if (preset) {
+    try {
+      await syncMissingPresetModels(preset)
+    } catch {
+      /* key is saved even if catalog sync cannot run */
+    }
+  }
+  const fresh = await readConfig()
+  refreshLlmRuntime(fresh)
   const src = describeSecretSource(name, hint)
   send(res, 200, { name, source: src.source })
 }

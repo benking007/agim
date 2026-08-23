@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const TMP_OWN = mkdtempSync(join(tmpdir(), 'agim-sync-preset-'))
 process.env.AGIM_HOME = TMP_OWN
 
-const { syncMissingPresetModels, SyncPresetError } = await import('./sync-preset.js')
+const { syncMissingPresetModels, syncInstalledPresetGaps, SyncPresetError } = await import('./sync-preset.js')
 const { quickEnableLlmPreset } = await import('./quick-enable.js')
 const { readConfigObject, updateConfigObject } = await import('../config-store.js')
 const { saveSecret, describeSecretSource, loadSecretsFile, secretHintForBackend } = await import('./secrets.js')
@@ -80,6 +80,39 @@ describe('syncMissingPresetModels', () => {
   it('rejects an unknown or custom preset', async () => {
     await expect(syncMissingPresetModels('custom')).rejects.toBeInstanceOf(SyncPresetError)
     await expect(syncMissingPresetModels('nope')).rejects.toBeInstanceOf(SyncPresetError)
+  })
+
+  it('syncInstalledPresetGaps fills DeepSeek vision on an older install', async () => {
+    await updateConfigObject((current) => ({
+      config: {
+        ...current,
+        messengers: [],
+        agents: ['agim'],
+        defaultAgent: 'agim',
+        llmBackends: [
+          {
+            name: 'deepseek-v4-pro',
+            provider: 'openai-compat',
+            model: 'deepseek-v4-pro',
+            baseUrl: 'https://api.deepseek.com',
+            label: 'deepseek',
+          },
+          {
+            name: 'deepseek-v4-flash',
+            provider: 'openai-compat',
+            model: 'deepseek-v4-flash',
+            baseUrl: 'https://api.deepseek.com',
+            label: 'deepseek',
+          },
+        ],
+      },
+      result: undefined,
+    }))
+    saveSecret('deepseek-v4-pro', 'sk-existing')
+    const gaps = await syncInstalledPresetGaps()
+    expect(gaps).toHaveLength(1)
+    expect(gaps[0]?.preset).toBe('deepseek')
+    expect(gaps[0]?.added.map((b) => b.model)).toEqual([DEEPSEEK_VISION_MODEL])
   })
 
   it('404s when the vendor group is not installed', async () => {

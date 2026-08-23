@@ -10,6 +10,7 @@ import { clearAgentCache } from '../onboarding.js'
 import { loadFromConfig as loadLlmFromConfig } from './registry.js'
 import { loadSecretsFile, resolveSecret, secretHintForBackend } from './secrets.js'
 import {
+  LLM_PRESETS,
   builtinPresetKeyForBaseUrl,
   getLlmPreset,
   missingPresetModels,
@@ -157,4 +158,22 @@ export async function syncMissingPresetModels(presetKey: string): Promise<SyncPr
     preset: preset.key,
     added: planned.map((b) => ({ name: b.name, model: b.model })),
   }
+}
+
+/** Best-effort: for every installed built-in vendor that is missing catalog
+ *  models and already has a key, add the gaps. Used by GET /api/llm so
+ *  opening Settings fills DeepSeek vision after an upgrade. */
+export async function syncInstalledPresetGaps(): Promise<SyncPresetResult[]> {
+  const out: SyncPresetResult[] = []
+  for (const preset of LLM_PRESETS) {
+    if (preset.key === 'custom') continue
+    try {
+      const result = await syncMissingPresetModels(preset.key)
+      if (result.added.length > 0) out.push(result)
+    } catch (err) {
+      if (err instanceof SyncPresetError) continue
+      throw err
+    }
+  }
+  return out
 }

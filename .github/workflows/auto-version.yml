@@ -61,7 +61,6 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       ref: ${{ needs.bump.outputs.sha }}
-    secrets: inherit
     permissions:
       contents: read
       id-token: write

@@ -76,6 +76,23 @@ export function resolveToolTimeoutMs(perToolMs: number | undefined): number {
   return n
 }
 
+/** Outer wall for one dispatch. Honors ToolDef.timeoutMs / env, then
+ *  raises it to the call's `timeout_ms` so agim_exec(timeout_ms: 300000)
+ *  is not killed by the generic 60s tool-bridge cap. `0` still means
+ *  "no outer cap" (A2A / ask_user). */
+export function resolveDispatchTimeoutMs(
+  perToolMs: number | undefined,
+  args?: Record<string, unknown>,
+): number {
+  const base = resolveToolTimeoutMs(perToolMs)
+  if (!args || base <= 0) return base
+  const raw = args.timeout_ms ?? args.timeoutMs
+  const n = typeof raw === 'number' ? raw
+    : typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN
+  if (!Number.isFinite(n) || n <= 0) return base
+  return Math.max(base, Math.floor(n))
+}
+
 /** v1.2.119 — intra-loop blank-response retry cap. Complements v1.2.94's
  *  POST-loop auto-summary (which only fires when tools ran). This handles
  *  the case where the provider returns `finishReason: 'stop'` with

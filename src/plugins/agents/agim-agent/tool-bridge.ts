@@ -40,7 +40,7 @@ import {
 } from '../../../core/llm/tool-call-spine.js'
 import {
   resolveToolResultMaxChars,
-  resolveToolTimeoutMs,
+  resolveDispatchTimeoutMs,
 } from '../../../core/llm/agent-loop-config.js'
 
 /** A never-aborted signal for when pi invokes execute without one. The agim
@@ -103,8 +103,8 @@ export function agimToolToPi(def: ToolDef, dispatch: ToolDispatcher, opts: ToolB
     executionMode: parallelSafe ? 'parallel' : 'sequential',
     execute: async (toolCallId, args, signal) => {
       const cap = resolveToolResultMaxChars()
-      const timeoutMs = resolveToolTimeoutMs(def.timeoutMs)
       const parsedArgs = (args ?? {}) as Record<string, unknown>
+      const timeoutMs = resolveDispatchTimeoutMs(def.timeoutMs, parsedArgs)
       const schemaFail = prevalidateToolArgs(def.name, parsedArgs, def.parameters)
       if (!schemaFail.ok) {
         postAuditToolCall(opts.audit, {

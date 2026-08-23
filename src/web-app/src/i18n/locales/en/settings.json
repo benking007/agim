@@ -666,7 +666,7 @@
       "sandboxNet": "Sandbox network",
       "sandboxNetOn": "Allowed (default)",
       "sandboxNetOff": "Blocked (--unshare-net)",
-      "timeoutMs": "Command timeout (ms, default 60000)",
+      "timeoutMs": "Command timeout (ms, default 300000 / 5 min)",
       "maxOutput": "Per-stream output cap (bytes, default 32768)"
     },
     "web": {

@@ -1,47 +1,84 @@
 name: Publish to npm
 
+# This file is the npm Trusted Publisher workflow. The filename must
+# stay `release.yml` — npm OIDC checks the *root* workflow name, not a
+# nested reusable job. Do not invoke this file via workflow_call from
+# another workflow (that made npm see `auto-version.yml` and return
+# ENEEDAUTH).
 on:
+  pull_request:
+    types: [closed]
+    branches: [main]
   push:
     branches: [main]
     paths:
       - 'package.json'
-  # Manual trigger — fallback when a publish was skipped.
   workflow_dispatch:
-  # Called by Auto Version Bump after it pushes a bot version commit.
-  # GitHub blocks github-actions[bot] pushes from triggering other workflows
-  # on `push`, so without workflow_call the registry stays stale (e.g. npm
-  # stuck at 1.5.21 while git advanced through 1.5.22–1.5.25).
-  workflow_call:
-    inputs:
-      ref:
-        description: 'Git ref/SHA to publish (bump commit). Empty = github.sha.'
-        type: string
-        required: false
-        default: ''
 
 permissions:
-  id-token: write # npm Trusted Publishing (OIDC)
-  contents: read
+  id-token: write
+  contents: write
 
 jobs:
+  bump:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.meta.outputs.sha }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Determine bump level
+        id: bump
+        run: |
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q '"major"'; then
+            echo "level=major" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q '"minor"'; then
+            echo "level=minor" >> $GITHUB_OUTPUT
+          else
+            echo "level=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version ${{ steps.bump.outputs.level }} -m "chore: release v%s"
+          git push
+
+      - name: Record bump metadata
+        id: meta
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: bump
+    if: always() && !cancelled() && (needs.bump.result == 'success' || needs.bump.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
-          # Prefer the bump SHA from workflow_call; otherwise the event SHA.
-          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
+          ref: ${{ needs.bump.outputs.sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          # Do not set registry-url here. setup-node would write
-          # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into
-          # ~/.npmrc, which forces classic-token auth and blocks OIDC
-          # Trusted Publishing (npm then asks for OTP → EOTP).
+          # No registry-url: that writes `_authToken=${NODE_AUTH_TOKEN}`
+          # and blocks the OIDC exchange (ENEEDAUTH / EOTP).
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -63,15 +100,6 @@ jobs:
 
       - name: Install dependencies
         if: steps.version.outputs.changed == 'true'
-        # Use the Node-bundled npm — do NOT `npm install -g npm@latest`.
-        # History: the arborist "Exit handler never called!" hang (npm 10 on
-        # a large tree) was worked around by upgrading to npm@latest. But
-        # `npm@latest` later shipped a broken tarball whose bundled `sigstore`
-        # dep is missing, so `npm publish` aborted with
-        # "Cannot find module 'sigstore'" (v1.5.9 / v1.5.10 push failures).
-        # Node 24's bundled npm (11.x) has sigstore vendored AND predates the
-        # arborist stall. The repaired public-registry lockfile now lets the
-        # release use npm ci without a global npm upgrade.
         run: |
           npm --version
           npm ci --omit=optional --no-audit --no-fund --legacy-peer-deps
@@ -83,9 +111,6 @@ jobs:
 
       - name: Install web-app dependencies
         if: steps.version.outputs.changed == 'true'
-        # src/web-app is a separate package (not a workspace), so the root
-        # install doesn't reach it. The explicit typecheck below validates
-        # TypeScript; the root build later runs Vite and packages its output.
         working-directory: src/web-app
         run: npm ci --no-audit --no-fund --legacy-peer-deps
 
@@ -129,13 +154,18 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: npm run test:node
 
+      - name: Use npm 11.5.1 for OIDC publish
+        if: steps.version.outputs.changed == 'true'
+        # Trusted Publishing requires npm >= 11.5.1. Pin the version —
+        # `npm@latest` previously shipped a tarball missing `sigstore`.
+        run: |
+          npm install -g npm@11.5.1
+          npm --version
+
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
-        # Auth is npm Trusted Publishing via OIDC (`id-token: write`).
-        # Do not set NODE_AUTH_TOKEN — a granular token now requires OTP
-        # (EOTP) and also shadows the OIDC exchange.
-        # `--provenance` stays off: this repo is private and the runner npm
-        # used to abort on a missing `sigstore` when provenance auto-enabled.
+        # OIDC Trusted Publishing. No NODE_AUTH_TOKEN.
+        # Provenance off: this repository is private (npm would 422).
         run: npm publish --access public
         env:
           NPM_CONFIG_PROVENANCE: 'false'

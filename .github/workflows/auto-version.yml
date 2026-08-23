@@ -1,66 +1,19 @@
 name: Auto Version Bump
 
+# Retired. Bump + publish now run as the root jobs in `release.yml`
+# so npm Trusted Publisher matches workflow filename `release.yml`.
+# A nested `workflow_call` made npm see *this* file and return ENEEDAUTH.
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
-
-permissions:
-  contents: write # push version bump commit
-  id-token: write # required so the nested Publish workflow can use OIDC / npm auth
-  actions: write  # allow invoking the reusable Publish workflow
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Retired — merge a PR or run "Publish to npm"'
+        required: false
 
 jobs:
-  bump:
-    # Only run when PR is merged (not just closed)
-    if: github.event.pull_request.merged == true
+  retired:
     runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.meta.outputs.sha }}
-      version: ${{ steps.meta.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Determine bump level
-        id: bump
-        run: |
-          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
-          if echo "$LABELS" | grep -q '"major"'; then
-            echo "level=major" >> $GITHUB_OUTPUT
-          elif echo "$LABELS" | grep -q '"minor"'; then
-            echo "level=minor" >> $GITHUB_OUTPUT
-          else
-            echo "level=patch" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Bump version
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version ${{ steps.bump.outputs.level }} -m "chore: release v%s"
-          git push
-
-      - name: Record bump metadata
-        id: meta
-        run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
-
-  # Bot pushes do not trigger the push-based Publish workflow; call it here.
-  publish:
-    needs: bump
-    if: needs.bump.result == 'success' && needs.bump.outputs.sha != ''
-    uses: ./.github/workflows/release.yml
-    with:
-      ref: ${{ needs.bump.outputs.sha }}
-    permissions:
-      contents: read
-      id-token: write
+      - run: |
+          echo "Auto Version Bump is retired. Use .github/workflows/release.yml."
+          exit 1

@@ -110,14 +110,16 @@ async function resyncLoopAfterJobTerminal(
 // Override with AGIM_A2A_MAX_DEPTH=N. Set N=1 to restrict to a single
 // delegation hop; set N=0 to disable A2A entirely.
 export const A2A_MAX_DEPTH_DEFAULT = 8
-// v1.1.10: bumped from 10 min to 30 min after the HSTECH debate run revealed
-// codex routinely takes 15-25 min when the prompt asks for ~4 API pulls + a
-// report. 10 min cut codex off mid-write and produced orphan output files.
-export const A2A_TIMEOUT_MS_DEFAULT = 30 * 60 * 1000  // 30 min
+// v1.1.10: 10 min → 30 min (codex 15–25 min research writes).
+// Later: 30 min still cut long coding/research Subagents mid-run
+// (`a2a timed out after 1800000ms`). Default is now 2 h; set
+// AGIM_A2A_TIMEOUT_DEFAULT_MS=0 to disable the wall clock.
+export const A2A_TIMEOUT_MS_DEFAULT = 2 * 60 * 60 * 1000  // 2 h
 /** Hard upper bound — refuse caller-supplied `timeoutMs` larger than this so
  *  an agent can't accidentally write `timeoutMs: 86400000` and block A2A
- *  forever. Override with AGIM_A2A_MAX_TIMEOUT_MS. */
-export const A2A_TIMEOUT_MS_MAX = 60 * 60 * 1000  // 1 h
+ *  forever. Override with AGIM_A2A_MAX_TIMEOUT_MS. Aligns with the goal-boost
+ *  6 h cap so an active long-task goal is not clamped back to 1 h. */
+export const A2A_TIMEOUT_MS_MAX = 6 * 60 * 60 * 1000  // 6 h
 
 export function isA2AEnabled(): boolean {
   return process.env.AGIM_A2A_ENABLED !== '0'
@@ -167,8 +169,10 @@ export async function compressA2AResult(jobId: number, result: string): Promise<
 export function getA2ATimeoutMs(ctx?: { platform?: string; channelId?: string; threadId?: string }): number {
   const raw = process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS
   let base = A2A_TIMEOUT_MS_DEFAULT
-  if (raw) {
+  if (raw !== undefined && raw.trim() !== '') {
     const n = parseInt(raw, 10)
+    // 0 = no wall clock (operator opt-out). Skip the goal multiplier.
+    if (n === 0) return 0
     if (Number.isFinite(n) && n > 0) base = Math.min(n, getA2AMaxTimeoutMs())
   }
   // v1.2.86 — goal-aware timeout boost. When the addressed thread has
@@ -536,14 +540,13 @@ export async function callAgentByName(
   // v1.2.86: pass the route context so getA2ATimeoutMs can apply the
   // active-goal multiplier when present (no boost when caller already
   // supplied an explicit timeoutMs — they made an informed choice).
-  const timeoutMs = Math.min(
-    opts.timeoutMs ?? getA2ATimeoutMs({
-      platform: ctx.platform,
-      channelId: ctx.channelId,
-      threadId: ctx.threadId,
-    }),
-    getA2AMaxTimeoutMs(),
-  )
+  // 0 (env or caller) = no wall clock.
+  const resolvedTimeout = opts.timeoutMs ?? getA2ATimeoutMs({
+    platform: ctx.platform,
+    channelId: ctx.channelId,
+    threadId: ctx.threadId,
+  })
+  const timeoutMs = resolvedTimeout <= 0 ? 0 : Math.min(resolvedTimeout, getA2AMaxTimeoutMs())
   const started = Date.now()
   log.info({
     event: 'a2a.invoke_start',
@@ -851,7 +854,11 @@ export async function callAgentByName(
 // ─── helpers ──────────────────────────────────────────────────────────
 
 class TimeoutError extends Error {
-  constructor(ms: number) { super(`a2a timed out after ${ms}ms`) }
+  constructor(ms: number) {
+    super(
+      `a2a timed out after ${ms}ms (set AGIM_A2A_TIMEOUT_DEFAULT_MS, or 0 to disable)`,
+    )
+  }
 }
 
 async function accumulateWithTimeout(
@@ -859,6 +866,21 @@ async function accumulateWithTimeout(
   ms: number,
   signal?: AbortSignal,
 ): Promise<string> {
+  if (ms <= 0) {
+    let acc = ''
+    try {
+      for await (const chunk of gen) {
+        if (signal?.aborted) return acc
+        if (typeof chunk === 'string') acc += chunk
+      }
+    } catch (err) {
+      if (signal?.aborted || (err instanceof Error && /a2a aborted/i.test(err.message))) {
+        return acc
+      }
+      throw err
+    }
+    return acc
+  }
   let acc = ''
   const deadline = Date.now() + ms
   // Drain the generator with a per-step race against deadline + abort.

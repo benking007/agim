@@ -119,10 +119,17 @@ describe('handleLlmApi — add backend', () => {
 
     const res2 = makeRes()
     await handleLlmApi(makeReq('GET'), res2 as unknown as import('node:http').ServerResponse, url('/api/llm'))
-    const body = JSON.parse(res2.body)
-    expect(body.backends).toHaveLength(1)
-    expect(body.backends[0].name).toBe('deepseek')
+    const body = JSON.parse(res2.body) as {
+      backends: Array<{ name: string; secret: { source: string } }>
+    }
+    // GET also fills missing DeepSeek catalog models (flash + vision).
+    expect(body.backends.some((b) => b.name === 'deepseek')).toBe(true)
     expect(body.backends[0].secret.source).toBe('file')
+    expect(body.backends.map((b) => b.name)).toEqual(expect.arrayContaining([
+      'deepseek',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ]))
   })
 
   it('enriches list contextWindow/maxTokens from pi catalog when unset', async () => {
@@ -474,6 +481,67 @@ describe('handleLlmApi — presets + quick-enable', () => {
     }
     const vision = listed.backends.find((b) => b.name === 'deepseek-v4-flash-vision-exp')
     expect(vision?.secret.source).toBe('file')
+  })
+
+  it('POST /api/llm/quick-enable rebinds an existing DeepSeek group and fills vision', async () => {
+    await handleLlmApi(makeReq('POST', {
+      name: 'deepseek-v4-pro',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      apiKey: 'sk-old',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    await handleLlmApi(makeReq('POST', {
+      name: 'deepseek-v4-flash',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+      apiKey: 'sk-old',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+
+    const res = makeRes()
+    const handled = await handleLlmApi(
+      makeReq('POST', { apiKey: 'sk-rebind' }),
+      res as unknown as import('node:http').ServerResponse,
+      url('/api/llm/quick-enable'),
+    )
+    expect(handled).toBe(true)
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body) as {
+      rebound?: boolean
+      added?: Array<{ model: string }>
+      backends?: Array<{ model: string }>
+    }
+    expect(body.rebound).toBe(true)
+    expect(body.added?.map((b) => b.model)).toEqual(['deepseek-v4-flash-vision-exp'])
+    expect(body.backends?.map((b) => b.model)).toEqual([
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-vision-exp',
+    ])
+  })
+
+  it('GET /api/llm fills missing DeepSeek vision when a vendor key exists', async () => {
+    await handleLlmApi(makeReq('POST', {
+      name: 'deepseek-v4-pro',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      apiKey: 'sk-old',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+    await handleLlmApi(makeReq('POST', {
+      name: 'deepseek-v4-flash',
+      provider: 'openai-compat',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+      apiKey: 'sk-old',
+    }), makeRes() as unknown as import('node:http').ServerResponse, url('/api/llm/backends'))
+
+    const list = makeRes()
+    await handleLlmApi(makeReq('GET'), list as unknown as import('node:http').ServerResponse, url('/api/llm'))
+    expect(list.statusCode).toBe(200)
+    const listed = JSON.parse(list.body) as { backends: Array<{ model: string }> }
+    expect(listed.backends.map((b) => b.model)).toContain('deepseek-v4-flash-vision-exp')
   })
 })
 

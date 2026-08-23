@@ -222,12 +222,15 @@ async function quickAction(argv: string[]): Promise<number> {
         : {}),
     })
     process.stdout.write(
-      `\n✅ Agim Agent enabled\n`
+      `\n✅ Agim Agent ${result.rebound ? 'rebound' : 'enabled'}\n`
       + `   backend: ${result.name}\n`
       + `   model:   ${result.model}\n`
       + `   baseUrl: ${result.baseUrl}\n`
       + (result.dialect ? `   dialect: ${result.dialect}\n` : '')
       + (result.strictTools ? `   strictTools: on (beta)\n` : '')
+      + (result.rebound && result.added && result.added.length > 0
+        ? `   added:   ${result.added.map((b) => b.model).join(', ')}\n`
+        : '')
       + `   roles:   native-chat / cheap / evaluator → ${result.name}\n`
       + `   defaultAgent: ${result.defaultAgent}\n`,
     )

@@ -22,8 +22,10 @@ import {
   presetBackendStem,
   presetModels,
   suggestLlmBackendName,
+  type LlmPresetDef,
   type LlmPresetKey,
 } from './presets.js'
+import { SyncPresetError, syncMissingPresetModels } from './sync-preset.js'
 
 export interface QuickEnableInput {
   /** Preset key; defaults to DeepSeek. */
@@ -67,6 +69,10 @@ export interface QuickEnableResult {
   preset: string
   dialect?: DeepSeekApiDialect
   strictTools?: boolean
+  /** True when the vendor group already existed: key written + missing models synced. */
+  rebound?: boolean
+  /** Models added during a rebind (empty when the catalog was already complete). */
+  added?: QuickEnableBackend[]
 }
 
 export class QuickEnableError extends Error {
@@ -140,20 +146,17 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
 
   const current = (await readConfigObject()) as RawConfig
   const existingBackends = current.llmBackends ?? []
-  // Built-in presets are one-shot: match label (quick-enable writes preset key)
-  // or the same vendor host family (hand-added custom without label — includes
-  // intl hosts like api.moonshot.ai ↔ moonshot.cn). Operators must delete the
-  // group before re-adding — mirrors Web installedBuiltinPresetKeys.
+  // Built-in presets that already exist (label or vendor host family, including
+  // intl hosts like api.moonshot.ai ↔ moonshot.cn) rebind: write the vendor
+  // key and fill missing catalog models. Do not throw conflict.
   if (!isCustom) {
-    const already = existingBackends.some((b) => {
-      if ((b.label ?? '').trim().toLowerCase() === preset.key) return true
-      return builtinPresetKeyForBaseUrl(b.baseUrl) === preset.key
-    })
+    const already = existingBackends.some((b) => backendMatchesPreset(b, preset.key))
     if (already) {
-      throw new QuickEnableError(
-        'conflict',
-        `provider preset "${preset.key}" is already configured`,
-      )
+      return rebindExistingPreset(preset, apiKey, {
+        dialect,
+        baseUrl,
+        strictTools,
+      })
     }
   }
   const existingNames = existingBackends.map((b) => b.name)
@@ -264,4 +267,65 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
 
   if (!result) throw new QuickEnableError('config', 'quick-enable failed unexpectedly')
   return result
+}
+
+function backendMatchesPreset(b: RawBackend, key: string): boolean {
+  if ((b.label ?? '').trim().toLowerCase() === key) return true
+  return builtinPresetKeyForBaseUrl(b.baseUrl) === key
+}
+
+async function reloadLlmRegistry(): Promise<RawConfig | null> {
+  try {
+    const cfg = (await readConfigObject()) as RawConfig
+    loadLlmFromConfig({
+      llmBackends: cfg.llmBackends as never,
+      llmRoles: cfg.llmRoles,
+    })
+    return cfg
+  } catch {
+    return null
+  }
+}
+
+/** Already-installed vendor: write the vendor key and fill missing catalog models. */
+async function rebindExistingPreset(
+  preset: LlmPresetDef,
+  apiKey: string,
+  extras: {
+    dialect: DeepSeekApiDialect
+    baseUrl: string
+    strictTools: boolean
+  },
+): Promise<QuickEnableResult> {
+  saveSecretForBackend(preset.key, apiKey, { label: preset.key, baseUrl: extras.baseUrl })
+  let added: QuickEnableBackend[] = []
+  try {
+    const synced = await syncMissingPresetModels(preset.key)
+    added = synced.added
+  } catch (err) {
+    if (!(err instanceof SyncPresetError && err.code === 'validation')) throw err
+  }
+
+  const cfg = (await reloadLlmRegistry()) ?? (await readConfigObject()) as RawConfig
+  clearAgentCache()
+  const group = (cfg.llmBackends ?? []).filter((b) => backendMatchesPreset(b, preset.key))
+  const primary = group[0]
+  if (!primary) {
+    throw new QuickEnableError('config', `provider preset "${preset.key}" vanished during rebind`)
+  }
+  const roles: Record<string, string> = { ...(cfg.llmRoles ?? {}) }
+  return {
+    name: primary.name,
+    provider: primary.provider,
+    baseUrl: primary.baseUrl,
+    model: primary.model,
+    backends: group.map((b) => ({ name: b.name, model: b.model })),
+    roles,
+    defaultAgent: String(cfg.defaultAgent ?? 'agim'),
+    preset: preset.key,
+    rebound: true,
+    added,
+    ...(preset.key === 'deepseek' ? { dialect: extras.dialect } : {}),
+    ...(extras.strictTools ? { strictTools: true } : {}),
+  }
 }

@@ -1,10 +1,10 @@
 // Unit tests for the rule-based intent classifier
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { classifyIntent } from '../../src/core/intent'
 import { registry } from '../../src/core/registry'
-import { circuitBreaker } from '../../src/core/circuit-breaker'
-import type { AgentAdapter } from '../../src/core/types'
+import { setLiveConfig, __resetLiveConfigForTest } from '../../src/core/live-config'
+import type { AgentAdapter, Config } from '../../src/core/types'
 
 function makeAgent(name: string, aliases: string[] = []): AgentAdapter {
   return {
@@ -25,21 +25,21 @@ function registerProfiledAgents(): void {
 describe('classifyIntent', () => {
   beforeEach(() => {
     registerProfiledAgents()
-    // Reset breaker state between tests
-    for (const a of ['opencode', 'claude-code', 'codex']) {
-      circuitBreaker.recordSuccess(a)
-    }
+    __resetLiveConfigForTest()
+  })
+
+  afterEach(() => {
+    __resetLiveConfigForTest()
   })
 
   it('throws when no agents are registered/available', () => {
-    // Force-open every profiled agent so the available list is empty
-    for (const a of ['opencode', 'claude-code', 'codex']) {
-      for (let i = 0; i < 3; i++) circuitBreaker.recordFailure(a)
-    }
-    // Also force-open any other registered agents (e.g. test-agent from earlier suites)
-    for (const a of registry.listAgents()) {
-      for (let i = 0; i < 3; i++) circuitBreaker.recordFailure(a)
-    }
+    // Empty `agents` is "allow all"; a non-empty list that matches nothing
+    // (and is not the defaultAgent) hides every registered adapter.
+    setLiveConfig({
+      messengers: [],
+      agents: ['__no_such_agent__'],
+      defaultAgent: '__no_such_agent__',
+    } as Config)
     expect(() => classifyIntent('hello')).toThrow('No agents available')
   })
 
@@ -59,13 +59,6 @@ describe('classifyIntent', () => {
     const result = classifyIntent('thanks', 'codex')
     expect(result.agent).toBe('codex')
     expect(result.triggeredBy).toBe('sticky')
-  })
-
-  it('skips agents with an open circuit breaker', () => {
-    // Open opencode
-    for (let i = 0; i < 3; i++) circuitBreaker.recordFailure('opencode')
-    const result = classifyIntent('git commit and push to main')
-    expect(result.agent).not.toBe('opencode')
   })
 
   it('rounds the score to two decimals', () => {

@@ -99,13 +99,15 @@ describe('A2A env helpers', () => {
     expect(a2a.getA2AMaxDepth()).toBe(a2a.A2A_MAX_DEPTH_DEFAULT)
   })
 
-  it('getA2ATimeoutMs defaults to A2A_TIMEOUT_MS_DEFAULT; env override applies; rejects 0 / negative / NaN', () => {
+  it('getA2ATimeoutMs defaults to A2A_TIMEOUT_MS_DEFAULT; env override applies; 0 disables; rejects negative / NaN', () => {
     delete process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS
     expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
+    expect(a2a.A2A_TIMEOUT_MS_DEFAULT).toBe(2 * 60 * 60 * 1000)
+    expect(a2a.A2A_TIMEOUT_MS_MAX).toBe(6 * 60 * 60 * 1000)
     process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = '5000'
     expect(a2a.getA2ATimeoutMs()).toBe(5000)
     process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = '0'
-    expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
+    expect(a2a.getA2ATimeoutMs()).toBe(0)
     process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = '-1'
     expect(a2a.getA2ATimeoutMs()).toBe(a2a.A2A_TIMEOUT_MS_DEFAULT)
     process.env.AGIM_A2A_TIMEOUT_DEFAULT_MS = 'x'

@@ -12,6 +12,15 @@ const Breaker: new (threshold?: number, cooldownMs?: number) => typeof globalBre
   Object.getPrototypeOf(globalBreaker).constructor
 
 describe('CircuitBreaker', () => {
+  it('production singleton never intercepts after consecutive failures', () => {
+    for (let i = 0; i < 5; i++) globalBreaker.recordFailure('agim')
+    expect(globalBreaker.peek('agim')).toBe(false)
+    expect(globalBreaker.isOpen('agim')).toBe(false)
+    expect(globalBreaker.listOpen()).toEqual([])
+    expect(globalBreaker.getStatus('agim').phase).toBe('closed')
+    globalBreaker.reset()
+  })
+
   it('stays closed under threshold', () => {
     const br = new Breaker(3, 1_000)
     br.recordFailure('a')

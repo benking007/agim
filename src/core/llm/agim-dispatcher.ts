@@ -448,9 +448,9 @@ export function getAgimTools(): ToolDef[] {
         required: ['agent', 'prompt'],
         additionalProperties: false,
       },
-      // Subagent wall clock is owned by A2A (AGIM_A2A_TIMEOUT_DEFAULT_MS, 30 min
-      // default). The Native tool-bridge default (60s) must not abort call_agent
-      // mid-research — that was mis-labeled "Stopped by user" in the UI.
+      // Subagent wall clock is owned by A2A (AGIM_A2A_TIMEOUT_DEFAULT_MS, 2 h
+      // default; 0 disables). The Native tool-bridge default (60s) must not
+      // abort call_agent mid-research — that was mis-labeled "Stopped by user".
       timeoutMs: 0,
     },
     {

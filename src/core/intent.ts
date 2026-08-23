@@ -5,7 +5,6 @@
 
 import type { Logger } from 'pino'
 import { registry } from './registry.js'
-import { circuitBreaker } from './circuit-breaker.js'
 
 /** Per-agent keyword profile for topic matching */
 interface AgentProfile {
@@ -104,9 +103,7 @@ export function classifyIntent(
   logger?: Logger,
   defaultAgent?: string,
 ): IntentResult {
-  // peek() is side-effect-free: classification must never consume the
-  // half-open probe (otherwise the breaker can get stuck open forever).
-  const available = registry.listAgents().filter(a => !circuitBreaker.peek(a))
+  const available = registry.listAgents()
   if (available.length === 0) {
     throw new Error('No agents available')
   }

@@ -84,6 +84,8 @@ export interface LlmQuickEnableResult {
   preset: string
   dialect?: 'openai' | 'anthropic'
   strictTools?: boolean
+  rebound?: boolean
+  added?: Array<{ name: string; model: string }>
 }
 
 export interface LlmPingResponse {

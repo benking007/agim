@@ -442,7 +442,7 @@ describe('/settings/llm quick setup', () => {
     expect(screen.queryAllByRole('button', { name: /^Remove$/i })).toHaveLength(0)
   })
 
-  it('marks installed built-in presets as already added in the Add API dropdown', async () => {
+  it('labels installed built-in presets as already added but still selectable to rebind', async () => {
     // jsdom lacks scrollIntoView; Radix Select calls it when opening.
     Element.prototype.scrollIntoView = vi.fn()
     mockLlmFetch({
@@ -481,10 +481,8 @@ describe('/settings/llm quick setup', () => {
     const options = await screen.findAllByRole('option')
     const byLabel = Object.fromEntries(options.map((o) => [o.textContent?.trim() ?? '', o]))
     const mimoOpt = requireValue(byLabel['MiMo (already added)'], 'MiMo already-added option')
-    expect(
-      mimoOpt.getAttribute('aria-disabled') === 'true'
-      || mimoOpt.hasAttribute('data-disabled'),
-    ).toBe(true)
+    expect(mimoOpt.getAttribute('aria-disabled')).not.toBe('true')
+    expect(mimoOpt.hasAttribute('data-disabled')).toBe(false)
     expect(byLabel.DeepSeek?.getAttribute('aria-disabled')).not.toBe('true')
     expect(byLabel.Custom?.getAttribute('aria-disabled')).not.toBe('true')
   })

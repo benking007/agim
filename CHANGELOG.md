@@ -80,6 +80,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **npm publish via Trusted Publishing**: the release workflow no longer
+  injects `NODE_AUTH_TOKEN`. Granular access tokens now require OTP
+  (`EOTP`) and were shadowing GitHub OIDC. Configure the npm trusted
+  publisher for `agim-cli` as workflow `release.yml` (no environment).
 - **Running status line** uses a highlight sweep (`text-shimmer`) instead
   of an opacity pulse, matching the Cursor “Planning next moves” look.
 - **Execution history reflect rows** keep the thinking line and preview;

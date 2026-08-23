@@ -18,13 +18,10 @@ on:
         type: string
         required: false
         default: ''
-    secrets:
-      NPM_TOKEN:
-        required: false
 
 permissions:
-  id-token: write # 必须：用于 OIDC 身份验证
-  contents: read  # 必须：用于检出代码
+  id-token: write # npm Trusted Publishing (OIDC)
+  contents: read
 
 jobs:
   publish:
@@ -41,11 +38,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          # 双通道：
-          # - 优先 OIDC trusted publishing（npmjs.com 上为 agim-cli 配置好后自动启用）
-          # - 兜底 NPM_TOKEN（automation token，配 id-token:write 同样可带 provenance）
-          # registry-url 让 setup-node 把 NODE_AUTH_TOKEN 注入到 ~/.npmrc
-          registry-url: 'https://registry.npmjs.org'
+          # Do not set registry-url here. setup-node would write
+          # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into
+          # ~/.npmrc, which forces classic-token auth and blocks OIDC
+          # Trusted Publishing (npm then asks for OTP → EOTP).
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -135,15 +131,13 @@ jobs:
 
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
-        # `--provenance` is intentionally omitted (repo not public). BUT npm
-        # also AUTO-enables provenance under GitHub Actions OIDC (this job has
-        # `id-token: write`), and on the runner's upgraded npm that path throws
-        # "Cannot find module 'sigstore'" and aborts the publish. Explicitly
-        # disable provenance so `npm publish` never loads the sigstore path.
-        # Re-enable once the repo is public and provenance is verified.
+        # Auth is npm Trusted Publishing via OIDC (`id-token: write`).
+        # Do not set NODE_AUTH_TOKEN — a granular token now requires OTP
+        # (EOTP) and also shadows the OIDC exchange.
+        # `--provenance` stays off: this repo is private and the runner npm
+        # used to abort on a missing `sigstore` when provenance auto-enabled.
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'false'
 
       - name: Summary

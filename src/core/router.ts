@@ -496,13 +496,6 @@ export async function routeMessage(
         return formatRateLimitError(wsAgent, limitKeyAgent)
       }
 
-      // peek() is non-consuming: the probe is only claimed once we commit to
-      // the actual invocation below (after every early-return path), so the
-      // half-open slot is never wasted on a switch/empty-prompt short-circuit.
-      if (circuitBreaker.peek(agent.name)) {
-        return `⛔ ${displayAgentName(agent.name)} 暂时不可用（连续失败次数过多）。几分钟后再试，或换用其他 Agent。`
-      }
-
       if (!(await isAgentAvailableCached(agent.name))) {
         return formatAgentNotAvailableError(agent.name)
       }
@@ -599,9 +592,8 @@ export async function routeMessage(
       const judge = getLLMJudge()
       if (judge && intent === 'fallback' && ruleScore < (judge.threshold ?? 1.0) && !stickyAgent) {
         const candidates = workspaceRegistry.resolve(ctx.userId || 'unknown').agentWhitelist.size === 0
-          ? registry.listAgents().filter((a) => !circuitBreaker.peek(a))
+          ? registry.listAgents()
           : registry.listAgents().filter((a) =>
-              !circuitBreaker.peek(a) &&
               workspaceRegistry.resolve(ctx.userId || 'unknown').hasAgent(a))
         const picked = await classifyWithLLM(parsed.prompt, candidates, (n) => registry.findAgent(n))
         if (picked) {
@@ -617,11 +609,6 @@ export async function routeMessage(
       const agent = registry.findAgent(agentName)
       if (!agent) {
         return `❌ Agent "${displayAgentName(agentName)}" 未配置。到 Web → Agent 设置或 agim config 添加。`
-      }
-
-      if (circuitBreaker.peek(agent.name)) {
-        const openAgents = circuitBreaker.listOpen().map(displayAgentName).join(', ')
-        return `⛔ ${displayAgentName(agent.name)} 暂时不可用（熔断已打开）。\n当前被熔断：${openAgents || '无'}\n\n用 /agents 查看可用 Agent，或等几分钟再试。`
       }
 
       // Workspace already resolved above — check the whitelist before

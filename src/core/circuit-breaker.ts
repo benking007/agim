@@ -30,14 +30,18 @@ class CircuitBreaker {
   private states = new Map<string, BreakerState>()
   private threshold: number
   private baseCooldownMs: number
+  /** When false, never intercept routing (still usable for unit tests). */
+  private enabled: boolean
 
-  constructor(threshold = DEFAULT_THRESHOLD, cooldownMs = DEFAULT_COOLDOWN_MS) {
+  constructor(threshold = DEFAULT_THRESHOLD, cooldownMs = DEFAULT_COOLDOWN_MS, enabled = true) {
     this.threshold = threshold
     this.baseCooldownMs = cooldownMs
+    this.enabled = enabled
   }
 
   /** Record a failed invocation. Returns true if the breaker just opened. */
   recordFailure(agent: string): boolean {
+    if (!this.enabled) return false
     const s = this.get(agent)
     if (s.phase === 'half-open') {
       // Probe failed → re-open with double cooldown (capped).
@@ -59,12 +63,14 @@ class CircuitBreaker {
 
   /** Record a successful invocation. Closes the breaker, resets counters. */
   recordSuccess(agent: string): void {
+    if (!this.enabled) return
     this.states.delete(agent)
   }
 
   /** Release a claimed half-open probe without treating caller cancellation,
    *  policy denial, or a local watchdog as provider success/failure. */
   recordNeutral(agent: string): void {
+    if (!this.enabled) return
     const s = this.states.get(agent)
     if (s?.phase === 'half-open') s.phase = 'open'
   }
@@ -84,6 +90,7 @@ class CircuitBreaker {
    * is retained for its documented probe-granting semantics.
    */
   isOpen(agent: string): boolean {
+    if (!this.enabled) return false
     const s = this.states.get(agent)
     if (!s || s.phase === 'closed') return false
     if (s.phase === 'half-open') {
@@ -112,6 +119,7 @@ class CircuitBreaker {
    * via {@link acquireProbe}.
    */
   peek(agent: string): boolean {
+    if (!this.enabled) return false
     const s = this.states.get(agent)
     if (!s || s.phase === 'closed') return false
     if (s.phase === 'half-open') return true
@@ -128,6 +136,7 @@ class CircuitBreaker {
    * is `closed` or already `half-open`.
    */
   acquireProbe(agent: string): void {
+    if (!this.enabled) return
     const s = this.states.get(agent)
     if (s?.phase !== 'open') return
     if (s.openedAt !== null && Date.now() - s.openedAt > s.cooldownMs) {
@@ -137,6 +146,9 @@ class CircuitBreaker {
 
   /** Get status for display / debug. */
   getStatus(agent: string): { failures: number; open: boolean; phase: BreakerPhase; openedAt: number | null; cooldownMs: number } {
+    if (!this.enabled) {
+      return { failures: 0, open: false, phase: 'closed', openedAt: null, cooldownMs: this.baseCooldownMs }
+    }
     const s = this.get(agent)
     return {
       failures: s.failures,
@@ -149,6 +161,7 @@ class CircuitBreaker {
 
   /** List all agents currently blocked (open or half-open with active probe). */
   listOpen(): string[] {
+    if (!this.enabled) return []
     const open: string[] = []
     for (const [agent, s] of this.states) {
       if (s.phase === 'open' || s.phase === 'half-open') open.push(agent)
@@ -179,4 +192,8 @@ class CircuitBreaker {
   }
 }
 
-export const circuitBreaker = new CircuitBreaker()
+/** Production singleton never trips routing. Three consecutive failures
+ *  used to hide Agim Agent behind "暂时不可用" — that is too crude for
+ *  transient LLM/network errors. The class itself stays for tests and
+ *  `/router reset`. */
+export const circuitBreaker = new CircuitBreaker(DEFAULT_THRESHOLD, DEFAULT_COOLDOWN_MS, false)

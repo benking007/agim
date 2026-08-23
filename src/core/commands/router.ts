@@ -41,8 +41,6 @@ export async function handleRouterCommand(
 3. 主题规则  — git/test/sql/review 等关键词映射到专用 agent (+2)
 4. 关键词匹配 — agent 画像关键词权重 (+0.5~1.2 每匹配)
 5. 兜底      — 默认 agent 或首家可用
-
-断路保护: 连续 3 次失败 → 5 分钟冷却
 `
     }
 

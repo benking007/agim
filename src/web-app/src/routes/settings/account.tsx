@@ -77,12 +77,13 @@ export default function SettingsAccountRoute(): JSX.Element {
       body: JSON.stringify({ uses: 1 }),
     })
     const body = await res.json() as { invite?: InviteRow & { raw?: string }; error?: string }
-    if (!res.ok || !body.invite?.raw) {
+    const invite = body.invite
+    if (!res.ok || !invite?.raw) {
       toast.error(body.error || 'failed')
       return
     }
-    setInviteRaw(body.invite.raw)
-    setInvites((prev) => [body.invite!, ...prev])
+    setInviteRaw(invite.raw)
+    setInvites((prev) => [invite, ...prev])
   }
 
   async function logout(): Promise<void> {

@@ -147,7 +147,6 @@ export function PortalSidePanel(props: {
               dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
             )}
             title={userName || (status === 'open' ? t('chat.portal.connected') : status)}
-            aria-label={userName ? t('nav.signedInAs', { name: userName }) : undefined}
           >
             <User className="h-4 w-4" />
           </div>

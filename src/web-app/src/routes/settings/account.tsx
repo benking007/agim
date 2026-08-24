@@ -36,22 +36,22 @@ export default function SettingsAccountRoute(): JSX.Element {
   const [invites, setInvites] = useState<InviteRow[]>([])
   const [bindCode, setBindCode] = useState<string | null>(null)
 
-  async function refresh(): Promise<void> {
-    const me = await fetch('/api/me/points', { credentials: 'same-origin' })
-    if (me.ok) {
-      const body = await me.json() as { balance?: PointsBalance }
-      setPoints(body.balance ?? null)
-    }
-    if (role === 'admin') {
-      const inv = await fetch('/api/admin/invites', { credentials: 'same-origin' })
-      if (inv.ok) {
-        const body = await inv.json() as { invites?: InviteRow[] }
-        setInvites(body.invites ?? [])
+  useEffect(() => {
+    void (async () => {
+      const me = await fetch('/api/me/points', { credentials: 'same-origin' })
+      if (me.ok) {
+        const body = await me.json() as { balance?: PointsBalance }
+        setPoints(body.balance ?? null)
       }
-    }
-  }
-
-  useEffect(() => { void refresh() }, [role])
+      if (role === 'admin') {
+        const inv = await fetch('/api/admin/invites', { credentials: 'same-origin' })
+        if (inv.ok) {
+          const body = await inv.json() as { invites?: InviteRow[] }
+          setInvites(body.invites ?? [])
+        }
+      }
+    })()
+  }, [role])
 
   async function createApiToken(): Promise<void> {
     const res = await fetch('/api/me/tokens', {
@@ -82,7 +82,7 @@ export default function SettingsAccountRoute(): JSX.Element {
       return
     }
     setInviteRaw(body.invite.raw)
-    void refresh()
+    setInvites((prev) => [body.invite!, ...prev])
   }
 
   async function createBindCode(): Promise<void> {

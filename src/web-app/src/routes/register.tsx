@@ -129,7 +129,12 @@ export default function RegisterRoute(): JSX.Element {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="captcha">{t('login.captcha', { defaultValue: '验证码' })}</Label>
                 <div className="flex items-center gap-3">
-                  <div dangerouslySetInnerHTML={{ __html: challenge.svg }} />
+                  <img
+                    alt="captcha"
+                    width={160}
+                    height={48}
+                    src={`data:image/svg+xml;utf8,${encodeURIComponent(challenge.svg)}`}
+                  />
                   <Button type="button" variant="outline" onClick={() => { void loadCaptcha().then(setChallenge) }}>
                     {t('login.refreshCaptcha', { defaultValue: '换一张' })}
                   </Button>

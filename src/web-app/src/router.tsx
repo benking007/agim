@@ -19,6 +19,7 @@ import { RequireAuth } from '@/components/shell/require-auth'
 import { ErrorBoundary } from '@/components/shell/error-boundary'
 
 import LoginRoute from '@/routes/login'
+import RegisterRoute from '@/routes/register'
 import ChatRoute from '@/routes/chat'
 import NotFoundRoute from '@/routes/not-found'
 import { MobileChatRedirect } from '@/components/chat/mobile-chat-redirect'
@@ -53,6 +54,7 @@ function lazy(factory: () => Promise<{ default: React.ComponentType }>) {
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
+  { path: '/register', element: <RegisterRoute /> },
   {
     path: '/setup',
     lazy: authedLazy(() => import('@/routes/setup')),
@@ -143,6 +145,7 @@ const router = createBrowserRouter([
     children: [
       { index: true,        element: <Navigate to="start" replace /> },
       { path: 'start',      lazy: lazy(() => import('@/routes/settings/start')) },
+      { path: 'account',    lazy: lazy(() => import('@/routes/settings/account')) },
       { path: 'messengers', lazy: lazy(() => import('@/routes/settings/messengers')) },
       { path: 'email',      element: <Navigate to="/settings/advanced/email" replace /> },
       { path: 'viewer',     element: <Navigate to="/settings/advanced/viewer" replace /> },

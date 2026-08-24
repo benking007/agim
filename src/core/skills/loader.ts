@@ -46,6 +46,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logger as rootLogger } from '../logger.js'
 import { AGIM_HOME } from '../agim-paths.js'
+import { currentAccountUserId } from '../accounts.js'
 
 const log = rootLogger.child({ component: 'skills-loader' })
 
@@ -67,8 +68,8 @@ export const MAX_INJECTED_SKILLS = 32
 export interface SkillMeta {
   name: string
   description: string
-  /** Source: 'workspace' wins shadowing over 'builtin' with the same name. */
-  source: 'workspace' | 'builtin'
+  /** Source: 'user' shadows workspace, which shadows 'builtin'. */
+  source: 'workspace' | 'builtin' | 'user'
   /** Absolute path of the skill's directory (parent of SKILL.md). */
   dir: string
   /** When true, the body is auto-injected after the tier-1 summary
@@ -96,7 +97,7 @@ export interface SkillMeta {
 interface SkillDiscovered {
   name: string
   dir: string
-  source: 'workspace' | 'builtin'
+  source: 'workspace' | 'builtin' | 'user'
   /** Raw bytes of SKILL.md (already size-capped). */
   body: string
 }
@@ -124,6 +125,12 @@ function workspaceSkillsDir(): string {
   const override = process.env.AGIM_SKILLS_WORKSPACE_DIR
   if (override) return override
   return join(AGIM_HOME, 'skills')
+}
+
+export function userSkillsDir(userId: string): string {
+  const override = process.env.AGIM_SKILLS_USER_DIR
+  if (override) return join(override, userId, 'skills')
+  return join(process.env.AGIM_HOME || AGIM_HOME, 'users', userId, 'skills')
 }
 
 export type SkillsMode = 'auto' | 'agim-only' | 'custom'
@@ -249,16 +256,18 @@ export function invalidateSkillsCache(): void {
  *   - Invalidates the cache so listSkills() picks up the new file
  *     on next call.
  */
-export function writeSkillFile(name: string, body: string): SkillMeta | null {
+export function writeSkillFile(name: string, body: string, opts?: { userId?: string }): SkillMeta | null {
   const safe = sanitizeSkillName(name)
   if (!safe) return null
-  const probe = parseSkill({ name: safe, dir: '<probe>', source: 'workspace', body })
+  const source: SkillMeta['source'] = opts?.userId ? 'user' : 'workspace'
+  const probe = parseSkill({ name: safe, dir: '<probe>', source, body })
   if (!probe) return null
   if (body.length > MAX_SKILL_BODY_CHARS) {
     log.warn({ event: 'skills.write.too_long', name: safe, len: body.length })
     return null
   }
-  const dir = join(workspaceSkillsDir(), safe)
+  const root = opts?.userId ? userSkillsDir(opts.userId) : workspaceSkillsDir()
+  const dir = join(root, safe)
   try {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'SKILL.md'), body, 'utf-8')
@@ -267,7 +276,7 @@ export function writeSkillFile(name: string, body: string): SkillMeta | null {
     return null
   }
   invalidateSkillsCache()
-  return getSkillByName(safe)
+  return getSkillByName(safe) ?? probe
 }
 
 /**
@@ -276,13 +285,14 @@ export function writeSkillFile(name: string, body: string): SkillMeta | null {
  * (which writeSkillFile does for them). Returns true iff a file
  * was actually unlinked.
  */
-export function deleteSkill(name: string): boolean {
+export function deleteSkill(name: string, opts?: { userId?: string }): boolean {
   const safe = sanitizeSkillName(name)
   if (!safe) return false
-  const path = join(workspaceSkillsDir(), safe, 'SKILL.md')
+  const root = opts?.userId ? userSkillsDir(opts.userId) : workspaceSkillsDir()
+  const path = join(root, safe, 'SKILL.md')
   if (!existsSync(path)) return false
   try {
-    rmSync(join(workspaceSkillsDir(), safe), { recursive: true, force: true })
+    rmSync(join(root, safe), { recursive: true, force: true })
   } catch (err) {
     log.warn({ event: 'skills.delete.failed', name: safe, err: String(err) })
     return false
@@ -304,15 +314,38 @@ function sanitizeSkillName(raw: string): string {
 /** Read-only access to the loaded skill list. Triggers a scan on first
  *  call or when the cache has expired. Never throws — disk errors yield
  *  the partial list discovered up to that point. */
+function userSkillOverlay(): SkillMeta[] {
+  const uid = currentAccountUserId()
+  if (!uid) return []
+  const found: SkillDiscovered[] = []
+  scanDir(userSkillsDir(uid), 'user', found)
+  const out: SkillMeta[] = []
+  for (const d of found) {
+    const meta = parseSkill(d)
+    if (meta) out.push(meta)
+  }
+  return out
+}
+
+function mergeUserSkills(base: SkillMeta[]): SkillMeta[] {
+  const extra = userSkillOverlay()
+  if (extra.length === 0) return base
+  const seen = new Set(extra.map((s) => s.name.toLowerCase()))
+  return [...extra, ...base.filter((s) => !seen.has(s.name.toLowerCase()))]
+}
+
 export function listSkills(): SkillMeta[] {
-  return ensureCache().skills
+  return mergeUserSkills(ensureCache().skills)
 }
 
 /** Look up one skill by name (case-insensitive). Returns null when
  *  unknown; caller decides whether to surface "no such skill" to the
  *  agent or the operator. */
 export function getSkillByName(name: string): SkillMeta | null {
-  return ensureCache().byName.get(name.toLowerCase()) ?? null
+  const key = name.toLowerCase()
+  const extra = userSkillOverlay().find((s) => s.name.toLowerCase() === key)
+  if (extra) return extra
+  return ensureCache().byName.get(key) ?? null
 }
 
 /** Read the full SKILL.md body for a known skill. Returns null on
@@ -520,7 +553,7 @@ export function rankSkillBucket(s: SkillMeta): number {
   const isEcc = s.source === 'builtin'
     && (s.description.startsWith('[ECC] ') || /^ECC\b/i.test(s.origin ?? ''))
   if (isEcc) return resolveEccTopPicks().has(s.name) ? 2 : 4
-  if (s.source === 'workspace') return 3
+  if (s.source === 'workspace' || s.source === 'user') return 3
   // non-ECC builtin (agim's own small in-tree pack)
   return 1
 }
@@ -908,7 +941,7 @@ function doScan(): CacheEntry {
   return { scannedAt: Date.now(), skills, byName }
 }
 
-function scanDir(dir: string, source: 'workspace' | 'builtin', out: SkillDiscovered[]): void {
+function scanDir(dir: string, source: 'workspace' | 'builtin' | 'user', out: SkillDiscovered[]): void {
   if (!dir || !existsSync(dir)) return
   let entries: string[] = []
   try {

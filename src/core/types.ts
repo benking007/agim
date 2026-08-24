@@ -76,7 +76,7 @@ export interface PersistedChatActivity {
  */
 export type ParsedMessage =
   | { type: 'default'; prompt: string }
-  | { type: 'command'; command: 'start' | 'help' | 'agents' | 'new'; args?: string }
+  | { type: 'command'; command: 'start' | 'help' | 'agents' | 'new' | 'bind'; args?: string }
   | { type: 'agentCommand'; command: string; prompt: string }
   | { type: 'agent'; agent: string; prompt: string }
   | { type: 'audit'; args: string }
@@ -241,6 +241,12 @@ export interface Session {
   /** 执行过程 — DeepSeek-style per-hop think-then-act. Default on.
    *  /step-reflect on|off still persists a per-session override. Cleared by /new. */
   stepReflect?: boolean
+  /** Local account that owns this web thread (cross-device sync). */
+  ownerUserId?: string
+  /** Rail title. Web sessions only. */
+  title?: string
+  /** Hidden from the owner's rail when set. */
+  archivedAt?: number
 }
 
 export interface SessionUsage {

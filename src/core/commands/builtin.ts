@@ -64,6 +64,7 @@ const HELP_ZH = [
   '/audit [n]    查看调用记录',
   '/stats        用量统计（/usage /cost）',
   '/sessions     最近会话',
+  '/bind <码>    绑定 Web 账号（IM）',
   '/workspaces   工作区管理（别名 /ws）',
   '/router       查看路由决策',
   '/test         -> agent: 测试',
@@ -338,7 +339,7 @@ async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string 
 }
 
 export async function handleBuiltInCommand(
-  command: 'start' | 'help' | 'agents' | 'new',
+  command: 'start' | 'help' | 'agents' | 'new' | 'bind',
   ctx: RouteContext,
   args?: string,
 ): Promise<string> {
@@ -400,6 +401,23 @@ export async function handleBuiltInCommand(
         return `🆕 New conversation started with ${displayAgent}.\n\nPrevious context has been cleared.`
       }
       return `🆕 Ready to start a new conversation.\n\nSend a message to begin.`
+    }
+
+    case 'bind': {
+      const code = (args ?? '').trim()
+      if (!code) {
+        return '用法: `/bind <邀请绑定码>`\n\n在 Web 后台「账号 → IM 绑定」生成 6 位绑定码，然后在这里发送。未绑定也可以继续使用 Agim。'
+      }
+      if (ctx.platform === 'web') {
+        return '请在 IM（Telegram / Discord 等）里发送 `/bind` 码，而不是在 Web 对话里。'
+      }
+      try {
+        const { consumeBindCode } = await import('../im-bind.js')
+        const row = consumeBindCode(ctx.platform, ctx.userId || '', code)
+        return `已绑定到用户 \`${row.userId}\`。之后本 IM 身份使用 Agim Agent 会扣该账号的点数。会话与记忆仍分开。`
+      } catch (err) {
+        return `绑定失败：${err instanceof Error ? err.message : String(err)}`
+      }
     }
   }
 }

@@ -17,6 +17,8 @@
 // here goes straight to every CLI agent + the native agent.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { getRequestUserId, isRequestAdmin } from './auth.js'
+import { runWithAccountUser } from '../core/accounts.js'
 import {
   listSkills, getSkillByName, readSkillBody, invalidateSkillsCache,
   writeSkillFile, deleteSkill,
@@ -43,6 +45,14 @@ async function readJsonBody<T = unknown>(req: IncomingMessage): Promise<T | null
 
 /** Dispatcher; returns true when handled. */
 export async function handleAgimSkillsApi(
+  req: IncomingMessage, res: ServerResponse, url: URL,
+): Promise<boolean> {
+  const userId = getRequestUserId(req)
+  if (userId) return runWithAccountUser(userId, () => handleAgimSkillsApiInner(req, res, url))
+  return handleAgimSkillsApiInner(req, res, url)
+}
+
+async function handleAgimSkillsApiInner(
   req: IncomingMessage, res: ServerResponse, url: URL,
 ): Promise<boolean> {
   const p = url.pathname
@@ -76,7 +86,7 @@ export async function handleAgimSkillsApi(
   const byName = p.match(/^\/api\/agim-skills\/([A-Za-z0-9._-]+)$/)
   if (byName && m === 'GET')    { await handleGet(res, byName[1]);    return true }
   if (byName && m === 'PUT')    { await handleUpdate(req, res, byName[1]); return true }
-  if (byName && m === 'DELETE') { await handleDelete(res, byName[1]); return true }
+  if (byName && m === 'DELETE') { await handleDelete(req, res, byName[1]); return true }
   return false
 }
 
@@ -117,7 +127,11 @@ async function handleCreate(req: IncomingMessage, res: ServerResponse): Promise<
   if (getSkillByName(body.name)) {
     send(res, 409, { error: `skill "${body.name}" already exists` }); return
   }
-  const meta = writeSkillFile(body.name, body.body)
+  const userId = isRequestAdmin(req) ? undefined : getRequestUserId(req)
+  if (!isRequestAdmin(req) && !userId) {
+    send(res, 403, { error: 'login required' }); return
+  }
+  const meta = writeSkillFile(body.name, body.body, userId ? { userId } : undefined)
   if (!meta) {
     send(res, 400, {
       error: 'write failed — invalid name (safe chars only) or invalid frontmatter (need name + description) or body > limit',
@@ -135,7 +149,11 @@ async function handleUpdate(req: IncomingMessage, res: ServerResponse, name: str
   if (!body || typeof body.body !== 'string') {
     send(res, 400, { error: 'body { body: string } required' }); return
   }
-  const meta = writeSkillFile(name, body.body)
+  const userId = isRequestAdmin(req) ? undefined : getRequestUserId(req)
+  if (!isRequestAdmin(req) && !userId) {
+    send(res, 403, { error: 'login required' }); return
+  }
+  const meta = writeSkillFile(name, body.body, userId ? { userId } : undefined)
   if (!meta) {
     send(res, 400, { error: 'write failed — invalid frontmatter or body > limit' })
     return
@@ -143,7 +161,7 @@ async function handleUpdate(req: IncomingMessage, res: ServerResponse, name: str
   send(res, 200, { meta })
 }
 
-async function handleDelete(res: ServerResponse, name: string): Promise<void> {
+async function handleDelete(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
   const meta = getSkillByName(name)
   if (!meta) {
     send(res, 404, { error: `no skill named "${name}"` }); return
@@ -154,7 +172,14 @@ async function handleDelete(res: ServerResponse, name: string): Promise<void> {
     })
     return
   }
-  const ok = deleteSkill(name)
+  const userId = isRequestAdmin(req) ? undefined : getRequestUserId(req)
+  if (!isRequestAdmin(req) && !userId) {
+    send(res, 403, { error: 'login required' }); return
+  }
+  if (!isRequestAdmin(req) && meta.source !== 'user') {
+    send(res, 403, { error: 'can only delete your own skills' }); return
+  }
+  const ok = deleteSkill(name, userId ? { userId } : undefined)
   if (!ok) { send(res, 500, { error: 'delete failed' }); return }
   send(res, 200, { name, deleted: true })
 }

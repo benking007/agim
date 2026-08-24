@@ -64,6 +64,9 @@ export interface TokenRow {
    *  explicitly demote by passing `role: 'user'` to createToken or via
    *  the PATCH /api/tokens/:id endpoint. */
   role?: TokenRole
+  /** Owning local account. Missing on pre-account tokens; first admin
+   *  registration claims orphans via {@link attachOrphanTokens}. */
+  user_id?: string
 }
 
 interface TokenFile {
@@ -119,7 +122,12 @@ function newId(): string {
 
 /** Create + persist a new token. Returns the raw value (caller must
  *  surface it to the operator immediately — it is NOT recoverable later). */
-export function createToken(label: string, opts?: { actor?: string; traceId?: string; role?: TokenRole }): { id: string; raw: string; createdAt: number; role: TokenRole } {
+export function createToken(label: string, opts?: {
+  actor?: string
+  traceId?: string
+  role?: TokenRole
+  userId?: string
+}): { id: string; raw: string; createdAt: number; role: TokenRole; userId?: string } {
   const data = readFile()
   const raw = generateRawToken()
   const id = newId()
@@ -131,6 +139,7 @@ export function createToken(label: string, opts?: { actor?: string; traceId?: st
     created_at: Math.floor(Date.now() / 1000),
     last_used_at: null,
     role,
+    ...(opts?.userId ? { user_id: opts.userId } : {}),
   }
   data.tokens.push(row)
   writeFile(data)
@@ -149,7 +158,38 @@ export function createToken(label: string, opts?: { actor?: string; traceId?: st
       })
     } catch { /* best-effort */ }
   })()
-  return { id, raw, createdAt: row.created_at, role }
+  return { id, raw, createdAt: row.created_at, role, userId: row.user_id }
+}
+
+export function getTokenUserId(id: string): string | undefined {
+  return readFile().tokens.find((t) => t.id === id)?.user_id
+}
+
+export function listTokensForUser(userId: string): Array<Omit<TokenRow, 'hash'>> {
+  return readFile().tokens
+    .filter((t) => t.user_id === userId)
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      created_at: t.created_at,
+      last_used_at: t.last_used_at,
+      role: t.role ?? 'admin',
+      user_id: t.user_id,
+    }))
+}
+
+/** Attach tokens that have no user_id to the given account (first-admin migrate). */
+export function attachOrphanTokens(userId: string): number {
+  const data = readFile()
+  let n = 0
+  for (const row of data.tokens) {
+    if (!row.user_id) {
+      row.user_id = userId
+      n += 1
+    }
+  }
+  if (n > 0) writeFile(data)
+  return n
 }
 
 /** List tokens with secrets stripped. */

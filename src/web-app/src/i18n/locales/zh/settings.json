@@ -16,6 +16,7 @@
   },
   "tabs": {
     "start": "开始",
+    "account": "账号",
     "messengers": "IM 平台",
     "email": "邮件 (SMTP)",
     "viewer": "Viewer & 地图",

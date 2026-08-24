@@ -16,6 +16,7 @@
   },
   "tabs": {
     "start": "Start",
+    "account": "Account",
     "messengers": "Messengers",
     "email": "Email (SMTP)",
     "viewer": "Viewer & Maps",

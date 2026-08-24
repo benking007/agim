@@ -826,6 +826,33 @@ export class NativeAgentAdapter implements AgentAdapter {
       return
     }
 
+    let billableUserId: string | null = null
+    try {
+      const points = await import('../../../core/points.js')
+      billableUserId = points.resolveBillableUserId(opts?.platform, opts?.userId)
+      if (billableUserId) {
+        points.assertCanSpend(billableUserId)
+        const priced = points.estimateChargeUsd({
+          userId: billableUserId,
+          tokensIn: 1000,
+          tokensOut: 1000,
+          model: binding.model.id,
+        })
+        if (!priced) {
+          opts?.onOutcome?.({ status: 'error', providerFailure: false, error: 'no model price' })
+          yield '⚠️ 无法计价：请管理员为当前模型配置价格后再使用 Agim Agent。'
+          return
+        }
+      }
+    } catch (err) {
+      const code = (err as { code?: string }).code
+      if (code === 'POINTS_EXHAUSTED' || code === 'POINTS_NO_PRICE') {
+        opts?.onOutcome?.({ status: 'error', providerFailure: false, error: (err as Error).message })
+        yield `⚠️ ${(err as Error).message}`
+        return
+      }
+    }
+
     const env = new SecureNodeExecutionEnv({ cwd: this.deps.sessionsRoot })
     const repo = new JsonlSessionRepo({ fs: env, sessionsRoot: this.deps.sessionsRoot })
 
@@ -2148,6 +2175,20 @@ export class NativeAgentAdapter implements AgentAdapter {
           tokensOutput: usage.tokensOutput,
           costUsd: usage.costUsd,
         })
+        if (billableUserId) {
+          try {
+            const points = await import('../../../core/points.js')
+            points.chargePoints({
+              userId: billableUserId,
+              tokensIn: usage.tokensInput ?? 0,
+              tokensOut: usage.tokensOutput ?? 0,
+              model: binding.model.id,
+              costUsd: usage.costUsd,
+            })
+          } catch (err) {
+            console.warn('[agim-agent] points charge failed:', err instanceof Error ? err.message : err)
+          }
+        }
       }
     }
     opts?.onCostMetadata?.({ known: binding.costKnown === true })

@@ -1,29 +1,13 @@
 /**
- * /login — token-based sign-in.
- *
- * The agim backend's auth model is simple: the operator copies a
- * token via `agim token bootstrap` (first boot) or `agim token create`,
- * then pastes it here. POST /api/auth/login validates it (timing-safe
- * SHA-256 compare) and returns `{ok, tokenId}`. We additionally
- * stash the raw token in localStorage so future fetches attach
- * Authorization: Bearer.
- *
- * Mobile-aware:
- *   * Single full-width form; no chrome.
- *   * `inputMode="text"` + `autoComplete="off"` — never autofill a
- *     token from password managers.
- *   * Submit button uses `size="lg"` to clear the 44×44 hit target
- *     even with the keyboard up.
+ * /login — username/password (plus captcha after failed tries) or
+ * first-run redirect to /register.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { api } from '@/lib/api/endpoints'
-import { describeError } from '@/lib/api/errors'
 import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,50 +21,82 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-/** Sanitize the `next` query param: only allow same-origin paths so a
- *  rogue `?next=https://evil.com/` can't redirect off-domain after
- *  login. Falls back to `/` for anything else. */
 function safeNext(raw: string | null): string {
   if (!raw) return '/'
   try {
     const decoded = decodeURIComponent(raw)
     if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded
-  } catch {
-    /* malformed encoding */
-  }
+  } catch { /* ignore */ }
   return '/'
+}
+
+interface CaptchaState {
+  id: string
+  svg: string
+}
+
+async function loadCaptcha(): Promise<CaptchaState | null> {
+  const res = await fetch('/api/auth/captcha', { credentials: 'same-origin' })
+  if (!res.ok) return null
+  return res.json() as Promise<CaptchaState>
 }
 
 export default function LoginRoute(): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const setToken = useAuth((s) => s.setToken)
-  const [token, setLocalToken] = useState('')
+  const setUser = useAuth((s) => s.setUser)
+  const hydrate = useAuth((s) => s.hydrate)
+  const hasUsers = useAuth((s) => s.hasUsers)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [captcha, setCaptcha] = useState('')
+  const [challenge, setChallenge] = useState<CaptchaState | null>(null)
+  const [needCaptcha, setNeedCaptcha] = useState(false)
+  const [pending, setPending] = useState(false)
 
   const next = safeNext(params.get('next'))
-  const reason = params.get('reason')
-  const requiresAdminToken = reason === 'admin'
 
-  const login = useMutation({
-    mutationFn: (raw: string) => api.login({ token: raw }),
-    onSuccess: () => {
-      // POST returned ok — token validates server-side. Persist + go.
-      setToken(token.trim())
+  useEffect(() => {
+    void hydrate()
+  }, [hydrate])
+
+  useEffect(() => {
+    if (hasUsers === false) navigate(`/register?next=${encodeURIComponent(next)}`, { replace: true })
+  }, [hasUsers, navigate, next])
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault()
+    setPending(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          password,
+          captchaId: challenge?.id,
+          captcha,
+        }),
+      })
+      const body = await res.json() as { user?: { id: string; username: string; displayName: string; role: 'admin' | 'user' }; code?: string; error?: string }
+      if (!res.ok) {
+        if (body.code === 'AUTH_CAPTCHA') {
+          setNeedCaptcha(true)
+          setChallenge(await loadCaptcha())
+        }
+        toast.error(body.error || t('login.failed', { defaultValue: '登录失败' }))
+        return
+      }
+      if (body.user) setUser(body.user)
       toast.success(t('states.saved'))
       navigate(next, { replace: true })
-    },
-    onError: (err) => {
-      const { message } = describeError(err, t)
-      toast.error(message)
-    },
-  })
-
-  function onSubmit(e: React.FormEvent<HTMLFormElement>): void {
-    e.preventDefault()
-    const v = token.trim()
-    if (!v) return
-    login.mutate(v)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -92,52 +108,60 @@ export default function LoginRoute(): JSX.Element {
             {t('appName')}
           </CardTitle>
           <CardDescription>
-            {t('login.intro', {
-              defaultValue:
-                'Paste your access token from `agim token bootstrap` (first boot) or `agim token create`.',
-            })}
+            {t('login.intro', { defaultValue: '使用用户名和密码登录。' })}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {requiresAdminToken && (
-            <p className="mb-3 rounded-md border border-warning/40 bg-warning-bg/50 px-3 py-2 text-sm text-warning">
-              {t('login.adminRequired', {
-                defaultValue: 'Current token has no admin permission. Please sign in with an admin token.',
-              })}
-            </p>
-          )}
-          <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <form onSubmit={(e) => { void onSubmit(e) }} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="token">
-                {t('login.tokenLabel', { defaultValue: 'Access token' })}
-              </Label>
+              <Label htmlFor="username">{t('login.username', { defaultValue: '用户名' })}</Label>
               <Input
-                id="token"
-                type="password"
-                value={token}
-                onChange={(e) => setLocalToken(e.target.value)}
-                placeholder="agim_••••••••"
-                autoComplete="off"
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
                 autoFocus
                 required
               />
             </div>
-            <Button
-              type="submit"
-              size="lg"
-              disabled={login.isPending || token.trim().length === 0}
-            >
-              {login.isPending
-                ? t('states.loading')
-                : t('login.submit', { defaultValue: 'Sign in' })}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="password">{t('login.password', { defaultValue: '密码' })}</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            {needCaptcha && challenge && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="captcha">{t('login.captcha', { defaultValue: '验证码' })}</Label>
+                <div className="flex items-center gap-3">
+                  <div dangerouslySetInnerHTML={{ __html: challenge.svg }} />
+                  <Button type="button" variant="outline" onClick={() => { void loadCaptcha().then(setChallenge) }}>
+                    {t('login.refreshCaptcha', { defaultValue: '换一张' })}
+                  </Button>
+                </div>
+                <Input
+                  id="captcha"
+                  value={captcha}
+                  onChange={(e) => setCaptcha(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+            )}
+            <Button type="submit" size="lg" disabled={pending || !username || !password}>
+              {pending ? t('states.loading') : t('login.submit', { defaultValue: '登录' })}
             </Button>
           </form>
         </CardContent>
         <CardFooter className="block text-xs text-text-muted">
-          {t('login.hint', {
-            defaultValue:
-              'Loopback (127.0.0.1) requests bypass this check; you only see this page when accessing agim from another host or with AGIM_TRUST_LOOPBACK=off.',
-          })}
+          <Link className="text-accent underline" to={`/register?next=${encodeURIComponent(next)}`}>
+            {t('login.goRegister', { defaultValue: '没有账号？使用邀请码注册' })}
+          </Link>
         </CardFooter>
       </Card>
     </div>

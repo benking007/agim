@@ -315,7 +315,12 @@ tokenCmd
   .description('Create a new web access token (raw value printed once)')
   .action(async (label?: string) => {
     const { createToken } = await import('./core/access-token.js')
-    const row = createToken(label || '')
+    let userId: string | undefined
+    try {
+      const { listUsers } = await import('./core/accounts.js')
+      userId = listUsers().find((u) => u.role === 'admin' && !u.disabled)?.id
+    } catch { /* no accounts yet */ }
+    const row = createToken(label || '', userId ? { userId } : undefined)
     const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
     const lang = resolveCliLang()
     console.log('')

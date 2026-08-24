@@ -189,6 +189,15 @@ function deserializeSession(value: unknown): Session | null {
     workspacePath: typeof parsed.workspacePath === 'string' && parsed.workspacePath.trim()
       ? parsed.workspacePath.trim()
       : undefined,
+    ownerUserId: typeof parsed.ownerUserId === 'string' && parsed.ownerUserId.trim()
+      ? parsed.ownerUserId.trim()
+      : undefined,
+    title: typeof parsed.title === 'string' && parsed.title.trim()
+      ? parsed.title.trim()
+      : undefined,
+    archivedAt: typeof parsed.archivedAt === 'number' && Number.isFinite(parsed.archivedAt)
+      ? parsed.archivedAt
+      : undefined,
   }
 }
 
@@ -1137,6 +1146,109 @@ class SessionManager {
     return out.slice(0, limit)
   }
 
+  async listUserWebSessions(userId: string): Promise<Array<{
+    id: string
+    title?: string
+    updatedAt: number
+    agent?: string
+    archivedAt?: number
+    turns: number
+  }>> {
+    let names: string[]
+    try {
+      names = await readdir(SESSIONS_DIR)
+    } catch {
+      return []
+    }
+    const out: Array<{
+      id: string
+      title?: string
+      updatedAt: number
+      agent?: string
+      archivedAt?: number
+      turns: number
+    }> = []
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      try {
+        const raw = await readFile(join(SESSIONS_DIR, name), 'utf-8')
+        const parsed = JSON.parse(raw) as Partial<Session> & { usage?: { turns?: number } }
+        if (parsed.platform !== 'web' || parsed.channelId !== 'web') continue
+        if (parsed.ownerUserId !== userId) continue
+        if (!parsed.threadId) continue
+        const lastActivity = parsePersistedDate(parsed.lastActivity)
+        out.push({
+          id: parsed.threadId,
+          title: parsed.title,
+          updatedAt: lastActivity ? lastActivity.getTime() : 0,
+          agent: parsed.agent || undefined,
+          archivedAt: parsed.archivedAt,
+          turns: typeof parsed.usage?.turns === 'number' ? parsed.usage.turns : 0,
+        })
+      } catch {
+        /* skip */
+      }
+    }
+    out.sort((a, b) => b.updatedAt - a.updatedAt)
+    return out
+  }
+
+  async claimWebSessionOwner(
+    threadId: string, userId: string,
+  ): Promise<boolean> {
+    const key = `web:web:${threadId}`
+    return this.withLock(key, async () => {
+      let session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) {
+        const now = new Date()
+        session = {
+          id: `web-web-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
+          channelId: 'web',
+          threadId,
+          platform: 'web',
+          agent: 'agim',
+          createdAt: now,
+          lastActivity: now,
+          ttl: DEFAULT_TTL,
+          messages: [],
+          ownerUserId: userId,
+        }
+        this.sessions.set(key, session)
+        await this.saveSession(key, session)
+        return true
+      }
+      if (session.ownerUserId && session.ownerUserId !== userId) return false
+      if (session.ownerUserId === userId) return true
+      session.ownerUserId = userId
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return true
+    })
+  }
+
+  async updateUserWebSession(
+    userId: string,
+    threadId: string,
+    patch: { title?: string; archivedAt?: number; clearArchived?: boolean; agent?: string },
+  ): Promise<boolean> {
+    const key = `web:web:${threadId}`
+    return this.withLock(key, async () => {
+      const session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session || session.ownerUserId !== userId) return false
+      if (typeof patch.title === 'string') {
+        const t = patch.title.trim()
+        if (t) session.title = t
+        else delete session.title
+      }
+      if (patch.clearArchived) delete session.archivedAt
+      else if (typeof patch.archivedAt === 'number') session.archivedAt = patch.archivedAt
+      if (typeof patch.agent === 'string' && patch.agent.trim()) session.agent = patch.agent.trim()
+      this.sessions.set(key, session)
+      await this.saveSessionMeta(key, session)
+      return true
+    })
+  }
+
   /**
    * Update subtask metadata in parent session.
    */
@@ -1259,6 +1371,9 @@ class SessionManager {
         planMode: session.planMode,
         workspacePath: session.workspacePath,
         ...(typeof session.stepReflect === 'boolean' ? { stepReflect: session.stepReflect } : {}),
+        ...(session.ownerUserId ? { ownerUserId: session.ownerUserId } : {}),
+        ...(session.title ? { title: session.title } : {}),
+        ...(typeof session.archivedAt === 'number' ? { archivedAt: session.archivedAt } : {}),
         messageCount: session.messages.length,
       }
       await this.atomicWrite(filePath, JSON.stringify(meta, null, 2))

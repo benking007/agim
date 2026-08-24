@@ -63,6 +63,7 @@ import {
   useStartWechatQr,
   useWechatQrStatus,
 } from '@/hooks/use-settings'
+import { ImChannelBindCard } from '@/components/settings/im-channel-bind'
 import { describeError } from '@/lib/api/errors'
 import type { AppConfig } from '@/types/api'
 import { cn } from '@/lib/utils'
@@ -238,6 +239,8 @@ export default function SettingsMessengersRoute(): JSX.Element {
         </div>
         <p className="text-sm text-text-dim">{t('messengers.subtitle')}</p>
       </header>
+
+      <ImChannelBindCard />
 
       {cfgQuery.isLoading ? null : cfg ? (
         <MessengerQuickStartCard

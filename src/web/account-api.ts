@@ -28,9 +28,7 @@ import {
 } from '../core/accounts.js'
 import { consumeCaptcha, issueCaptcha } from '../core/captcha.js'
 import {
-  bindImIdentity,
-  consumeBindCode,
-  issueBindCode,
+  claimImIdentity,
   listBindings,
   unbindImIdentity,
 } from '../core/im-bind.js'
@@ -148,11 +146,22 @@ export async function handleAccountApi(
     sendJson(res, 200, { bindings: listBindings({ userId }) })
     return true
   }
-  if (p === '/api/me/im-bindings/code' && m === 'POST') {
+  if (p === '/api/me/im-bindings' && m === 'POST') {
     const userId = getRequestUserId(req)
     if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
-    const issued = issueBindCode(userId)
-    sendJson(res, 200, { ok: true, code: issued.raw, expiresAt: issued.expiresAt })
+    try {
+      const parsed = JSON.parse(await readBody(req, res) || '{}') as {
+        platform?: string; imUserId?: string
+      }
+      const result = claimImIdentity({
+        platform: parsed.platform || '',
+        imUserId: parsed.imUserId || '',
+        userId,
+      })
+      sendJson(res, 200, { ok: true, ...result })
+    } catch (err) {
+      sendError(res, 400, codeOf(err), { message: err instanceof Error ? err.message : String(err) })
+    }
     return true
   }
   if (p === '/api/me/im-bindings' && m === 'DELETE') {
@@ -253,20 +262,18 @@ export async function handleAccountApi(
     sendJson(res, 200, { bindings: listBindings(), known: listKnownImUsers() })
     return true
   }
-  // Ops fallback only — users bind themselves via IM /register or /login.
   if (p === '/api/admin/im-bindings' && m === 'POST') {
     if (!requireAdmin(req, res)) return true
     try {
       const parsed = JSON.parse(await readBody(req, res) || '{}') as {
         platform?: string; imUserId?: string; userId?: string
       }
-      const row = bindImIdentity({
+      const result = claimImIdentity({
         platform: parsed.platform || '',
         imUserId: parsed.imUserId || '',
-        userId: parsed.userId || '',
-        createdBy: getRequestUserId(req) || 'admin',
+        userId: parsed.userId || getRequestUserId(req) || '',
       })
-      sendJson(res, 201, { ok: true, binding: row })
+      sendJson(res, 200, { ok: true, ...result })
     } catch (err) {
       sendError(res, 400, codeOf(err), { message: err instanceof Error ? err.message : String(err) })
     }

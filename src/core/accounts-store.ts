@@ -51,12 +51,6 @@ export interface ImBindingRow {
   createdBy: string
 }
 
-export interface BindCodeRow {
-  hash: string
-  userId: string
-  expiresAt: number
-}
-
 export interface QuotaRow {
   userId: string
   monthlyLimit: number
@@ -82,7 +76,6 @@ export interface AccountsFile {
   loginSessions: LoginSessionRow[]
   invites: InviteRow[]
   imBindings: ImBindingRow[]
-  bindCodes: BindCodeRow[]
   pointsPerUsd: number
   defaultMonthlyLimit: number
   defaultCostPer1kIn: number
@@ -110,7 +103,6 @@ function emptyFile(): AccountsFile {
     loginSessions: [],
     invites: [],
     imBindings: [],
-    bindCodes: [],
     pointsPerUsd: DEFAULT_POINTS_PER_USD,
     defaultMonthlyLimit: DEFAULT_MONTHLY_LIMIT,
     defaultCostPer1kIn: 0,
@@ -126,7 +118,6 @@ let cachedPath = ''
 function prune(data: AccountsFile): void {
   const now = Date.now()
   data.loginSessions = data.loginSessions.filter((s) => s.expiresAt > now)
-  data.bindCodes = data.bindCodes.filter((c) => c.expiresAt > now)
   if (data.ledger.length > MAX_LEDGER_ROWS) {
     data.ledger = data.ledger.slice(data.ledger.length - MAX_LEDGER_ROWS)
   }
@@ -141,7 +132,8 @@ export function readAccounts(): AccountsFile {
     return cached
   }
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Partial<AccountsFile>
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Partial<AccountsFile> & { bindCodes?: unknown }
+    delete parsed.bindCodes
     cached = {
       ...emptyFile(),
       ...parsed,
@@ -150,7 +142,6 @@ export function readAccounts(): AccountsFile {
       loginSessions: Array.isArray(parsed.loginSessions) ? parsed.loginSessions : [],
       invites: Array.isArray(parsed.invites) ? parsed.invites : [],
       imBindings: Array.isArray(parsed.imBindings) ? parsed.imBindings : [],
-      bindCodes: Array.isArray(parsed.bindCodes) ? parsed.bindCodes : [],
       quotas: Array.isArray(parsed.quotas) ? parsed.quotas : [],
       ledger: Array.isArray(parsed.ledger) ? parsed.ledger : [],
       pointsPerUsd: Number.isFinite(parsed.pointsPerUsd) ? Number(parsed.pointsPerUsd) : DEFAULT_POINTS_PER_USD,

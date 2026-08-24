@@ -76,7 +76,7 @@ export interface PersistedChatActivity {
  */
 export type ParsedMessage =
   | { type: 'default'; prompt: string }
-  | { type: 'command'; command: 'start' | 'help' | 'agents' | 'new' | 'bind' | 'register' | 'login'; args?: string }
+  | { type: 'command'; command: 'start' | 'help' | 'agents' | 'new'; args?: string }
   | { type: 'agentCommand'; command: string; prompt: string }
   | { type: 'agent'; agent: string; prompt: string }
   | { type: 'audit'; args: string }

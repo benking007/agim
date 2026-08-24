@@ -51,6 +51,7 @@ import {
   type ClientConnection,
   webRunAborts,
   sendToClient,
+  wsCanDeliver,
   sendSessionHistory,
   handleClientMessage,
 } from './ws-chat.js'
@@ -975,15 +976,18 @@ export async function startWebServer(options: {
     async sendChoiceCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
-      if (!c || c.ws.readyState !== c.ws.OPEN) {
+      if (!c || !wsCanDeliver(c.ws)) {
         // Must throw so ask-user-rpc does NOT mark cardSent=true and skip the
         // text fallback — otherwise the agent waits with no Portal AskDock.
+        // Half-open sockets stay OPEN until the next missed ping; treat
+        // isAlive===false the same as CLOSED.
         webLog.warn({
           event: 'ask.card_undelivered',
           threadId,
           hasClient: Boolean(c),
           readyState: c?.ws.readyState,
-        }, 'web choice-card undelivered — no OPEN WS client')
+          zombie: c ? (c.ws as WebSocket & { isAlive?: boolean }).isAlive === false : undefined,
+        }, 'web choice-card undelivered — no live WS client')
         throw new Error(`web choice-card undelivered: no OPEN client for thread ${threadId}`)
       }
       sendToClient(c.ws, { type: 'choice-card', messageId, prompt, threadId })

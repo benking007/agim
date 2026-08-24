@@ -179,6 +179,23 @@ describe('handleAskOp — happy paths', () => {
     }
   })
 
+  it('lists pending ask cards for reconnect replay', async () => {
+    const m = makeFakeMessenger('web', { withCards: true })
+    register(m)
+    const ctx = { ...CTX, platform: 'web' }
+    const promise = handleAskOp(
+      { question: '按此实施？', choices: ['按此方案实施', '先只做核心 3 tab'], timeoutSec: 30 },
+      ctx,
+    )
+    await new Promise<void>((r) => setImmediate(r))
+    const cards = listPendingAskCards({ platform: 'web', threadId: ctx.threadId })
+    expect(cards).toHaveLength(1)
+    expect(cards[0]?.prompt.body).toContain('按此实施')
+    expect(cards[0]?.messageId).toBeTruthy()
+    tryResolvePendingAskByButton(m.cards[0]!.prompt.choices[0]!.data)
+    await promise
+  })
+
   it('falls back to text when messenger lacks sendChoiceCard', async () => {
     const m = makeFakeMessenger('h-text-1', { withCards: false })
     register(m)

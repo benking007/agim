@@ -95,7 +95,7 @@ describe('handleBackgroundTasksApi — asks', () => {
     const res = makeRes()
     await handleBackgroundTasksApi(makeReq('GET'), asRes(res), url('/api/asks/pending'))
     expect(res.statusCode).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ pending: [], count: 0 })
+    expect(JSON.parse(res.body)).toEqual({ pending: [], count: 0, cards: [] })
   })
 
   it('cancel endpoint returns 404 on unknown reqId', async () => {

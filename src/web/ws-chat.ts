@@ -102,6 +102,12 @@ export function sendToClient(ws: WebSocket, data: Record<string, unknown>): void
   }
 }
 
+/** OPEN is not enough: half-open peers stay OPEN until the next missed ping. */
+export function wsCanDeliver(ws: WebSocket): boolean {
+  if (ws.readyState !== ws.OPEN) return false
+  return (ws as WebSocket & { isAlive?: boolean }).isAlive !== false
+}
+
 /** L1: backpressure threshold for the WS send path. When `ws.bufferedAmount`
  *  exceeds this, the streaming chunk loop awaits a tick instead of piling up
  *  more frames. 4 MiB tolerates a few seconds of slow client without
@@ -232,6 +238,21 @@ export async function sendSessionHistory(
   // Small catch-up first: half-open reconnects die while a ~800KB HISTORY
   // is still in the kernel. done / run-finish / active-run must go first.
   flushPendingTerminal(threadId, (data) => sendToClient(ws, data))
+  // Ask cards before HISTORY — same half-open lesson as done/run-finish.
+  // choice-card is not in the transcript; if this frame dies behind a
+  // large window the agent stays blocked with an empty AskDock.
+  try {
+    const { listPendingAskCards } = await import('../core/ask-user-rpc.js')
+    for (const card of listPendingAskCards({ platform: 'web', threadId })) {
+      if (!wsCanDeliver(ws)) break
+      sendToClient(ws, {
+        type: 'choice-card',
+        messageId: card.messageId,
+        prompt: card.prompt,
+        threadId,
+      })
+    }
+  } catch { /* ask bus optional during early boot */ }
   if (active) {
     // Always replay — including finished runs. Sleep/wake often misses
     // `done` while the SPA mid-flight guard also refuses HISTORY; skipping
@@ -262,21 +283,6 @@ export async function sendSessionHistory(
   // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
   // get-history (chat bootstrap does not carry the Loop DTO).
   sendToClient(ws, { type: 'loop-changed', threadId })
-  // Re-emit unresolved ask_user cards. choice-card is ephemeral (not in
-  // history); without replay, refresh / sleep-wake leaves the agent blocked
-  // on PENDING while AskDock stays empty.
-  try {
-    const { listPendingAskCards } = await import('../core/ask-user-rpc.js')
-    for (const card of listPendingAskCards({ platform: 'web', threadId })) {
-      if (ws.readyState !== ws.OPEN) break
-      sendToClient(ws, {
-        type: 'choice-card',
-        messageId: card.messageId,
-        prompt: card.prompt,
-        threadId,
-      })
-    }
-  } catch { /* ask bus optional during early boot */ }
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────

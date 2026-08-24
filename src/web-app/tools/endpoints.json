@@ -2,6 +2,7 @@
   "generatedFrom": "src/web/*.ts (composition root + domain *-api modules)",
   "scope": "REST routes handled by startWebServer and its domain dispatchers",
   "sourceFiles": [
+    "src/web/account-api.ts",
     "src/web/active-runs.ts",
     "src/web/agim-skills-api.ts",
     "src/web/approvals-api.ts",
@@ -38,12 +39,24 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 131,
+  "count": 154,
   "endpoints": [
     {
       "method": "DELETE",
       "path": "/api/admin-allowlist",
       "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/im-bindings",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/invites/:id",
+      "source": "dynamic",
       "authRequired": true
     },
     {
@@ -61,6 +74,18 @@
     {
       "method": "DELETE",
       "path": "/api/mcp/servers/:name",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/me/im-bindings",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/me/tokens/:id",
       "source": "dynamic",
       "authRequired": true
     },
@@ -126,6 +151,30 @@
     },
     {
       "method": "GET",
+      "path": "/api/admin/im-bindings",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/invites",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/points",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/users",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
       "path": "/api/agent-health",
       "source": "exact",
       "authRequired": true
@@ -181,6 +230,24 @@
     {
       "method": "GET",
       "path": "/api/audit/events",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/bootstrap-state",
+      "source": "exact",
+      "authRequired": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/captcha",
+      "source": "exact",
+      "authRequired": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
       "source": "exact",
       "authRequired": true
     },
@@ -307,6 +374,30 @@
     {
       "method": "GET",
       "path": "/api/mcp",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/im-bindings",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/points",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/sessions",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/tokens",
       "source": "exact",
       "authRequired": true
     },
@@ -498,6 +589,24 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/admin/points",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/users/:id",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/users/:id/points",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
       "path": "/api/workspaces/:id",
       "source": "dynamic",
       "authRequired": true
@@ -505,6 +614,18 @@
     {
       "method": "POST",
       "path": "/api/admin-allowlist",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/im-bindings",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/invites",
       "source": "exact",
       "authRequired": true
     },
@@ -543,6 +664,12 @@
       "path": "/api/auth/logout",
       "source": "exact",
       "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "source": "exact",
+      "authRequired": false
     },
     {
       "method": "POST",
@@ -650,6 +777,18 @@
       "method": "POST",
       "path": "/api/mcp/servers/:name/health",
       "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/me/im-bindings/code",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/me/tokens",
+      "source": "exact",
       "authRequired": true
     },
     {

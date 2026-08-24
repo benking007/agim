@@ -92,7 +92,8 @@ export function isSenderAllowed(platform: string, userId: string | undefined): b
   if (wildcard) return true
   if (!userId) return false
   const p = platform.toLowerCase()
-  return entries.some((e) => e.platform === p && e.userId === userId)
+  const imId = userId.replace(/:usr_[a-z0-9]+$/i, '').replace(new RegExp(`^${p}:`, 'i'), '')
+  return entries.some((e) => e.platform === p && (e.userId === userId || e.userId === imId))
 }
 
 /** Localized refusal message for IM users. Terse — the bot shouldn't

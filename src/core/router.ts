@@ -37,6 +37,7 @@ import {
   formatLoopParentRequired,
   resolvePreferredWorkerAgent,
 } from './loop-parent-agent.js'
+import { attachRegisteredIdentity, registeredUserIdOf } from './im-identity.js'
 import { handleSkillCommand } from './commands/skill.js'
 import { buildSkillsSummary } from './skills/loader.js'
 import { buildContextSnippet as buildReminderContextSnippet } from './reminders.js'
@@ -342,6 +343,7 @@ export async function routeMessage(
   parsed: ParsedMessage,
   ctx: RouteContext
 ): Promise<string | AsyncGenerator<string>> {
+  ctx.userId = attachRegisteredIdentity(ctx.platform, ctx.userId)
   switch (parsed.type) {
     case 'command': {
       return handleBuiltInCommand(parsed.command, ctx, parsed.args)
@@ -482,14 +484,15 @@ export async function routeMessage(
       // Workspace whitelist must apply to explicit /<agent> too — otherwise
       // a named workspace with `agents: ['oc']` cannot stop a member from
       // bypassing it via /cc directly.
-      const wsAgent = workspaceRegistry.resolve(ctx.userId || 'unknown')
+      const wsActor = registeredUserIdOf(ctx.platform, ctx.userId) || ctx.userId || 'unknown'
+      const wsAgent = workspaceRegistry.resolve(wsActor)
       if (!wsAgent.hasAgent(agent.name)) {
         return `🚫 Agent "${displayAgentName(agent.name)}" 不在你的工作区可用列表里。\n\n用 /agents 查看可用 Agent。`
       }
 
       // Per-workspace rate limit (falls back to userLimiter for default
       // workspace which has no explicit limiter override).
-      const limitKeyAgent = `${ctx.platform}:${ctx.userId || 'unknown'}`
+      const limitKeyAgent = `${ctx.platform}:${wsActor}`
       const allowedAgent = wsAgent.id === 'default'
         ? userLimiter.allow(limitKeyAgent)
         : wsAgent.allow(limitKeyAgent)
@@ -525,8 +528,9 @@ export async function routeMessage(
     case 'default': {
       // Resolve workspace upfront so rate-limit & whitelist share the same
       // tenant context.
-      const ws = workspaceRegistry.resolve(ctx.userId || 'unknown')
-      const limitKey = `${ctx.platform}:${ctx.userId || 'unknown'}`
+      const wsActor = registeredUserIdOf(ctx.platform, ctx.userId) || ctx.userId || 'unknown'
+      const ws = workspaceRegistry.resolve(wsActor)
+      const limitKey = `${ctx.platform}:${wsActor}`
       const allowed = ws.id === 'default'
         ? userLimiter.allow(limitKey)
         : ws.allow(limitKey)
@@ -592,10 +596,10 @@ export async function routeMessage(
       // active conversations stay deterministic.
       const judge = getLLMJudge()
       if (judge && intent === 'fallback' && ruleScore < (judge.threshold ?? 1.0) && !stickyAgent) {
-        const candidates = workspaceRegistry.resolve(ctx.userId || 'unknown').agentWhitelist.size === 0
+        const candidates = workspaceRegistry.resolve(wsActor).agentWhitelist.size === 0
           ? registry.listAgents()
           : registry.listAgents().filter((a) =>
-              workspaceRegistry.resolve(ctx.userId || 'unknown').hasAgent(a))
+              workspaceRegistry.resolve(wsActor).hasAgent(a))
         const picked = await classifyWithLLM(parsed.prompt, candidates, (n) => registry.findAgent(n))
         if (picked) {
           agentName = picked.agent

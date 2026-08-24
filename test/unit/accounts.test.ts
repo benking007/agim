@@ -13,6 +13,13 @@ import {
 import { consumeCaptcha, issueCaptcha, _issueCaptchaForTests } from '../../src/core/captcha.js'
 import { consumeBindCode, issueBindCode, findBinding } from '../../src/core/im-bind.js'
 import {
+  attachRegisteredIdentity,
+  imChannelKey,
+  parseImActor,
+  registeredUserIdOf,
+} from '../../src/core/im-identity.js'
+import { userKey } from '../../src/core/memory.js'
+import {
   assertCanSpend,
   chargePoints,
   getPointsBalance,
@@ -108,20 +115,35 @@ describe('im bind', () => {
     expect(findBinding('telegram', '12345')?.userId).toBe(user.id)
   })
 
-  it('unbound IM is never billable so Agim stays open', () => {
+  it('quota follows the registered user; IM is only a channel', () => {
     const { user } = registerUser({ username: 'frank', password: 'password1' })
     expect(resolveBillableUserId('telegram', '99999')).toBeNull()
     expect(resolveBillableUserId('discord', 'abc')).toBeNull()
-    expect(resolveBillableUserId('telegram', 'telegram:99999')).toBeNull()
     expect(resolveBillableUserId('web', 'thread-local')).toBeNull()
+    expect(userKey('telegram', '99999')).toBe('telegram:99999')
 
     const code = issueBindCode(user.id)
     consumeBindCode('telegram', '99999', code.raw)
+
+    expect(attachRegisteredIdentity('telegram', '99999')).toBe(`99999:${user.id}`)
+    expect(imChannelKey('telegram', '99999', user.id)).toBe(`telegram:99999:${user.id}`)
+    expect(parseImActor('telegram', `99999:${user.id}`)).toEqual({
+      imUserId: '99999',
+      registeredUserId: user.id,
+    })
+    expect(registeredUserIdOf('telegram', '99999')).toBe(user.id)
     expect(resolveBillableUserId('telegram', '99999')).toBe(user.id)
-    expect(resolveBillableUserId('telegram', 'telegram:99999')).toBe(user.id)
+    expect(resolveBillableUserId('telegram', `telegram:99999:${user.id}`)).toBe(user.id)
+    expect(resolveBillableUserId('telegram', `99999:${user.id}`)).toBe(user.id)
+    expect(userKey('telegram', '99999')).toBe(`telegram:99999:${user.id}`)
+    expect(resolveBillableUserId('web', user.id)).toBe(user.id)
+
+    // A spoofed :usr_ suffix without a binding does not bill that user
+    expect(resolveBillableUserId('discord', `abc:${user.id}`)).toBeNull()
 
     unbindImIdentity('telegram', '99999')
     expect(findBinding('telegram', '99999')).toBeNull()
+    expect(attachRegisteredIdentity('telegram', `99999:${user.id}`)).toBe('99999')
     expect(resolveBillableUserId('telegram', '99999')).toBeNull()
   })
 })

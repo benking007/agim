@@ -37,6 +37,8 @@ export async function handleInboundMessage(ctx: MessageContext, defaultAgent: st
       channelId: ctx.channelId,
       threadId: ctx.message.threadId,
     })
+    const { attachRegisteredIdentity } = await import('../core/im-identity.js')
+    ctx.message.userId = attachRegisteredIdentity(ctx.platform, ctx.message.userId) || ctx.message.userId
   } catch (err) {
     ctx.logger.warn({
       event: 'admin.known_user.record_failed',

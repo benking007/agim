@@ -1,11 +1,11 @@
 // Points quota for Agim Agent turns. Convert USD cost → points using
-// the instance `pointsPerUsd` rate (default 10_000). Unbound IM traffic
-// does not consume points and is never blocked.
+// the instance `pointsPerUsd` rate (default 10_000). Quota is always on
+// the registered user; IM is only a channel. Unbound IM has no account.
 
 import { estimateCostUsd } from './llm/model-catalog.js'
 import { logger as rootLogger } from './logger.js'
 import { getUserById, monthStartMs } from './accounts.js'
-import { findBinding } from './im-bind.js'
+import { registeredUserIdOf } from './im-identity.js'
 import {
   mutateAccounts,
   readAccounts,
@@ -270,23 +270,10 @@ export function listLedger(opts: { userId?: string; limit?: number } = {}): Ledg
 }
 
 /**
- * Resolve which Web account (if any) should be charged for this turn.
- * Unbound IM identities return null — they stay allowed and unpaid.
+ * Quota belongs to the registered user. IM is only a channel:
+ * `telegram:12345:usr_ab12` bills `usr_ab12`. Unbound IM has no
+ * registered user, so this returns null (Agim still runs).
  */
 export function resolveBillableUserId(platform: string | undefined, userId: string | undefined): string | null {
-  const p = (platform || '').trim().toLowerCase()
-  const u = (userId || '').trim()
-  if (!u) return null
-  if (u.startsWith('usr_') && getUserById(u)) return u
-  if (p === 'web') {
-    if (u.startsWith('usr_') && getUserById(u)) return u
-    // `web:<userId>` from memory keys / older WS handlers
-    if (u.startsWith('web:usr_')) {
-      const id = u.slice(4)
-      if (getUserById(id)) return id
-    }
-    return null
-  }
-  const imUser = u.startsWith(`${p}:`) ? u.slice(p.length + 1) : u
-  return findBinding(p, imUser)?.userId ?? null
+  return registeredUserIdOf(platform, userId)
 }

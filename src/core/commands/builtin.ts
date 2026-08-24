@@ -413,8 +413,12 @@ export async function handleBuiltInCommand(
       }
       try {
         const { consumeBindCode } = await import('../im-bind.js')
-        const row = consumeBindCode(ctx.platform, ctx.userId || '', code)
-        return `已绑定到用户 \`${row.userId}\`。之后本 IM 身份使用 Agim Agent 会扣该账号的点数。会话与记忆仍分开。`
+        const { composeImActor, imChannelKey, parseImActor } = await import('../im-identity.js')
+        const imUserId = parseImActor(ctx.platform, ctx.userId).imUserId
+        const row = consumeBindCode(ctx.platform, imUserId, code)
+        ctx.userId = composeImActor(imUserId, row.userId)
+        const channel = imChannelKey(ctx.platform, imUserId, row.userId)
+        return `已绑定到用户 \`${row.userId}\`。本渠道现为 \`${channel}\`。点数扣该注册用户，与 IM 账号本身无关。`
       } catch (err) {
         return `绑定失败：${err instanceof Error ? err.message : String(err)}`
       }

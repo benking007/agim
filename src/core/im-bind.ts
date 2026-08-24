@@ -31,7 +31,7 @@ function normPlatform(platform: string): string {
 }
 
 function normImUser(userId: string): string {
-  return userId.trim()
+  return userId.trim().replace(/:usr_[a-z0-9]+$/i, '')
 }
 
 function toPublic(row: ImBindingRow): PublicBinding {

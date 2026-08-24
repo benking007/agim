@@ -16,8 +16,10 @@ import {
   assertCanSpend,
   chargePoints,
   getPointsBalance,
+  resolveBillableUserId,
   usdToPoints,
 } from '../../src/core/points.js'
+import { unbindImIdentity } from '../../src/core/im-bind.js'
 
 const saved: Record<string, string | undefined> = {}
 let tmp = ''
@@ -104,5 +106,22 @@ describe('im bind', () => {
     const row = consumeBindCode('telegram', '12345', code.raw)
     expect(row.userId).toBe(user.id)
     expect(findBinding('telegram', '12345')?.userId).toBe(user.id)
+  })
+
+  it('unbound IM is never billable so Agim stays open', () => {
+    const { user } = registerUser({ username: 'frank', password: 'password1' })
+    expect(resolveBillableUserId('telegram', '99999')).toBeNull()
+    expect(resolveBillableUserId('discord', 'abc')).toBeNull()
+    expect(resolveBillableUserId('telegram', 'telegram:99999')).toBeNull()
+    expect(resolveBillableUserId('web', 'thread-local')).toBeNull()
+
+    const code = issueBindCode(user.id)
+    consumeBindCode('telegram', '99999', code.raw)
+    expect(resolveBillableUserId('telegram', '99999')).toBe(user.id)
+    expect(resolveBillableUserId('telegram', 'telegram:99999')).toBe(user.id)
+
+    unbindImIdentity('telegram', '99999')
+    expect(findBinding('telegram', '99999')).toBeNull()
+    expect(resolveBillableUserId('telegram', '99999')).toBeNull()
   })
 })

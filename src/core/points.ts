@@ -23,6 +23,8 @@ export interface PointsBalance {
   remaining: number
   periodStart: number
   pointsPerUsd: number
+  /** Admins are not gated by monthlyLimit / bonus. Never JSON-serialize Infinity. */
+  unlimited: boolean
 }
 
 export interface ChargeInput {
@@ -61,6 +63,10 @@ function ensureQuota(data: ReturnType<typeof readAccounts>, userId: string, now:
   return row
 }
 
+function isUnlimitedUser(userId: string): boolean {
+  return getUserById(userId)?.role === 'admin'
+}
+
 function usedInPeriod(data: ReturnType<typeof readAccounts>, userId: string, periodStart: number): number {
   let used = 0
   for (const row of data.ledger) {
@@ -92,6 +98,7 @@ export function getPointsBalance(userId: string): PointsBalance | null {
     remaining,
     periodStart,
     pointsPerUsd: data.pointsPerUsd,
+    unlimited: isUnlimitedUser(userId),
   }
 }
 
@@ -104,8 +111,12 @@ export function setPointsQuota(userId: string, patch: {
   bonus?: number
   addBonus?: number
 }): PointsBalance {
-  if (!getUserById(userId)) {
+  const user = getUserById(userId)
+  if (!user) {
     throw new PointsError('POINTS_NO_USER', 'user not found')
+  }
+  if (user.role === 'admin') {
+    throw new PointsError('POINTS_ADMIN_UNLIMITED', '管理员额度不限，无需加点')
   }
   mutateAccounts((data) => {
     const row = ensureQuota(data, userId, Date.now())
@@ -215,7 +226,7 @@ export function estimateChargeUsd(input: ChargeInput): { usd: number; source: 'u
 export function assertCanSpend(userId: string): PointsBalance {
   const bal = getPointsBalance(userId)
   if (!bal) throw new PointsError('POINTS_NO_USER', 'user not found')
-  if (bal.remaining <= 0) {
+  if (!bal.unlimited && bal.remaining <= 0) {
     throw new PointsError('POINTS_EXHAUSTED', '点数已用完，请联系管理员加点')
   }
   return bal
@@ -232,10 +243,11 @@ export function chargePoints(input: ChargeInput): LedgerRow {
     const quota = ensureQuota(data, input.userId, now)
     const used = usedInPeriod(data, input.userId, quota.periodStart)
     const remaining = quota.monthlyLimit + quota.bonus - used
-    if (remaining <= 0) {
+    const unlimited = isUnlimitedUser(input.userId)
+    if (!unlimited && remaining <= 0) {
       throw new PointsError('POINTS_EXHAUSTED', '点数已用完，请联系管理员加点')
     }
-    const debit = Math.min(points, remaining)
+    const debit = unlimited ? points : Math.min(points, remaining)
     const row: LedgerRow = {
       id: `pt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       userId: input.userId,

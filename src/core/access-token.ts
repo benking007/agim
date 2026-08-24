@@ -1,4 +1,10 @@
-// Access token — token-based authentication for the web console.
+// Access token — programmatic API auth (Bearer / X-Agim-Token).
+//
+// Web console login is username + password + session cookie (`agim_session`).
+// Tokens are not a second login password. They exist so scripts, the CLI
+// (`agim token create|list|revoke`), and other programs can call the same
+// HTTP API without a browser cookie. Mobile QR sign-in still mints a
+// short-lived token (`mobile-via-qr-*`).
 //
 // Why exist (v1.1.10): the web console used to ship with "no built-in auth"
 // (per the comment at the top of web/server.ts). For single-user / locally-

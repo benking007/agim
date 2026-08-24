@@ -38,6 +38,27 @@
     "env": "环境变量",
     "service": "服务"
   },
+  "account": {
+    "title": "账号",
+    "points": "点数",
+    "pointsUnlimited": "不限（本月已用 {{used}}）",
+    "pointsDetail": "剩余 {{remaining}} / 月额度 {{limit}}（已用 {{used}}，奖励 {{bonus}}）",
+    "pointsNone": "登录后显示额度。",
+    "userQuota": "用户额度",
+    "userQuotaHint": "给非管理员增加使用额度。管理员本人不限额。",
+    "userQuotaEmpty": "还没有普通用户。先发邀请码让他们注册。",
+    "addQuota": "增加额度",
+    "addQuotaPlaceholder": "点数",
+    "addQuotaInvalid": "请输入大于 0 的点数。",
+    "addQuotaDone": "已增加 {{amount}} 点给 {{username}}",
+    "apiToken": "API 令牌",
+    "apiTokenHint": "网页用账号密码登录。令牌只给脚本、CLI 或其他程序调本机 API（Authorization: Bearer 或 X-Agim-Token），不是登录密码。明文只显示一次。",
+    "createToken": "生成令牌",
+    "tokenCreated": "令牌已生成，请立即复制，之后无法再看明文。",
+    "invites": "邀请码",
+    "createInvite": "派生邀请码",
+    "logout": "退出登录"
+  },
   "advanced": {
     "title": "高级",
     "subtitle": "搜索、语音转写、邮件和长文 Viewer。API 不变，只是从主设置栏收进去。",

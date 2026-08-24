@@ -38,6 +38,27 @@
     "env": "Env Vars",
     "service": "Service"
   },
+  "account": {
+    "title": "Account",
+    "points": "Points",
+    "pointsUnlimited": "Unlimited (used {{used}} this month)",
+    "pointsDetail": "{{remaining}} left / monthly {{limit}} (used {{used}}, bonus {{bonus}})",
+    "pointsNone": "Sign in to see your quota.",
+    "userQuota": "User quotas",
+    "userQuotaHint": "Grant extra points to non-admin users. Admins have no quota.",
+    "userQuotaEmpty": "No regular users yet. Issue an invite so they can register.",
+    "addQuota": "Add points",
+    "addQuotaPlaceholder": "points",
+    "addQuotaInvalid": "Enter a number greater than 0.",
+    "addQuotaDone": "Added {{amount}} points to {{username}}",
+    "apiToken": "API token",
+    "apiTokenHint": "The web UI signs in with username and password. Tokens are only for scripts, the CLI, or other programs calling this API (Authorization: Bearer or X-Agim-Token) — not a login password. The raw value is shown once.",
+    "createToken": "Create token",
+    "tokenCreated": "Token created. Copy it now — it cannot be shown again.",
+    "invites": "Invite codes",
+    "createInvite": "Issue invite",
+    "logout": "Sign out"
+  },
   "advanced": {
     "title": "Advanced",
     "subtitle": "Search, speech-to-text, email, and the long-message viewer. APIs stay the same; this is just a quieter door.",

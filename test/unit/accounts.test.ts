@@ -24,6 +24,7 @@ import {
   chargePoints,
   getPointsBalance,
   resolveBillableUserId,
+  setPointsQuota,
   usdToPoints,
 } from '../../src/core/points.js'
 
@@ -102,6 +103,44 @@ describe('points', () => {
     })
     const after = getPointsBalance(user.id)!
     expect(after.remaining).toBe(before.remaining - 100)
+    expect(after.unlimited).toBe(true)
+  })
+
+  it('admins keep spending after the monthly quota is exhausted', () => {
+    const { user } = registerUser({ username: 'admin', password: 'password1' })
+    expect(getPointsBalance(user.id)!.unlimited).toBe(true)
+    chargePoints({
+      userId: user.id,
+      tokensIn: 1,
+      tokensOut: 1,
+      costUsd: 20,
+    })
+    const after = getPointsBalance(user.id)!
+    expect(after.usedThisPeriod).toBe(200_000)
+    expect(after.remaining).toBe(0)
+    expect(after.unlimited).toBe(true)
+    assertCanSpend(user.id)
+    chargePoints({
+      userId: user.id,
+      tokensIn: 1,
+      tokensOut: 1,
+      costUsd: 0.01,
+    })
+    expect(getPointsBalance(user.id)!.usedThisPeriod).toBe(200_100)
+  })
+
+  it('rejects granting quota to an admin and lets admins grant to users', () => {
+    const { user: admin } = registerUser({ username: 'admin', password: 'password1' })
+    expect(() => setPointsQuota(admin.id, { addBonus: 1000 })).toThrow(/管理员额度不限/)
+    const invite = createInvite({ createdBy: admin.id })
+    const { user } = registerUser({ username: 'bob', password: 'password1', inviteRaw: invite.raw })
+    expect(getPointsBalance(user.id)!.unlimited).toBe(false)
+    setPointsQuota(user.id, { monthlyLimit: 0, bonus: 0 })
+    expect(() => assertCanSpend(user.id)).toThrow(/点数已用完/)
+    const granted = setPointsQuota(user.id, { addBonus: 500 })
+    expect(granted.bonus).toBe(500)
+    expect(granted.remaining).toBe(500)
+    assertCanSpend(user.id)
   })
 })
 

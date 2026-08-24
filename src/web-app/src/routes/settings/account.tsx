@@ -49,25 +49,6 @@ export default function SettingsAccountRoute(): JSX.Element {
   const [grantAmt, setGrantAmt] = useState<Record<string, string>>({})
   const [grantingId, setGrantingId] = useState<string | null>(null)
 
-  async function loadAdminQuota(): Promise<void> {
-    const [usersRes, pointsRes] = await Promise.all([
-      fetch('/api/admin/users', { credentials: 'same-origin' }),
-      fetch('/api/admin/points', { credentials: 'same-origin' }),
-    ])
-    if (usersRes.ok) {
-      const body = await usersRes.json() as { users?: AccountUser[] }
-      setMembers((body.users ?? []).filter((u) => u.role !== 'admin'))
-    }
-    if (pointsRes.ok) {
-      const body = await pointsRes.json() as { balances?: PointsBalance[] }
-      const next: Record<string, PointsBalance> = {}
-      for (const row of body.balances ?? []) {
-        if (row.userId) next[row.userId] = row
-      }
-      setBalances(next)
-    }
-  }
-
   useEffect(() => {
     void (async () => {
       const me = await fetch('/api/me/points', { credentials: 'same-origin' })
@@ -75,13 +56,27 @@ export default function SettingsAccountRoute(): JSX.Element {
         const body = await me.json() as { balance?: PointsBalance }
         setPoints(body.balance ?? null)
       }
-      if (role === 'admin') {
-        const inv = await fetch('/api/admin/invites', { credentials: 'same-origin' })
-        if (inv.ok) {
-          const body = await inv.json() as { invites?: InviteRow[] }
-          setInvites(body.invites ?? [])
+      if (role !== 'admin') return
+      const [inv, usersRes, pointsRes] = await Promise.all([
+        fetch('/api/admin/invites', { credentials: 'same-origin' }),
+        fetch('/api/admin/users', { credentials: 'same-origin' }),
+        fetch('/api/admin/points', { credentials: 'same-origin' }),
+      ])
+      if (inv.ok) {
+        const body = await inv.json() as { invites?: InviteRow[] }
+        setInvites(body.invites ?? [])
+      }
+      if (usersRes.ok) {
+        const body = await usersRes.json() as { users?: AccountUser[] }
+        setMembers((body.users ?? []).filter((u) => u.role !== 'admin'))
+      }
+      if (pointsRes.ok) {
+        const body = await pointsRes.json() as { balances?: PointsBalance[] }
+        const next: Record<string, PointsBalance> = {}
+        for (const row of body.balances ?? []) {
+          if (row.userId) next[row.userId] = row
         }
-        await loadAdminQuota()
+        setBalances(next)
       }
     })()
   }, [role])

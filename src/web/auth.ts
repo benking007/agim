@@ -55,7 +55,7 @@ export function isLoopbackPeer(req: IncomingMessage): boolean {
   // transports or post-close sockets the field can read empty, which
   // pre-R9 would silently pass auth. Tighten to exact loopback IPs
   // (with the IPv4-mapped IPv6 form Node uses on dual-stack servers).
-  const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  const ip = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
   return ip === '127.0.0.1' || ip === '::1'
 }
 
@@ -65,11 +65,13 @@ export function isEnvOff(name: string): boolean {
 }
 
 export function hasForwardedPeerHeaders(req: IncomingMessage): boolean {
-  return req.headers.forwarded !== undefined
-    || req.headers['x-forwarded-for'] !== undefined
-    || req.headers['x-forwarded-host'] !== undefined
-    || req.headers['x-real-ip'] !== undefined
-    || req.headers['cf-connecting-ip'] !== undefined
+  const h = req.headers
+  if (!h) return false
+  return h.forwarded !== undefined
+    || h['x-forwarded-for'] !== undefined
+    || h['x-forwarded-host'] !== undefined
+    || h['x-real-ip'] !== undefined
+    || h['cf-connecting-ip'] !== undefined
 }
 
 export function isTrustedLoopbackPeer(req: IncomingMessage): boolean {
@@ -89,7 +91,7 @@ export function isTrustedLoopbackPeer(req: IncomingMessage): boolean {
 export let _queryTokenWarned = false
 
 export function readCookie(req: IncomingMessage, name: string): string | null {
-  const cookie = req.headers.cookie
+  const cookie = req.headers?.cookie
   if (typeof cookie !== 'string') return null
   for (const part of cookie.split(';')) {
     const [k, ...rest] = part.trim().split('=')
@@ -107,7 +109,7 @@ export function extractSessionRaw(req: IncomingMessage): string | null {
 
 export function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
-  const auth = req.headers.authorization
+  const auth = req.headers?.authorization
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
     const v = auth.slice(7).trim()
     if (v) return v

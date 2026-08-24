@@ -141,7 +141,7 @@ export default function SettingsAccountRoute(): JSX.Element {
       <section className="space-y-3 rounded-xl border border-border p-4">
         <h2 className="font-medium">{t('account.imBind', { defaultValue: 'IM 绑定' })}</h2>
         <p className="text-sm text-text-muted">
-          {t('account.imBindHint', { defaultValue: '在 Telegram / Discord 发送 /bind 下面的码。绑定后渠道为「IM类型:IM渠道id:注册id」，点数扣注册用户。未绑定也能继续用 Agim。' })}
+          {t('account.imBindHint', { defaultValue: '主路径：在 Telegram / Discord 自己发 /register 用户名 密码 [邀请码]，或已有账号发 /login 用户名 密码。不必等管理员代绑。绑定码是过渡备选——已有 Web 账号时也可在这里生成 6 位码再到 IM 发 /bind。绑定后渠道为「IM类型:IM渠道id:注册id」，点数扣注册用户。未绑定也能继续用 Agim。' })}
         </p>
         <Button type="button" onClick={() => { void createBindCode() }}>
           {t('account.createBindCode', { defaultValue: '生成绑定码' })}

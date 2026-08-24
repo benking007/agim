@@ -64,7 +64,9 @@ const HELP_ZH = [
   '/audit [n]    查看调用记录',
   '/stats        用量统计（/usage /cost）',
   '/sessions     最近会话',
-  '/bind <码>    绑定 Web 账号（IM）',
+  '/register …   在 IM 里自己注册并绑定当前会话',
+  '/login …      用已有账号绑定当前 IM',
+  '/bind <码>    备选：用 Web 生成的 6 位码绑定（过渡）',
   '/workspaces   工作区管理（别名 /ws）',
   '/router       查看路由决策',
   '/test         -> agent: 测试',
@@ -113,6 +115,9 @@ const HELP_EN = [
   '/audit [n]    show invocations',
   '/stats        usage stats (/usage /cost)',
   '/sessions     list recent sessions',
+  '/register …   register in IM and bind this chat',
+  '/login …      bind this IM to an existing account',
+  '/bind <code>  fallback: 6-digit code from Web (transitional)',
   '/workspaces   workspace management (alias /ws)',
   '/router       show routing decisions',
   '/test         -> agent: test',
@@ -155,6 +160,8 @@ const TOPIC_ALIAS: Record<string, string> = {
   cornloop: 'cronloop',
   reminder: 'remind',
   tasks: 'job',
+  signup: 'register',
+  signin: 'login',
   check: 'job',
   cancel: 'job',
   switch: 'job',
@@ -246,6 +253,32 @@ const TOPIC_HELP_ZH: Record<string, string> = {
   agents: '/agents — 列出已注册的 agent',
   new: '/new — 开新会话 (清当前 thread 的上下文)',
   status: '/status — 连接状态',
+  register: [
+    '/register — 在 IM 里自己注册并绑定当前会话（无需管理员代绑）',
+    SEP,
+    '/register <用户名> <密码>              首个用户即管理员，无需邀请码',
+    '/register <用户名> <密码> <邀请码>     之后注册需 AGIM-XXXX-XXXX',
+    '/login <用户名> <密码>                 已有账号：绑定当前 IM',
+    '/bind <6位码>                          过渡备选：Web 账号页生成码后再贴过来',
+    SEP,
+    '邀请码只用来开新用户，不是绑定码。绑定是用户自己的事。',
+    '请在 Telegram / Discord 发送，不要在 Web 对话里发密码。',
+  ].join('\n'),
+  login: [
+    '/login — 用已有用户名密码把当前 IM 绑到该账号',
+    SEP,
+    '/login <用户名> <密码>',
+    SEP,
+    '新用户用 /register。Web 绑定码 /bind 只是过渡备选。',
+  ].join('\n'),
+  bind: [
+    '/bind — 过渡备选：把当前 IM 绑到已有 Web 账号',
+    SEP,
+    '/bind <6位码>     在 Web「设置 → 账号」生成，15 分钟有效',
+    SEP,
+    '主路径是用户自己 /register 或 /login，不必等管理员干预。',
+    '不要和邀请码 AGIM-XXXX-XXXX 搞混。',
+  ].join('\n'),
 }
 
 const TOPIC_HELP_EN: Record<string, string> = {
@@ -324,6 +357,32 @@ const TOPIC_HELP_EN: Record<string, string> = {
   agents: '/agents — list registered agents',
   new: '/new — start a new conversation (clear current thread\'s context)',
   status: '/status — connectivity status',
+  register: [
+    '/register — create an account in IM and bind this chat (no admin needed)',
+    SEP,
+    '/register <user> <password>             first user becomes admin, no invite',
+    '/register <user> <password> <invite>    later users need AGIM-XXXX-XXXX',
+    '/login <user> <password>                existing account: bind this IM',
+    '/bind <6-digit>                         fallback: code from Web account page',
+    SEP,
+    'Invites create users. Binding is the user\'s own action.',
+    'Send this in Telegram / Discord — not in the Web chat.',
+  ].join('\n'),
+  login: [
+    '/login — bind this IM to an existing username/password',
+    SEP,
+    '/login <user> <password>',
+    SEP,
+    'New users: /register. /bind codes are a transitional fallback.',
+  ].join('\n'),
+  bind: [
+    '/bind — transitional fallback to attach this IM to an existing Web account',
+    SEP,
+    '/bind <6-digit>     generate on Web Settings → Account (15 min)',
+    SEP,
+    'Preferred path is /register or /login in IM. No admin click-to-bind.',
+    'Not the same as an AGIM-XXXX-XXXX invite.',
+  ].join('\n'),
 }
 
 /** Topics that delegate to the command's own `help` subcommand. Topic is canonical
@@ -338,8 +397,40 @@ async function delegatedTopic(topic: string, ctx: RouteContext): Promise<string 
   return null
 }
 
+const INVITE_TOKEN_RE = /^AGIM-[A-Z0-9]+-[A-Z0-9]+$/i
+
+/** Split `/register` / `/login` args. Last token is an invite when it looks like AGIM-XXXX-XXXX. */
+export function parseImAuthArgs(args: string | undefined): {
+  username: string
+  password: string
+  invite?: string
+} | null {
+  const parts = (args ?? '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return null
+  const username = parts[0]!
+  const last = parts[parts.length - 1]!
+  const inviteLooks = parts.length >= 3 && INVITE_TOKEN_RE.test(last)
+  const password = (inviteLooks ? parts.slice(1, -1) : parts.slice(1)).join(' ')
+  if (!password) return null
+  return inviteLooks ? { username, password, invite: last.toUpperCase() } : { username, password }
+}
+
+async function bindCurrentIm(ctx: RouteContext, userId: string): Promise<string> {
+  const { bindImIdentity } = await import('../im-bind.js')
+  const { composeImActor, imChannelKey, parseImActor } = await import('../im-identity.js')
+  const imUserId = parseImActor(ctx.platform, ctx.userId).imUserId
+  bindImIdentity({
+    platform: ctx.platform,
+    imUserId,
+    userId,
+    createdBy: userId,
+  })
+  ctx.userId = composeImActor(imUserId, userId)
+  return imChannelKey(ctx.platform, imUserId, userId)
+}
+
 export async function handleBuiltInCommand(
-  command: 'start' | 'help' | 'agents' | 'new' | 'bind',
+  command: 'start' | 'help' | 'agents' | 'new' | 'bind' | 'register' | 'login',
   ctx: RouteContext,
   args?: string,
 ): Promise<string> {
@@ -403,10 +494,73 @@ export async function handleBuiltInCommand(
       return `🆕 Ready to start a new conversation.\n\nSend a message to begin.`
     }
 
+    case 'register': {
+      if (ctx.platform === 'web') {
+        return '请到浏览器打开注册页，或在 IM（Telegram / Discord）里发送 `/register`。不要在 Web 对话里发密码。'
+      }
+      const parsed = parseImAuthArgs(args)
+      if (!parsed) {
+        return [
+          '用法: `/register <用户名> <密码> [邀请码]`',
+          '',
+          '在 IM 里自己注册并绑定当前会话，不必等管理员代绑。',
+          '首个用户无需邀请码；之后需要管理员发的 `AGIM-XXXX-XXXX`。',
+          '已有账号用 `/login <用户名> <密码>`。',
+        ].join('\n')
+      }
+      try {
+        const { findBinding } = await import('../im-bind.js')
+        const { parseImActor } = await import('../im-identity.js')
+        const { registerUser } = await import('../accounts.js')
+        const imUserId = parseImActor(ctx.platform, ctx.userId).imUserId
+        const existing = findBinding(ctx.platform, imUserId)
+        if (existing) {
+          return `当前 IM 已绑定 \`${existing.userId}\`，不必再注册。已有账号换绑请先解绑。`
+        }
+        const { user } = registerUser({
+          username: parsed.username,
+          password: parsed.password,
+          inviteRaw: parsed.invite,
+        })
+        const channel = await bindCurrentIm(ctx, user.id)
+        return `已注册并绑定 \`${user.username}\`（${user.id}）。本渠道现为 \`${channel}\`。点数扣该注册用户。`
+      } catch (err) {
+        return `注册失败：${err instanceof Error ? err.message : String(err)}`
+      }
+    }
+
+    case 'login': {
+      if (ctx.platform === 'web') {
+        return '请到浏览器打开登录页，或在 IM 里发送 `/login`。不要在 Web 对话里发密码。'
+      }
+      const parsed = parseImAuthArgs(args)
+      if (!parsed) {
+        return [
+          '用法: `/login <用户名> <密码>`',
+          '',
+          '把当前 IM 绑到已有账号。新用户用 `/register`。',
+        ].join('\n')
+      }
+      try {
+        const { loginUser } = await import('../accounts.js')
+        const session = loginUser({ username: parsed.username, password: parsed.password })
+        const channel = await bindCurrentIm(ctx, session.user.id)
+        return `已登录并绑定 \`${session.user.username}\`（${session.user.id}）。本渠道现为 \`${channel}\`。`
+      } catch (err) {
+        return `登录失败：${err instanceof Error ? err.message : String(err)}`
+      }
+    }
+
     case 'bind': {
       const code = (args ?? '').trim()
       if (!code) {
-        return '用法: `/bind <邀请绑定码>`\n\n在 Web 后台「账号 → IM 绑定」生成 6 位绑定码，然后在这里发送。未绑定也可以继续使用 Agim。'
+        return [
+          '用法: `/bind <6位码>`',
+          '',
+          '这是过渡备选：已有 Web 账号时，在「设置 → 账号」生成 6 位码再贴到这里。',
+          '主路径是用户自己 `/register` 或 `/login`，不必等管理员干预。',
+          '不要和邀请码 `AGIM-XXXX-XXXX` 搞混。未绑定也可以继续使用 Agim。',
+        ].join('\n')
       }
       if (ctx.platform === 'web') {
         return '请在 IM（Telegram / Discord 等）里发送 `/bind` 码，而不是在 Web 对话里。'

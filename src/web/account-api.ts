@@ -253,6 +253,7 @@ export async function handleAccountApi(
     sendJson(res, 200, { bindings: listBindings(), known: listKnownImUsers() })
     return true
   }
+  // Ops fallback only — users bind themselves via IM /register or /login.
   if (p === '/api/admin/im-bindings' && m === 'POST') {
     if (!requireAdmin(req, res)) return true
     try {

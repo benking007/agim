@@ -261,6 +261,8 @@ export function parseMessage(text: string): ParsedMessage {
   if (cmd === 'agents') return { type: 'command', command: 'agents' }
   if (cmd === 'new') return { type: 'command', command: 'new' }
   if (cmd === 'bind') return { type: 'command', command: 'bind', args: rest }
+  if (cmd === 'register' || cmd === 'signup') return { type: 'command', command: 'register', args: rest }
+  if (cmd === 'login' || cmd === 'signin') return { type: 'command', command: 'login', args: rest }
   if (cmd === 'audit') return { type: 'audit', args: rest }
   if (cmd === 'router') return { type: 'router', args: rest }
   if (cmd === 'workspaces' || cmd === 'ws') return { type: 'workspaces', args: rest }

@@ -388,6 +388,24 @@ describe('parseMessage', () => {
       expect(parseMessage('/new')).toEqual({ type: 'command', command: 'new' })
     })
 
+    it('parses IM self-register and login commands', () => {
+      expect(parseMessage('/register alice password1')).toEqual({
+        type: 'command', command: 'register', args: 'alice password1',
+      })
+      expect(parseMessage('/signup bob password1 AGIM-ABCD-EFGH')).toEqual({
+        type: 'command', command: 'register', args: 'bob password1 AGIM-ABCD-EFGH',
+      })
+      expect(parseMessage('/login alice password1')).toEqual({
+        type: 'command', command: 'login', args: 'alice password1',
+      })
+      expect(parseMessage('/signin alice password1')).toEqual({
+        type: 'command', command: 'login', args: 'alice password1',
+      })
+      expect(parseMessage('/bind ABC123')).toEqual({
+        type: 'command', command: 'bind', args: 'ABC123',
+      })
+    })
+
     it('parses /workspaces and /ws as aliases', () => {
       expect(parseMessage('/workspaces list')).toEqual({ type: 'workspaces', args: 'list' })
       expect(parseMessage('/ws list')).toEqual({ type: 'workspaces', args: 'list' })

@@ -5,12 +5,15 @@ import { join } from 'node:path'
 import { _resetAccountsCache } from '../../src/core/accounts-store.js'
 import {
   createInvite,
+  getUserByUsername,
   hasAnyUser,
   loginUser,
   registerUser,
   verifyLoginSession,
 } from '../../src/core/accounts.js'
 import { consumeCaptcha, issueCaptcha, _issueCaptchaForTests } from '../../src/core/captcha.js'
+import { handleBuiltInCommand, parseImAuthArgs } from '../../src/core/commands/builtin.js'
+import type { RouteContext } from '../../src/core/router.js'
 import { consumeBindCode, issueBindCode, findBinding } from '../../src/core/im-bind.js'
 import {
   attachRegisteredIdentity,
@@ -103,6 +106,72 @@ describe('points', () => {
     })
     const after = getPointsBalance(user.id)!
     expect(after.remaining).toBe(before.remaining - 100)
+  })
+})
+
+function imCtx(userId = '12345'): RouteContext {
+  return {
+    platform: 'telegram',
+    channelId: 'c',
+    threadId: 't',
+    defaultAgent: 'agim',
+    traceId: 'tx',
+    logger: console as unknown as RouteContext['logger'],
+    userId,
+  }
+}
+
+describe('im self register', () => {
+  it('parses username, password, and trailing invite', () => {
+    expect(parseImAuthArgs('alice password1')).toEqual({ username: 'alice', password: 'password1' })
+    expect(parseImAuthArgs('alice my pass AGIM-AB12-CD34')).toEqual({
+      username: 'alice',
+      password: 'my pass',
+      invite: 'AGIM-AB12-CD34',
+    })
+    expect(parseImAuthArgs('alice')).toBeNull()
+  })
+
+  it('registers and binds the current IM without an admin step', async () => {
+    const ctx = imCtx('777')
+    const out = await handleBuiltInCommand('register', ctx, 'gina password1')
+    expect(out).toContain('已注册并绑定')
+    expect(out).toContain('telegram:777:')
+    expect(findBinding('telegram', '777')?.userId).toMatch(/^usr_/)
+    expect(ctx.userId).toMatch(/^777:usr_/)
+  })
+
+  it('logs in to bind an existing account to this IM', async () => {
+    registerUser({ username: 'hank', password: 'password1' })
+    const ctx = imCtx('888')
+    const out = await handleBuiltInCommand('login', ctx, 'hank password1')
+    expect(out).toContain('已登录并绑定')
+    expect(findBinding('telegram', '888')?.userId).toBe(getUserByUsername('hank')!.id)
+  })
+
+  it('refuses to register when this IM is already bound', async () => {
+    const first = imCtx('999')
+    await handleBuiltInCommand('register', first, 'ivy password1')
+    const again = await handleBuiltInCommand('register', imCtx('999'), 'jack password1')
+    expect(again).toContain('已绑定')
+    expect(getUserByUsername('jack')).toBeNull()
+  })
+
+  it('refuses login when this IM is already bound to someone else', async () => {
+    registerUser({ username: 'kate', password: 'password1' })
+    const invite = createInvite({ createdBy: 'kate' })
+    registerUser({ username: 'leo', password: 'password1', inviteRaw: invite.raw })
+    await handleBuiltInCommand('login', imCtx('111'), 'kate password1')
+    const out = await handleBuiltInCommand('login', imCtx('111'), 'leo password1')
+    expect(out).toContain('登录失败')
+    expect(findBinding('telegram', '111')?.userId).toBe(getUserByUsername('kate')!.id)
+  })
+
+  it('rejects register/login from the web chat', async () => {
+    const web = { ...imCtx(), platform: 'web' }
+    expect(await handleBuiltInCommand('register', web, 'mia password1')).toContain('注册页')
+    expect(await handleBuiltInCommand('login', web, 'mia password1')).toContain('登录页')
+    expect(hasAnyUser()).toBe(false)
   })
 })
 

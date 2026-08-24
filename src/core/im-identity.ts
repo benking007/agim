@@ -5,7 +5,7 @@
 // that id onto the IM channel.
 
 import { getUserById } from './accounts.js'
-import { findBinding } from './im-bind.js'
+import { findBinding, PLATFORM_CHANNEL } from './im-bind.js'
 
 const REGISTERED_RE = /^usr_[a-z0-9]+$/i
 
@@ -82,7 +82,8 @@ export function attachRegisteredIdentity(
   if (!parsed.imUserId) return raw
   if (isRegisteredUserId(parsed.imUserId) && !platform) return parsed.imUserId
 
-  const bound = findBinding(normPlatform(platform), parsed.imUserId)
+  const p = normPlatform(platform)
+  const bound = findBinding(p, parsed.imUserId) ?? findBinding(p, PLATFORM_CHANNEL)
   if (bound) return composeImActor(parsed.imUserId, bound.userId)
   return parsed.imUserId
 }

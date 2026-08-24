@@ -82,7 +82,6 @@ function mockFetch(config: Record<string, unknown> = {}, service: Record<string,
     if (u.startsWith('/api/messengers/wechat/qr-status')) {
       return jsonResponse({ status: 'pending' })
     }
-    if (u === '/api/me/im-bindings') return jsonResponse({ bindings: [] })
     return jsonResponse({})
   })
 }

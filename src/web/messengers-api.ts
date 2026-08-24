@@ -17,7 +17,7 @@ import { generateTraceId, createLogger } from '../core/logger.js'
 import { sink, resolveMessenger } from '../core/message-sink.js'
 import { parseMessage, routeMessage } from '../core/router.js'
 import { readBody, sendJson, sendError } from './http-utils.js'
-import { requireAdmin, getRequestActor } from './auth.js'
+import { requireAdmin, getRequestActor, getRequestUserId } from './auth.js'
 
 /**
  * Match-and-handle dispatcher. Returns `true` when the request was
@@ -41,7 +41,7 @@ export async function handleMessengersApi(
   }
   if (p === '/api/messengers/wechat/qr-status' && m === 'GET') {
     if (!requireAdmin(req, res)) return true
-    await handleWechatQrStatus(res, url); return true
+    await handleWechatQrStatus(req, res, url); return true
   }
   if (p === '/api/admin-allowlist' && m === 'GET') {
     if (!requireAdmin(req, res)) return true
@@ -88,7 +88,7 @@ export async function handleWechatQrStart(res: ServerResponse): Promise<void> {
   }
 }
 
-export async function handleWechatQrStatus(res: ServerResponse, url: URL): Promise<void> {
+export async function handleWechatQrStatus(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   const qrToken = url.searchParams.get('token') || ''
   if (!qrToken) {
     sendJson(res, 400, { error: 'token query param required' })
@@ -114,6 +114,17 @@ export async function handleWechatQrStatus(res: ServerResponse, url: URL): Promi
           fallback: { messengers: [], agents: [], defaultAgent: 'agim' },
         })
       } catch { /* best-effort */ }
+      const actorUserId = getRequestUserId(req)
+      const scanned = result.credentials?.userId
+      if (actorUserId) {
+        try {
+          const { claimImIdentity, claimMessengerPlatform } = await import('../core/im-bind.js')
+          claimMessengerPlatform('wechat', actorUserId)
+          if (scanned) {
+            claimImIdentity({ platform: 'wechat', imUserId: scanned, userId: actorUserId })
+          }
+        } catch { /* key stamp is best-effort; QR confirm already succeeded */ }
+      }
     }
     sendJson(res, 200, result)
   } catch (err) {

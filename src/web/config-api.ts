@@ -36,7 +36,7 @@ import {
 import { listProviders } from '../core/llm/registry.js'
 import { isMasked } from './env-mask.js'
 import { readBody, sendJson, sendError } from './http-utils.js'
-import { requireAdmin, getRequestActor } from './auth.js'
+import { requireAdmin, getRequestActor, getRequestUserId } from './auth.js'
 
 class ConfigValidationError extends Error {
   constructor(readonly details: string[]) {
@@ -359,6 +359,16 @@ async function handlePutConfig(req: IncomingMessage, res: ServerResponse): Promi
       const { setLiveConfig } = await import('../core/live-config.js')
       setLiveConfig(storedConfig as unknown as Config)
     } catch { /* best-effort — old configs without live-config still work */ }
+    const actorUserId = getRequestUserId(req)
+    if (actorUserId && Array.isArray(incoming.messengers)) {
+      try {
+        const { claimMessengerSlots } = await import('../core/im-bind.js')
+        claimMessengerSlots(
+          incoming.messengers.filter((m): m is string => typeof m === 'string'),
+          actorUserId,
+        )
+      } catch { /* key stamp is best-effort; messenger save already succeeded */ }
+    }
     // R12 ⑤ — persistent audit. `details.keys` is the list of top-level
     // config keys touched (e.g. ['feishu', 'discord']) — never the raw
     // values, which would leak tokens / app secrets through the audit

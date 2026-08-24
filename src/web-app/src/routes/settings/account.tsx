@@ -1,13 +1,12 @@
 /**
- * /settings/account — profile, points, API tokens, invites (admin),
- * IM channel claim for the signed-in user.
+ * /settings/account — profile, points, API tokens, invites (admin).
+ * IM connect stays on Settings → Messengers; this page does not bind channels.
  */
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { ImChannelBindCard } from '@/components/settings/im-channel-bind'
 import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -128,8 +127,6 @@ export default function SettingsAccountRoute(): JSX.Element {
           </Label>
         )}
       </section>
-
-      <ImChannelBindCard />
 
       {role === 'admin' && (
         <section className="space-y-3 rounded-xl border border-border p-4">

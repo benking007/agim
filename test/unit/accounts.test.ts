@@ -11,7 +11,7 @@ import {
   verifyLoginSession,
 } from '../../src/core/accounts.js'
 import { consumeCaptcha, issueCaptcha, _issueCaptchaForTests } from '../../src/core/captcha.js'
-import { bindImIdentity, claimImIdentity, findBinding, unbindImIdentity } from '../../src/core/im-bind.js'
+import { bindImIdentity, claimImIdentity, claimMessengerPlatform, findBinding, PLATFORM_CHANNEL, unbindImIdentity } from '../../src/core/im-bind.js'
 import {
   attachRegisteredIdentity,
   imChannelKey,
@@ -137,6 +137,15 @@ describe('im bind', () => {
     expect(claimed.binding.userId).toBe(second.id)
     expect(findBinding('telegram', '777')?.userId).toBe(second.id)
     expect(resolveBillableUserId('telegram', '777')).toBe(second.id)
+  })
+
+  it('connecting a messenger stamps inbound keys with the signed-in user', () => {
+    const { user } = registerUser({ username: 'ivy', password: 'password1' })
+    claimMessengerPlatform('telegram', user.id)
+    expect(findBinding('telegram', PLATFORM_CHANNEL)?.userId).toBe(user.id)
+    expect(attachRegisteredIdentity('telegram', '12345')).toBe(`12345:${user.id}`)
+    expect(userKey('telegram', '12345')).toBe(`telegram:12345:${user.id}`)
+    expect(resolveBillableUserId('telegram', '12345')).toBe(user.id)
   })
 
   it('quota follows the registered user; IM is only a channel', () => {

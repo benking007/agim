@@ -140,39 +140,6 @@ export async function handleAccountApi(
     return true
   }
 
-  if (p === '/api/me/im-bindings' && m === 'GET') {
-    const userId = getRequestUserId(req)
-    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
-    sendJson(res, 200, { bindings: listBindings({ userId }) })
-    return true
-  }
-  if (p === '/api/me/im-bindings' && m === 'POST') {
-    const userId = getRequestUserId(req)
-    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
-    try {
-      const parsed = JSON.parse(await readBody(req, res) || '{}') as {
-        platform?: string; imUserId?: string
-      }
-      const result = claimImIdentity({
-        platform: parsed.platform || '',
-        imUserId: parsed.imUserId || '',
-        userId,
-      })
-      sendJson(res, 200, { ok: true, ...result })
-    } catch (err) {
-      sendError(res, 400, codeOf(err), { message: err instanceof Error ? err.message : String(err) })
-    }
-    return true
-  }
-  if (p === '/api/me/im-bindings' && m === 'DELETE') {
-    const userId = getRequestUserId(req)
-    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
-    const parsed = JSON.parse(await readBody(req, res) || '{}') as { platform?: string; imUserId?: string }
-    const ok = unbindImIdentity(parsed.platform || '', parsed.imUserId || '', userId)
-    sendJson(res, 200, { ok })
-    return true
-  }
-
   if (p === '/api/admin/users' && m === 'GET') {
     if (!requireAdmin(req, res)) return true
     sendJson(res, 200, { users: listUsers() })

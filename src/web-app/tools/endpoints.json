@@ -39,7 +39,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 154,
+  "count": 151,
   "endpoints": [
     {
       "method": "DELETE",
@@ -75,12 +75,6 @@
       "method": "DELETE",
       "path": "/api/mcp/servers/:name",
       "source": "dynamic",
-      "authRequired": true
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/me/im-bindings",
-      "source": "exact",
       "authRequired": true
     },
     {
@@ -374,12 +368,6 @@
     {
       "method": "GET",
       "path": "/api/mcp",
-      "source": "exact",
-      "authRequired": true
-    },
-    {
-      "method": "GET",
-      "path": "/api/me/im-bindings",
       "source": "exact",
       "authRequired": true
     },
@@ -777,12 +765,6 @@
       "method": "POST",
       "path": "/api/mcp/servers/:name/health",
       "source": "dynamic",
-      "authRequired": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/me/im-bindings",
-      "source": "exact",
       "authRequired": true
     },
     {

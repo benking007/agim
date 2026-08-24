@@ -70,8 +70,8 @@ export interface TokenRow {
    *  explicitly demote by passing `role: 'user'` to createToken or via
    *  the PATCH /api/tokens/:id endpoint. */
   role?: TokenRole
-  /** Owning local account. Missing on pre-account tokens; first admin
-   *  registration claims orphans via {@link attachOrphanTokens}. */
+  /** Owning local account. Missing on pre-account tokens; the first
+   *  admin inherit/skip step revokes those leftovers. */
   user_id?: string
 }
 
@@ -184,7 +184,21 @@ export function listTokensForUser(userId: string): Array<Omit<TokenRow, 'hash'>>
     }))
 }
 
-/** Attach tokens that have no user_id to the given account (first-admin migrate). */
+/** Tokens created before accounts (no user_id). */
+export function listUnownedTokens(): Array<Omit<TokenRow, 'hash'>> {
+  return readFile().tokens
+    .filter((t) => !t.user_id)
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      created_at: t.created_at,
+      last_used_at: t.last_used_at,
+      role: t.role ?? 'admin',
+      user_id: t.user_id,
+    }))
+}
+
+/** @deprecated Upgrade no longer attaches leftovers; inherit/skip revokes them. */
 export function attachOrphanTokens(userId: string): number {
   const data = readFile()
   let n = 0

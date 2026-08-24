@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _resetAccountsCache } from '../../src/core/accounts-store.js'
@@ -13,10 +14,16 @@ import {
   verifyLoginSession,
 } from '../../src/core/accounts.js'
 import * as accounts from '../../src/core/accounts.js'
-import { adoptLegacyInstall } from '../../src/core/accounts-upgrade.js'
+import {
+  adoptLegacyInstall,
+  inheritLegacySession,
+  listLegacyUpgrade,
+  skipLegacyUpgrade,
+} from '../../src/core/accounts-upgrade.js'
 import { createToken, getTokenUserId } from '../../src/core/access-token.js'
 import { setLiveConfig } from '../../src/core/live-config.js'
 import { bindAccountsModule, resolveWebIdentity } from '../../src/web/auth.js'
+import { webThreadOwners } from '../../src/core/web-thread-owners.js'
 import type { Config } from '../../src/core/types.js'
 import { consumeCaptcha, issueCaptcha, _issueCaptchaForTests } from '../../src/core/captcha.js'
 import { bindImIdentity, claimImIdentity, claimMessengerPlatform, findBinding, PLATFORM_CHANNEL, unbindImIdentity } from '../../src/core/im-bind.js'
@@ -44,10 +51,12 @@ beforeEach(() => {
   saved.AGIM_HOME = process.env.AGIM_HOME
   process.env.AGIM_HOME = tmp
   _resetAccountsCache()
+  webThreadOwners._resetForTests()
 })
 
 afterEach(() => {
   _resetAccountsCache()
+  webThreadOwners._resetForTests()
   if (saved.AGIM_HOME === undefined) delete process.env.AGIM_HOME
   else process.env.AGIM_HOME = saved.AGIM_HOME
   rmSync(tmp, { recursive: true, force: true })
@@ -247,16 +256,86 @@ describe('legacy upgrade', () => {
     } as unknown as IncomingMessage
   }
 
-  it('first admin inherits orphan tokens and connected messengers', () => {
+  function sanitizeKey(raw: string): string {
+    return raw.replace(/[^A-Za-z0-9_-]/g, (c) => {
+      return createHash('sha256').update(c).digest('hex').slice(0, 8)
+    })
+  }
+
+  function sessionJsonPath(threadId: string): string {
+    return join(tmp, 'sessions', `${sanitizeKey(`web:web:${threadId}`)}.json`)
+  }
+
+  function writeSession(threadId: string, title: string): void {
+    mkdirSync(join(tmp, 'sessions'), { recursive: true })
+    writeFileSync(sessionJsonPath(threadId), `${JSON.stringify({
+      title,
+      lastActivity: Date.now(),
+      agent: 'agim',
+      usage: { turns: 2 },
+    }, null, 2)}\n`)
+  }
+
+  it('first admin claims messengers only; tokens wait for inherit', () => {
     const orphan = createToken('pre-account', { role: 'admin' })
     expect(getTokenUserId(orphan.id)).toBeUndefined()
     setLiveConfig({ messengers: ['feishu', 'wechat-ilink'] } as Config)
     const { user } = registerUser({ username: 'operator', password: 'password1' })
     const adopted = adoptLegacyInstall(user.id)
-    expect(adopted.tokens).toBeGreaterThan(0)
-    expect(getTokenUserId(orphan.id)).toBe(user.id)
+    expect(adopted.tokens).toBe(0)
+    expect(getTokenUserId(orphan.id)).toBeUndefined()
     expect(findBinding('feishu', PLATFORM_CHANNEL)?.userId).toBe(user.id)
     expect(findBinding('wechat', PLATFORM_CHANNEL)?.userId).toBe(user.id)
+  })
+
+  it('lists unowned tokens and their sessions, then inherits one', () => {
+    const keepToken = createToken('keep-token', { role: 'admin' })
+    const dropToken = createToken('drop-token', { role: 'admin' })
+    writeSession('keep-thread', 'Keep me')
+    writeSession('drop-thread', 'Drop me')
+    writeSession('local-thread', 'Loopback chat')
+    webThreadOwners.set('keep-thread', keepToken.id)
+    webThreadOwners.set('drop-thread', dropToken.id)
+    webThreadOwners.set('local-thread', 'loopback')
+
+    const { user } = registerUser({ username: 'operator', password: 'password1' })
+    const preview = listLegacyUpgrade()
+    expect(preview.pending).toBe(true)
+    expect(preview.tokens.map((t) => t.id).sort()).toEqual([dropToken.id, keepToken.id].sort())
+    expect(preview.tokens.find((t) => t.id === keepToken.id)?.sessions.map((s) => s.id)).toEqual(['keep-thread'])
+    expect(preview.tokens.find((t) => t.id === dropToken.id)?.sessions.map((s) => s.id)).toEqual(['drop-thread'])
+    expect(preview.local.sessions.map((s) => s.id)).toEqual(['local-thread'])
+
+    const result = inheritLegacySession(user.id, 'keep-thread')
+    expect(result.inherited).toBe('keep-thread')
+    expect(result.discardedSessions).toBe(2)
+    expect(result.discardedTokens).toBe(2)
+    expect(existsSync(sessionJsonPath('keep-thread'))).toBe(true)
+    expect(existsSync(sessionJsonPath('drop-thread'))).toBe(false)
+    expect(existsSync(sessionJsonPath('local-thread'))).toBe(false)
+    const kept = JSON.parse(readFileSync(sessionJsonPath('keep-thread'), 'utf-8')) as { ownerUserId?: string }
+    expect(kept.ownerUserId).toBe(user.id)
+    expect(webThreadOwners.get('keep-thread')).toBe(user.id)
+    expect(getTokenUserId(keepToken.id)).toBeUndefined()
+    expect(getTokenUserId(dropToken.id)).toBeUndefined()
+    expect(listLegacyUpgrade().pending).toBe(false)
+  })
+
+  it('skip discards every unowned token and its sessions', () => {
+    const orphan = createToken('pre-account', { role: 'admin' })
+    writeSession('old-thread', 'Old chat')
+    writeSession('local-thread', 'Loopback chat')
+    webThreadOwners.set('old-thread', orphan.id)
+    webThreadOwners.set('local-thread', 'anon')
+
+    const { user } = registerUser({ username: 'operator', password: 'password1' })
+    const result = skipLegacyUpgrade(user.id)
+    expect(result.discardedSessions).toBe(2)
+    expect(result.discardedTokens).toBe(1)
+    expect(existsSync(sessionJsonPath('old-thread'))).toBe(false)
+    expect(existsSync(sessionJsonPath('local-thread'))).toBe(false)
+    expect(getTokenUserId(orphan.id)).toBeUndefined()
+    expect(listLegacyUpgrade().pending).toBe(false)
   })
 
   it('loopback keeps acting as the sole admin after upgrade', () => {

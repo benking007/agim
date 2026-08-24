@@ -78,7 +78,12 @@ export default function RegisterRoute(): JSX.Element {
           captcha,
         }),
       })
-      const body = await res.json() as { user?: { id: string; username: string; displayName: string; role: 'admin' | 'user' }; error?: string }
+      const body = await res.json() as {
+        user?: { id: string; username: string; displayName: string; role: 'admin' | 'user' }
+        error?: string
+        firstAdmin?: boolean
+        legacyUpgrade?: boolean
+      }
       if (!res.ok) {
         setChallenge(await loadCaptcha())
         toast.error(body.error || t('login.registerFailed', { defaultValue: '注册失败' }))
@@ -86,6 +91,10 @@ export default function RegisterRoute(): JSX.Element {
       }
       if (body.user) setUser(body.user)
       toast.success(t('states.saved'))
+      if (body.legacyUpgrade) {
+        navigate(`/upgrade-legacy?next=${encodeURIComponent(next)}`, { replace: true })
+        return
+      }
       navigate(next, { replace: true })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
@@ -105,7 +114,7 @@ export default function RegisterRoute(): JSX.Element {
           </CardTitle>
           <CardDescription>
             {first
-              ? t('login.firstHint', { defaultValue: '这是本机第一个账号，将自动成为管理员。升级前的 API 令牌和已连接的信使会挂到这个账号上；只有一个用户时，本机访问仍免登录。' })
+              ? t('login.firstHint')
               : t('login.inviteHint', { defaultValue: '需要管理员发放的邀请码。' })}
           </CardDescription>
         </CardHeader>

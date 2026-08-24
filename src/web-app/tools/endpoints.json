@@ -39,7 +39,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 151,
+  "count": 153,
   "endpoints": [
     {
       "method": "DELETE",
@@ -238,6 +238,12 @@
       "path": "/api/auth/captcha",
       "source": "exact",
       "authRequired": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/legacy-upgrade",
+      "source": "exact",
+      "authRequired": true
     },
     {
       "method": "GET",
@@ -640,6 +646,12 @@
       "path": "/api/auth/exchange-mobile",
       "source": "exact",
       "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/legacy-upgrade",
+      "source": "exact",
+      "authRequired": true
     },
     {
       "method": "POST",

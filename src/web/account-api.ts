@@ -14,7 +14,13 @@ import {
   listTokensForUser,
   revokeToken,
 } from '../core/access-token.js'
-import { adoptLegacyInstall } from '../core/accounts-upgrade.js'
+import {
+  adoptLegacyInstall,
+  inheritLegacySession,
+  listLegacyUpgrade,
+  markLegacyUpgradeDone,
+  skipLegacyUpgrade,
+} from '../core/accounts-upgrade.js'
 import {
   createInvite,
   getUserById,
@@ -55,6 +61,34 @@ export async function handleAccountApi(
 
   if (p === '/api/auth/bootstrap-state' && m === 'GET') {
     sendJson(res, 200, { hasUsers: hasAnyUser() })
+    return true
+  }
+  if (p === '/api/auth/legacy-upgrade' && m === 'GET') {
+    const userId = getRequestUserId(req)
+    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
+    if (!isRequestAdmin(req)) { sendError(res, 403, 'AUTH_ADMIN_REQUIRED', { message: 'admin role required' }); return true }
+    sendJson(res, 200, listLegacyUpgrade())
+    return true
+  }
+  if (p === '/api/auth/legacy-upgrade' && m === 'POST') {
+    const userId = getRequestUserId(req)
+    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
+    if (!isRequestAdmin(req)) { sendError(res, 403, 'AUTH_ADMIN_REQUIRED', { message: 'admin role required' }); return true }
+    try {
+      const parsed = JSON.parse(await readBody(req, res) || '{}') as { threadId?: string; skip?: boolean }
+      if (parsed.skip) {
+        sendJson(res, 200, { ok: true, ...skipLegacyUpgrade(userId) })
+        return true
+      }
+      const threadId = (parsed.threadId || '').trim()
+      if (!threadId) {
+        sendError(res, 400, 'LEGACY_SESSION_REQUIRED', { message: 'threadId required, or skip' })
+        return true
+      }
+      sendJson(res, 200, { ok: true, ...inheritLegacySession(userId, threadId) })
+    } catch (err) {
+      sendError(res, 400, codeOf(err), { message: err instanceof Error ? err.message : String(err) })
+    }
     return true
   }
   if (p === '/api/auth/captcha' && m === 'GET') {
@@ -279,11 +313,13 @@ async function handleRegister(req: IncomingMessage, res: ServerResponse): Promis
       try { adoptLegacyInstall(result.user.id) } catch { /* ignore */ }
     }
     const maxAge = 30 * 24 * 60 * 60
+    const legacyUpgrade = first ? listLegacyUpgrade().pending : false
+    if (first && !legacyUpgrade) markLegacyUpgradeDone()
     res.writeHead(201, {
       'Content-Type': 'application/json; charset=utf-8',
       'Set-Cookie': buildSessionCookie(req, result.session.raw, maxAge),
     })
-    res.end(JSON.stringify({ ok: true, user: result.user, firstAdmin: first }))
+    res.end(JSON.stringify({ ok: true, user: result.user, firstAdmin: first, legacyUpgrade }))
   } catch (err) {
     sendError(res, 400, codeOf(err), { message: err instanceof Error ? err.message : String(err) })
   }

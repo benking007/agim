@@ -20,10 +20,12 @@ import { ErrorBoundary } from '@/components/shell/error-boundary'
 
 import LoginRoute from '@/routes/login'
 import RegisterRoute from '@/routes/register'
+import UpgradeLegacyRoute from '@/routes/upgrade-legacy'
 import ChatRoute from '@/routes/chat'
 import NotFoundRoute from '@/routes/not-found'
 import { MobileChatRedirect } from '@/components/chat/mobile-chat-redirect'
 import { FirstRunRedirect } from '@/components/setup/first-run-redirect'
+import { LegacyUpgradeRedirect } from '@/components/setup/legacy-upgrade-redirect'
 
 /** Wrap a `lazy:` factory so the route renders behind RequireAuth.
  *  We can't apply the auth wrapper via element AND lazy, so the
@@ -35,7 +37,9 @@ function authedLazy(factory: () => Promise<{ default: React.ComponentType }>) {
     return {
       element: (
         <RequireAuth>
-          <Cmp />
+          <LegacyUpgradeRedirect>
+            <Cmp />
+          </LegacyUpgradeRedirect>
         </RequireAuth>
       ),
     }
@@ -56,6 +60,14 @@ const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
   { path: '/register', element: <RegisterRoute /> },
   {
+    path: '/upgrade-legacy',
+    element: (
+      <RequireAuth>
+        <UpgradeLegacyRoute />
+      </RequireAuth>
+    ),
+  },
+  {
     path: '/setup',
     lazy: authedLazy(() => import('@/routes/setup')),
   },
@@ -64,9 +76,11 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <FirstRunRedirect>
-          <MobileChatRedirect>
-            <ChatRoute />
-          </MobileChatRedirect>
+          <LegacyUpgradeRedirect>
+            <MobileChatRedirect>
+              <ChatRoute />
+            </MobileChatRedirect>
+          </LegacyUpgradeRedirect>
         </FirstRunRedirect>
       </RequireAuth>
     ),

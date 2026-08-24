@@ -82,6 +82,8 @@ export interface AccountsFile {
   defaultCostPer1kOut: number
   quotas: QuotaRow[]
   ledger: LedgerRow[]
+  /** Set after the first admin inherits or skips pre-account sessions. */
+  legacyUpgradeDone?: boolean
 }
 
 export const DEFAULT_POINTS_PER_USD = 10_000
@@ -109,6 +111,7 @@ function emptyFile(): AccountsFile {
     defaultCostPer1kOut: 0,
     quotas: [],
     ledger: [],
+    legacyUpgradeDone: false,
   }
 }
 
@@ -149,6 +152,7 @@ export function readAccounts(): AccountsFile {
         ? Number(parsed.defaultMonthlyLimit) : DEFAULT_MONTHLY_LIMIT,
       defaultCostPer1kIn: Number.isFinite(parsed.defaultCostPer1kIn) ? Number(parsed.defaultCostPer1kIn) : 0,
       defaultCostPer1kOut: Number.isFinite(parsed.defaultCostPer1kOut) ? Number(parsed.defaultCostPer1kOut) : 0,
+      legacyUpgradeDone: Boolean(parsed.legacyUpgradeDone),
     }
     prune(cached)
     cachedPath = path

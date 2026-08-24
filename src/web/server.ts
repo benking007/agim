@@ -54,6 +54,8 @@ import {
   sendToClient,
   sendSessionHistory,
   handleClientMessage,
+  bindWsClients,
+  notifyAccountSessionsChanged,
 } from './ws-chat.js'
 import { unregisterClientIfCurrent } from './unregister-client.js'
 import { serveStatic, servePageHtml, PUBLIC_DIR } from './static-serve.js'
@@ -114,6 +116,7 @@ export async function startWebServer(options: {
   const bindHost = process.env.AGIM_WEB_BIND || '127.0.0.1'
   await assertPortCanListen(port, bindHost)
   const clients = new Map<string, ClientConnection>()
+  bindWsClients(clients)
   // R9: threadId → tokenId ownership. A WS peer claims a threadId on
   // first connection (verifyClient already verified the token); later
   // `get-history { threadId }` rekey requests must come from a peer
@@ -139,6 +142,10 @@ export async function startWebServer(options: {
     const c = clients.get(threadId)
     if (!c || c.ws.readyState !== 1 /* WebSocket.OPEN */) return
     sendToClient(c.ws, { type: 'loop-schedule-changed', threadId })
+  })
+  const { onWebSessionListChanged } = await import('../core/session.js')
+  const offSessionsChanged = onWebSessionListChanged((userId) => {
+    notifyAccountSessionsChanged(userId)
   })
 
   // v1.1.10+: token-based auth for the web console.
@@ -727,7 +734,12 @@ export async function startWebServer(options: {
     // same-tokenId tabs (which is fine), but the stronger id closes the
     // pre-rekey race window.
     const clientId = `web-${randomBytes(12).toString('base64url')}`
-    const client: ClientConnection = { ws, id: clientId, agent: getDefaultAgent(options.defaultAgent) }
+    const client: ClientConnection = {
+      ws,
+      id: clientId,
+      agent: getDefaultAgent(options.defaultAgent),
+      ...(accountUserId ? { userId: accountUserId } : {}),
+    }
     clients.set(clientId, client)
     // First-claim ownership: this connection's tokenId owns this
     // brand-new threadId until disconnect.
@@ -1092,6 +1104,7 @@ export async function startWebServer(options: {
       clearInterval(wsHeartbeat)
       offLoopWritten()
       offLoopSchedule()
+      offSessionsChanged()
       // Close all WebSocket connections
       for (const [id, client] of clients) {
         client.ws.close()

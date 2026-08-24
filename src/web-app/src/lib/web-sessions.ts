@@ -1,17 +1,17 @@
 /**
  * Browser-side index of Web chat sessions (`web-*` thread ids).
  *
- * Server persistence is unchanged: each id maps to `web:web:<threadId>`
- * under `~/.agim/sessions/`. This module only remembers which threads
- * *this browser* has opened so the Portal rail can switch via
- * `get-history { threadId }` instead of wiping the current log.
+ * Authoritative list is the account's server sessions (`GET /api/me/sessions`).
+ * This module caches that list in `localStorage['agim-web-sessions']` so the
+ * Portal rail can switch via `get-history { threadId }` without a round trip
+ * on every paint. Blank "New conversation" shells stay local until the first
+ * user message (or an explicit archive) is pushed to the server.
  *
  * `localStorage['agim-web-thread-id']` is the last-focused id (new tabs
  * and older upload paths still read it). Each tab also keeps its own
  * current thread in `sessionStorage['agim-web-tab-thread']` so another
  * window switching sessions cannot hydrate this tab into the wrong
- * transcript. `agim-web-sessions` holds the shared list + titles.
- * First load migrates a lone thread id into the index.
+ * transcript. First load migrates a lone thread id into the index.
  */
 
 import { CLOUD_WORKSPACE_ID, loadActiveWorkspaceId } from './web-workspaces'
@@ -256,15 +256,71 @@ export function upsertSession(patch: {
   })
 }
 
-/** Replace the local rail with the server-authoritative list. */
+/** Replace the local rail with the server-authoritative list.
+ *
+ * Keeps the tab's current session when the server does not know it yet
+ * (blank new chat, or the first message still in flight). Local
+ * `workspaceId` is a device concept and is preserved across pulls.
+ */
 export function replaceIndexFromServer(rows: WebSessionEntry[], activeId?: string): WebSessionIndex {
-  const sessions = rows.filter((s) => isWebThreadId(s.id))
-  if (sessions.length === 0) return loadIndex()
-  const nextActive = (activeId && sessions.some((s) => s.id === activeId))
-    ? activeId
-    : (sessions.find((s) => !s.archivedAt)?.id || sessions[0]!.id)
+  const local = loadIndex()
+  const tabId = (activeId && isWebThreadId(activeId) ? activeId : null)
+    || readTabThreadId()
+    || local.activeId
+  const localById = new Map(local.sessions.map((s) => [s.id, s]))
+  const merged: WebSessionEntry[] = []
+  const seen = new Set<string>()
+
+  for (const row of rows) {
+    if (!isWebThreadId(row.id)) continue
+    const prev = localById.get(row.id)
+    const archivedAt = typeof row.archivedAt === 'number' && Number.isFinite(row.archivedAt)
+      ? row.archivedAt
+      : prev?.archivedAt
+    const entry: WebSessionEntry = {
+      id: row.id,
+      updatedAt: typeof row.updatedAt === 'number' && Number.isFinite(row.updatedAt)
+        ? row.updatedAt
+        : (prev?.updatedAt ?? Date.now()),
+      title: row.title?.trim() || prev?.title,
+      agent: row.agent?.trim() || prev?.agent,
+      workspaceId: prev?.workspaceId || row.workspaceId,
+      ...(typeof archivedAt === 'number' ? { archivedAt } : {}),
+    }
+    if (!entry.title) delete entry.title
+    if (!entry.agent) delete entry.agent
+    if (!entry.workspaceId) delete entry.workspaceId
+    merged.push(entry)
+    seen.add(row.id)
+  }
+
+  const keep = localById.get(tabId)
+  if (keep && !seen.has(tabId) && !isSessionArchived(keep)) {
+    merged.unshift(keep)
+    seen.add(tabId)
+  }
+
+  const horizon = Date.now() - 60_000
+  for (const s of local.sessions) {
+    if (seen.has(s.id) || isSessionArchived(s)) continue
+    if (s.title && s.updatedAt >= horizon) {
+      merged.push(s)
+      seen.add(s.id)
+    }
+  }
+
+  if (merged.length === 0) return local
+
+  const tabEntry = merged.find((s) => s.id === tabId)
+  const nextActive = (tabEntry && !isSessionArchived(tabEntry))
+    ? tabId
+    : (merged.find((s) => !s.archivedAt)?.id || merged[0]?.id || tabId)
+
   persistTabThreadId(nextActive)
-  return writeIndex({ activeId: nextActive, sessions })
+  return writeIndex({
+    activeId: nextActive,
+    sessions: capSessions(merged, nextActive),
+  })
 }
 
 export function setActiveId(id: string): WebSessionIndex {

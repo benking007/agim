@@ -39,7 +39,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 153,
+  "count": 155,
   "endpoints": [
     {
       "method": "DELETE",
@@ -601,6 +601,12 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/me/sessions",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
       "path": "/api/workspaces/:id",
       "source": "dynamic",
       "authRequired": true
@@ -777,6 +783,12 @@
       "method": "POST",
       "path": "/api/mcp/servers/:name/health",
       "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/me/sessions",
+      "source": "exact",
       "authRequired": true
     },
     {

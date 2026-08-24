@@ -38,6 +38,8 @@ export interface ClientConnection {
   ws: WebSocket
   id: string
   agent: string
+  /** Local account id when the peer logged in with username/password. */
+  userId?: string
 }
 
 // ─── Module-level state ──────────────────────────────────────────────────────
@@ -96,6 +98,23 @@ export function formatWebAgentUnavailableMessage(agentName: string): string {
 /**
  * Send a JSON message to a WebSocket client
  */
+/** Live WS peers — set by `startWebServer` so account-level rail nudges can fan out. */
+let boundWsClients: Map<string, ClientConnection> | undefined
+
+export function bindWsClients(clients: Map<string, ClientConnection>): void {
+  boundWsClients = clients
+}
+
+/** Tell every open socket for this account to re-fetch GET /api/me/sessions. */
+export function notifyAccountSessionsChanged(userId: string): void {
+  if (!userId || !boundWsClients) return
+  for (const c of boundWsClients.values()) {
+    if (c.userId !== userId) continue
+    if (c.ws.readyState !== 1 /* WebSocket.OPEN */) continue
+    sendToClient(c.ws, { type: 'sessions-changed' })
+  }
+}
+
 export function sendToClient(ws: WebSocket, data: Record<string, unknown>): void {
   if (ws.readyState === ws.OPEN) {
     ws.send(JSON.stringify(data))
@@ -554,7 +573,7 @@ export async function handleClientMessage(
         logger.info({ event: 'message.received', ...sanitizeUserText(text) })
 
         if (accountUserId) {
-          void sessionManager.claimWebSessionOwner(sessionThreadId, accountUserId)
+          await sessionManager.claimWebSessionOwner(sessionThreadId, accountUserId)
         }
         const { runWithAccountUser } = await import('../core/accounts.js')
         const result = accountUserId

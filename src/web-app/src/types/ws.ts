@@ -135,6 +135,11 @@ export type ChatIncoming =
   | { type: 'loop-changed'; threadId: string }
   | { type: 'loop-schedule-changed'; threadId: string }
   | { type: 'workspace'; ok: boolean; path: string | null; threadId?: string }
+  /**
+   * Account-level rail changed on another device (or this one via REST).
+   * SPA re-fetches GET /api/me/sessions. Not session-scoped.
+   */
+  | { type: 'sessions-changed' }
 
 /** Run lifecycle events emitted around each web chat request.
  *  These are additive (old servers may not send them) and let the

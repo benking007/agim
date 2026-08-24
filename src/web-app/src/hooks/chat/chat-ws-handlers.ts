@@ -443,6 +443,9 @@ export function makeOnIncoming(
         return
       case 'loop-schedule-changed':
         return
+      case 'sessions-changed':
+        // useChat pulls GET /api/me/sessions; this handler is a no-op.
+        return
       case 'steer-accepted':
         // Optimistic APPEND_USER already painted the bubble.
         return

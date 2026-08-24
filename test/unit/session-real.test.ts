@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { existsSync, readdirSync } from 'node:fs'
 import { readFile, writeFile, mkdir, unlink, chmod, stat } from 'node:fs/promises'
-import { sessionManager } from '../../src/core/session'
+import { sessionManager, onWebSessionListChanged } from '../../src/core/session'
 import { AGIM_HOME } from '../../src/core/agim-paths'
 
 const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
@@ -474,6 +474,70 @@ describe('SessionManager (real, on-disk)', () => {
       // because we forked / lost the old one).
       const c = await sessionManager.setOpencodeSessionId(k.platform, k.channelId, k.threadId, 'ses_y')
       expect(c?.opencodeSessionId).toBe('ses_y')
+    } finally {
+      await cleanupKey(k)
+    }
+  })
+
+  it('first web user message sets title and listUserWebSessions skips empty shells', async () => {
+    const threadId = `web-sync-empty-${Date.now().toString(36)}`
+    const userId = `usr-sync-${Date.now().toString(36)}`
+    const k = { platform: 'web', channelId: 'web', threadId }
+    const seen: string[] = []
+    const off = onWebSessionListChanged((id) => { seen.push(id) })
+    try {
+      await sessionManager.claimWebSessionOwner(threadId, userId)
+      let listed = await sessionManager.listUserWebSessions(userId)
+      expect(listed.some((s) => s.id === threadId)).toBe(false)
+
+      await sessionManager.addMessage('web', 'web', threadId, {
+        role: 'user',
+        content: '  hello from browser\nplease sync  ',
+        timestamp: new Date(),
+      })
+      listed = await sessionManager.listUserWebSessions(userId)
+      const row = listed.find((s) => s.id === threadId)
+      expect(row?.title).toBe('hello from browser please sync')
+      expect(seen).toContain(userId)
+
+      await sessionManager.addMessage('web', 'web', threadId, {
+        role: 'user',
+        content: 'second turn should not retitle',
+        timestamp: new Date(),
+      })
+      listed = await sessionManager.listUserWebSessions(userId)
+      expect(listed.find((s) => s.id === threadId)?.title).toBe('hello from browser please sync')
+    } finally {
+      off()
+      await cleanupKey(k)
+    }
+  })
+
+  it('upsertUserWebSession creates a titled session and rejects a foreign owner', async () => {
+    const threadId = `web-sync-upsert-${Date.now().toString(36)}`
+    const userId = `usr-up-${Date.now().toString(36)}`
+    const other = `usr-other-${Date.now().toString(36)}`
+    const k = { platform: 'web', channelId: 'web', threadId }
+    try {
+      const created = await sessionManager.upsertUserWebSession(userId, threadId, {
+        title: 'From Mac',
+        agent: 'agim',
+      })
+      expect(created).toBe(true)
+      const listed = await sessionManager.listUserWebSessions(userId)
+      expect(listed.find((s) => s.id === threadId)?.title).toBe('From Mac')
+
+      const stolen = await sessionManager.upsertUserWebSession(other, threadId, { title: 'steal' })
+      expect(stolen).toBe(false)
+      expect((await sessionManager.listUserWebSessions(userId)).find((s) => s.id === threadId)?.title)
+        .toBe('From Mac')
+
+      const archived = await sessionManager.upsertUserWebSession(userId, threadId, {
+        archivedAt: Date.now(),
+      })
+      expect(archived).toBe(true)
+      const after = await sessionManager.listUserWebSessions(userId)
+      expect(after.find((s) => s.id === threadId)?.archivedAt).toBeGreaterThan(0)
     } finally {
       await cleanupKey(k)
     }

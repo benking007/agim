@@ -127,7 +127,13 @@ export async function handleAccountApi(
     sendJson(res, 200, { sessions })
     return true
   }
-  if (p === '/api/me/sessions' && (m === 'PATCH' || m === 'POST')) {
+  if (p === '/api/me/sessions' && m === 'POST') {
+    const userId = getRequestUserId(req)
+    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
+    await handlePatchMySession(req, res, userId)
+    return true
+  }
+  if (p === '/api/me/sessions' && m === 'PATCH') {
     const userId = getRequestUserId(req)
     if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
     await handlePatchMySession(req, res, userId)

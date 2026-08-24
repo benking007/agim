@@ -1,12 +1,13 @@
 /**
  * Portal left rail — conversation list click switches the active thread.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Brain } from 'lucide-react'
 
 import '@/i18n'
+import { useAuth } from '@/stores/auth'
 import { PortalSidePanel } from './portal-side-panel'
 
 const visual = {
@@ -62,6 +63,10 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
   )
   return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace, onArchiveSession, onArchiveWorkspace }
 }
+
+afterEach(() => {
+  useAuth.getState().clear()
+})
 
 describe('PortalSidePanel conversations', () => {
   it('lists saved sessions under the cloud workspace and click calls onSwitchSession', async () => {
@@ -150,5 +155,17 @@ describe('PortalSidePanel conversations', () => {
     expect(screen.getByTestId('portal-rail-collapsed')).toBeInTheDocument()
     expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
+  })
+
+  it('shows the signed-in username and a logout button', () => {
+    useAuth.getState().setUser({
+      id: 'usr_1',
+      username: 'tester',
+      displayName: 'tester',
+      role: 'admin',
+    })
+    renderPanel()
+    expect(screen.getByTestId('portal-signed-in-user')).toHaveTextContent('tester')
+    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument()
   })
 })

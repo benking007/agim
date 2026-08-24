@@ -46,7 +46,8 @@
     "skills": "技能",
     "workspace": "Agent 文件",
     "observability": "观测",
-    "settings": "设置"
+    "settings": "设置",
+    "signedInAs": "当前登录：{{name}}"
   },
   "confirm": {
     "deleteTitle": "确认删除？",

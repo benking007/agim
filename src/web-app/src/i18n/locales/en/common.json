@@ -46,7 +46,8 @@
     "skills": "Skills",
     "workspace": "Agent Files",
     "observability": "Observability",
-    "settings": "Settings"
+    "settings": "Settings",
+    "signedInAs": "Signed in as {{name}}"
   },
   "confirm": {
     "deleteTitle": "Delete this item?",

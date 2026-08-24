@@ -8,9 +8,11 @@ import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
   Archive, ChevronDown, ChevronRight, Cloud, Folder, FolderPlus,
-  Languages, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, User, X,
+  Languages, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
+import { signedInName, signOut } from '@/lib/sign-out'
+import { useAuth } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { sessionWorkspaceId, type WebSessionEntry } from '@/lib/web-sessions'
 import type { WebWorkspace } from '@/lib/web-workspaces'
@@ -44,6 +46,7 @@ export function PortalSidePanel(props: {
   onArchiveWorkspace: (id: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
+  const userName = signedInName(useAuth((s) => s.user))
   const {
     dark, agentId, visual, AgentIcon, status, lang, showClose,
     railCollapsed = false, onToggleRailCollapsed,
@@ -130,12 +133,21 @@ export function PortalSidePanel(props: {
             onClick={onToggleLang}
             icon={<Languages className="h-4 w-4" />}
           />
+          {userName ? (
+            <IconRailButton
+              dark={dark}
+              label={t('chat.logout')}
+              onClick={() => { void signOut() }}
+              icon={<LogOut className="h-4 w-4" />}
+            />
+          ) : null}
           <div
             className={cn(
               'mt-1 flex h-8 w-8 items-center justify-center rounded-full',
               dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
             )}
-            title={status === 'open' ? t('chat.portal.connected') : status}
+            title={userName || (status === 'open' ? t('chat.portal.connected') : status)}
+            aria-label={userName ? t('nav.signedInAs', { name: userName }) : undefined}
           >
             <User className="h-4 w-4" />
           </div>
@@ -360,17 +372,36 @@ export function PortalSidePanel(props: {
         </div>
         <div className={cn('flex items-center gap-3', dark ? 'border-zinc-800' : 'border-zinc-200')}>
           <div className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-full',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
             dark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-600',
           )}>
             <User className="h-4 w-4" />
           </div>
-          <div>
-            <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>Agim</h4>
+          <div className="min-w-0 flex-1">
+            <h4
+              className={cn('truncate text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}
+              data-testid="portal-signed-in-user"
+            >
+              {userName || '—'}
+            </h4>
             <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
               {status === 'open' ? t('chat.portal.connected') : status}
             </p>
           </div>
+          {userName ? (
+            <button
+              type="button"
+              onClick={() => { void signOut() }}
+              className={cn(
+                'shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold transition',
+                dark
+                  ? 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
+                  : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900',
+              )}
+            >
+              {t('chat.logout')}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

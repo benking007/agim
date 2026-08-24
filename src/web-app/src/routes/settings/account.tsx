@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { signOut } from '@/lib/sign-out'
 import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,7 +31,6 @@ export default function SettingsAccountRoute(): JSX.Element {
   const { t } = useTranslation('settings')
   const user = useAuth((s) => s.user)
   const role = useAuth((s) => s.role)
-  const clear = useAuth((s) => s.clear)
   const [points, setPoints] = useState<PointsBalance | null>(null)
   const [tokenRaw, setTokenRaw] = useState<string | null>(null)
   const [inviteRaw, setInviteRaw] = useState<string | null>(null)
@@ -86,9 +86,7 @@ export default function SettingsAccountRoute(): JSX.Element {
   }
 
   async function logout(): Promise<void> {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
-    clear()
-    window.location.href = '/login'
+    await signOut()
   }
 
   return (

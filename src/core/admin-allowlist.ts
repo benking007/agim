@@ -51,8 +51,10 @@ let loggedOnce = false
 
 function normalizeEntry(platform: string, userId: string | undefined): Entry | null {
   const p = platform.trim().toLowerCase()
-  const u = (userId ?? '').trim()
-  if (!p || !u) return null
+  const raw = (userId ?? '').trim()
+  if (!p || !raw) return null
+  const u = raw.replace(/:usr_[a-z0-9]+$/i, '').replace(new RegExp(`^${p}:`, 'i'), '')
+  if (!u) return null
   return { platform: p, userId: u }
 }
 

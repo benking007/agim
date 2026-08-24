@@ -46,7 +46,8 @@
     "skills": "技能",
     "workspace": "Agent 文件",
     "observability": "观测",
-    "settings": "设置"
+    "settings": "设置",
+    "signedInAs": "当前登录：{{name}}"
   },
   "confirm": {
     "deleteTitle": "确认删除？",
@@ -66,11 +67,29 @@
     "selectRow": "选中此行"
   },
   "login": {
-    "intro": "粘贴访问令牌：首次部署可运行 `agim token bootstrap`，后续可用 `agim token create` 生成。",
-    "tokenLabel": "访问令牌",
+    "intro": "使用用户名和密码登录。",
     "submit": "登录",
+    "createAdmin": "创建管理员账号",
+    "registerTitle": "注册",
+    "firstHint": "这是本机第一个账号，将自动成为管理员。创建后会列出升级前的旧令牌及其会话，选一个继承；也可以跳过并丢掉它们。只有一个用户时，本机访问仍免登录。",
+    "inviteHint": "需要管理员发放的邀请码。",
+    "invite": "邀请码",
+    "goRegister": "没有账号？使用邀请码注册",
+    "goRegisterFirst": "还没有账号？创建管理员（无需邀请码）",
+    "goLogin": "已有账号？去登录",
     "adminRequired": "当前 token 没有管理权限，请使用管理员 token 重新登录。",
-    "hint": "loopback（127.0.0.1）的请求会跳过此页；只有跨机访问或设置了 AGIM_TRUST_LOOPBACK=off 时才会看到此页。"
+    "hint": "本机 127.0.0.1 且只有一个用户时会免登录。跨机访问请用账号密码。"
+  },
+  "legacyUpgrade": {
+    "title": "继承一个旧会话",
+    "hint": "API 令牌不是登录方式。下面是升级前的旧令牌，以及每个令牌下的会话。选一个接到这个管理员账号；其余令牌和会话会丢掉。",
+    "local": "本机免登会话",
+    "token": "令牌 {{label}}",
+    "noSessions": "这个令牌下没有会话",
+    "inherit": "继承所选会话",
+    "skip": "跳过",
+    "skipHint": "跳过会丢掉全部旧令牌及其会话，之后无法恢复。脚本用的新令牌可在账号页重新生成。",
+    "loading": "正在读取旧会话…"
   },
   "home": {
     "placeholder": "已登录，请从侧栏进入对话。",

@@ -22,6 +22,9 @@ const checkMode = process.argv.includes('--check')
 
 const publicRoutes = new Set([
   'POST /api/auth/login',
+  'POST /api/auth/register',
+  'GET /api/auth/captcha',
+  'GET /api/auth/bootstrap-state',
   'POST /api/auth/exchange-mobile',
   'GET /api/health',
   'POST /api/loc',
@@ -57,6 +60,10 @@ const dynamicRoutes = {
   healthMatch: [['POST', '/api/mcp/servers/:name/health']],
   loopIdMatch: [['GET', '/api/loops/:id']],
   loopReportMatch: [['GET', '/api/loops/:id/report']],
+  tokenMatch: [['DELETE', '/api/me/tokens/:id']],
+  userMatch: [['PATCH', '/api/admin/users/:id']],
+  invMatch: [['DELETE', '/api/admin/invites/:id']],
+  quotaMatch: [['PATCH', '/api/admin/users/:id/points']],
 }
 
 const ignoredDynamicMatches = new Set([

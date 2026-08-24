@@ -9,7 +9,11 @@ import { sendError, sendJson, readBody } from './http-utils.js'
 /** v1.1.10 — paths that never require a web token. */
 export const PUBLIC_EXACT_PATHS = new Set<string>([
   '/login', '/login.html',
+  '/register', '/register.html',
   '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/captcha',
+  '/api/auth/bootstrap-state',
   // CR P2c — one-shot exchange of mobile QR code → raw token (no auth yet).
   '/api/auth/exchange-mobile',
   '/api/health',
@@ -51,7 +55,7 @@ export function isLoopbackPeer(req: IncomingMessage): boolean {
   // transports or post-close sockets the field can read empty, which
   // pre-R9 would silently pass auth. Tighten to exact loopback IPs
   // (with the IPv4-mapped IPv6 form Node uses on dual-stack servers).
-  const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  const ip = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
   return ip === '127.0.0.1' || ip === '::1'
 }
 
@@ -61,11 +65,13 @@ export function isEnvOff(name: string): boolean {
 }
 
 export function hasForwardedPeerHeaders(req: IncomingMessage): boolean {
-  return req.headers.forwarded !== undefined
-    || req.headers['x-forwarded-for'] !== undefined
-    || req.headers['x-forwarded-host'] !== undefined
-    || req.headers['x-real-ip'] !== undefined
-    || req.headers['cf-connecting-ip'] !== undefined
+  const h = req.headers
+  if (!h) return false
+  return h.forwarded !== undefined
+    || h['x-forwarded-for'] !== undefined
+    || h['x-forwarded-host'] !== undefined
+    || h['x-real-ip'] !== undefined
+    || h['cf-connecting-ip'] !== undefined
 }
 
 export function isTrustedLoopbackPeer(req: IncomingMessage): boolean {
@@ -84,21 +90,33 @@ export function isTrustedLoopbackPeer(req: IncomingMessage): boolean {
  *  re-importing the module fresh. */
 export let _queryTokenWarned = false
 
+export function readCookie(req: IncomingMessage, name: string): string | null {
+  const cookie = req.headers?.cookie
+  if (typeof cookie !== 'string') return null
+  for (const part of cookie.split(';')) {
+    const [k, ...rest] = part.trim().split('=')
+    if (k === name) {
+      const v = decodeURIComponent(rest.join('=').trim())
+      return v || null
+    }
+  }
+  return null
+}
+
+export function extractSessionRaw(req: IncomingMessage): string | null {
+  return readCookie(req, 'agim_session')
+}
+
 export function extractToken(req: IncomingMessage, url: URL): string | null {
   // 1. Authorization: Bearer <token>
-  const auth = req.headers.authorization
+  const auth = req.headers?.authorization
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
     const v = auth.slice(7).trim()
     if (v) return v
   }
   // 2. Cookie agim_token=<token>
-  const cookie = req.headers.cookie
-  if (typeof cookie === 'string') {
-    for (const part of cookie.split(';')) {
-      const [k, ...rest] = part.trim().split('=')
-      if (k === 'agim_token') return decodeURIComponent(rest.join('=').trim())
-    }
-  }
+  const fromCookie = readCookie(req, 'agim_token')
+  if (fromCookie) return fromCookie
   // 3. ?token=...  (deprecated — kept for WS upgrade / iframe compat)
   //
   // R13 A5 — query-string tokens leak to:
@@ -161,27 +179,103 @@ export function verifyTokenSync(raw: string): string | null {
   return _tokenModule.verifyToken(raw)
 }
 
+export interface WebIdentity {
+  kind: 'auth-off' | 'loopback' | 'session' | 'token'
+  role: 'admin' | 'user'
+  userId?: string
+  tokenId?: string
+  username?: string
+}
+
+let _accountsMod: typeof import('../core/accounts.js') | null = null
+
+function accountsMod(): typeof import('../core/accounts.js') | null {
+  return _accountsMod
+}
+
+export function bindAccountsModule(mod: typeof import('../core/accounts.js') | null): void {
+  _accountsMod = mod
+}
+
+function usersExist(): boolean {
+  const mod = accountsMod()
+  if (!mod) return false
+  try { return mod.hasAnyUser() } catch { return false }
+}
+
+export function resolveWebIdentity(req: IncomingMessage, url?: URL): WebIdentity | null {
+  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') {
+    return { kind: 'auth-off', role: 'admin' }
+  }
+  let parsed = url
+  if (!parsed) {
+    try { parsed = new URL(req.url || '', 'http://localhost') } catch { parsed = undefined }
+  }
+  const acc = accountsMod()
+  const sessionRaw = extractSessionRaw(req)
+  if (sessionRaw && acc) {
+    try {
+      const user = acc.verifyLoginSession(sessionRaw)
+      if (user) {
+        return {
+          kind: 'session',
+          role: user.role,
+          userId: user.id,
+          username: user.username,
+        }
+      }
+    } catch { /* ignore corrupt session */ }
+  }
+  if (parsed) {
+    const tok = extractToken(req, parsed)
+    if (tok) {
+      const id = verifyTokenSync(tok)
+      if (id && _tokenModule) {
+        const tokenUserId = _tokenModule.getTokenUserId?.(id)
+        if (tokenUserId && acc) {
+          const user = acc.getUserById(tokenUserId)
+          if (user && !user.disabled) {
+            return {
+              kind: 'token',
+              role: user.role,
+              userId: user.id,
+              tokenId: id,
+              username: user.username,
+            }
+          }
+        }
+        return {
+          kind: 'token',
+          role: _tokenModule.getTokenRole(id),
+          userId: tokenUserId,
+          tokenId: id,
+        }
+      }
+    }
+  }
+  if (isTrustedLoopbackPeer(req)) {
+    if (!usersExist()) {
+      return { kind: 'loopback', role: 'admin' }
+    }
+    const sole = acc?.getSoleEnabledUser()
+    if (sole) {
+      return {
+        kind: 'loopback',
+        role: sole.role,
+        userId: sole.id,
+        username: sole.username,
+      }
+    }
+  }
+  return null
+}
+
 /** Returns true if the request is authenticated (or auth not required). */
 export function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
-  // 1. Disabled by env → pass through.
   if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return true
-  // 2. Trusted loopback → pass through (local CLI / browser-on-same-host).
-  if (isTrustedLoopbackPeer(req)) return true
-  // 3. Public-by-design path → pass through.
   if (isPublicPath(url.pathname, req.method || 'GET')) return true
+  if (resolveWebIdentity(req, url)) return true
 
-  // 4. Verify token from header / cookie / query.
-  const tok = extractToken(req, url)
-  if (tok) {
-    // Lazy import avoids loading SQLite-adjacent modules in test stubs etc.
-    // The synchronous verifyToken touches the small tokens.json only.
-    // We require require()-style top-level access by deferring resolution:
-    // but ESM has no require — use a global cache instead.
-    const id = verifyTokenSync(tok)
-    if (id) return true
-  }
-
-  // 5. No / invalid token. /api/* → 401 JSON; static page → 302 to /login.
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ error: 'unauthorized', loginUrl: '/login' }))
@@ -192,9 +286,9 @@ export function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): 
     res.end()
     return false
   }
-  // HTML / static — redirect.
   const next = encodeURIComponent(url.pathname + url.search)
-  res.writeHead(302, { Location: `/login?next=${next}` })
+  const dest = usersExist() ? '/login' : '/register'
+  res.writeHead(302, { Location: `${dest}?next=${next}` })
   res.end()
   return false
 }
@@ -207,16 +301,17 @@ export function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): 
  *    - otherwise → 'web:unknown' (request should already have been rejected
  *      by checkAuth — this branch exists for defensive logging). */
 export function getRequestActor(req: IncomingMessage): string {
-  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return 'web:auth-off'
-  if (isTrustedLoopbackPeer(req)) return 'web:loopback'
-  let url: URL
-  try { url = new URL(req.url || '', 'http://localhost') } catch { return 'web:unknown' }
-  const tok = extractToken(req, url)
-  if (tok) {
-    const id = verifyTokenSync(tok)
-    if (id) return `web:${id}`
-  }
+  const ident = resolveWebIdentity(req)
+  if (!ident) return 'web:unknown'
+  if (ident.kind === 'auth-off') return 'web:auth-off'
+  if (ident.kind === 'loopback') return 'web:loopback'
+  if (ident.userId) return `web:${ident.userId}`
+  if (ident.tokenId) return `web:${ident.tokenId}`
   return 'web:unknown'
+}
+
+export function getRequestUserId(req: IncomingMessage): string | undefined {
+  return resolveWebIdentity(req)?.userId
 }
 
 /** Resolve whether the request's actor has admin role. Used to gate
@@ -234,19 +329,8 @@ export function getRequestActor(req: IncomingMessage): string {
  *  works. Disable it with AGIM_TRUST_LOOPBACK=off. Reverse-proxied
  *  requests with Forwarded / X-Forwarded-* peer headers never qualify. */
 export function isRequestAdmin(req: IncomingMessage): boolean {
-  if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return true
-  if (isTrustedLoopbackPeer(req)) return true
-  let url: URL
-  try { url = new URL(req.url || '', 'http://localhost') } catch { return false }
-  const tok = extractToken(req, url)
-  if (!tok) return false
-  const id = verifyTokenSync(tok)
-  if (!id) return false
-  if (!_tokenModule) return false
-  // isAdminTokenId returns true for legacy tokens missing the role
-  // field (back-compat) so existing deployments stay functional after
-  // upgrade — see access-token.ts:getTokenRole.
-  return _tokenModule.isAdminTokenId(id)
+  const ident = resolveWebIdentity(req)
+  return ident?.role === 'admin'
 }
 
 /** Send 403 and return false when the actor isn't admin. Use as guard:
@@ -264,8 +348,12 @@ export const __webAuthForTesting = {
   isTrustedLoopbackPeer,
   isRequestAdmin,
   isPublicPath,
+  resolveWebIdentity,
   setTokenModule(mod: typeof import('../core/access-token.js') | null): void {
     _tokenModule = mod
+  },
+  setAccountsModule(mod: typeof import('../core/accounts.js') | null): void {
+    _accountsMod = mod
   },
 }
 
@@ -280,27 +368,107 @@ export const __webAuthForTesting = {
  *  — the symptom the operator reported 2026-05-19.
  *  Also relax SameSite=Strict → Lax so following an external link
  *  back to the dashboard doesn't lose the session. */
-export function buildAuthCookie(req: IncomingMessage, token: string | null, maxAgeSec: number): string {
+function cookieSecureSuffix(req: IncomingMessage): string {
   const isHttps = (req.socket as { encrypted?: boolean }).encrypted === true
     || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https'
-  const secure = isHttps ? '; Secure' : ''
+  return isHttps ? '; Secure' : ''
+}
+
+export function buildNamedCookie(
+  req: IncomingMessage, name: string, token: string | null, maxAgeSec: number,
+): string {
   const value = token === null ? '' : encodeURIComponent(token)
-  // HttpOnly: SPA auth uses localStorage + Authorization; cookie is for
-  // EventSource / same-origin fetches. Keep raw token out of document.cookie.
-  return `agim_token=${value}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax; HttpOnly${secure}`
+  return `${name}=${value}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax; HttpOnly${cookieSecureSuffix(req)}`
+}
+
+export function buildAuthCookie(req: IncomingMessage, token: string | null, maxAgeSec: number): string {
+  return buildNamedCookie(req, 'agim_token', token, maxAgeSec)
+}
+
+export function buildSessionCookie(req: IncomingMessage, token: string | null, maxAgeSec: number): string {
+  return buildNamedCookie(req, 'agim_session', token, maxAgeSec)
+}
+
+const loginFailures = new Map<string, { n: number; until: number }>()
+
+export function loginNeedsCaptcha(key: string): boolean {
+  const row = loginFailures.get(key)
+  if (!row) return false
+  if (Date.now() > row.until) {
+    loginFailures.delete(key)
+    return false
+  }
+  return row.n >= 3
+}
+
+function noteLoginFailure(key: string): void {
+  const now = Date.now()
+  const row = loginFailures.get(key)
+  if (!row || now > row.until) {
+    loginFailures.set(key, { n: 1, until: now + 15 * 60 * 1000 })
+    return
+  }
+  row.n += 1
+}
+
+function clearLoginFailure(key: string): void {
+  loginFailures.delete(key)
+}
+
+function loginKey(req: IncomingMessage, username: string): string {
+  const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  return `${ip}:${username.trim().toLowerCase()}`
 }
 
 export async function handleAuthLogin(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const body = await readBody(req, res)
-    const parsed = JSON.parse(body || '{}') as { token?: string }
+    const parsed = JSON.parse(body || '{}') as {
+      token?: string
+      username?: string
+      password?: string
+      captchaId?: string
+      captcha?: string
+    }
     const token = (parsed.token || '').trim()
-    if (!token) { sendError(res, 400, 'AUTH_TOKEN_REQUIRED', { message: 'token required' }); return }
+    const username = (parsed.username || '').trim()
+    const maxAge = 30 * 24 * 60 * 60
+
+    if (username) {
+      const acc = accountsMod()
+      if (!acc) { sendError(res, 503, 'AUTH_NOT_READY', { message: 'auth module not ready' }); return }
+      const key = loginKey(req, username)
+      if (loginNeedsCaptcha(key)) {
+        const { consumeCaptcha } = await import('../core/captcha.js')
+        if (!consumeCaptcha(parsed.captchaId || '', parsed.captcha || '')) {
+          sendError(res, 400, 'AUTH_CAPTCHA', { message: 'captcha required' })
+          return
+        }
+      }
+      try {
+        const session = acc.loginUser({ username, password: parsed.password || '' })
+        clearLoginFailure(key)
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Set-Cookie': [
+            buildSessionCookie(req, session.raw, maxAge),
+            buildAuthCookie(req, null, 0),
+          ],
+        })
+        res.end(JSON.stringify({ ok: true, user: session.user }))
+        return
+      } catch (err) {
+        noteLoginFailure(key)
+        const code = (err as { code?: string }).code || 'AUTH_INVALID'
+        sendError(res, 401, code, { message: err instanceof Error ? err.message : 'invalid credentials' })
+        return
+      }
+    }
+
+    if (!token) { sendError(res, 400, 'AUTH_TOKEN_REQUIRED', { message: 'username/password or token required' }); return }
     if (!_tokenModule) { sendError(res, 503, 'AUTH_NOT_READY', { message: 'auth module not ready' }); return }
     const id = _tokenModule.verifyToken(token)
     if (!id) { sendError(res, 401, 'AUTH_INVALID', { message: 'invalid token' }); return }
-    // 30-day cookie. SameSite=Lax + conditional Secure — see buildAuthCookie.
-    const maxAge = 30 * 24 * 60 * 60
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Set-Cookie': buildAuthCookie(req, token, maxAge),
@@ -312,9 +480,16 @@ export async function handleAuthLogin(req: IncomingMessage, res: ServerResponse)
 }
 
 export function handleAuthLogout(req: IncomingMessage, res: ServerResponse): void {
+  const raw = extractSessionRaw(req)
+  if (raw) {
+    try { accountsMod()?.revokeLoginSession(raw) } catch { /* ignore */ }
+  }
   res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Set-Cookie': buildAuthCookie(req, null, 0),
+    'Set-Cookie': [
+      buildAuthCookie(req, null, 0),
+      buildSessionCookie(req, null, 0),
+    ],
   })
   res.end(JSON.stringify({ ok: true }))
 }

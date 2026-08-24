@@ -6,10 +6,11 @@
  *   * children slot renders between nav and theme controls
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { Topbar } from './topbar'
+import { useAuth } from '@/stores/auth'
 import '@/i18n'
 
 function renderAt(path: string, children?: React.ReactNode): ReturnType<typeof render> {
@@ -21,6 +22,10 @@ function renderAt(path: string, children?: React.ReactNode): ReturnType<typeof r
     </MemoryRouter>,
   )
 }
+
+afterEach(() => {
+  useAuth.getState().clear()
+})
 
 describe('Topbar', () => {
   it('renders brand mark + app name', () => {
@@ -65,5 +70,17 @@ describe('Topbar', () => {
   it('renders the children slot', () => {
     renderAt('/', <div data-testid="page-chrome">page chrome</div>)
     expect(screen.getByTestId('page-chrome')).toBeInTheDocument()
+  })
+
+  it('shows the signed-in username on the right', () => {
+    useAuth.getState().setUser({
+      id: 'usr_1',
+      username: 'tester',
+      displayName: 'tester',
+      role: 'admin',
+    })
+    renderAt('/')
+    expect(screen.getByTestId('signed-in-user')).toHaveTextContent('tester')
+    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument()
   })
 })

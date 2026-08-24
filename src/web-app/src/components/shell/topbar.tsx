@@ -16,6 +16,7 @@
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
+import { SignedInUser } from '@/components/shell/signed-in-user'
 import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
@@ -113,6 +114,7 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
         <div className="flex shrink-0 items-center gap-3">
           {children && <div className="flex items-center gap-2">{children}</div>}
 
+          <SignedInUser />
           <ThemeAndLangControls />
         </div>
       </div>

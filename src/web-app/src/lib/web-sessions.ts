@@ -256,6 +256,17 @@ export function upsertSession(patch: {
   })
 }
 
+/** Replace the local rail with the server-authoritative list. */
+export function replaceIndexFromServer(rows: WebSessionEntry[], activeId?: string): WebSessionIndex {
+  const sessions = rows.filter((s) => isWebThreadId(s.id))
+  if (sessions.length === 0) return loadIndex()
+  const nextActive = (activeId && sessions.some((s) => s.id === activeId))
+    ? activeId
+    : (sessions.find((s) => !s.archivedAt)?.id || sessions[0]!.id)
+  persistTabThreadId(nextActive)
+  return writeIndex({ activeId: nextActive, sessions })
+}
+
 export function setActiveId(id: string): WebSessionIndex {
   const next = id.trim()
   if (!isWebThreadId(next)) return loadIndex()

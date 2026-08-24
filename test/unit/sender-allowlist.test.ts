@@ -56,6 +56,10 @@ describe('sender-allowlist', () => {
       expect(isSenderAllowed('telegram', '8754479311')).toBe(true)
       expect(isSenderAllowed('wechat-ilink', 'wxid_abc')).toBe(true)
     })
+    it('matches the IM channel id after a registered-user suffix is stamped', () => {
+      setEnv('telegram:8754479311')
+      expect(isSenderAllowed('telegram', '8754479311:usr_ab12')).toBe(true)
+    })
     it('mismatch fails', () => {
       setEnv('telegram:8754479311')
       expect(isSenderAllowed('telegram', '999')).toBe(false)

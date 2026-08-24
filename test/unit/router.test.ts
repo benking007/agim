@@ -388,6 +388,12 @@ describe('parseMessage', () => {
       expect(parseMessage('/new')).toEqual({ type: 'command', command: 'new' })
     })
 
+    it('does not treat IM auth slash commands as built-ins', () => {
+      expect(parseMessage('/bind ABC123').type).toBe('error')
+      expect(parseMessage('/register alice password1').type).toBe('error')
+      expect(parseMessage('/login alice password1').type).toBe('error')
+    })
+
     it('parses /workspaces and /ws as aliases', () => {
       expect(parseMessage('/workspaces list')).toEqual({ type: 'workspaces', args: 'list' })
       expect(parseMessage('/ws list')).toEqual({ type: 'workspaces', args: 'list' })

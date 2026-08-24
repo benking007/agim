@@ -14,12 +14,14 @@ import { Badge } from '@/components/ui/badge'
 import { useConfig } from '@/hooks/use-settings'
 import { isAdminRequiredError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/stores/auth'
 
 interface SubTab {
   to: string
   i18nKey: string
   mounted: boolean
   recommended?: boolean
+  adminOnly?: boolean
 }
 
 interface SubTabGroup {
@@ -34,18 +36,17 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     i18nKey: 'navigation.groups.start',
     tabs: [
       { to: 'start', i18nKey: 'tabs.start', mounted: true, recommended: true },
+      { to: 'account', i18nKey: 'tabs.account', mounted: true },
     ],
   },
   {
     id: 'core',
     i18nKey: 'navigation.groups.core',
     tabs: [
-      { to: 'messengers', i18nKey: 'tabs.messengers', mounted: true },
-      { to: 'agents',     i18nKey: 'tabs.agents',     mounted: true },
-      // Stage 6 — Agim Agent stack (model APIs + runtime knobs).
-      { to: 'llm',        i18nKey: 'tabs.llm',        mounted: true },
-      // v1.2.129 — mobile QR generator (open /m/chat from a phone).
-      { to: 'mobile',     i18nKey: 'tabs.mobile',     mounted: true },
+      { to: 'messengers', i18nKey: 'tabs.messengers', mounted: true, adminOnly: true },
+      { to: 'agents',     i18nKey: 'tabs.agents',     mounted: true, adminOnly: true },
+      { to: 'llm',        i18nKey: 'tabs.llm',        mounted: true, adminOnly: true },
+      { to: 'mobile',     i18nKey: 'tabs.mobile',     mounted: true, adminOnly: true },
     ],
   },
   {
@@ -54,29 +55,31 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     tabs: [
       // P1 follow-up — agim SKILL.md editor.
       { to: 'agim-skills', i18nKey: 'tabs.agimSkills', mounted: true },
-      { to: 'tools',       i18nKey: 'tabs.tools',      mounted: true },
-      { to: 'mcp',         i18nKey: 'tabs.mcp',        mounted: true },
-      { to: 'advanced',    i18nKey: 'tabs.advanced',   mounted: true },
+      { to: 'tools',       i18nKey: 'tabs.tools',      mounted: true, adminOnly: true },
+      { to: 'mcp',         i18nKey: 'tabs.mcp',        mounted: true, adminOnly: true },
+      { to: 'advanced',    i18nKey: 'tabs.advanced',   mounted: true, adminOnly: true },
     ],
   },
   {
     id: 'operations',
     i18nKey: 'navigation.groups.operations',
     tabs: [
-      { to: 'policy',     i18nKey: 'tabs.policy',     mounted: true },
-      { to: 'security',   i18nKey: 'tabs.security',   mounted: true },
-      { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true },
-      { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true },
+      { to: 'policy',     i18nKey: 'tabs.policy',     mounted: true, adminOnly: true },
+      { to: 'security',   i18nKey: 'tabs.security',   mounted: true, adminOnly: true },
+      { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true, adminOnly: true },
+      { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true, adminOnly: true },
       // R13 follow-up — /settings/env catch-all editor removed; raw
       // env-var editing belongs in `~/.agim/env` on the host.
-      { to: 'observability', i18nKey: 'tabs.observability', mounted: true },
-      { to: 'service',    i18nKey: 'tabs.service',    mounted: true },
+      { to: 'observability', i18nKey: 'tabs.observability', mounted: true, adminOnly: true },
+      { to: 'service',    i18nKey: 'tabs.service',    mounted: true, adminOnly: true },
     ],
   },
 ]
 
 export default function SettingsLayout(): JSX.Element {
   const { t } = useTranslation('settings')
+  const role = useAuth((s) => s.role)
+  const isAdmin = role !== 'user'
   // Shared with child routes via react-query. When the session is a
   // Mobile QR / role=user token, GET /api/config returns 403 and IM /
   // Agents pages used to look blank — surface the gate once at the shell.
@@ -100,7 +103,7 @@ export default function SettingsLayout(): JSX.Element {
                   {t(group.i18nKey)}
                 </h2>
                 <div className="mt-1 flex gap-1 xl:flex-col">
-                  {group.tabs.filter((tab) => tab.mounted).map((tab) => (
+                  {group.tabs.filter((tab) => tab.mounted && (isAdmin || !tab.adminOnly)).map((tab) => (
                     <SettingsNavLink key={tab.to} tab={tab} />
                   ))}
                 </div>

@@ -27,12 +27,16 @@ interface MockRes {
 }
 type FakeReq = EventEmitter & {
   method: string
+  headers: Record<string, string | undefined>
+  socket: { remoteAddress?: string }
   [Symbol.asyncIterator](): AsyncIterableIterator<Buffer>
 }
 
 function makeReq(method: string, body?: unknown): import('node:http').IncomingMessage {
   const ee = new EventEmitter() as FakeReq
   ee.method = method
+  ee.headers = {}
+  ee.socket = { remoteAddress: '127.0.0.1' }
   const raw = body === undefined ? null : (typeof body === 'string' ? body : JSON.stringify(body))
   ee[Symbol.asyncIterator] = (async function* () {
     if (raw !== null) yield Buffer.from(raw)

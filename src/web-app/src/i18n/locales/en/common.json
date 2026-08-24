@@ -46,7 +46,8 @@
     "skills": "Skills",
     "workspace": "Agent Files",
     "observability": "Observability",
-    "settings": "Settings"
+    "settings": "Settings",
+    "signedInAs": "Signed in as {{name}}"
   },
   "confirm": {
     "deleteTitle": "Delete this item?",
@@ -66,11 +67,29 @@
     "selectRow": "Select row"
   },
   "login": {
-    "intro": "Paste your access token from `agim token bootstrap` (first boot) or `agim token create`.",
-    "tokenLabel": "Access token",
+    "intro": "Sign in with your username and password.",
     "submit": "Sign in",
+    "createAdmin": "Create admin account",
+    "registerTitle": "Register",
+    "firstHint": "This is the first account on this machine and becomes admin. Next you can pick one old session to keep, or skip and discard old tokens and their sessions. While there is only one user, this machine still skips login.",
+    "inviteHint": "An invite from an admin is required.",
+    "invite": "Invite code",
+    "goRegister": "No account? Register with an invite",
+    "goRegisterFirst": "No account yet? Create the admin (no invite)",
+    "goLogin": "Already have an account? Sign in",
     "adminRequired": "Current token has no admin permission. Please sign in with an admin token.",
-    "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with AGIM_TRUST_LOOPBACK=off."
+    "hint": "This machine skips login while there is only one user. From another host, use username and password."
+  },
+  "legacyUpgrade": {
+    "title": "Keep one old session",
+    "hint": "API tokens are not a login method. These are tokens from before accounts, and the sessions under each one. Pick one session for this admin; the rest of the tokens and sessions are discarded.",
+    "local": "Local no-login sessions",
+    "token": "Token {{label}}",
+    "noSessions": "This token has no sessions",
+    "inherit": "Keep selected session",
+    "skip": "Skip",
+    "skipHint": "Skip discards every old token and its sessions. You can mint a new API token for scripts on the account page later.",
+    "loading": "Reading old sessions…"
   },
   "home": {
     "placeholder": "Signed in. Open Chat from the sidebar.",

@@ -100,6 +100,10 @@ class ThreadOwnerStore {
     persist(map)
   }
 
+  entries(): Array<{ threadId: string; ownerId: string }> {
+    return [...this.ensure().entries()].map(([threadId, ownerId]) => ({ threadId, ownerId }))
+  }
+
   /** Move ownership key when a session rekeys to a new thread id. */
   rekey(oldId: string, newId: string): void {
     const map = this.ensure()

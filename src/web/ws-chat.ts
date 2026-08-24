@@ -307,6 +307,8 @@ export async function handleClientMessage(
   /** Live client registry — used to retarget chunk/activity frames after
    *  a reconnect (the closure `ws` may already be CLOSED). */
   clients?: Map<string, ClientConnection>,
+  /** Local account id when the peer logged in with username/password. */
+  accountUserId?: string,
 ): Promise<void> {
   const { ws } = client
   // Read client.id fresh — `get-history` may rekey it mid-handler so the
@@ -371,7 +373,7 @@ export async function handleClientMessage(
           platform: 'web',
           channelId: 'web',
           threadId: sessionThreadId,
-          userId: `web:${sessionThreadId}`,
+          userId: accountUserId || `web:${sessionThreadId}`,
           text,
           surface: 'dock',
         })
@@ -507,7 +509,7 @@ export async function handleClientMessage(
           defaultAgent: client.agent,
           traceId,
           logger,
-          userId: `web:${clientId}`,
+          userId: accountUserId || `web:${clientId}`,
           webRunId: runId,
           ...(workspacePath ? { workspacePath } : {}),
           signal: runAbort.signal,
@@ -551,7 +553,13 @@ export async function handleClientMessage(
 
         logger.info({ event: 'message.received', ...sanitizeUserText(text) })
 
-        const result = await routeMessage(parsed, routeCtx)
+        if (accountUserId) {
+          void sessionManager.claimWebSessionOwner(sessionThreadId, accountUserId)
+        }
+        const { runWithAccountUser } = await import('../core/accounts.js')
+        const result = accountUserId
+          ? await runWithAccountUser(accountUserId, () => routeMessage(parsed, routeCtx))
+          : await routeMessage(parsed, routeCtx)
 
         if (runAbort.signal.aborted) {
           const finishedAt = Date.now()
@@ -915,9 +923,13 @@ export async function handleClientMessage(
       // a rekey from a different tokenId is refused.
       const wantedThreadId = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
       if (wantedThreadId && /^web-[A-Za-z0-9_-]{4,64}$/.test(wantedThreadId) && wantedThreadId !== clientId) {
-        const peer = tokenId ?? 'anon'
+        const peer = accountUserId || tokenId || 'anon'
         const owner = threadOwners?.get(wantedThreadId)
-        if (owner !== undefined && owner !== peer) {
+        const sessionOwner = accountUserId
+          ? (await sessionManager.getExistingSession('web', 'web', wantedThreadId))?.ownerUserId
+          : undefined
+        const sameAccount = Boolean(accountUserId && sessionOwner === accountUserId)
+        if (owner !== undefined && owner !== peer && !sameAccount) {
           // Stale localStorage from another token (rotated bootstrap,
           // shared browser profile, …). Do NOT hijack that thread —
           // keep this connection's already-claimed clientId and tell
@@ -939,8 +951,11 @@ export async function handleClientMessage(
         const oldId = clientId
         client.id = wantedThreadId
         clientId = wantedThreadId
-        if (threadOwners && owner === undefined) {
+        if (threadOwners && (owner === undefined || sameAccount)) {
           threadOwners.set(wantedThreadId, peer)
+        }
+        if (accountUserId) {
+          void sessionManager.claimWebSessionOwner(wantedThreadId, accountUserId)
         }
         onRekey?.(oldId, wantedThreadId)
         webLog.info({ clientId, oldId, event: 'web.session.rekey' }, 'WS client adopted persisted threadId')

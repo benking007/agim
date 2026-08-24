@@ -13,9 +13,8 @@
 //     each agent turn + manual saves from /memo or memory_save MCP. Read
 //     via memory_query (hybrid FTS5 + recency) when agent decides to query.
 //
-//     `user_key` = `${platform}:${userId}` so a single human across multiple
-//     IMs converges to the same memory if userId is consistent. Otherwise
-//     each IM persona is independent.
+//     `user_key` = `platform:imUserId:usr_…` after bind (IM is a channel).
+//     Unbound IM stays `platform:imUserId`. Web is `web:usr_…`.
 //
 // Vector index (sqlite-vss) is **optional** for v1.5 — when the extension
 // isn't loaded the helper falls back to FTS5-only retrieval. Vector adds
@@ -25,6 +24,7 @@ import { join } from 'node:path'
 import { logger as rootLogger } from './logger.js'
 import { createSqliteHelper } from './sqlite-helper.js'
 import { AGIM_HOME } from './agim-paths.js'
+import { attachRegisteredIdentity, imChannelKey, parseImActor } from './im-identity.js'
 
 const MEMORY_DB = join(AGIM_HOME, 'memory.db')
 const log = rootLogger.child({ component: 'memory' })
@@ -179,7 +179,13 @@ export interface SaveFactInput {
 }
 
 export function userKey(platform: string, userId: string): string {
-  return `${platform}:${userId || 'anon'}`
+  const attached = attachRegisteredIdentity(platform, userId) || userId || 'anon'
+  const parsed = parseImActor(platform, attached)
+  if (parsed.registeredUserId && parsed.imUserId) {
+    if ((platform || '').toLowerCase() === 'web') return `web:${parsed.registeredUserId}`
+    return imChannelKey(platform, parsed.imUserId, parsed.registeredUserId)
+  }
+  return `${platform}:${parsed.imUserId || userId || 'anon'}`
 }
 
 function nowSec(): number {

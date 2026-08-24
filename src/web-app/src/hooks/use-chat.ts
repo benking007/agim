@@ -33,6 +33,7 @@ import {
   listSessions,
   loadTabThreadId,
   mintThreadId,
+  replaceIndexFromServer,
   sessionTitleFromText,
   setActiveId,
   subscribeSessions,
@@ -136,6 +137,21 @@ export function useChat(): UseChat {
   useEffect(() => subscribeSessions(() => {
     setSessionSnap(snapshotSessions())
   }), [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/me/sessions', { credentials: 'same-origin' }).then(async (res) => {
+      if (!res.ok || cancelled) return
+      const body = await res.json() as {
+        sessions?: Array<{ id: string; title?: string; updatedAt: number; agent?: string; archivedAt?: number }>
+      }
+      const rows = (body.sessions ?? []).filter((s) => isWebThreadId(s.id))
+      if (rows.length === 0) return
+      replaceIndexFromServer(rows, threadIdRef.current)
+      if (!cancelled) setSessionSnap(snapshotSessions())
+    }).catch(() => { /* keep local index */ })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const ws = wsRef.current

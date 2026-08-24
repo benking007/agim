@@ -38,15 +38,16 @@ import { sendError } from './http-utils.js'
 import {
   checkAuth,
   requireAdmin,
-  extractToken,
-  verifyTokenSync,
   isTrustedLoopbackPeer,
   bindTokenModule,
+  bindAccountsModule,
   isEnvOff,
   handleAuthLogin,
   handleAuthExchangeMobile,
   handleAuthLogout,
+  resolveWebIdentity,
 } from './auth.js'
+import { handleAccountApi } from './account-api.js'
 import {
   type ClientConnection,
   webRunAborts,
@@ -149,6 +150,8 @@ export async function startWebServer(options: {
   // Retrieve with `agim token bootstrap` — never logged to journald (R13).
   const accessTokenModule = await import('../core/access-token.js')
   bindTokenModule(accessTokenModule)
+  const accountsModule = await import('../core/accounts.js')
+  bindAccountsModule(accountsModule)
   const { bootstrapIfEmpty, isAuthEnabled } = accessTokenModule
   try { bootstrapIfEmpty() } catch (err) {
     webLog.warn({ event: 'web.auth_bootstrap_failed', err: String(err) })
@@ -279,6 +282,16 @@ export async function startWebServer(options: {
     // above lets it through. These do the actual validation + cookie set.
     if (url.pathname === '/api/auth/login' && req.method === 'POST') {
       return handleAuthLogin(req, res)
+    }
+    if (
+      url.pathname.startsWith('/api/auth/')
+      || url.pathname.startsWith('/api/me/')
+      || url.pathname.startsWith('/api/admin/users')
+      || url.pathname.startsWith('/api/admin/invites')
+      || url.pathname.startsWith('/api/admin/points')
+      || url.pathname.startsWith('/api/admin/im-bindings')
+    ) {
+      if (await handleAccountApi(req, res, url)) return
     }
     if (url.pathname === '/api/auth/exchange-mobile' && req.method === 'POST') {
       return handleAuthExchangeMobile(req, res)
@@ -491,7 +504,8 @@ export async function startWebServer(options: {
     // are readable by any authenticated peer so Portal `/` skill picker works.
     if (url.pathname === '/api/agim-skills' || url.pathname.startsWith('/api/agim-skills/')) {
       const method = (req.method || 'GET').toUpperCase()
-      if (method !== 'GET' && !requireAdmin(req, res)) return
+      const injection = url.pathname.startsWith('/api/agim-skills/injection')
+      if (method !== 'GET' && injection && !requireAdmin(req, res)) return
       const handled = await handleAgimSkillsApi(req, res, url)
       if (handled) return
     }
@@ -552,10 +566,9 @@ export async function startWebServer(options: {
         return cb(false, 429, 'rate limited')
       }
 
-      // Auth-off / trusted-loopback bypass — mirror checkAuth's two short-circuits
-      // so dev / local CLI sessions still work without a token.
+      // Auth-off / first-run loopback bypass — once local users exist,
+      // the browser must present a session cookie or API token.
       if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return cb(true)
-      if (isTrustedLoopbackPeer(info.req as IncomingMessage)) return cb(true)
 
       // Origin check: cookie SameSite=Lax handles most of the CSWSH
       // surface, but defence-in-depth — reject when Origin's host
@@ -573,15 +586,17 @@ export async function startWebServer(options: {
         }
       }
 
-      // Auth: token from Authorization / Cookie / ?token=.
       try {
         const url = new URL(info.req.url || '/ws', `http://${info.req.headers.host}`)
-        const tok = extractToken(info.req as IncomingMessage, url)
-        const tokenId = tok ? verifyTokenSync(tok) : null
-        if (!tokenId) return cb(false, 401, 'auth required')
-        // Attach the verified tokenId to the request — the connection
-        // handler reads it from here so we don't re-parse on every msg.
-        ;(info.req as IncomingMessage & { _agimTokenId?: string })._agimTokenId = tokenId
+        const ident = resolveWebIdentity(info.req as IncomingMessage, url)
+        if (!ident) return cb(false, 401, 'auth required')
+        const tagged = info.req as IncomingMessage & {
+          _agimTokenId?: string
+          _agimUserId?: string
+        }
+        if (ident.tokenId) tagged._agimTokenId = ident.tokenId
+        if (ident.userId) tagged._agimUserId = ident.userId
+        if (!ident.tokenId && !ident.userId) tagged._agimTokenId = ident.kind
         cb(true)
       } catch {
         cb(false, 500, 'auth error')
@@ -698,7 +713,11 @@ export async function startWebServer(options: {
     // wants to rekey to a persisted threadId. 'anon' is the loopback /
     // auth-off path — still safe because those paths trust the peer.
     const tokenId =
-      (req as IncomingMessage & { _agimTokenId?: string })._agimTokenId ?? 'anon'
+      (req as IncomingMessage & { _agimTokenId?: string; _agimUserId?: string })._agimUserId
+      ?? (req as IncomingMessage & { _agimTokenId?: string })._agimTokenId
+      ?? 'anon'
+    const accountUserId =
+      (req as IncomingMessage & { _agimUserId?: string })._agimUserId
 
     // R9: crypto.randomBytes(12) → 96 bits of base64url entropy
     // (~16 chars). The pre-R9 `Date.now() + Math.random().slice(2,8)`
@@ -875,6 +894,7 @@ export async function startWebServer(options: {
             tokenId,
             threadOwners,
             clients,
+            accountUserId,
           )
         } catch (err) {
           webLog.error({ clientId: client.id, err: err instanceof Error ? err.message : String(err) }, 'Error in client message handler')

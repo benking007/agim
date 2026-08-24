@@ -38,8 +38,6 @@ import { sendError } from './http-utils.js'
 import {
   checkAuth,
   requireAdmin,
-  extractToken,
-  verifyTokenSync,
   isTrustedLoopbackPeer,
   bindTokenModule,
   bindAccountsModule,
@@ -48,7 +46,6 @@ import {
   handleAuthExchangeMobile,
   handleAuthLogout,
   resolveWebIdentity,
-  isTrustedLoopbackPeer,
 } from './auth.js'
 import { handleAccountApi } from './account-api.js'
 import {

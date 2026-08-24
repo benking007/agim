@@ -46,10 +46,13 @@ export default function LoginRoute(): JSX.Element {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const setUser = useAuth((s) => s.setUser)
+  const setToken = useAuth((s) => s.setToken)
   const hydrate = useAuth((s) => s.hydrate)
   const hasUsers = useAuth((s) => s.hasUsers)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [token, setTokenValue] = useState('')
+  const [showToken, setShowToken] = useState(false)
   const [captcha, setCaptcha] = useState('')
   const [challenge, setChallenge] = useState<CaptchaState | null>(null)
   const [needCaptcha, setNeedCaptcha] = useState(false)
@@ -90,6 +93,34 @@ export default function LoginRoute(): JSX.Element {
         return
       }
       if (body.user) setUser(body.user)
+      toast.success(t('states.saved'))
+      navigate(next, { replace: true })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function onTokenSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault()
+    const raw = token.trim()
+    if (!raw) return
+    setPending(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: raw }),
+      })
+      const body = await res.json() as { error?: string }
+      if (!res.ok) {
+        toast.error(body.error || t('login.failed', { defaultValue: '登录失败' }))
+        return
+      }
+      setToken(raw)
+      await hydrate()
       toast.success(t('states.saved'))
       navigate(next, { replace: true })
     } catch (err) {
@@ -162,10 +193,35 @@ export default function LoginRoute(): JSX.Element {
               {pending ? t('states.loading') : t('login.submit', { defaultValue: '登录' })}
             </Button>
           </form>
+          <p className="mt-4 text-xs text-text-muted">{t('login.hint')}</p>
+          <button
+            type="button"
+            className="mt-3 text-sm text-accent underline"
+            onClick={() => { setShowToken((v) => !v) }}
+          >
+            {t('login.useToken')}
+          </button>
+          {showToken && (
+            <form onSubmit={(e) => { void onTokenSubmit(e) }} className="mt-3 flex flex-col gap-3">
+              <p className="text-xs text-text-muted">{t('login.tokenHint')}</p>
+              <Label htmlFor="legacy-token">{t('login.tokenLabel')}</Label>
+              <Input
+                id="legacy-token"
+                value={token}
+                onChange={(e) => { setTokenValue(e.target.value) }}
+                autoComplete="off"
+              />
+              <Button type="submit" variant="outline" disabled={pending || !token.trim()}>
+                {t('login.tokenSubmit')}
+              </Button>
+            </form>
+          )}
         </CardContent>
         <CardFooter className="block text-xs text-text-muted">
           <Link className="text-accent underline" to={`/register?next=${encodeURIComponent(next)}`}>
-            {t('login.goRegister', { defaultValue: '没有账号？使用邀请码注册' })}
+            {hasUsers === false
+              ? t('login.goRegisterFirst')
+              : t('login.goRegister')}
           </Link>
         </CardFooter>
       </Card>

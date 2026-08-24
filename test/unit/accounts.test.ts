@@ -3,13 +3,21 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _resetAccountsCache } from '../../src/core/accounts-store.js'
+import type { IncomingMessage } from 'node:http'
 import {
   createInvite,
+  getSoleEnabledUser,
   hasAnyUser,
   loginUser,
   registerUser,
   verifyLoginSession,
 } from '../../src/core/accounts.js'
+import * as accounts from '../../src/core/accounts.js'
+import { adoptLegacyInstall } from '../../src/core/accounts-upgrade.js'
+import { createToken, getTokenUserId } from '../../src/core/access-token.js'
+import { setLiveConfig } from '../../src/core/live-config.js'
+import { bindAccountsModule, resolveWebIdentity } from '../../src/web/auth.js'
+import type { Config } from '../../src/core/types.js'
 import { consumeCaptcha, issueCaptcha, _issueCaptchaForTests } from '../../src/core/captcha.js'
 import { bindImIdentity, claimImIdentity, claimMessengerPlatform, findBinding, PLATFORM_CHANNEL, unbindImIdentity } from '../../src/core/im-bind.js'
 import {
@@ -221,5 +229,51 @@ describe('im bind', () => {
     expect(findBinding('telegram', '99999')).toBeNull()
     expect(attachRegisteredIdentity('telegram', `99999:${user.id}`)).toBe('99999')
     expect(resolveBillableUserId('telegram', '99999')).toBeNull()
+  })
+})
+
+describe('legacy upgrade', () => {
+  beforeEach(() => {
+    bindAccountsModule(accounts)
+    delete process.env.AGIM_WEB_AUTH
+    delete process.env.AGIM_TRUST_LOOPBACK
+  })
+
+  function loopbackReq(): IncomingMessage {
+    return {
+      socket: { remoteAddress: '127.0.0.1' },
+      headers: {},
+      url: '/api/auth/me',
+    } as unknown as IncomingMessage
+  }
+
+  it('first admin inherits orphan tokens and connected messengers', () => {
+    const orphan = createToken('pre-account', { role: 'admin' })
+    expect(getTokenUserId(orphan.id)).toBeUndefined()
+    setLiveConfig({ messengers: ['feishu', 'wechat-ilink'] } as Config)
+    const { user } = registerUser({ username: 'operator', password: 'password1' })
+    const adopted = adoptLegacyInstall(user.id)
+    expect(adopted.tokens).toBeGreaterThan(0)
+    expect(getTokenUserId(orphan.id)).toBe(user.id)
+    expect(findBinding('feishu', PLATFORM_CHANNEL)?.userId).toBe(user.id)
+    expect(findBinding('wechat', PLATFORM_CHANNEL)?.userId).toBe(user.id)
+  })
+
+  it('loopback keeps acting as the sole admin after upgrade', () => {
+    expect(resolveWebIdentity(loopbackReq())?.kind).toBe('loopback')
+    expect(resolveWebIdentity(loopbackReq())?.userId).toBeUndefined()
+    const { user } = registerUser({ username: 'operator', password: 'password1' })
+    expect(getSoleEnabledUser()?.id).toBe(user.id)
+    const ident = resolveWebIdentity(loopbackReq())
+    expect(ident).toEqual({
+      kind: 'loopback',
+      role: 'admin',
+      userId: user.id,
+      username: 'operator',
+    })
+    const invite = createInvite({ createdBy: user.id })
+    registerUser({ username: 'bob', password: 'password1', inviteRaw: invite.raw })
+    expect(getSoleEnabledUser()).toBeNull()
+    expect(resolveWebIdentity(loopbackReq())).toBeNull()
   })
 })

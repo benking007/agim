@@ -777,6 +777,12 @@ export async function runStartForeground(): Promise<void> {
       const webUrl = `http://localhost:${ctx.webServer.port}`
       console.log(`   ${cliT(bootLang, 'start.web_console', { url: webUrl })}`)
       try {
+        const { hasAnyUser } = await import('../core/accounts.js')
+        if (!hasAnyUser()) {
+          console.log(`   ${cliT(bootLang, 'start.accounts_upgrade')}`)
+        }
+      } catch { /* accounts optional during very early boot */ }
+      try {
         const { checkAgentAvailability } = await import('../core/onboarding.js')
         const { loadOnboardingStatus } = await import('../core/onboarding-status.js')
         const { available } = await checkAgentAvailability()

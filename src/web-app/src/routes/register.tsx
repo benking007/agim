@@ -105,7 +105,7 @@ export default function RegisterRoute(): JSX.Element {
           </CardTitle>
           <CardDescription>
             {first
-              ? t('login.firstHint', { defaultValue: '这是本机第一个账号，将自动成为管理员。' })
+              ? t('login.firstHint', { defaultValue: '这是本机第一个账号，将自动成为管理员。升级前的 API 令牌和已连接的信使会挂到这个账号上；只有一个用户时，本机访问仍免登录。' })
               : t('login.inviteHint', { defaultValue: '需要管理员发放的邀请码。' })}
           </CardDescription>
         </CardHeader>

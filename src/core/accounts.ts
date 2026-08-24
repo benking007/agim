@@ -136,6 +136,13 @@ export function hasAnyUser(): boolean {
   return readAccounts().users.length > 0
 }
 
+/** Single enabled account — typical upgraded single-operator box. */
+export function getSoleEnabledUser(): PublicUser | null {
+  const users = readAccounts().users.filter((u) => !u.disabled)
+  const only = users.length === 1 ? users[0] : undefined
+  return only ? toPublic(only) : null
+}
+
 export function countUsers(): number {
   return readAccounts().users.length
 }

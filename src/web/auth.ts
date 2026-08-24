@@ -253,8 +253,19 @@ export function resolveWebIdentity(req: IncomingMessage, url?: URL): WebIdentity
       }
     }
   }
-  if (!usersExist() && isTrustedLoopbackPeer(req)) {
-    return { kind: 'loopback', role: 'admin' }
+  if (isTrustedLoopbackPeer(req)) {
+    if (!usersExist()) {
+      return { kind: 'loopback', role: 'admin' }
+    }
+    const sole = acc?.getSoleEnabledUser()
+    if (sole) {
+      return {
+        kind: 'loopback',
+        role: sole.role,
+        userId: sole.id,
+        username: sole.username,
+      }
+    }
   }
   return null
 }

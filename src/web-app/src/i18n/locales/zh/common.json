@@ -69,9 +69,20 @@
   "login": {
     "intro": "使用用户名和密码登录。",
     "tokenLabel": "访问令牌",
+    "tokenHint": "升级前发过的 API 令牌仍可用，不是登录密码。",
+    "tokenSubmit": "用令牌继续",
+    "useToken": "使用原有 API 令牌",
     "submit": "登录",
+    "createAdmin": "创建管理员账号",
+    "registerTitle": "注册",
+    "firstHint": "这是本机第一个账号，将自动成为管理员。升级前的 API 令牌和已连接的信使会挂到这个账号上；只有一个用户时，本机访问仍免登录。",
+    "inviteHint": "需要管理员发放的邀请码。",
+    "invite": "邀请码",
+    "goRegister": "没有账号？使用邀请码注册",
+    "goRegisterFirst": "还没有账号？创建管理员（无需邀请码）",
+    "goLogin": "已有账号？去登录",
     "adminRequired": "当前 token 没有管理权限，请使用管理员 token 重新登录。",
-    "hint": "loopback（127.0.0.1）的请求会跳过此页；只有跨机访问或设置了 AGIM_TRUST_LOOPBACK=off 时才会看到此页。"
+    "hint": "本机 127.0.0.1 且只有一个用户时会免登录。跨机访问请用账号密码，或粘贴原有 API 令牌。"
   },
   "home": {
     "placeholder": "已登录，请从侧栏进入对话。",

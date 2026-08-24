@@ -69,9 +69,20 @@
   "login": {
     "intro": "Sign in with your username and password.",
     "tokenLabel": "Access token",
+    "tokenHint": "API tokens from before accounts still work. They are not a login password.",
+    "tokenSubmit": "Continue with token",
+    "useToken": "Use an existing API token",
     "submit": "Sign in",
+    "createAdmin": "Create admin account",
+    "registerTitle": "Register",
+    "firstHint": "This is the first account on this machine and becomes admin. Existing API tokens and connected messengers attach to it. While there is only one user, this machine still skips login.",
+    "inviteHint": "An invite from an admin is required.",
+    "invite": "Invite code",
+    "goRegister": "No account? Register with an invite",
+    "goRegisterFirst": "No account yet? Create the admin (no invite)",
+    "goLogin": "Already have an account? Sign in",
     "adminRequired": "Current token has no admin permission. Please sign in with an admin token.",
-    "hint": "Loopback (127.0.0.1) requests bypass this page; you only land here from another host or with AGIM_TRUST_LOOPBACK=off."
+    "hint": "This machine skips login while there is only one user. From another host, use username and password or paste an existing API token."
   },
   "home": {
     "placeholder": "Signed in. Open Chat from the sidebar.",

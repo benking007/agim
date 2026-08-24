@@ -10,11 +10,11 @@ import {
   resolveWebIdentity,
 } from './auth.js'
 import {
-  attachOrphanTokens,
   createToken,
   listTokensForUser,
   revokeToken,
 } from '../core/access-token.js'
+import { adoptLegacyInstall } from '../core/accounts-upgrade.js'
 import {
   createInvite,
   getUserById,
@@ -276,7 +276,7 @@ async function handleRegister(req: IncomingMessage, res: ServerResponse): Promis
       inviteRaw: parsed.invite,
     })
     if (first) {
-      try { attachOrphanTokens(result.user.id) } catch { /* ignore */ }
+      try { adoptLegacyInstall(result.user.id) } catch { /* ignore */ }
     }
     const maxAge = 30 * 24 * 60 * 60
     res.writeHead(201, {

@@ -100,6 +100,9 @@ function claimSessionOwner(threadId: string, userId: string): void {
     try {
       const parsed = JSON.parse(readFileSync(json, 'utf-8')) as Record<string, unknown>
       parsed.ownerUserId = userId
+      if (typeof parsed.platform !== 'string' || !parsed.platform) parsed.platform = 'web'
+      if (typeof parsed.channelId !== 'string' || !parsed.channelId) parsed.channelId = 'web'
+      if (typeof parsed.threadId !== 'string' || !parsed.threadId) parsed.threadId = threadId
       const tmp = `${json}.${process.pid}.tmp`
       writeFileSync(tmp, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 })
       renameSync(tmp, json)

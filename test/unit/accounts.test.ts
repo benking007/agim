@@ -272,6 +272,9 @@ describe('legacy upgrade', () => {
       title,
       lastActivity: Date.now(),
       agent: 'agim',
+      platform: 'web',
+      channelId: 'web',
+      threadId,
       usage: { turns: 2 },
     }, null, 2)}\n`)
   }
@@ -291,31 +294,39 @@ describe('legacy upgrade', () => {
   it('lists unowned tokens and their sessions, then inherits one', () => {
     const keepToken = createToken('keep-token', { role: 'admin' })
     const dropToken = createToken('drop-token', { role: 'admin' })
-    writeSession('keep-thread', 'Keep me')
-    writeSession('drop-thread', 'Drop me')
-    writeSession('local-thread', 'Loopback chat')
-    webThreadOwners.set('keep-thread', keepToken.id)
-    webThreadOwners.set('drop-thread', dropToken.id)
-    webThreadOwners.set('local-thread', 'loopback')
+    writeSession('web-keep-aaaa', 'Keep me')
+    writeSession('web-drop-bbbb', 'Drop me')
+    writeSession('web-local-cccc', 'Loopback chat')
+    webThreadOwners.set('web-keep-aaaa', keepToken.id)
+    webThreadOwners.set('web-drop-bbbb', dropToken.id)
+    webThreadOwners.set('web-local-cccc', 'loopback')
 
     const { user } = registerUser({ username: 'operator', password: 'password1' })
     const preview = listLegacyUpgrade()
     expect(preview.pending).toBe(true)
     expect(preview.tokens.map((t) => t.id).sort()).toEqual([dropToken.id, keepToken.id].sort())
-    expect(preview.tokens.find((t) => t.id === keepToken.id)?.sessions.map((s) => s.id)).toEqual(['keep-thread'])
-    expect(preview.tokens.find((t) => t.id === dropToken.id)?.sessions.map((s) => s.id)).toEqual(['drop-thread'])
-    expect(preview.local.sessions.map((s) => s.id)).toEqual(['local-thread'])
+    expect(preview.tokens.find((t) => t.id === keepToken.id)?.sessions.map((s) => s.id)).toEqual(['web-keep-aaaa'])
+    expect(preview.tokens.find((t) => t.id === dropToken.id)?.sessions.map((s) => s.id)).toEqual(['web-drop-bbbb'])
+    expect(preview.local.sessions.map((s) => s.id)).toEqual(['web-local-cccc'])
 
-    const result = inheritLegacySession(user.id, 'keep-thread')
-    expect(result.inherited).toBe('keep-thread')
+    const result = inheritLegacySession(user.id, 'web-keep-aaaa')
+    expect(result.inherited).toBe('web-keep-aaaa')
     expect(result.discardedSessions).toBe(2)
     expect(result.discardedTokens).toBe(2)
-    expect(existsSync(sessionJsonPath('keep-thread'))).toBe(true)
-    expect(existsSync(sessionJsonPath('drop-thread'))).toBe(false)
-    expect(existsSync(sessionJsonPath('local-thread'))).toBe(false)
-    const kept = JSON.parse(readFileSync(sessionJsonPath('keep-thread'), 'utf-8')) as { ownerUserId?: string }
+    expect(existsSync(sessionJsonPath('web-keep-aaaa'))).toBe(true)
+    expect(existsSync(sessionJsonPath('web-drop-bbbb'))).toBe(false)
+    expect(existsSync(sessionJsonPath('web-local-cccc'))).toBe(false)
+    const kept = JSON.parse(readFileSync(sessionJsonPath('web-keep-aaaa'), 'utf-8')) as {
+      ownerUserId?: string
+      platform?: string
+      channelId?: string
+      threadId?: string
+    }
     expect(kept.ownerUserId).toBe(user.id)
-    expect(webThreadOwners.get('keep-thread')).toBe(user.id)
+    expect(kept.platform).toBe('web')
+    expect(kept.channelId).toBe('web')
+    expect(kept.threadId).toBe('web-keep-aaaa')
+    expect(webThreadOwners.get('web-keep-aaaa')).toBe(user.id)
     expect(getTokenUserId(keepToken.id)).toBeUndefined()
     expect(getTokenUserId(dropToken.id)).toBeUndefined()
     expect(listLegacyUpgrade().pending).toBe(false)
@@ -323,17 +334,17 @@ describe('legacy upgrade', () => {
 
   it('skip discards every unowned token and its sessions', () => {
     const orphan = createToken('pre-account', { role: 'admin' })
-    writeSession('old-thread', 'Old chat')
-    writeSession('local-thread', 'Loopback chat')
-    webThreadOwners.set('old-thread', orphan.id)
-    webThreadOwners.set('local-thread', 'anon')
+    writeSession('web-old-aaaa', 'Old chat')
+    writeSession('web-local-bbbb', 'Loopback chat')
+    webThreadOwners.set('web-old-aaaa', orphan.id)
+    webThreadOwners.set('web-local-bbbb', 'anon')
 
     const { user } = registerUser({ username: 'operator', password: 'password1' })
     const result = skipLegacyUpgrade(user.id)
     expect(result.discardedSessions).toBe(2)
     expect(result.discardedTokens).toBe(1)
-    expect(existsSync(sessionJsonPath('old-thread'))).toBe(false)
-    expect(existsSync(sessionJsonPath('local-thread'))).toBe(false)
+    expect(existsSync(sessionJsonPath('web-old-aaaa'))).toBe(false)
+    expect(existsSync(sessionJsonPath('web-local-bbbb'))).toBe(false)
     expect(getTokenUserId(orphan.id)).toBeUndefined()
     expect(listLegacyUpgrade().pending).toBe(false)
   })

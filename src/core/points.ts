@@ -12,6 +12,7 @@ import {
   type LedgerRow,
   type QuotaRow,
 } from './accounts-store.js'
+import { resolveTokenPrice } from './model-prices.js'
 
 const log = rootLogger.child({ component: 'points' })
 
@@ -32,6 +33,8 @@ export interface ChargeInput {
   tokensIn: number
   tokensOut: number
   model?: string
+  /** CLI adapter name (`claude-code`, `cursor`, …) when there is no LLM id. */
+  agent?: string
   providerType?: string
   costUsd?: number
   costPer1kIn?: number
@@ -195,10 +198,18 @@ export function usdToPoints(usd: number, pointsPerUsd = readAccounts().pointsPer
   return Math.max(1, Math.ceil(usd * pointsPerUsd))
 }
 
-export function estimateChargeUsd(input: ChargeInput): { usd: number; source: 'usage' | 'catalog' | 'backend' | 'default' } | null {
+export function estimateChargeUsd(input: ChargeInput): { usd: number; source: 'usage' | 'override' | 'preset' | 'catalog' | 'backend' | 'default' } | null {
   if (typeof input.costUsd === 'number' && Number.isFinite(input.costUsd) && input.costUsd > 0) {
     return { usd: input.costUsd, source: 'usage' }
   }
+
+  const listed = resolveTokenPrice({ model: input.model, agent: input.agent })
+  if (listed && (listed.source === 'override' || listed.source === 'preset' || listed.source === 'fallback')) {
+    const usd = (input.tokensIn / 1000) * listed.price.costPer1kIn
+      + (input.tokensOut / 1000) * listed.price.costPer1kOut
+    if (usd > 0) return { usd, source: listed.source === 'override' ? 'override' : 'preset' }
+  }
+
   const catalog = input.model
     ? estimateCostUsd(input.providerType, input.model, {
         input: input.tokensIn,
@@ -256,7 +267,7 @@ export function chargePoints(input: ChargeInput): LedgerRow {
       usd: priced.usd,
       tokensIn: input.tokensIn,
       tokensOut: input.tokensOut,
-      model: input.model,
+      model: input.model || input.agent,
       at: now,
     }
     data.ledger.push(row)
@@ -270,6 +281,36 @@ export function chargePoints(input: ChargeInput): LedgerRow {
     }, 'agim turn charged')
     return row
   })
+}
+
+/** Best-effort debit after a native or CLI turn. No-ops when there is no
+ *  registered user or no measured usage. */
+export function chargeTurnUsage(input: {
+  platform?: string
+  userId?: string
+  model?: string
+  agent?: string
+  tokensIn: number
+  tokensOut: number
+  costUsd?: number
+}): void {
+  const billable = resolveBillableUserId(input.platform, input.userId)
+  if (!billable) return
+  const hasTokens = input.tokensIn > 0 || input.tokensOut > 0
+  const hasCost = typeof input.costUsd === 'number' && Number.isFinite(input.costUsd) && input.costUsd > 0
+  if (!hasTokens && !hasCost) return
+  try {
+    chargePoints({
+      userId: billable,
+      tokensIn: Math.max(0, input.tokensIn),
+      tokensOut: Math.max(0, input.tokensOut),
+      model: input.model,
+      agent: input.agent,
+      costUsd: input.costUsd,
+    })
+  } catch (err) {
+    log.warn({ event: 'points.charge_skipped', err: String(err) }, 'turn charge failed')
+  }
 }
 
 export function listLedger(opts: { userId?: string; limit?: number } = {}): LedgerRow[] {

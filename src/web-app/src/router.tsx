@@ -181,6 +181,7 @@ const router = createBrowserRouter([
       { path: 'viewer',     element: <Navigate to="/settings/advanced/viewer" replace /> },
       { path: 'agents',     lazy: lazy(() => import('@/routes/settings/agents')) },
       { path: 'policy',     lazy: lazy(() => import('@/routes/settings/policy')) },
+      { path: 'pricing',    lazy: lazy(() => import('@/routes/settings/pricing')) },
       { path: 'security',   lazy: lazy(() => import('@/routes/settings/security')) },
       // R13 follow-up — generic "/settings/env" raw editor removed. The
       // domain-specific pages (email / policy / viewer / memory) still

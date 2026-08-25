@@ -113,6 +113,10 @@ describe('workspace-files per-account cwd', () => {
     expect(listing.type).toBe('dir')
     expect(listing.base.replace(/\\/g, '/')).toContain('/users/usr_ws01/agim')
     expect(listing.entries.some((e) => e.name === 'NOTES.md')).toBe(true)
+    expect(listing.entries.some((e) => e.name === 'AGENTS.md')).toBe(true)
+    expect(listing.entries.some((e) => e.name === 'MEMORY.md')).toBe(true)
+    expect(listing.entries.some((e) => e.name === 'PROJECTS')).toBe(true)
+    expect(listing.entries.some((e) => e.name === 'SESSIONS')).toBe(true)
 
     const getRes = mockRes()
     await handleWorkspaceFilesApi(

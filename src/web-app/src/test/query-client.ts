@@ -10,9 +10,9 @@ const TEST_WORKBENCH_CONFIG: AppConfig = {
 }
 
 /**
- * Route tests that render WorkbenchFrame also mount its footer config query.
- * Seed that shared query so a route's first mocked fetch always belongs to
- * the route under test, rather than being consumed by shell chrome.
+ * Route tests that render WorkbenchFrame also mount its footer config
+ * query and, for members, the agents-status query. Seed both so a
+ * route's first mocked fetch belongs to the page under test.
  */
 export function createWorkbenchQueryClient(): QueryClient {
   const client = new QueryClient({
@@ -22,5 +22,6 @@ export function createWorkbenchQueryClient(): QueryClient {
     },
   })
   client.setQueryData(settingsKeys.config, TEST_WORKBENCH_CONFIG)
+  client.setQueryData(['agents', 'status'], { agim: true })
   return client
 }

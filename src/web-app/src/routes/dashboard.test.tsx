@@ -4,14 +4,26 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import DashboardRoute from './dashboard'
+import { useAuth } from '@/stores/auth'
 import '@/i18n'
+
+function asAdmin(): void {
+  useAuth.getState().setUser({
+    id: 'usr_admin',
+    username: 'op',
+    displayName: 'op',
+    role: 'admin',
+  })
+}
 
 beforeEach(() => {
   localStorage.setItem('agim_token', 'tok')
+  asAdmin()
 })
 
 afterEach(() => {
   localStorage.clear()
+  useAuth.getState().clear()
   vi.restoreAllMocks()
 })
 

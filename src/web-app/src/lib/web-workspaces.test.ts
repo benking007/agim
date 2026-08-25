@@ -13,6 +13,7 @@ import {
   loadActiveWorkspaceId,
   loadWorkspaceIndex,
   removeLocalWorkspace,
+  resetWorkspaces,
   setActiveWorkspace,
   toggleWorkspaceCollapsed,
   workspaceBasename,
@@ -104,5 +105,14 @@ describe('web-workspaces', () => {
     expect(listed[1]?.id).toBe('ws-one')
     expect(loadActiveWorkspaceId()).toBe('ws-one')
     expect(loadWorkspaceIndex().collapsed['ws-one']).toBe(true)
+  })
+
+  it('resetWorkspaces returns to cloud only', () => {
+    addLocalWorkspace({ name: 'old', path: '/tmp/old-ws' })
+    expect(listWorkspaces().length).toBeGreaterThan(1)
+    resetWorkspaces()
+    expect(listWorkspaces()).toHaveLength(1)
+    expect(loadActiveWorkspaceId()).toBe(CLOUD_WORKSPACE_ID)
+    expect(activeWorkspacePath()).toBeUndefined()
   })
 })

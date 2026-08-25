@@ -10,6 +10,8 @@ import {
   MAX_CACHED_THREADS,
   applyCachedHistory,
   cachedHistoryToAction,
+  clearAllCachedHistory,
+  dropCachedHistory,
   readCachedHistory,
   slimCachedMessages,
   writeCachedHistory,
@@ -108,6 +110,23 @@ describe('web-history-cache', () => {
     writeCachedHistory('web-emptythreadxx', { messages: [] })
     expect(readCachedHistory('web-emptythreadxx')).toBeNull()
     expect(readCachedHistory('not-a-thread')).toBeNull()
+  })
+
+  it('dropCachedHistory removes one snapshot', () => {
+    const id = 'web-dropthreadxxxx'
+    writeCachedHistory(id, { messages: [msg('u1', 'user', 'gone')] })
+    dropCachedHistory(id)
+    expect(readCachedHistory(id)).toBeNull()
+    expect(JSON.parse(localStorage.getItem(HIST_INDEX_KEY) ?? '[]')).not.toContain(id)
+  })
+
+  it('clearAllCachedHistory drops every snapshot', () => {
+    writeCachedHistory('web-allthreadaaaax', { messages: [msg('u1', 'user', 'a')] })
+    writeCachedHistory('web-allthreadbbbbx', { messages: [msg('u2', 'user', 'b')] })
+    clearAllCachedHistory()
+    expect(readCachedHistory('web-allthreadaaaax')).toBeNull()
+    expect(readCachedHistory('web-allthreadbbbbx')).toBeNull()
+    expect(JSON.parse(localStorage.getItem(HIST_INDEX_KEY) ?? '[]')).toEqual([])
   })
 
   it('evicts another thread when setItem hits quota', () => {

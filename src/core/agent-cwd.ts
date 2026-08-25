@@ -19,7 +19,7 @@
 // `AGIM_CLAUDE_CODE_CWD=/srv/foo`). Useful for migration tests and for
 // future per-tenant deployments.
 
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { mkdir, writeFile, access, readFile, appendFile } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
@@ -60,6 +60,50 @@ export function agentCwdForAccount(agentName: string, userId: string): string {
   return join(agimWorkspacesRoot(), 'users', sanitizeAccountWorkspaceId(userId), id)
 }
 
+const ACCOUNT_USER_RE = /^usr_[A-Za-z0-9_-]+$/
+
+/** True for a Portal login id (`usr_*`). Ignores `web:` token/loopback ids. */
+export function isAccountWorkspaceUserId(userId: string | undefined | null): userId is string {
+  const uid = typeof userId === 'string' ? userId.trim() : ''
+  return Boolean(uid && ACCOUNT_USER_RE.test(uid))
+}
+
+/** Logged-in Portal / web account id from ALS or `opts.userId` (`usr_*` only). */
+export function accountIdForWorkspace(opts?: { userId?: string }): string | undefined {
+  const als = currentAccountUserId()?.trim()
+  if (isAccountWorkspaceUserId(als)) return als
+  const uid = typeof opts?.userId === 'string' ? opts.userId.trim() : ''
+  if (isAccountWorkspaceUserId(uid)) return uid
+  return undefined
+}
+
+function isInsideDir(root: string, candidate: string): boolean {
+  const parent = resolve(root)
+  const child = resolve(candidate)
+  if (child === parent) return true
+  const prefix = parent.endsWith(sep) ? parent : parent + sep
+  return child.startsWith(prefix)
+}
+
+/**
+ * Keep a Portal `workspacePath` only when it belongs to this account.
+ * Shared `~/.agim-workspaces/<agent>/` paths from a previous login are dropped
+ * so a new user is not pinned to the shared IM tree (or another member).
+ * With no account, the raw path is returned unchanged (legacy IM / tests).
+ */
+export function bindableWorkspacePath(
+  raw: string | undefined | null,
+  agentName: string,
+  accountUserId?: string,
+): string | undefined {
+  const trimmed = typeof raw === 'string' ? raw.trim() : ''
+  if (!trimmed) return undefined
+  const uid = accountUserId?.trim() || currentAccountUserId()?.trim() || ''
+  if (!isAccountWorkspaceUserId(uid)) return trimmed
+  const root = agentCwdForAccount(agentName, uid)
+  return isInsideDir(root, trimmed) ? trimmed : undefined
+}
+
 /**
  * Root shown in Agent Files. Env `AGIM_<AGENT>_CWD` still wins; otherwise
  * a logged-in account gets its own tree so members cannot browse each
@@ -68,7 +112,8 @@ export function agentCwdForAccount(agentName: string, userId: string): string {
 export function resolveAgentFilesRoot(agentName: string, accountUserId?: string): string {
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit?.trim()) return explicit.trim()
-  if (accountUserId) return agentCwdForAccount(agentName, accountUserId)
+  const uid = accountUserId?.trim()
+  if (isAccountWorkspaceUserId(uid)) return agentCwdForAccount(agentName, uid)
   return defaultAgentCwd(agentName)
 }
 
@@ -79,9 +124,11 @@ export function resolveAgentFilesRoot(agentName: string, accountUserId?: string)
  * Env `AGIM_<AGENT>_CWD` wins (same as bootstrap). Portal `workspacePath`
  * never moves this root: selected folders are for project file I/O only.
  */
-export function resolveAgentWorkspaceRoot(agentName: string): string {
+export function resolveAgentWorkspaceRoot(agentName: string, accountUserId?: string): string {
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit?.trim()) return explicit.trim()
+  const uid = accountUserId?.trim() || currentAccountUserId()?.trim()
+  if (isAccountWorkspaceUserId(uid)) return agentCwdForAccount(agentName, uid)
   return defaultAgentCwd(agentName)
 }
 
@@ -89,9 +136,13 @@ export function resolveAgentWorkspaceRoot(agentName: string): string {
  * Ephemeral hint when Portal binds a subdirectory as the working directory.
  * Project files follow `workspacePath`; AGENTS.md / MEMORY.md stay at root.
  */
-export function buildPortalWorkspaceHint(agentName: string, workspacePath: string): string {
+export function buildPortalWorkspaceHint(
+  agentName: string,
+  workspacePath: string,
+  accountUserId?: string,
+): string {
   const cwd = workspacePath.trim()
-  const root = resolveAgentWorkspaceRoot(agentName)
+  const root = resolveAgentWorkspaceRoot(agentName, accountUserId)
   const lines = [
     '## Portal workspace',
     `Working directory: \`${cwd}\``,
@@ -388,9 +439,11 @@ export async function ensureAgentMemoryLink(
  *
  * Decision order:
  *   1. Env override `AGIM_<AGENT>_CWD` always wins.
- *   2. Explicit Portal / web `opts.workspacePath` (resolved directory).
- *   3. If we're in an IM context (threadId + platform both present), pin to
- *      `~/.agim-workspaces/<agent>/`.
+ *   2. Explicit Portal / web `opts.workspacePath` when it is inside this
+ *      account's tree (or any path when no account is in scope).
+ *   3. If we're in an IM / web context (threadId + platform both present),
+ *      pin to `~/.agim-workspaces/users/<usr_*>/<agent>/` for a logged-in
+ *      account, otherwise `~/.agim-workspaces/<agent>/`.
  *   4. Otherwise return undefined → adapter inherits agim's cwd. This
  *      keeps scheduler/intent-llm judge paths exactly as they were.
  */
@@ -398,13 +451,13 @@ export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string 
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit) return explicit
 
-  const portal = typeof opts.workspacePath === 'string' ? opts.workspacePath.trim() : ''
+  const accountId = accountIdForWorkspace(opts)
+  const portal = bindableWorkspacePath(opts.workspacePath, agentName, accountId)
   if (portal) return portal
 
   if (opts.threadId && opts.platform) {
-    const accountUserId = currentAccountUserId()
-    if (accountUserId) {
-      const dir = agentCwdForAccount(agentName, accountUserId)
+    if (accountId) {
+      const dir = agentCwdForAccount(agentName, accountId)
       try { mkdirSync(dir, { recursive: true }) } catch { /* spawn still gets the path */ }
       return dir
     }

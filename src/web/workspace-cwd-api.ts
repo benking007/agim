@@ -7,6 +7,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename } from 'node:path'
 import { readBody, sendJson } from './http-utils.js'
+import { getRequestUserId } from './auth.js'
 import { resolvePortalWorkspacePath } from '../core/workspace-path.js'
 
 export async function handleWorkspaceCwdApi(
@@ -31,7 +32,7 @@ export async function handleWorkspaceCwdApi(
       sendJson(res, 400, { error: 'Missing agent' })
       return true
     }
-    const path = resolvePortalWorkspacePath(rawPath, agent)
+    const path = resolvePortalWorkspacePath(rawPath, agent, getRequestUserId(req))
     if (!path) {
       sendJson(res, 200, { ok: false, path: null })
       return true

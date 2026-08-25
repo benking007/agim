@@ -80,4 +80,20 @@ describe('resolvePortalWorkspacePath', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('resolves named folders under the account tree and rejects the shared tree', () => {
+    const { root } = withAgentTree()
+    const accountChild = join(root, 'users', 'usr_abc123', 'agim', 'proj')
+    mkdirSync(accountChild, { recursive: true })
+    try {
+      expect(resolvePortalWorkspacePath('proj', 'agim', 'usr_abc123'))
+        .toBe(realpathSync(accountChild))
+      expect(resolvePortalWorkspacePath(join(root, 'agim', 'proj'), 'agim', 'usr_abc123'))
+        .toBeUndefined()
+      expect(resolvePortalWorkspacePath('proj', 'agim', 'web:tok1'))
+        .toBe(realpathSync(join(root, 'agim', 'proj')))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

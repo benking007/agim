@@ -47,7 +47,10 @@ describe('thread-reassigned', () => {
       .map((s) => s.id)
     expect(ids).toContain('web-abc123-fresh')
     expect(ids).not.toContain('web-oldthreadxxxx')
-    expect(actions).toEqual([{ kind: 'SET_CLIENT_ID', clientId: 'web-abc123-fresh' }])
+    expect(actions).toEqual([
+      { kind: 'RESET_CONVERSATION' },
+      { kind: 'SET_CLIENT_ID', clientId: 'web-abc123-fresh' },
+    ])
     expect(actions.some((a) => a.kind === 'ERROR')).toBe(false)
   })
 

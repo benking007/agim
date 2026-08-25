@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Portal chat after account switch**: signing out, registering, or
+  logging into another user now wipes origin-scoped session / history /
+  workspace caches and resets the transcript. `get-history` also refuses
+  a disk-owned `web-*` thread when the memory owner map is empty
+  (process restart), so the new account cannot paint the previous
+  user's bubbles.
+- **Portal per-account cwd**: a logged-in `usr_*` session uses
+  `~/.agim-workspaces/users/<id>/<agent>/` as the agent working
+  directory and AGENTS.md root. Shared `~/.agim-workspaces/agim`
+  (and leftover Portal folder paths under it) no longer pin a new
+  account to the previous user's tree.
 - **outbox SQLite flake**: first-failure backoff is 1s and SQLite
   `datetime('now')` is second precision, so `pickPending` can legally
   see the row in CI. The test now asserts the schedule, then uses the
@@ -88,6 +99,13 @@ All notable changes to this project will be documented in this file.
   They store the host only, read the WKWebView `agim_session` cookie,
   and open `/m/chat` or `/login?next=/m/chat`. Sign-in is username /
   password in the WebView; the login page has a native host switcher.
+- **Portal empty session**: switching conversations shows a centered
+  spinner (“正在加载会话”) instead of two starter prompt cards, so a
+  slow `get-history` no longer looks frozen. Idle empty sessions are
+  blank (no agent title / sample prompts).
+- **macOS window title**: the native title-bar label “Agim” is hidden
+  (traffic lights stay). SwiftUI kept rewriting `NSWindow.title`; the
+  shell now clears it on attach and whenever the title is set again.
 - **npm publish via Trusted Publishing**: bump + publish run as the
   root `release.yml` workflow (npm OIDC checks that filename, not a
   nested `workflow_call`). Publish uses npm 11.5.1+ and does not set

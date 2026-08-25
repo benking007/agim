@@ -1,3 +1,4 @@
+import { syncWebAccountScope } from '@/lib/web-account-scope'
 import { useAuth, type AuthUser } from '@/stores/auth'
 
 export function signedInName(user: AuthUser | null | undefined): string {
@@ -9,6 +10,7 @@ export async function signOut(): Promise<void> {
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
   } catch { /* still drop the local session */ }
+  syncWebAccountScope(null)
   useAuth.getState().clear()
   window.location.href = '/login'
 }

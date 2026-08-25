@@ -40,6 +40,7 @@ import {
   unbindImIdentity,
 } from '../core/im-bind.js'
 import {
+  dailyPointsSeries,
   getPointsBalance,
   getPointsConfig,
   listLedger,
@@ -47,6 +48,11 @@ import {
   setPointsConfig,
   setPointsQuota,
 } from '../core/points.js'
+import {
+  applyModelPriceOverrides,
+  listModelPriceRows,
+} from '../core/model-prices.js'
+import { getLiveConfig } from '../core/live-config.js'
 import { sessionManager } from '../core/session.js'
 import { listKnownImUsers } from '../core/admin-allowlist.js'
 
@@ -177,7 +183,11 @@ export async function handleAccountApi(
   if (p === '/api/me/points' && m === 'GET') {
     const userId = getRequestUserId(req)
     if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
-    sendJson(res, 200, { balance: getPointsBalance(userId), ledger: listLedger({ userId, limit: 50 }) })
+    sendJson(res, 200, {
+      balance: getPointsBalance(userId),
+      ledger: listLedger({ userId, limit: 50 }),
+      daily: dailyPointsSeries(userId),
+    })
     return true
   }
 
@@ -250,6 +260,37 @@ export async function handleAccountApi(
     sendJson(res, 200, { ok: true, config: setPointsConfig(parsed) })
     return true
   }
+
+  if (p === '/api/admin/model-prices' && m === 'GET') {
+    if (!requireAdmin(req, res)) return true
+    const extra = (getLiveConfig() as { llmBackends?: Array<{ model?: string }> } | null)
+      ?.llmBackends?.map((b) => b.model).filter((id): id is string => !!id?.trim()) ?? []
+    sendJson(res, 200, { ok: true, rows: listModelPriceRows(extra) })
+    return true
+  }
+  if (p === '/api/admin/model-prices' && m === 'PUT') {
+    if (!requireAdmin(req, res)) return true
+    try {
+      const parsed = JSON.parse(await readBody(req, res) || '{}') as {
+        overrides?: unknown
+      }
+      const overrides = parsed.overrides
+      if (overrides != null && (typeof overrides !== 'object' || Array.isArray(overrides))) {
+        sendError(res, 400, 'BAD_REQUEST', { message: 'overrides must be an object' })
+        return true
+      }
+      applyModelPriceOverrides(
+        (overrides ?? {}) as Record<string, { costPer1kIn: number; costPer1kOut: number } | null>,
+      )
+      const extra = (getLiveConfig() as { llmBackends?: Array<{ model?: string }> } | null)
+        ?.llmBackends?.map((b) => b.model).filter((id): id is string => !!id?.trim()) ?? []
+      sendJson(res, 200, { ok: true, rows: listModelPriceRows(extra) })
+    } catch (err) {
+      sendError(res, 400, codeOf(err), { message: err instanceof Error ? err.message : String(err) })
+    }
+    return true
+  }
+
   const quotaMatch = p.match(/^\/api\/admin\/users\/([^/]+)\/points$/)
   if (quotaMatch && m === 'PATCH') {
     if (!requireAdmin(req, res)) return true

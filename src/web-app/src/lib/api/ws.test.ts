@@ -150,4 +150,25 @@ describe('openChatWs resume reconnect', () => {
     expect(MockWebSocket.instances.length).toBe(afterForce)
     handle.close()
   })
+
+  it('reconnect() handshakes immediately even inside the resume debounce', async () => {
+    const { openChatWs } = await loadWs()
+    const handle = openChatWs()
+    MockWebSocket.instances[0]?.open()
+
+    handle.reconnect()
+    expect(MockWebSocket.instances.length).toBe(2)
+    expect(MockWebSocket.instances[0]?.readyState).toBe(MockWebSocket.CLOSED)
+    handle.close()
+  })
+
+  it('reconnectChatWs is a no-op before openChatWs and reconnects after', async () => {
+    const mod = await loadWs()
+    expect(() => mod.reconnectChatWs()).not.toThrow()
+    const handle = mod.openChatWs()
+    MockWebSocket.instances[0]?.open()
+    mod.reconnectChatWs()
+    expect(MockWebSocket.instances.length).toBe(2)
+    handle.close()
+  })
 })

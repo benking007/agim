@@ -12,6 +12,7 @@ import {
   type LedgerRow,
   type QuotaRow,
 } from './accounts-store.js'
+import { resolveTokenPrice } from './model-prices.js'
 
 const log = rootLogger.child({ component: 'points' })
 
@@ -32,6 +33,8 @@ export interface ChargeInput {
   tokensIn: number
   tokensOut: number
   model?: string
+  /** CLI adapter name (`claude-code`, `cursor`, …) when there is no LLM id. */
+  agent?: string
   providerType?: string
   costUsd?: number
   costPer1kIn?: number
@@ -195,10 +198,18 @@ export function usdToPoints(usd: number, pointsPerUsd = readAccounts().pointsPer
   return Math.max(1, Math.ceil(usd * pointsPerUsd))
 }
 
-export function estimateChargeUsd(input: ChargeInput): { usd: number; source: 'usage' | 'catalog' | 'backend' | 'default' } | null {
+export function estimateChargeUsd(input: ChargeInput): { usd: number; source: 'usage' | 'override' | 'preset' | 'catalog' | 'backend' | 'default' } | null {
   if (typeof input.costUsd === 'number' && Number.isFinite(input.costUsd) && input.costUsd > 0) {
     return { usd: input.costUsd, source: 'usage' }
   }
+
+  const listed = resolveTokenPrice({ model: input.model, agent: input.agent })
+  if (listed && (listed.source === 'override' || listed.source === 'preset' || listed.source === 'fallback')) {
+    const usd = (input.tokensIn / 1000) * listed.price.costPer1kIn
+      + (input.tokensOut / 1000) * listed.price.costPer1kOut
+    if (usd > 0) return { usd, source: listed.source === 'override' ? 'override' : 'preset' }
+  }
+
   const catalog = input.model
     ? estimateCostUsd(input.providerType, input.model, {
         input: input.tokensIn,
@@ -256,7 +267,7 @@ export function chargePoints(input: ChargeInput): LedgerRow {
       usd: priced.usd,
       tokensIn: input.tokensIn,
       tokensOut: input.tokensOut,
-      model: input.model,
+      model: input.model || input.agent,
       at: now,
     }
     data.ledger.push(row)
@@ -272,6 +283,36 @@ export function chargePoints(input: ChargeInput): LedgerRow {
   })
 }
 
+/** Best-effort debit after a native or CLI turn. No-ops when there is no
+ *  registered user or no measured usage. */
+export function chargeTurnUsage(input: {
+  platform?: string
+  userId?: string
+  model?: string
+  agent?: string
+  tokensIn: number
+  tokensOut: number
+  costUsd?: number
+}): void {
+  const billable = resolveBillableUserId(input.platform, input.userId)
+  if (!billable) return
+  const hasTokens = input.tokensIn > 0 || input.tokensOut > 0
+  const hasCost = typeof input.costUsd === 'number' && Number.isFinite(input.costUsd) && input.costUsd > 0
+  if (!hasTokens && !hasCost) return
+  try {
+    chargePoints({
+      userId: billable,
+      tokensIn: Math.max(0, input.tokensIn),
+      tokensOut: Math.max(0, input.tokensOut),
+      model: input.model,
+      agent: input.agent,
+      costUsd: input.costUsd,
+    })
+  } catch (err) {
+    log.warn({ event: 'points.charge_skipped', err: String(err) }, 'turn charge failed')
+  }
+}
+
 export function listLedger(opts: { userId?: string; limit?: number } = {}): LedgerRow[] {
   const limit = Math.min(500, Math.max(1, opts.limit ?? 50))
   const rows = readAccounts().ledger
@@ -279,6 +320,42 @@ export function listLedger(opts: { userId?: string; limit?: number } = {}): Ledg
     .slice()
     .reverse()
   return rows.slice(0, limit)
+}
+
+export const POINTS_DAILY_DAYS = 14
+const DAY_MS = 86_400_000
+
+export function utcDayKey(atMs: number): string {
+  return new Date(atMs).toISOString().slice(0, 10)
+}
+
+export interface DailyPointsSpend {
+  day: string
+  spent: number
+}
+
+/** UTC calendar buckets of spent points (negative ledger deltas). */
+export function dailyPointsSeries(
+  userId: string,
+  days = POINTS_DAILY_DAYS,
+  now = Date.now(),
+): DailyPointsSpend[] {
+  const daysN = Math.min(90, Math.max(1, Math.floor(days)))
+  const endDay = utcDayKey(now)
+  const endStart = Date.parse(`${endDay}T00:00:00.000Z`)
+  const startMs = endStart - (daysN - 1) * DAY_MS
+  const spent = new Map<string, number>()
+  for (let i = 0; i < daysN; i++) {
+    spent.set(utcDayKey(startMs + i * DAY_MS), 0)
+  }
+  for (const row of readAccounts().ledger) {
+    if (row.userId !== userId) continue
+    if (row.at < startMs || row.delta >= 0) continue
+    const key = utcDayKey(row.at)
+    if (!spent.has(key)) continue
+    spent.set(key, (spent.get(key) ?? 0) + (-row.delta))
+  }
+  return [...spent.entries()].map(([day, value]) => ({ day, spent: value }))
 }
 
 /**

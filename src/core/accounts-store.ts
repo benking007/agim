@@ -80,6 +80,8 @@ export interface AccountsFile {
   defaultMonthlyLimit: number
   defaultCostPer1kIn: number
   defaultCostPer1kOut: number
+  /** Admin overrides keyed `llm:<modelId>` or `agent:<cliName>`. */
+  modelPriceOverrides?: Record<string, { costPer1kIn: number; costPer1kOut: number }>
   quotas: QuotaRow[]
   ledger: LedgerRow[]
   /** Set after the first admin inherits or skips pre-account sessions. */
@@ -109,6 +111,7 @@ function emptyFile(): AccountsFile {
     defaultMonthlyLimit: DEFAULT_MONTHLY_LIMIT,
     defaultCostPer1kIn: 0,
     defaultCostPer1kOut: 0,
+    modelPriceOverrides: {},
     quotas: [],
     ledger: [],
     legacyUpgradeDone: false,
@@ -124,6 +127,20 @@ function prune(data: AccountsFile): void {
   if (data.ledger.length > MAX_LEDGER_ROWS) {
     data.ledger = data.ledger.slice(data.ledger.length - MAX_LEDGER_ROWS)
   }
+}
+
+function parsePriceOverrides(raw: unknown): Record<string, { costPer1kIn: number; costPer1kOut: number }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, { costPer1kIn: number; costPer1kOut: number }> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!key.trim() || !value || typeof value !== 'object' || Array.isArray(value)) continue
+    const row = value as { costPer1kIn?: unknown; costPer1kOut?: unknown }
+    const inn = Number(row.costPer1kIn)
+    const outn = Number(row.costPer1kOut)
+    if (!Number.isFinite(inn) || !Number.isFinite(outn) || inn < 0 || outn < 0) continue
+    out[key] = { costPer1kIn: inn, costPer1kOut: outn }
+  }
+  return out
 }
 
 export function readAccounts(): AccountsFile {
@@ -152,6 +169,7 @@ export function readAccounts(): AccountsFile {
         ? Number(parsed.defaultMonthlyLimit) : DEFAULT_MONTHLY_LIMIT,
       defaultCostPer1kIn: Number.isFinite(parsed.defaultCostPer1kIn) ? Number(parsed.defaultCostPer1kIn) : 0,
       defaultCostPer1kOut: Number.isFinite(parsed.defaultCostPer1kOut) ? Number(parsed.defaultCostPer1kOut) : 0,
+      modelPriceOverrides: parsePriceOverrides(parsed.modelPriceOverrides),
       legacyUpgradeDone: Boolean(parsed.legacyUpgradeDone),
     }
     prune(cached)

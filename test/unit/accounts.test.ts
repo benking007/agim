@@ -41,7 +41,9 @@ import {
   resolveBillableUserId,
   setPointsQuota,
   usdToPoints,
+  dailyPointsSeries,
 } from '../../src/core/points.js'
+import { mutateAccounts } from '../../src/core/accounts-store.js'
 
 const saved: Record<string, string | undefined> = {}
 let tmp = ''
@@ -158,6 +160,51 @@ describe('points', () => {
     expect(granted.bonus).toBe(500)
     expect(granted.remaining).toBe(500)
     assertCanSpend(user.id)
+  })
+
+  it('buckets spent points by UTC day and fills empty days', () => {
+    const { user: admin } = registerUser({ username: 'admin', password: 'password1' })
+    const invite = createInvite({ createdBy: admin.id })
+    const { user } = registerUser({ username: 'cleo', password: 'password1', inviteRaw: invite.raw })
+    const now = Date.parse('2026-08-25T15:30:00.000Z')
+    mutateAccounts((data) => {
+      data.ledger.push(
+        {
+          id: 'pt_d1',
+          userId: user.id,
+          delta: -40,
+          reason: 'agim_turn',
+          at: Date.parse('2026-08-24T08:00:00.000Z'),
+        },
+        {
+          id: 'pt_d2',
+          userId: user.id,
+          delta: -15,
+          reason: 'agim_turn',
+          at: Date.parse('2026-08-25T01:00:00.000Z'),
+        },
+        {
+          id: 'pt_grant',
+          userId: user.id,
+          delta: 500,
+          reason: 'admin_grant',
+          at: Date.parse('2026-08-25T02:00:00.000Z'),
+        },
+        {
+          id: 'pt_old',
+          userId: user.id,
+          delta: -99,
+          reason: 'agim_turn',
+          at: Date.parse('2026-08-01T00:00:00.000Z'),
+        },
+      )
+    })
+    const series = dailyPointsSeries(user.id, 3, now)
+    expect(series).toEqual([
+      { day: '2026-08-23', spent: 0 },
+      { day: '2026-08-24', spent: 40 },
+      { day: '2026-08-25', spent: 15 },
+    ])
   })
 })
 

@@ -94,7 +94,17 @@ import type {
   TopNResponse,
   UpdatePersonaBody,
   VectorStatus,
+  MePointsResponse,
 } from '@/types/api'
+
+export interface ModelPriceRowDto {
+  key: string
+  kind: 'llm' | 'cli'
+  id: string
+  preset: { costPer1kIn: number; costPer1kOut: number } | null
+  current: { costPer1kIn: number; costPer1kOut: number }
+  source: 'override' | 'preset' | 'fallback' | 'unset'
+}
 
 export const api = {
   /** GET /api/a2a/recent */
@@ -116,6 +126,14 @@ export const api = {
   /** POST /api/admin-allowlist */
   addAdminAllowlist: (body: AddAdminBody) =>
     client.post<AdminMutationResponse>('/api/admin-allowlist', { body }),
+
+  /** GET /api/admin/model-prices */
+  getModelPrices: () =>
+    client.get<{ ok: boolean; rows: ModelPriceRowDto[] }>('/api/admin/model-prices'),
+
+  /** PUT /api/admin/model-prices */
+  putModelPrices: (body: { overrides: Record<string, { costPer1kIn: number; costPer1kOut: number } | null> }) =>
+    client.put<{ ok: boolean; rows: ModelPriceRowDto[] }>('/api/admin/model-prices', { body }),
 
   /** GET /api/agent-health */
   getAgentHealth: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
@@ -361,6 +379,10 @@ export const api = {
   /** GET /api/metrics */
   getMetrics: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/metrics', opts),
+
+  /** GET /api/me/points — remaining quota, recent ledger, daily spend. */
+  getMePoints: () =>
+    client.get<MePointsResponse>('/api/me/points'),
 
   /** POST /api/notify */
   notify: (opts?: { body?: unknown }) =>

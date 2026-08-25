@@ -38,7 +38,8 @@
     "src/web/workspace-files-api.ts",
     "src/web/workspace-skills-api.ts",
     "src/web/workspaces-api.ts",
-    "src/web/ws-chat.ts"
+    "src/web/ws-chat.ts",
+    "src/web/ws-history-rekey.ts"
   ],
   "count": 155,
   "endpoints": [

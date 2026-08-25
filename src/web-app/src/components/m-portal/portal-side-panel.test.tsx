@@ -32,7 +32,7 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
   const onToggleWorkspace = vi.fn()
   const onArchiveSession = vi.fn()
   const onArchiveWorkspace = vi.fn()
-  render(
+  const view = render(
     <PortalSidePanel
       dark={false}
       agentId="agim"
@@ -61,7 +61,7 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       {...over}
     />,
   )
-  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace, onArchiveSession, onArchiveWorkspace }
+  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace, onArchiveSession, onArchiveWorkspace, unmount: view.unmount }
 }
 
 afterEach(() => {
@@ -105,10 +105,13 @@ describe('PortalSidePanel conversations', () => {
     expect(onNew).not.toHaveBeenCalled()
   })
 
-  it('hides the workspace tree on non-chat panes', () => {
-    renderPanel({ pane: 'library' })
-    expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
-    expect(screen.queryByText('First chat')).not.toBeInTheDocument()
+  it('keeps the workspace tree when Skills, Automation, or Library is open', () => {
+    for (const pane of ['skills', 'automation', 'library'] as const) {
+      const { unmount } = renderPanel({ pane })
+      expect(screen.getByText('Workspaces')).toBeInTheDocument()
+      expect(screen.getByText('First chat')).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('nests sessions under their workspace and opens the directory picker', async () => {
@@ -182,6 +185,13 @@ describe('PortalSidePanel conversations', () => {
     expect(screen.getByTestId('portal-brand-agent')).toBeInTheDocument()
     expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'First chat' })).toBeInTheDocument()
+  })
+
+  it('keeps collapsed-rail sessions when a tool pane is open', () => {
+    renderPanel({ railCollapsed: true, pane: 'automation' })
+    expect(screen.getByRole('button', { name: 'First chat' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Older chat' })).toBeInTheDocument()
   })
 
   it('shows the signed-in username and a logout button', () => {

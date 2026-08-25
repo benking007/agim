@@ -234,13 +234,11 @@ describe('Web REST API', () => {
       expect(res.status).toBe(404)
     })
 
-    it('POST /api/jobs/:id/cancel returns 200 with ok flag', async () => {
+    it('POST /api/jobs/:id/cancel on missing job returns 404', async () => {
       const res = await fetch(url('/api/jobs/999999999/cancel'), {
         method: 'POST', headers: auth,
       })
-      expect(res.status).toBe(200)
-      const body = await res.json() as { ok: boolean }
-      expect(typeof body.ok).toBe('boolean')
+      expect(res.status).toBe(404)
     })
 
     it('POST /api/jobs/:id/run on missing job returns 404', async () => {
@@ -277,19 +275,27 @@ describe('Web REST API', () => {
   })
 
   describe('role=user token restrictions', () => {
-    it('forbids global control-plane APIs on proxied loopback requests', async () => {
-      const token = createToken('integration-user-token', { role: 'user' })
+    it('lets members list their own jobs/reminders/approvals/outbox', async () => {
+      const token = createToken('integration-user-token', { role: 'user', userId: 'usr_int01' })
+      const headers = {
+        authorization: `Bearer ${token.raw}`,
+        'x-forwarded-for': '203.0.113.10',
+      }
+      for (const path of ['/api/jobs', '/api/reminders', '/api/approvals', '/api/outbox']) {
+        const res = await fetch(url(path), { headers })
+        expect({ path, status: res.status }).toEqual({ path, status: 200 })
+      }
+    })
+
+    it('forbids admin-only control-plane APIs on proxied loopback requests', async () => {
+      const token = createToken('integration-user-admin-apis', { role: 'user' })
       const headers = {
         authorization: `Bearer ${token.raw}`,
         'x-forwarded-for': '203.0.113.10',
       }
       const paths = [
-        '/api/jobs',
-        '/api/reminders',
         '/api/memos',
         '/api/memory/users',
-        '/api/approvals',
-        '/api/outbox',
         '/api/outbox/stats',
         '/api/env?reveal=1',
         '/api/service/log-tail',
@@ -298,7 +304,7 @@ describe('Web REST API', () => {
 
       for (const path of paths) {
         const res = await fetch(url(path), { headers })
-        expect(res.status).toBe(403)
+        expect({ path, status: res.status }).toEqual({ path, status: 403 })
       }
     })
 

@@ -94,6 +94,7 @@ import type {
   TopNResponse,
   UpdatePersonaBody,
   VectorStatus,
+  MePointsResponse,
 } from '@/types/api'
 
 export const api = {
@@ -361,6 +362,10 @@ export const api = {
   /** GET /api/metrics */
   getMetrics: (opts?: { query?: Record<string, string | number | boolean | undefined> }) =>
     client.get<unknown>('/api/metrics', opts),
+
+  /** GET /api/me/points — remaining quota, recent ledger, daily spend. */
+  getMePoints: () =>
+    client.get<MePointsResponse>('/api/me/points'),
 
   /** POST /api/notify */
   notify: (opts?: { body?: unknown }) =>

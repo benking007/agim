@@ -39,6 +39,7 @@ import {
   unbindImIdentity,
 } from '../core/im-bind.js'
 import {
+  dailyPointsSeries,
   getPointsBalance,
   getPointsConfig,
   listLedger,
@@ -176,7 +177,11 @@ export async function handleAccountApi(
   if (p === '/api/me/points' && m === 'GET') {
     const userId = getRequestUserId(req)
     if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
-    sendJson(res, 200, { balance: getPointsBalance(userId), ledger: listLedger({ userId, limit: 50 }) })
+    sendJson(res, 200, {
+      balance: getPointsBalance(userId),
+      ledger: listLedger({ userId, limit: 50 }),
+      daily: dailyPointsSeries(userId),
+    })
     return true
   }
 

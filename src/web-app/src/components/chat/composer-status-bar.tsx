@@ -1,6 +1,6 @@
 /**
  * ComposerStatusBar — Cursor-like row under the chat input:
- *   [model ▾]  [思考 max ▾]  [审批 ▾]          (context ring)
+ *   [model ▾]  [思考 max ▾]  [审批 ▾]  [点数]          (context ring)
  *
  * Model dropdown lists sibling backends under the same preset; last item
  * opens the LLM settings dialog. Thinking on/off + effort are one chip
@@ -27,6 +27,11 @@ import { cn } from '@/lib/utils'
 const ComposerAutoApproveChip = lazy(async () => {
   const module = await import('@/components/chat/composer-auto-approve-chip')
   return { default: module.ComposerAutoApproveChip }
+})
+
+const ComposerPointsChip = lazy(async () => {
+  const module = await import('@/components/chat/composer-points-chip')
+  return { default: module.ComposerPointsChip }
 })
 
 const ComposerContextPopover = lazy(async () => {
@@ -314,6 +319,10 @@ export function ComposerStatusBar({
           )}
         >
           <ComposerAutoApproveChip dark={dark} disabled={disabled} chipClassName={chip} />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <ComposerPointsChip dark={dark} disabled={disabled} chipClassName={chip} />
         </Suspense>
       </div>
 

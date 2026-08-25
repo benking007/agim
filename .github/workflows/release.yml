@@ -21,7 +21,9 @@ permissions:
 
 jobs:
   bump:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    # Label `skip-release` lands the PR without a patch bump / npm publish.
+    # Use it to stack several merges, then publish once from package.json.
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'skip-release')
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.meta.outputs.sha }}

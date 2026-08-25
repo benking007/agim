@@ -448,6 +448,10 @@ export async function handleAuthLogin(req: IncomingMessage, res: ServerResponse)
       try {
         const session = acc.loginUser({ username, password: parsed.password || '' })
         clearLoginFailure(key)
+        try {
+          const { seedAccountWorkspaces } = await import('../core/account-workspace-seed.js')
+          await seedAccountWorkspaces(session.user.id)
+        } catch { /* seed logs failures */ }
         res.writeHead(200, {
           'Content-Type': 'application/json; charset=utf-8',
           'Set-Cookie': [

@@ -77,6 +77,10 @@ export async function validateWorkspacePath(
 async function resolveFilesBase(req: IncomingMessage, agent: string): Promise<string> {
   const { resolveAgentFilesRoot } = await import('../core/agent-cwd.js')
   const userId = getRequestUserId(req)
+  if (userId) {
+    const { seedAccountAgentWorkspace } = await import('../core/account-workspace-seed.js')
+    await seedAccountAgentWorkspace(userId, agent)
+  }
   const base = resolvePath(resolveAgentFilesRoot(agent, userId))
   await mkdir(base, { recursive: true })
   return base

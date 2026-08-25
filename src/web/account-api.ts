@@ -33,6 +33,7 @@ import {
   setUserRole,
 } from '../core/accounts.js'
 import { consumeCaptcha, issueCaptcha } from '../core/captcha.js'
+import { seedAccountWorkspaces } from '../core/account-workspace-seed.js'
 import {
   claimImIdentity,
   listBindings,
@@ -315,6 +316,7 @@ async function handleRegister(req: IncomingMessage, res: ServerResponse): Promis
       password: parsed.password || '',
       inviteRaw: parsed.invite,
     })
+    try { await seedAccountWorkspaces(result.user.id) } catch { /* seed logs failures */ }
     if (first) {
       try { adoptLegacyInstall(result.user.id) } catch { /* ignore */ }
     }

@@ -1316,6 +1316,40 @@ export interface SubmitChatFeedbackResponse {
   messageId: string | null
 }
 
+export interface PointsBalance {
+  userId: string
+  monthlyLimit: number
+  bonus: number
+  usedThisPeriod: number
+  remaining: number
+  periodStart: number
+  pointsPerUsd: number
+  unlimited: boolean
+}
+
+export interface PointsLedgerRow {
+  id: string
+  userId: string
+  delta: number
+  reason: string
+  usd?: number
+  tokensIn?: number
+  tokensOut?: number
+  model?: string
+  at: number
+}
+
+export interface DailyPointsSpend {
+  day: string
+  spent: number
+}
+
+export interface MePointsResponse {
+  balance: PointsBalance | null
+  ledger: PointsLedgerRow[]
+  daily: DailyPointsSpend[]
+}
+
 export type OnboardingReason =
   | 'no-usable-agent'
   | 'no-llm'

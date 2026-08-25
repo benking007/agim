@@ -322,6 +322,42 @@ export function listLedger(opts: { userId?: string; limit?: number } = {}): Ledg
   return rows.slice(0, limit)
 }
 
+export const POINTS_DAILY_DAYS = 14
+const DAY_MS = 86_400_000
+
+export function utcDayKey(atMs: number): string {
+  return new Date(atMs).toISOString().slice(0, 10)
+}
+
+export interface DailyPointsSpend {
+  day: string
+  spent: number
+}
+
+/** UTC calendar buckets of spent points (negative ledger deltas). */
+export function dailyPointsSeries(
+  userId: string,
+  days = POINTS_DAILY_DAYS,
+  now = Date.now(),
+): DailyPointsSpend[] {
+  const daysN = Math.min(90, Math.max(1, Math.floor(days)))
+  const endDay = utcDayKey(now)
+  const endStart = Date.parse(`${endDay}T00:00:00.000Z`)
+  const startMs = endStart - (daysN - 1) * DAY_MS
+  const spent = new Map<string, number>()
+  for (let i = 0; i < daysN; i++) {
+    spent.set(utcDayKey(startMs + i * DAY_MS), 0)
+  }
+  for (const row of readAccounts().ledger) {
+    if (row.userId !== userId) continue
+    if (row.at < startMs || row.delta >= 0) continue
+    const key = utcDayKey(row.at)
+    if (!spent.has(key)) continue
+    spent.set(key, (spent.get(key) ?? 0) + (-row.delta))
+  }
+  return [...spent.entries()].map(([day, value]) => ({ day, spent: value }))
+}
+
 /**
  * Quota belongs to the registered user. IM is only a channel:
  * `telegram:12345:usr_ab12` bills `usr_ab12`. Unbound IM has no

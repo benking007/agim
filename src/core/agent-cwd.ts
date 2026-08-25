@@ -533,11 +533,10 @@ export async function bootstrapAgentWorkspaces(): Promise<Array<{ agent: string;
   }
 
   for (const agent of BOOTSTRAP_AGENT_IDS) {
-    const id = agent === 'native' ? 'agim' : agent
-    const filename = roleFileForAgent(id)
+    const filename = roleFileForAgent(agent)
     const seed = roleSeedForAgent(agent, {
-      fileLocation: `${defaultAgentCwd(id)}/${filename}`,
-      workspaceRoot: `~/.agim-workspaces/${id}`,
+      fileLocation: `${defaultAgentCwd(agent)}/${filename}`,
+      workspaceRoot: `~/.agim-workspaces/${agent}`,
     })
     result.push({ agent, dir: await seedAgentWorkspace(agent, seed) })
   }

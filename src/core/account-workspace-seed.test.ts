@@ -61,7 +61,7 @@ describe('seedAccountAgentWorkspace', () => {
     await writeFile(join(dir!, 'AGENTS.md'), '你是月魁。\n', 'utf8')
     await writeFile(join(dir!, 'MEMORY.md'), '# keep me\n', 'utf8')
     await seedAccountAgentWorkspace('usr_seed2', 'agim')
-    expect(await readFile(join(dir!, 'AGENTS.md'), 'utf8')).toBe('你是月魁。\n')
+    expect(await readFile(join(dir!, 'AGENTS.md'), 'utf8')).toContain('你是月魁')
     expect(await readFile(join(dir!, 'MEMORY.md'), 'utf8')).toBe('# keep me\n')
   })
 

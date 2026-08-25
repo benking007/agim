@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand'
+import { syncWebAccountScope } from '@/lib/web-account-scope'
 
 const TOKEN_KEY = 'agim_token'
 
@@ -61,6 +62,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ token, signedIn: Boolean(token) || Boolean(get().user) })
   },
   setUser: (user) => {
+    if (user?.id) syncWebAccountScope(user.id)
     set({
       user,
       role: user?.role ?? null,
@@ -70,6 +72,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   clear: () => {
     writeToken(null)
+    syncWebAccountScope(null)
     set({ token: null, user: null, role: null, signedIn: false, ready: true })
   },
   hydrate: async () => {
@@ -84,13 +87,8 @@ export const useAuth = create<AuthState>((set, get) => ({
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
       if (res.ok) {
         const body = await res.json() as { user?: AuthUser | null; role?: 'admin' | 'user' }
-        if (body.user && body.user.id && !body.user.id.startsWith('loopback') && body.user.id !== 'auth-off') {
-          set({
-            user: body.user,
-            role: body.user.role,
-            signedIn: true,
-            ready: true,
-          })
+        if (body.user?.id && !body.user.id.startsWith('loopback') && body.user.id !== 'auth-off') {
+          get().setUser(body.user)
           return
         }
         if (body.role === 'admin' && (body.user?.id === 'loopback' || body.user?.id === 'auth-off')) {

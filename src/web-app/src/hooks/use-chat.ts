@@ -57,6 +57,7 @@ import {
 import { chatReducer, initialChatState } from './chat/chat-reducer'
 import { makeOnIncoming } from './chat/chat-ws-handlers'
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
+import { useAccountScopedChat } from './use-account-scoped-chat'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
 import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
@@ -136,6 +137,7 @@ export function useChat(): UseChat {
   }, [state.messages])
 
   usePersistChatHistory(threadIdRef, state, messagesRef)
+  useAccountScopedChat(threadIdRef, currentReplyIdRef, dispatch, wsRef, pullRemoteRef)
 
   useEffect(() => subscribeSessions(() => {
     setSessionSnap(snapshotSessions())

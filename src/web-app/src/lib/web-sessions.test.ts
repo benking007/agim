@@ -215,4 +215,13 @@ describe('web-sessions', () => {
     replaceIndexFromServer([], first)
     expect(listSessions().some((s) => s.id === first && s.title === 'just sent')).toBe(true)
   })
+
+  it('replaceIndexFromServer empty payload does not keep other local titles', () => {
+    const first = loadIndex().activeId
+    const other = mintThreadId()
+    upsertSession({ id: other, title: 'previous account', updatedAt: Date.now() })
+    replaceIndexFromServer([], first)
+    expect(listSessions().some((s) => s.id === other)).toBe(false)
+    expect(listSessions().some((s) => s.id === first)).toBe(true)
+  })
 })

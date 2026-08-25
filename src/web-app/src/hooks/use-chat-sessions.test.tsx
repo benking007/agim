@@ -5,7 +5,7 @@
  * @vitest-environment jsdom
  */
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatOutgoing } from '@/types/ws'
 import type { WsStatus } from '@/lib/api/ws'
@@ -45,15 +45,25 @@ import { useChat } from './use-chat'
 import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
 import { addLocalWorkspace, listWorkspaces } from '@/lib/web-workspaces'
 import { writeCachedHistory } from '@/lib/web-history-cache'
+import { useAuth } from '@/stores/auth'
 
 describe('useChat multi-session', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
+    useAuth.setState({
+      token: null, user: null, role: null, signedIn: false, ready: false,
+    })
     mocks.sent.length = 0
     mocks.statusListeners.clear()
     mocks.pullAccountSessions.mockClear()
     mocks.pushAccountSession.mockClear()
+  })
+
+  afterEach(() => {
+    useAuth.setState({
+      token: null, user: null, role: null, signedIn: false, ready: false,
+    })
   })
 
   it('does not mint a second empty thread on New conversation', () => {
@@ -257,6 +267,29 @@ describe('useChat multi-session', () => {
       threadId: secondId,
       archivedAt: expect.any(Number),
     }))
+    unmount()
+  })
+
+  it('switching the signed-in user drops the previous transcript', () => {
+    act(() => {
+      useAuth.getState().setUser({
+        id: 'usr_aaaaaa', username: 'alice', displayName: 'alice', role: 'user',
+      })
+    })
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('copy files for Alice') })
+    const oldId = result.current.activeSessionId
+    expect(result.current.state.messages.some((m) => m.content === 'copy files for Alice')).toBe(true)
+
+    act(() => {
+      useAuth.getState().setUser({
+        id: 'usr_bbbbbb', username: 'bob', displayName: 'bob', role: 'user',
+      })
+    })
+
+    expect(result.current.state.messages.some((m) => m.content === 'copy files for Alice')).toBe(false)
+    expect(result.current.activeSessionId).not.toBe(oldId)
+    expect(listSessions().some((s) => s.title === 'copy files for Alice')).toBe(false)
     unmount()
   })
 })

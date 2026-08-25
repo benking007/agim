@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Portal chat after account switch**: signing out, registering, or
+  logging into another user now wipes origin-scoped session / history /
+  workspace caches and resets the transcript. `get-history` also refuses
+  a disk-owned `web-*` thread when the memory owner map is empty
+  (process restart), so the new account cannot paint the previous
+  user's bubbles.
 - **outbox SQLite flake**: first-failure backoff is 1s and SQLite
   `datetime('now')` is second precision, so `pickPending` can legally
   see the row in CI. The test now asserts the schedule, then uses the

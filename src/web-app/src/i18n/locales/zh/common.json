@@ -66,6 +66,11 @@
     "selectAll": "全选",
     "selectRow": "选中此行"
   },
+  "noPermission": {
+    "title": "没有权限",
+    "body": "这个页面仅管理员可用。你的账号仍可使用对话、任务、Agent Files 和设置。",
+    "backToChat": "返回对话"
+  },
   "login": {
     "intro": "使用用户名和密码登录。",
     "submit": "登录",

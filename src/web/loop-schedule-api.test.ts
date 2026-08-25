@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
   _clearLoopScheduleForTest,
   getPendingLoopSchedule,
@@ -55,8 +55,17 @@ function url(path: string): URL {
   return new URL(`http://localhost${path}`)
 }
 
+const saved: Record<string, string | undefined> = {}
+
+beforeEach(() => {
+  saved.AGIM_WEB_AUTH = process.env.AGIM_WEB_AUTH
+  process.env.AGIM_WEB_AUTH = 'off'
+})
+
 afterEach(() => {
   _clearLoopScheduleForTest()
+  if (saved.AGIM_WEB_AUTH === undefined) delete process.env.AGIM_WEB_AUTH
+  else process.env.AGIM_WEB_AUTH = saved.AGIM_WEB_AUTH
 })
 
 describe('handleLoopScheduleApi', () => {

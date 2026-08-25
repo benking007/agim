@@ -126,7 +126,7 @@ describe('client', () => {
     expect(loc.setHref).not.toHaveBeenCalled()
   })
 
-  it('on AUTH_ADMIN_REQUIRED in /settings → clears token + /login?reason=admin', async () => {
+  it('on AUTH_ADMIN_REQUIRED in /settings → keeps token and does NOT redirect', async () => {
     localStorage.setItem(TOKEN_KEY, 'user-qr-token')
     const loc = mockLocation('/settings/messengers')
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
@@ -139,12 +139,11 @@ describe('client', () => {
       code: 'AUTH_ADMIN_REQUIRED',
       status: 403,
     })
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
-    expect(loc.setHref).toHaveBeenCalledTimes(1)
-    expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*reason=admin/)
+    expect(localStorage.getItem(TOKEN_KEY)).toBe('user-qr-token')
+    expect(loc.setHref).not.toHaveBeenCalled()
   })
 
-  it('on legacy 403 "admin role required" in /settings → same re-login', async () => {
+  it('on legacy 403 "admin role required" in /settings → keeps session', async () => {
     localStorage.setItem(TOKEN_KEY, 'user-qr-token')
     const loc = mockLocation('/settings/service')
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
@@ -157,9 +156,8 @@ describe('client', () => {
       code: 'FORBIDDEN',
       status: 403,
     })
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
-    expect(loc.setHref).toHaveBeenCalledTimes(1)
-    expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*reason=admin/)
+    expect(localStorage.getItem(TOKEN_KEY)).toBe('user-qr-token')
+    expect(loc.setHref).not.toHaveBeenCalled()
   })
 
   it('does NOT redirect when /api/auth/* itself returns 401', async () => {

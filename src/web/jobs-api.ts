@@ -19,9 +19,9 @@
 //   POST   /api/reminders/:id/snooze        → { ok, originalId, newId, duration }
 //   GET    /api/plans                       → { plans, total }
 //
-// Most routes require admin. Exception: GET /api/jobs/:id allows role=user
-// when `?threadId=` matches the job's web thread and the token owns that thread
-// (Subagent detail sheet in chat/Portal).
+// List/read/cancel of a member's own rows is allowed. Creating arbitrary jobs
+// and batch ops stay admin. GET /api/jobs/:id also allows a role=user token
+// when `?threadId=` matches the job's web thread (Subagent detail sheet).
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registry } from '../core/registry.js'
@@ -33,6 +33,12 @@ import {
   extractToken,
   verifyTokenSync,
 } from './auth.js'
+import {
+  emptyMemberScope,
+  jobVisibleToScope,
+  resolveMemberScope,
+  sendForbidden,
+} from './member-scope.js'
 
 /**
  * Match-and-handle dispatcher. Returns `true` when the request was
@@ -48,8 +54,7 @@ export async function handleJobsApi(
   // ─── /api/jobs ──────────────────────────────────────────────────
 
   if (p === '/api/jobs' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleListJobs(res, url); return true
+    await handleListJobs(req, res, url); return true
   }
 
   // batch-cancel/batch-run before the generic /:id match (pattern-safe but explicit)
@@ -70,12 +75,10 @@ export async function handleJobsApi(
   }
   const jobCancelMatch = p.match(/^\/api\/jobs\/(\d+)\/cancel$/)
   if (jobCancelMatch && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
-    await handleCancelJob(res, parseInt(jobCancelMatch[1], 10)); return true
+    await handleCancelJob(req, res, parseInt(jobCancelMatch[1], 10)); return true
   }
   const jobRunMatch = p.match(/^\/api\/jobs\/(\d+)\/run$/)
   if (jobRunMatch && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
     await handleRunJob(req, res, parseInt(jobRunMatch[1], 10)); return true
   }
   if (p === '/api/jobs' && m === 'POST') {
@@ -86,51 +89,43 @@ export async function handleJobsApi(
   // ─── /api/bgjobs ────────────────────────────────────────────────
 
   if (p === '/api/bgjobs' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleListBgjobs(res, url); return true
+    await handleListBgjobs(req, res, url); return true
   }
   const bgjobIdMatch = p.match(/^\/api\/bgjobs\/([\w.-]+)$/)
   if (bgjobIdMatch && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleGetBgjob(res, bgjobIdMatch[1], url); return true
+    await handleGetBgjob(req, res, bgjobIdMatch[1], url); return true
   }
 
   // ─── /api/subtasks ──────────────────────────────────────────────
 
   if (p === '/api/subtasks' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleListSubtasks(res, url); return true
+    await handleListSubtasks(req, res, url); return true
   }
 
   // ─── /api/schedules ─────────────────────────────────────────────
 
   if (p === '/api/schedules' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleListSchedules(res, url); return true
+    await handleListSchedules(req, res, url); return true
   }
 
   // ─── /api/reminders ─────────────────────────────────────────────
 
   if (p === '/api/reminders' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleListReminders(res, url); return true
+    await handleListReminders(req, res, url); return true
   }
   const reminderCancelMatch = p.match(/^\/api\/reminders\/(\d+)\/cancel$/)
   if (reminderCancelMatch && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
-    await handleCancelReminderApi(res, Number.parseInt(reminderCancelMatch[1], 10)); return true
+    await handleCancelReminderApi(req, res, Number.parseInt(reminderCancelMatch[1], 10)); return true
   }
   const reminderSnoozeMatch = p.match(/^\/api\/reminders\/(\d+)\/snooze$/)
   if (reminderSnoozeMatch && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
     await handleSnoozeReminderApi(req, res, Number.parseInt(reminderSnoozeMatch[1], 10)); return true
   }
 
   // ─── /api/plans ─────────────────────────────────────────────────
 
   if (p === '/api/plans' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handlePlansList(res, url); return true
+    await handlePlansList(req, res, url); return true
   }
 
   return false
@@ -138,11 +133,16 @@ export async function handleJobsApi(
 
 // ─── handlers ───────────────────────────────────────────────────────
 
-async function handleListJobs(res: ServerResponse, url: URL): Promise<void> {
+async function handleListJobs(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const jb = await import('../core/job-board.js')
     type JobStatus = import('../core/job-board.js').JobStatus
     type JobKind = import('../core/job-board.js').JobKind
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) {
+      sendJson(res, 200, { jobs: [], stats: { total: 0, pending: 0, running: 0, completed: 0, failed: 0 } })
+      return
+    }
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
     const validStatuses = new Set<JobStatus>([
       'pending', 'running', 'completed', 'delivered', 'failed',
@@ -153,11 +153,15 @@ async function handleListJobs(res: ServerResponse, url: URL): Promise<void> {
     const agent = url.searchParams.get('agent') || undefined
     const kindRaw = url.searchParams.get('kind') || ''
     const kind: JobKind | undefined = (kindRaw === 'inline' || kindRaw === 'job') ? kindRaw : undefined
-    const opts: { agent?: string; kind?: JobKind } = {}
+    const opts: { agent?: string; kind?: JobKind; creatorId?: string; threadKeys?: string[] } = {}
     if (agent) opts.agent = agent
     if (kind) opts.kind = kind
+    if (scope.kind === 'user') {
+      opts.creatorId = scope.userId
+      opts.threadKeys = scope.threadKeys
+    }
     const jobs = jb.listJobs(limit, status, opts)
-    const stats = jb.getJobStats()
+    const stats = jb.getJobStats(scope.kind === 'user' ? { creatorId: scope.userId, threadKeys: scope.threadKeys } : {})
     sendJson(res, 200, { jobs, stats })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -197,11 +201,10 @@ async function handleGetJob(
     const job = getJob(id)
     if (!job) { sendJson(res, 404, { error: 'Job not found' }); return }
     if (!isRequestAdmin(req)) {
-      if (!(await canReadJobAsChatUser(req, url, job))) {
-        sendError(res, 403, 'AUTH_ADMIN_REQUIRED', {
-          message: 'admin role required',
-          extra: { loginUrl: '/login' },
-        })
+      const scope = await resolveMemberScope(req)
+      const owned = jobVisibleToScope(job, scope) || (await canReadJobAsChatUser(req, url, job))
+      if (!owned) {
+        sendForbidden(res)
         return
       }
     }
@@ -211,8 +214,30 @@ async function handleGetJob(
   }
 }
 
-async function handleCancelJob(res: ServerResponse, id: number): Promise<void> {
+async function assertJobOwned(
+  req: IncomingMessage,
+  res: ServerResponse,
+  id: number,
+): Promise<import('../core/job-board.js').Job | null> {
+  const { getJob } = await import('../core/job-board.js')
+  const job = getJob(id)
+  if (!job) {
+    sendJson(res, 404, { error: 'Job not found' })
+    return null
+  }
+  if (isRequestAdmin(req)) return job
+  const scope = await resolveMemberScope(req)
+  if (!jobVisibleToScope(job, scope)) {
+    sendForbidden(res)
+    return null
+  }
+  return job
+}
+
+async function handleCancelJob(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   try {
+    const job = await assertJobOwned(req, res, id)
+    if (!job) return
     const { cancelJob } = await import('../core/job-board.js')
     sendJson(res, 200, { ok: cancelJob(id) })
   } catch (err) {
@@ -220,12 +245,13 @@ async function handleCancelJob(res: ServerResponse, id: number): Promise<void> {
   }
 }
 
-async function handleRunJob(_req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+async function handleRunJob(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   try {
-    const { getJob, runJob } = await import('../core/job-board.js')
+    const owned = await assertJobOwned(req, res, id)
+    if (!owned) return
+    const { runJob } = await import('../core/job-board.js')
     const { AgentBase } = await import('../core/agent-base.js')
-    const job = getJob(id)
-    if (!job) { sendJson(res, 404, { error: 'Job not found' }); return }
+    const job = owned
     const agent = registry.findAgent(job.agent)
     if (!agent) { sendJson(res, 404, { error: `Agent "${job.agent}" not registered` }); return }
 
@@ -286,11 +312,17 @@ async function handleCreateJob(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-async function handleListSchedules(res: ServerResponse, url: URL): Promise<void> {
+async function handleListSchedules(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) { sendJson(res, 200, { schedules: [] }); return }
     const { listSchedules } = await import('../core/schedule.js')
     const agent = url.searchParams.get('agent') || undefined
-    sendJson(res, 200, { schedules: listSchedules(50, agent ? { agent } : {}) })
+    const rows = listSchedules(50, agent ? { agent } : {})
+    const schedules = scope.kind === 'admin'
+      ? rows
+      : rows.filter((s) => (s.creator_id || '') === scope.userId)
+    sendJson(res, 200, { schedules })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -302,14 +334,19 @@ async function handleListSchedules(res: ServerResponse, url: URL): Promise<void>
  * we only return pending — that's the 99% UI use-case (the page is a
  * "what's queued up" view, not an audit log).
  */
-async function handleListReminders(res: ServerResponse, url: URL): Promise<void> {
+async function handleListReminders(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) { sendJson(res, 200, { reminders: [] }); return }
     const { listReminders, describeRecurrence } = await import('../core/reminders.js')
     const status = url.searchParams.get('status') as
       | 'pending' | 'firing' | 'fired' | 'cancelled' | 'failed' | null
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '100', 10) || 100, 1), 500)
     const rows = listReminders({ status: status ?? 'pending', limit })
-    const annotated = rows.map((r) => ({
+    const visible = scope.kind === 'admin'
+      ? rows
+      : rows.filter((r) => (r.user_id || '') === scope.userId || scope.threadIds.includes(r.thread_id || ''))
+    const annotated = visible.map((r) => ({
       ...r,
       recurrence_label: r.recurrence ? describeRecurrence(r.recurrence) : null,
     }))
@@ -319,9 +356,26 @@ async function handleListReminders(res: ServerResponse, url: URL): Promise<void>
   }
 }
 
-async function handleCancelReminderApi(res: ServerResponse, id: number): Promise<void> {
+async function reminderOwned(
+  req: IncomingMessage,
+  res: ServerResponse,
+  id: number,
+): Promise<boolean> {
+  if (isRequestAdmin(req)) return true
+  const { getReminder } = await import('../core/reminders.js')
+  const row = getReminder(id)
+  if (!row) { sendJson(res, 404, { error: 'not found or not cancellable' }); return false }
+  const scope = await resolveMemberScope(req)
+  if (scope.kind !== 'user') { sendForbidden(res); return false }
+  if ((row.user_id || '') === scope.userId || scope.threadIds.includes(row.thread_id || '')) return true
+  sendForbidden(res)
+  return false
+}
+
+async function handleCancelReminderApi(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   if (!Number.isFinite(id) || id <= 0) { sendJson(res, 400, { error: 'invalid id' }); return }
   try {
+    if (!(await reminderOwned(req, res, id))) return
     const { cancelReminder } = await import('../core/reminders.js')
     const ok = cancelReminder(id)
     if (!ok) { sendJson(res, 404, { error: 'not found or not cancellable' }); return }
@@ -334,6 +388,7 @@ async function handleCancelReminderApi(res: ServerResponse, id: number): Promise
 async function handleSnoozeReminderApi(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   if (!Number.isFinite(id) || id <= 0) { sendJson(res, 400, { error: 'invalid id' }); return }
   try {
+    if (!(await reminderOwned(req, res, id))) return
     const body = await readBody(req, res)
     const parsed = JSON.parse(body || '{}') as { duration?: string }
     const duration = parsed.duration?.trim() || ''
@@ -354,29 +409,44 @@ async function handleSnoozeReminderApi(req: IncomingMessage, res: ServerResponse
 }
 
 async function handlePlansList(
+  req: IncomingMessage,
   res: ServerResponse,
   url: URL,
 ): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) { sendJson(res, 200, { plans: [], total: 0 }); return }
     const { listPlanHistory } = await import('../core/plan-history.js')
     const threadKey = url.searchParams.get('thread_key') || undefined
+    if (scope.kind === 'user' && threadKey && !scope.threadKeys.includes(threadKey)) {
+      sendJson(res, 200, { plans: [], total: 0 })
+      return
+    }
     const limitRaw = url.searchParams.get('limit')
     const limit = limitRaw ? Math.max(1, Math.min(parseInt(limitRaw, 10) || 50, 500)) : 50
     const rows = listPlanHistory({ threadKey, limit })
-    sendJson(res, 200, { plans: rows, total: rows.length })
+    const plans = scope.kind === 'admin'
+      ? rows
+      : rows.filter((r) => scope.threadKeys.includes(r.threadKey || ''))
+    sendJson(res, 200, { plans, total: plans.length })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
 }
 
-async function handleListBgjobs(res: ServerResponse, url: URL): Promise<void> {
+async function handleListBgjobs(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) {
+      sendJson(res, 200, { roots: [], groups: [] })
+      return
+    }
     const { resolveRoots, listJobsForRoot, listAllJobs } = await import('../core/bgjob-reader.js')
     const rootId = url.searchParams.get('root')
     const statusFilter = (url.searchParams.get('status') || '').trim().toLowerCase()
     const threadId = (url.searchParams.get('threadId') || '').trim()
     const platform = (url.searchParams.get('platform') || '').trim()
-    const filterJobs = <T extends { status: string; origin?: { platform: string; threadId: string } | null }>(
+    const filterJobs = <T extends { status: string; origin?: { platform: string; threadId: string; userId?: string } | null }>(
       jobs: T[],
     ): T[] => {
       let out = jobs
@@ -387,6 +457,14 @@ async function handleListBgjobs(res: ServerResponse, url: URL): Promise<void> {
       if (threadId) {
         out = out.filter((j) => j.origin?.threadId === threadId
           && (!platform || j.origin?.platform === platform))
+      }
+      if (scope.kind === 'user') {
+        out = out.filter((j) => {
+          const origin = j.origin
+          if (!origin) return false
+          if (origin.userId && origin.userId === scope.userId) return true
+          return origin.platform === 'web' && scope.threadIds.includes(origin.threadId)
+        })
       }
       return out
     }
@@ -409,16 +487,26 @@ async function handleListBgjobs(res: ServerResponse, url: URL): Promise<void> {
   }
 }
 
-async function handleGetBgjob(res: ServerResponse, id: string, url: URL): Promise<void> {
+async function handleGetBgjob(req: IncomingMessage, res: ServerResponse, id: string, url: URL): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) { sendJson(res, 404, { error: 'Job not found' }); return }
     const { findRoot, getJobDetail, resolveRoots, listJobsForRoot } = await import('../core/bgjob-reader.js')
     const tail = Math.min(Math.max(parseInt(url.searchParams.get('tail') || '200', 10) || 200, 1), 5000)
     const rootId = url.searchParams.get('root')
+    const allow = (job: { origin?: { platform: string; threadId: string; userId?: string } | null }): boolean => {
+      if (scope.kind === 'admin') return true
+      if (scope.kind !== 'user') return false
+      const origin = job.origin
+      if (!origin) return false
+      if (origin.userId && origin.userId === scope.userId) return true
+      return origin.platform === 'web' && scope.threadIds.includes(origin.threadId)
+    }
     if (rootId) {
       const root = findRoot(rootId)
       if (!root) { sendJson(res, 404, { error: `bgjob root "${rootId}" not configured` }); return }
       const job = await getJobDetail(root, id, tail)
-      if (!job) { sendJson(res, 404, { error: 'Job not found' }); return }
+      if (!job || !allow(job)) { sendJson(res, 404, { error: 'Job not found' }); return }
       sendJson(res, 200, { job })
       return
     }
@@ -427,7 +515,7 @@ async function handleGetBgjob(res: ServerResponse, id: string, url: URL): Promis
       const summaries = await listJobsForRoot(root)
       if (!summaries.some((s) => s.id === id)) continue
       const job = await getJobDetail(root, id, tail)
-      if (job) { sendJson(res, 200, { job }); return }
+      if (job && allow(job)) { sendJson(res, 200, { job }); return }
     }
     sendJson(res, 404, { error: 'Job not found' })
   } catch (err) {
@@ -435,12 +523,17 @@ async function handleGetBgjob(res: ServerResponse, id: string, url: URL): Promis
   }
 }
 
-async function handleListSubtasks(res: ServerResponse, url: URL): Promise<void> {
+async function handleListSubtasks(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) { sendJson(res, 200, { subtasks: [] }); return }
     const { sessionManager } = await import('../core/session.js')
     const agent = url.searchParams.get('agent') || undefined
     const subtasks = await sessionManager.listAllSubtasks(agent ? { agent } : {})
-    sendJson(res, 200, { subtasks })
+    const visible = scope.kind === 'admin'
+      ? subtasks
+      : subtasks.filter((s) => s.platform === 'web' && scope.threadIds.includes(s.threadId))
+    sendJson(res, 200, { subtasks: visible })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

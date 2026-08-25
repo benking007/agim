@@ -4,12 +4,14 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import SettingsLayout from './layout'
+import { useAuth } from '@/stores/auth'
 import '@/i18n'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   localStorage.clear()
+  useAuth.getState().clear()
 })
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -19,10 +21,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function asAdmin(): void {
+  useAuth.getState().setUser({
+    id: 'usr_admin',
+    username: 'op',
+    displayName: 'op',
+    role: 'admin',
+  })
+}
+
+function asMember(): void {
+  useAuth.getState().setUser({
+    id: 'usr_mem',
+    username: 'member',
+    displayName: 'member',
+    role: 'user',
+  })
+}
+
 function renderAt(path: string): ReturnType<typeof render> {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     if (String(input) === '/api/config') {
       return jsonResponse({ messengers: [], agents: ['claude-code'], defaultAgent: 'claude-code' })
+    }
+    if (String(input).startsWith('/api/agents/status')) {
+      return jsonResponse({ 'claude-code': true })
     }
     return jsonResponse({})
   })
@@ -44,6 +67,7 @@ function renderAt(path: string): ReturnType<typeof render> {
 
 describe('/settings layout', () => {
   it('groups settings entry points by operator intent', async () => {
+    asAdmin()
     renderAt('/settings/start')
 
     expect(screen.getByRole('heading', { name: 'Start' })).toBeInTheDocument()
@@ -67,6 +91,7 @@ describe('/settings layout', () => {
   })
 
   it('keeps nested routes active in the grouped navigation', () => {
+    asAdmin()
     renderAt('/settings/agim-skills/injection')
 
     const skills = screen.getByRole('link', { name: /agim Skills/i })
@@ -74,7 +99,19 @@ describe('/settings layout', () => {
     expect(screen.getByRole('link', { name: /Messengers/i }).className).not.toContain('text-brand-600')
   })
 
-  it('on AUTH_ADMIN_REQUIRED from /settings → client redirects to login?reason=admin', async () => {
+  it('hides admin tabs for members and keeps Account + Skills', () => {
+    asMember()
+    renderAt('/settings/account')
+
+    expect(screen.getByRole('link', { name: /Account/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /agim Skills/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Messengers/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^Start$/i })).not.toBeInTheDocument()
+    expect(screen.getByTestId('settings-child')).toBeInTheDocument()
+  })
+
+  it('shows no-permission on an admin settings URL without logging the member out', () => {
+    asMember()
     const setHref = vi.fn()
     let href = 'http://localhost:3000/settings/messengers'
     vi.stubGlobal('location', {
@@ -84,34 +121,12 @@ describe('/settings layout', () => {
       set href(v: string) { href = v; setHref(v) },
     } as unknown as Location)
     localStorage.setItem('agim_token', 'user-qr')
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      if (String(input) === '/api/config') {
-        return new Response(JSON.stringify({ code: 'AUTH_ADMIN_REQUIRED', error: 'admin role required' }), {
-          status: 403,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      return jsonResponse({})
-    })
-    const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    })
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/settings/messengers']}>
-          <Routes>
-            <Route path="/settings" element={<SettingsLayout />}>
-              <Route path="*" element={<div data-testid="settings-child">child</div>} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    )
+    renderAt('/settings/messengers')
 
-    await vi.waitFor(() => {
-      expect(setHref).toHaveBeenCalled()
-    })
-    expect(setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=.*reason=admin/)
-    expect(localStorage.getItem('agim_token')).toBeNull()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Back to chat/i })).toHaveAttribute('href', '/')
+    expect(setHref).not.toHaveBeenCalled()
+    expect(localStorage.getItem('agim_token')).toBe('user-qr')
+    expect(screen.queryByTestId('settings-child')).not.toBeInTheDocument()
   })
 })

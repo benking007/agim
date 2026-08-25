@@ -7,6 +7,7 @@ import {
   resolveAgentWorkspaceRoot,
   buildPortalWorkspaceHint,
   defaultAgentCwd,
+  resolveAgentFilesRoot,
   agimWorkspacesRoot,
   ensureAgentWorkspace,
   ensureAgimImOpsGuide,
@@ -19,6 +20,7 @@ import {
   AGIM_IM_OPS_FREEZE,
   AGIM_BGJOB_WRAPPER_EXPR,
 } from './agent-cwd.js'
+import { runWithAccountUser } from './accounts.js'
 
 const FULL_IM_OPTS = { threadId: 'thread-A', platform: 'feishu', channelId: 'chan-1', userId: 'u1' }
 const NO_IM_OPTS = { model: 'sonnet' }
@@ -49,8 +51,18 @@ describe('resolveAgentCwd', () => {
     await rm(tmpRoot, { recursive: true, force: true })
   })
 
+  it('pins IM+account ALS to ~/.agim-workspaces/users/<id>/<agent>', () => {
+    const cwd = runWithAccountUser('usr_abc123', () => resolveAgentCwd('claude-code', FULL_IM_OPTS))
+    expect(cwd).toBe(join(tmpRoot, 'users', 'usr_abc123', 'claude-code'))
+  })
+
   it('returns default workspace dir when full IM context is present', () => {
     expect(resolveAgentCwd('claude-code', FULL_IM_OPTS)).toBe(join(tmpRoot, 'claude-code'))
+  })
+
+  it('resolveAgentFilesRoot uses the account tree when a user id is set', () => {
+    expect(resolveAgentFilesRoot('agim', 'usr_abc123')).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+    expect(resolveAgentFilesRoot('agim')).toBe(join(tmpRoot, 'agim'))
   })
 
   it('returns undefined for non-IM call (web/scheduler), preserving inherited cwd', () => {

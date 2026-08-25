@@ -47,6 +47,7 @@ import {
   useWriteWorkspaceFile,
 } from '@/hooks/use-workspace'
 import { useConfig } from '@/hooks/use-settings'
+import { useIsAdmin } from '@/stores/auth'
 import { describeError } from '@/lib/api/errors'
 import { agentDisplayName } from '@/lib/agent-label'
 import { saveTextAsFile } from '@/lib/save-text-file'
@@ -58,15 +59,17 @@ import { cn } from '@/lib/utils'
 
 export default function WorkspaceRoute(): JSX.Element {
   const { t } = useTranslation(['workspace', 'common'])
+  const isAdmin = useIsAdmin()
   const [params, setParams] = useSearchParams()
   const agent = params.get('agent') ?? ''
   const path  = params.get('path')  ?? ''
 
   const agentsQuery = useAgentsStatus()
-  const cfgQuery = useConfig()
+  const cfgQuery = useConfig({ enabled: isAdmin })
   const agents = agentsQuery.data ?? {}
   const agentNames = useMemo(() => Object.keys(agents).sort(), [agents])
-  const defaultAgent = cfgQuery.data?.defaultAgent
+  const defaultAgent = (isAdmin ? cfgQuery.data?.defaultAgent : undefined)
+    || agentNames[0]
 
   /** Query may resolve to either a dir listing or file content — we
    *  branch on `data.type` in the render. */

@@ -135,22 +135,15 @@ async function request<T>(
       if (res.status === 404) code = 'NOT_FOUND'
       if (res.status === 413) code = 'PAYLOAD_TOO_LARGE'
     }
-    // Relogin policy:
-    //   * HTTP 401 → always clear token + /login (session dead).
-    //   * AUTH_ADMIN_REQUIRED on /settings/* → clear + /login?reason=admin
-    //     (control-plane pages need an admin token; blank IM/Agents is worse
-    //     than a redirect). Portal /m/chat keeps the user token — admin-only
-    //     side fetches there must not kick QR sessions out.
-    const adminRequired = code === 'AUTH_ADMIN_REQUIRED'
-      || (res.status === 403 && /admin role required/i.test(message))
-    const onSettings = location.pathname.startsWith('/settings')
-    const needsRelogin = res.status === 401 || (adminRequired && onSettings)
+    // Relogin policy: HTTP 401 → clear token + /login (session dead).
+    // AUTH_ADMIN_REQUIRED is a valid session with the wrong role — stay
+    // on the page so members are not kicked out of /settings.
+    const needsRelogin = res.status === 401
     if (needsRelogin && !path.startsWith('/api/auth/')) {
       try { localStorage.removeItem(TOKEN_STORAGE_KEY) } catch { /* private mode */ }
       const next = encodeURIComponent(location.pathname + location.search)
       if (!location.pathname.startsWith('/login')) {
-        const reason = adminRequired && onSettings ? '&reason=admin' : ''
-        location.href = `/login?next=${next}${reason}`
+        location.href = `/login?next=${next}`
       }
     }
     throw new ApiClientError({ code, message, status: res.status })

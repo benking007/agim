@@ -16,6 +16,7 @@
 
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { RequireAuth } from '@/components/shell/require-auth'
+import { RequireAdmin } from '@/components/shell/require-admin'
 import { ErrorBoundary } from '@/components/shell/error-boundary'
 
 import LoginRoute from '@/routes/login'
@@ -46,8 +47,23 @@ function authedLazy(factory: () => Promise<{ default: React.ComponentType }>) {
   }
 }
 
-/** Plain `lazy:` for nested route children — they inherit auth from
- *  the parent route's element. */
+function authedAdminLazy(factory: () => Promise<{ default: React.ComponentType }>) {
+  return async () => {
+    const mod = await factory()
+    const Cmp = mod.default
+    return {
+      element: (
+        <RequireAuth>
+          <RequireAdmin>
+            <LegacyUpgradeRedirect>
+              <Cmp />
+            </LegacyUpgradeRedirect>
+          </RequireAdmin>
+        </RequireAuth>
+      ),
+    }
+  }
+}
 function lazy(factory: () => Promise<{ default: React.ComponentType }>) {
   return async () => {
     const mod = await factory()
@@ -87,7 +103,7 @@ const router = createBrowserRouter([
   },
   {
     path: '/dashboard',
-    lazy: authedLazy(() => import('@/routes/dashboard')),
+    lazy: authedAdminLazy(() => import('@/routes/dashboard')),
   },
   {
     path: '/tasks',
@@ -115,7 +131,7 @@ const router = createBrowserRouter([
   { path: '/memos',     element: <Navigate to="/memory/memos" replace /> },
   {
     path: '/memory',
-    lazy: authedLazy(() => import('@/routes/memory/layout')),
+    lazy: authedAdminLazy(() => import('@/routes/memory/layout')),
     children: [
       { index: true,       lazy: lazy(() => import('@/routes/memory/overview')) },
       { path: 'reminders', lazy: lazy(() => import('@/routes/reminders')) },
@@ -157,7 +173,7 @@ const router = createBrowserRouter([
     path: '/settings',
     lazy: authedLazy(() => import('@/routes/settings/layout')),
     children: [
-      { index: true,        element: <Navigate to="start" replace /> },
+      { index: true,        lazy: lazy(() => import('@/routes/settings/index-redirect')) },
       { path: 'start',      lazy: lazy(() => import('@/routes/settings/start')) },
       { path: 'account',    lazy: lazy(() => import('@/routes/settings/account')) },
       { path: 'messengers', lazy: lazy(() => import('@/routes/settings/messengers')) },

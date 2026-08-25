@@ -10,8 +10,7 @@
 // modules. Each endpoint stays small — the routes are essentially
 // thin wrappers around the core/* helpers that already exist.
 //
-// All endpoints are admin-gated upstream in server.ts because the
-// data is global (cross-thread) and includes user-typed content.
+// Admins see every thread. Members only see / mutate their own web threads.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -24,6 +23,7 @@ import {
   listPendingAsks,
   cancelPendingAsk,
 } from '../core/ask-user-rpc.js'
+import { requireWebThreadAccess, emptyMemberScope, resolveMemberScope } from './member-scope.js'
 
 // ─── HTTP helpers (mirrors llm-api + mcp-api shape) ─────────────────
 
@@ -55,11 +55,11 @@ export async function handleBackgroundTasksApi(
 
   // ── heartbeat ──
   if (p === '/api/heartbeat/bindings' && m === 'GET') {
-    await handleHeartbeatList(res); return true
+    await handleHeartbeatList(req, res); return true
   }
   const hbToggle = p.match(/^\/api\/heartbeat\/bindings\/(.+)\/(enable|disable)$/)
   if (hbToggle && m === 'POST') {
-    await handleHeartbeatToggle(res, hbToggle[1], hbToggle[2] as 'enable' | 'disable'); return true
+    await handleHeartbeatToggle(req, res, hbToggle[1], hbToggle[2] as 'enable' | 'disable'); return true
   }
   const hbInterval = p.match(/^\/api\/heartbeat\/bindings\/(.+)\/interval$/)
   if (hbInterval && m === 'PUT') {
@@ -68,11 +68,11 @@ export async function handleBackgroundTasksApi(
 
   // ── asks ──
   if (p === '/api/asks/pending' && m === 'GET') {
-    await handleAsksList(res); return true
+    await handleAsksList(req, res); return true
   }
   const askCancel = p.match(/^\/api\/asks\/pending\/(.+)\/cancel$/)
   if (askCancel && m === 'POST') {
-    await handleAskCancel(res, askCancel[1]); return true
+    await handleAskCancel(req, res, askCancel[1]); return true
   }
 
   return false
@@ -80,21 +80,30 @@ export async function handleBackgroundTasksApi(
 
 // ─── heartbeat handlers ─────────────────────────────────────────────
 
-async function handleHeartbeatList(res: ServerResponse): Promise<void> {
-  const rows = listAllHeartbeats().map((r) => ({
-    platform: r.platform,
-    channelId: r.channelId,
-    threadId: r.threadId,
-    userId: r.userId,
-    body: r.body,
-    intervalMinutes: r.intervalMinutes,
-    enabled: r.enabled,
-    lastTickAt: r.lastTickAt,
-    lastStatus: r.lastStatus,
-    lastReason: r.lastReason,
-    lastTextPreview: r.lastTextPreview,
-    createdAt: r.createdAt,
-  }))
+async function handleHeartbeatList(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const scope = await resolveMemberScope(req)
+  if (emptyMemberScope(scope)) {
+    send(res, 200, { bindings: [], count: 0 })
+    return
+  }
+  const rows = listAllHeartbeats()
+    .filter((r) => scope.kind === 'admin'
+      || (r.userId && scope.kind === 'user' && r.userId === scope.userId)
+      || (scope.kind === 'user' && r.platform === 'web' && scope.threadIds.includes(r.threadId)))
+    .map((r) => ({
+      platform: r.platform,
+      channelId: r.channelId,
+      threadId: r.threadId,
+      userId: r.userId,
+      body: r.body,
+      intervalMinutes: r.intervalMinutes,
+      enabled: r.enabled,
+      lastTickAt: r.lastTickAt,
+      lastStatus: r.lastStatus,
+      lastReason: r.lastReason,
+      lastTextPreview: r.lastTextPreview,
+      createdAt: r.createdAt,
+    }))
   send(res, 200, { bindings: rows, count: rows.length })
 }
 
@@ -111,10 +120,11 @@ function parseBindingKey(raw: string): { platform: string; channelId: string; th
 }
 
 async function handleHeartbeatToggle(
-  res: ServerResponse, rawKey: string, op: 'enable' | 'disable',
+  req: IncomingMessage, res: ServerResponse, rawKey: string, op: 'enable' | 'disable',
 ): Promise<void> {
   const key = parseBindingKey(rawKey)
   if (!key) { send(res, 400, { error: 'malformed key, expected platform:channelId:threadId' }); return }
+  if (!(await requireWebThreadAccess(req, res, key.threadId, key.platform, key.channelId))) return
   const ok = op === 'enable'
     ? enableHeartbeat(key.platform, key.channelId, key.threadId)
     : disableHeartbeat(key.platform, key.channelId, key.threadId)
@@ -127,6 +137,7 @@ async function handleHeartbeatInterval(
 ): Promise<void> {
   const key = parseBindingKey(rawKey)
   if (!key) { send(res, 400, { error: 'malformed key' }); return }
+  if (!(await requireWebThreadAccess(req, res, key.threadId, key.platform, key.channelId))) return
   const body = await readJsonBody<{ intervalMin?: unknown }>(req)
   if (!body || typeof body.intervalMin !== 'number') {
     send(res, 400, { error: 'body.intervalMin (number) required' }); return
@@ -138,13 +149,27 @@ async function handleHeartbeatInterval(
 
 // ─── ask handlers ───────────────────────────────────────────────────
 
-async function handleAsksList(res: ServerResponse): Promise<void> {
-  const rows = listPendingAsks()
+async function handleAsksList(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const scope = await resolveMemberScope(req)
+  if (emptyMemberScope(scope)) {
+    send(res, 200, { pending: [], count: 0 })
+    return
+  }
+  const rows = listPendingAsks().filter((r) => scope.kind === 'admin'
+    || (scope.kind === 'user' && r.platform === 'web' && scope.threadIds.includes(r.threadId)))
   send(res, 200, { pending: rows, count: rows.length })
 }
 
-async function handleAskCancel(res: ServerResponse, rawReqId: string): Promise<void> {
+async function handleAskCancel(req: IncomingMessage, res: ServerResponse, rawReqId: string): Promise<void> {
   const reqId = decodeURIComponent(rawReqId)
+  const scope = await resolveMemberScope(req)
+  if (scope.kind !== 'admin') {
+    const row = listPendingAsks().find((p) => p.reqId === reqId)
+    if (!row || scope.kind !== 'user' || row.platform !== 'web' || !scope.threadIds.includes(row.threadId)) {
+      send(res, 404, { error: 'no pending ask with that reqId' })
+      return
+    }
+  }
   const ok = cancelPendingAsk(reqId, 'cancelled from admin panel')
   if (!ok) { send(res, 404, { error: 'no pending ask with that reqId' }); return }
   send(res, 200, { reqId, ok: true })

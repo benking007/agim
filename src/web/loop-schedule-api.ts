@@ -18,6 +18,8 @@ import {
 import { suggestLoopScheduleName } from '../core/loop-schedule-nl.js'
 import { sessionManager } from '../core/session.js'
 import { readBody, sendJson } from './http-utils.js'
+import { getRequestUserId, isRequestAdmin } from './auth.js'
+import { requireWebThreadAccess } from './member-scope.js'
 
 function threadKeyOf(platform: string, channelId: string, threadId: string): string {
   return `${platform}:${channelId}:${threadId}`
@@ -54,6 +56,7 @@ export async function handleLoopScheduleApi(
     }
     const platform = (url.searchParams.get('platform') || 'web').trim().slice(0, 40) || 'web'
     const channelId = (url.searchParams.get('channelId') || 'web').trim().slice(0, 40) || 'web'
+    if (!(await requireWebThreadAccess(req, res, threadId, platform, channelId))) return true
     sendJson(res, 200, { ok: true, pending: pendingDto(threadKeyOf(platform, channelId, threadId)) })
     return true
   }
@@ -94,6 +97,7 @@ async function handleConfirm(req: IncomingMessage, res: ServerResponse): Promise
   }
   const platform = (body.platform || 'web').trim().slice(0, 40) || 'web'
   const channelId = (body.channelId || 'web').trim().slice(0, 40) || 'web'
+  if (!(await requireWebThreadAccess(req, res, threadId, platform, channelId))) return
   const threadKey = threadKeyOf(platform, channelId, threadId)
   const existing = getPendingLoopSchedule(threadKey)
   const timeText = (body.timeText || existing?.timeText || '').trim()
@@ -127,7 +131,9 @@ async function handleConfirm(req: IncomingMessage, res: ServerResponse): Promise
   setPendingLoopSchedule(threadKey, pending)
   const created = commitPendingLoopSchedule({
     pending: { ...pending, createdAt: Date.now() },
-    userId: (body.userId || '').trim(),
+    userId: isRequestAdmin(req)
+      ? (body.userId || getRequestUserId(req) || '').trim()
+      : (getRequestUserId(req) || '').trim(),
   })
   if (!created.ok) {
     sendJson(res, 400, { ok: false, error: created.error })
@@ -173,6 +179,7 @@ async function handleCancel(req: IncomingMessage, res: ServerResponse): Promise<
   }
   const platform = (body.platform || 'web').trim().slice(0, 40) || 'web'
   const channelId = (body.channelId || 'web').trim().slice(0, 40) || 'web'
+  if (!(await requireWebThreadAccess(req, res, threadId, platform, channelId))) return
   clearPendingLoopSchedule(threadKeyOf(platform, channelId, threadId))
   sendJson(res, 200, { ok: true, pending: null })
 }

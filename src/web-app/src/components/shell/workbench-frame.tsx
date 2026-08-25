@@ -22,8 +22,10 @@ import {
 import { Topbar } from '@/components/shell/topbar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConfig } from '@/hooks/use-settings'
+import { useAgentsStatus } from '@/hooks/use-workspace'
 import { agentDisplayName } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
+import { useIsAdmin } from '@/stores/auth'
 
 interface WorkbenchFrameProps {
   children: React.ReactNode
@@ -103,8 +105,24 @@ const WORKBENCH_NAV: WorkbenchNavGroup[] = [
   },
 ]
 
+function workbenchNav(isAdmin: boolean): WorkbenchNavGroup[] {
+  if (isAdmin) return WORKBENCH_NAV
+  return [
+    {
+      id: 'shortcuts',
+      labelKey: 'dashboard.side.operate',
+      icon: <PanelLeft />,
+      items: [
+        { to: '/', labelKey: 'dashboard.quick.chat', icon: <MessageSquare />, end: true, pulse: true },
+        { to: '/tasks', labelKey: 'dashboard.advanced.tasks', icon: <Workflow /> },
+        { to: '/workspace', labelKey: 'dashboard.quick.workspace', icon: <PanelLeft /> },
+        { to: '/settings', labelKey: 'nav.settings', icon: <Settings /> },
+      ],
+    },
+  ]
+}
+
 const SIDEBAR_COLLAPSED_KEY = 'agim-workbench-sidebar-collapsed'
-const DEFAULT_EXPANDED_GROUPS = Object.fromEntries(WORKBENCH_NAV.map((group) => [group.id, true]))
 
 export function WorkbenchFrame({
   children,
@@ -112,9 +130,14 @@ export function WorkbenchFrame({
   footer = true,
 }: WorkbenchFrameProps): JSX.Element {
   const { t } = useTranslation()
-  const cfgQuery = useConfig()
+  const isAdmin = useIsAdmin()
+  const groups = workbenchNav(isAdmin)
+  const cfgQuery = useConfig({ enabled: isAdmin })
+  const agentsQuery = useAgentsStatus()
   const [collapsed, setCollapsed] = useState(readSidebarCollapsed)
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => DEFAULT_EXPANDED_GROUPS)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(WORKBENCH_NAV.map((group) => [group.id, true])),
+  )
 
   useEffect(() => {
     try {
@@ -125,9 +148,11 @@ export function WorkbenchFrame({
   }, [collapsed])
 
   const toggleLabel = collapsed ? t('dashboard.side.expand') : t('dashboard.side.collapse')
-  const defaultAgent = cfgQuery.data?.defaultAgent || cfgQuery.data?.agents?.[0] || ''
+  const defaultAgent = isAdmin
+    ? (cfgQuery.data?.defaultAgent || cfgQuery.data?.agents?.[0] || '')
+    : Object.keys(agentsQuery.data ?? {})[0] || ''
   const defaultAgentLabel = defaultAgent ? agentDisplayName(defaultAgent) : t('dashboard.unknown')
-  const collapsedItems = WORKBENCH_NAV.flatMap((group) =>
+  const collapsedItems = groups.flatMap((group) =>
     group.items.map((item) => ({
       ...item,
       key: `${group.id}:${item.to}`,
@@ -198,7 +223,7 @@ export function WorkbenchFrame({
               </div>
             ) : (
               <div className="space-y-5">
-                {WORKBENCH_NAV.map((group) => (
+                {groups.map((group) => (
                   <section key={group.id}>
                     <button
                       type="button"

@@ -116,3 +116,8 @@ export function bindAuthToStorage(): () => void {
   void useAuth.getState().hydrate()
   return () => window.removeEventListener('storage', onStorage)
 }
+
+/** True only when the hydrated session is role=admin. Null/user/loopback-pending stay false. */
+export function useIsAdmin(): boolean {
+  return useAuth((s) => s.role === 'admin')
+}

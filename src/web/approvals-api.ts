@@ -2,12 +2,16 @@
 // Extracted from server.ts; follows the dispatcher pattern used by config-api.ts.
 //
 // Endpoints:
-//   GET  /api/approvals                    → list pending approvals — admin only
-//   POST /api/approvals/:reqId/resolve     → resolve by reqId       — admin only
+//   GET  /api/approvals                    → pending (members: own web threads)
+//   POST /api/approvals/:reqId/resolve     → resolve (members: own pending only)
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readBody, sendJson } from './http-utils.js'
-import { requireAdmin } from './auth.js'
+import { isRequestAdmin } from './auth.js'
+import {
+  emptyMemberScope,
+  resolveMemberScope,
+} from './member-scope.js'
 
 /**
  * Match-and-handle dispatcher. Returns `true` when the request was
@@ -22,22 +26,44 @@ export async function handleApprovalsApi(
   const m = req.method ?? 'GET'
 
   if (p === '/api/approvals' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
     await handleListApprovals(req, res); return true
   }
   const approvalResolveMatch = p.match(/^\/api\/approvals\/([^/]+)\/resolve$/)
   if (approvalResolveMatch && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
     await handleResolveApproval(req, res, approvalResolveMatch[1]); return true
   }
   return false
 }
 
-async function handleListApprovals(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+function approvalVisible(
+  row: { threadId: string; platform: string },
+  scope: Awaited<ReturnType<typeof resolveMemberScope>>,
+): boolean {
+  if (scope.kind === 'admin') return true
+  if (scope.kind !== 'user') return false
+  return row.platform === 'web' && scope.threadIds.includes(row.threadId)
+}
+
+async function handleListApprovals(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) {
+      sendJson(res, 200, { pending: [], metrics: { pending: 0 } })
+      return
+    }
     const { approvalBus } = await import('../core/approval-bus.js')
-    const pending = approvalBus.listPending()
-    const metrics = approvalBus.getMetrics()
+    const pending = approvalBus.listPending().filter((row) => approvalVisible(row, scope))
+    const metrics = scope.kind === 'admin'
+      ? approvalBus.getMetrics()
+      : {
+          pending: pending.length,
+          totalRequests: 0,
+          totalResolved: 0,
+          totalAllowed: 0,
+          totalDenied: 0,
+          totalTimedOut: 0,
+          totalReadonlyAutoAllowed: 0,
+        }
     sendJson(res, 200, { pending, metrics })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -57,6 +83,14 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
       return
     }
     const { approvalBus } = await import('../core/approval-bus.js')
+    if (!isRequestAdmin(req)) {
+      const scope = await resolveMemberScope(req)
+      const pending = approvalBus.listPending().find((p) => p.reqId === reqId)
+      if (!pending || !approvalVisible(pending, scope)) {
+        sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
+        return
+      }
+    }
     const decision = parsed.behavior === 'allow'
       ? { behavior: 'allow' as const, autoAllowFurther: parsed.autoAllowFurther === true }
       : { behavior: 'deny' as const, message: parsed.message || 'denied via dashboard' }

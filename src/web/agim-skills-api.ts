@@ -12,9 +12,9 @@
 //   DELETE /api/agim-skills/:name                 -> 200 / 404
 //   POST   /api/agim-skills/refresh               -> 200 { count }
 //
-// All endpoints are admin-gated upstream in server.ts because SKILL.md
-// bodies are injected into every agent prompt — malicious content
-// here goes straight to every CLI agent + the native agent.
+// Per-account skill CRUD is scoped by `runWithAccountUser`. The
+// injection-block editor is admin-gated in server.ts — that body is
+// injected into every agent prompt.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { getRequestUserId, isRequestAdmin } from './auth.js'

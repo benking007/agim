@@ -115,6 +115,7 @@ describe('resolveAgentCwd', () => {
     expect(resolveAgentFilesRoot('agim', 'usr_abc123')).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
     expect(resolveAgentFilesRoot('agim', 'web:tok1')).toBe(join(tmpRoot, 'agim'))
     expect(resolveAgentFilesRoot('agim')).toBe(join(tmpRoot, 'agim'))
+    expect(resolveAgentFilesRoot('agim', 'web:loopback')).toBe(join(tmpRoot, 'agim'))
   })
 
   it('returns undefined for non-IM call (web/scheduler), preserving inherited cwd', () => {
@@ -196,6 +197,11 @@ describe('resolveAgentWorkspaceRoot', () => {
   it('honors AGIM_<AGENT>_CWD', () => {
     process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
     expect(resolveAgentWorkspaceRoot('claude-code')).toBe('/srv/explicit')
+  })
+
+  it('pins role/memory/PROJECTS root to the account tree when ALS is set', () => {
+    const root = runWithAccountUser('usr_abc123', () => resolveAgentWorkspaceRoot('agim'))
+    expect(root).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
   })
 })
 
@@ -472,6 +478,14 @@ describe('planImOpsUpsert', () => {
     const block = buildAgimImOpsBlock('agim')
     expect(block).not.toContain('## 对话逻辑')
     expect(block).toContain('强制使用 bgjob')
+  })
+
+  it('rewrites workspace paths when workspaceRoot is passed', () => {
+    const block = buildAgimImOpsBlock('agim', {
+      workspaceRoot: '~/.agim-workspaces/users/usr_x/agim',
+    })
+    expect(block).toContain('~/.agim-workspaces/users/usr_x/agim/')
+    expect(block).not.toContain('~/.agim-workspaces/agim/')
   })
 
   it('plans a patch that preserves content outside markers', () => {

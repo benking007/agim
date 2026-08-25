@@ -20,7 +20,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
-import { defaultAgentCwd } from './agent-cwd.js'
+import { resolveAgentWorkspaceRoot } from './agent-cwd.js'
 import { logger as rootLogger } from './logger.js'
 import {
   cancelActiveChildJobsByThread,
@@ -58,7 +58,7 @@ function historyPathFor(runId: string): string {
 /** Default: `<agim-cwd>/PROJECTS/loops`. Override: `AGIM_LOOP_REPORTS_DIR`. */
 export function resolveLoopReportsDir(agentName = 'agim'): string {
   if (process.env.AGIM_LOOP_REPORTS_DIR) return process.env.AGIM_LOOP_REPORTS_DIR
-  return join(defaultAgentCwd(agentName), 'PROJECTS', 'loops')
+  return join(resolveAgentWorkspaceRoot(agentName), 'PROJECTS', 'loops')
 }
 
 /**

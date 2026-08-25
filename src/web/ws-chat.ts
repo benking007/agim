@@ -575,6 +575,10 @@ export async function handleClientMessage(
 
         if (accountUserId) {
           await sessionManager.claimWebSessionOwner(sessionThreadId, accountUserId)
+          try {
+            const { seedAccountAgentWorkspace } = await import('../core/account-workspace-seed.js')
+            await seedAccountAgentWorkspace(accountUserId, client.agent)
+          } catch { /* seed logs failures */ }
         }
         const { runWithAccountUser } = await import('../core/accounts.js')
         const result = accountUserId

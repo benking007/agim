@@ -320,13 +320,12 @@ export function ComposerStatusBar({
         >
           <ComposerAutoApproveChip dark={dark} disabled={disabled} chipClassName={chip} />
         </Suspense>
+      </div>
 
+      <div className="ml-0.5 flex shrink-0 items-center gap-0.5">
         <Suspense fallback={null}>
           <ComposerPointsChip dark={dark} disabled={disabled} chipClassName={chip} />
         </Suspense>
-      </div>
-
-      <div className="ml-0.5 flex shrink-0 items-center">
         <ContextRing ratio={ratio} dark={dark} onClick={() => setContextOpen(true)} />
       </div>
 

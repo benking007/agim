@@ -20,6 +20,7 @@
     "src/web/loop-api.ts",
     "src/web/loop-schedule-api.ts",
     "src/web/mcp-api.ts",
+    "src/web/member-scope.ts",
     "src/web/memory-api.ts",
     "src/web/memos-api.ts",
     "src/web/messengers-api.ts",

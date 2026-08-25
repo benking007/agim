@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/stores/auth'
@@ -48,6 +48,8 @@ export default function LoginRoute(): JSX.Element {
   const setUser = useAuth((s) => s.setUser)
   const hydrate = useAuth((s) => s.hydrate)
   const hasUsers = useAuth((s) => s.hasUsers)
+  const signedIn = useAuth((s) => s.signedIn)
+  const ready = useAuth((s) => s.ready)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [captcha, setCaptcha] = useState('')
@@ -62,8 +64,13 @@ export default function LoginRoute(): JSX.Element {
   }, [hydrate])
 
   useEffect(() => {
+    if (signedIn || !ready) return
     if (hasUsers === false) navigate(`/register?next=${encodeURIComponent(next)}`, { replace: true })
-  }, [hasUsers, navigate, next])
+  }, [hasUsers, navigate, next, ready, signedIn])
+
+  if (ready && signedIn) {
+    return <Navigate to={next} replace />
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()

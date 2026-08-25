@@ -3,18 +3,43 @@
  * storage event handler.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth, bindAuthToStorage } from './auth'
 
+function jsonOk(body: unknown): Response {
+  return { ok: true, json: async () => body } as Response
+}
+
 afterEach(() => {
-  useAuth.setState({ token: null, signedIn: false })
+  useAuth.setState({
+    token: null,
+    user: null,
+    role: null,
+    signedIn: false,
+    ready: false,
+    hasUsers: null,
+  })
   localStorage.clear()
+  vi.unstubAllGlobals()
 })
 
 describe('useAuth', () => {
   beforeEach(() => {
-    useAuth.setState({ token: null, signedIn: false })
+    useAuth.setState({
+      token: null,
+      user: null,
+      role: null,
+      signedIn: false,
+      ready: false,
+      hasUsers: null,
+    })
     localStorage.clear()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('bootstrap-state')) return jsonOk({ hasUsers: true })
+      if (url.includes('/api/auth/me')) return jsonOk({ user: null })
+      return { ok: false, json: async () => ({}) } as Response
+    }))
   })
 
   it('setToken persists to agim_token + flips signedIn', () => {
@@ -70,5 +95,27 @@ describe('useAuth', () => {
     } finally {
       off()
     }
+  })
+
+  it('hydrate signs in auth-off even when no users exist yet', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('bootstrap-state')) return jsonOk({ hasUsers: false })
+      if (url.includes('/api/auth/me')) {
+        return jsonOk({
+          user: { id: 'auth-off', username: 'auth-off', role: 'admin', displayName: 'auth-off' },
+          role: 'admin',
+          kind: 'auth-off',
+        })
+      }
+      return { ok: false, json: async () => ({}) } as Response
+    }))
+    await useAuth.getState().hydrate()
+    const state = useAuth.getState()
+    expect(state.hasUsers).toBe(false)
+    expect(state.signedIn).toBe(true)
+    expect(state.ready).toBe(true)
+    expect(state.role).toBe('admin')
+    expect(state.user?.id).toBe('auth-off')
   })
 })

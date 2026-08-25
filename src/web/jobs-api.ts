@@ -14,6 +14,9 @@
 //   GET    /api/bgjobs/:id                  → { job }
 //   GET    /api/subtasks                    → { subtasks }
 //   GET    /api/schedules                   → { schedules }
+//   POST   /api/schedules                   → { id }          (schedule-api.ts)
+//   PATCH  /api/schedules/:id               → { ok }          (schedule-api.ts)
+//   DELETE /api/schedules/:id               → { ok }          (schedule-api.ts)
 //   GET    /api/reminders                   → { reminders }
 //   POST   /api/reminders/:id/cancel        → { ok, id }
 //   POST   /api/reminders/:id/snooze        → { ok, originalId, newId, duration }

@@ -19,6 +19,7 @@ import { handleMemoryApi } from './memory-api.js'
 import { handleChatMediaApi } from './chat-media-api.js'
 import { handleServiceApi } from './service-api.js'
 import { handleJobsApi } from './jobs-api.js'
+import { handleScheduleApi } from './schedule-api.js'
 import { handleEnvApi } from './env-api.js'
 import { createSerialQueue } from './serial-queue.js'
 import { handleWorkspacesApi } from './workspaces-api.js'
@@ -396,8 +397,12 @@ export async function startWebServer(options: {
         || url.pathname === '/api/bgjobs' || url.pathname.startsWith('/api/bgjobs/')
         || url.pathname === '/api/subtasks'
         || url.pathname === '/api/schedules'
+        || url.pathname.startsWith('/api/schedules/')
         || url.pathname === '/api/reminders' || url.pathname.startsWith('/api/reminders/')
         || url.pathname === '/api/plans') {
+      if (url.pathname === '/api/schedules' || url.pathname.startsWith('/api/schedules/')) {
+        if (await handleScheduleApi(req, res, url)) return
+      }
       if (await handleJobsApi(req, res, url)) return
     }
 

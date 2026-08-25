@@ -50,6 +50,17 @@ function writeToken(token: string | null): void {
 
 const initialToken = readToken()
 
+let hydrateInFlight: Promise<void> | null = null
+
+function asAuthUser(raw: AuthUser): AuthUser {
+  return {
+    id: raw.id,
+    username: raw.username,
+    displayName: raw.displayName || raw.username || raw.id,
+    role: raw.role === 'user' ? 'user' : 'admin',
+  }
+}
+
 export const useAuth = create<AuthState>((set, get) => ({
   token: initialToken,
   user: null,
@@ -76,31 +87,60 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ token: null, user: null, role: null, signedIn: false, ready: true })
   },
   hydrate: async () => {
-    try {
-      const boot = await fetch('/api/auth/bootstrap-state', { credentials: 'same-origin' })
-      if (boot.ok) {
-        const body = await boot.json() as { hasUsers?: boolean }
-        set({ hasUsers: Boolean(body.hasUsers) })
-      }
-    } catch { /* offline */ }
-    try {
-      const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
-      if (res.ok) {
-        const body = await res.json() as { user?: AuthUser | null; role?: 'admin' | 'user' }
-        if (body.user?.id && !body.user.id.startsWith('loopback') && body.user.id !== 'auth-off') {
-          get().setUser(body.user)
-          return
+    if (hydrateInFlight) return hydrateInFlight
+    hydrateInFlight = (async () => {
+      let hasUsers = get().hasUsers
+      try {
+        const boot = await fetch('/api/auth/bootstrap-state', { credentials: 'same-origin' })
+        if (boot.ok) {
+          const body = await boot.json() as { hasUsers?: boolean }
+          hasUsers = Boolean(body.hasUsers)
         }
-        if (body.role === 'admin' && (body.user?.id === 'loopback' || body.user?.id === 'auth-off')) {
-          set({ role: 'admin', signedIn: true, ready: true })
-          return
+      } catch { /* offline */ }
+
+      let user = get().user
+      let role = get().role
+      let signedIn = Boolean(get().token) || Boolean(user)
+
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
+        if (res.ok) {
+          const body = await res.json() as { user?: AuthUser | null; role?: 'admin' | 'user' }
+          const id = body.user?.id
+          if (id === 'loopback' || id === 'auth-off') {
+            user = asAuthUser({
+              id,
+              username: body.user?.username || id,
+              displayName: body.user?.displayName || id,
+              role: body.user?.role || body.role || 'admin',
+            })
+            role = user.role
+            signedIn = true
+          } else if (body.user && id && !id.startsWith('loopback')) {
+            user = asAuthUser(body.user)
+            role = user.role
+            signedIn = true
+          } else if (body.role === 'admin') {
+            role = 'admin'
+            signedIn = true
+          }
         }
-      }
-    } catch { /* ignore */ }
-    set({
-      signedIn: Boolean(get().token),
-      ready: true,
-    })
+      } catch { /* ignore */ }
+
+      signedIn = signedIn || Boolean(get().token) || Boolean(get().user)
+      user = user ?? get().user
+      role = role ?? get().role
+      if (user?.id) syncWebAccountScope(user.id)
+
+      // One tick: never publish hasUsers=false while signedIn is still false
+      // (that sent AGIM_WEB_AUTH=off visitors to /register before /api/auth/me).
+      set({ hasUsers, user, role, signedIn, ready: true })
+    })()
+    try {
+      await hydrateInFlight
+    } finally {
+      hydrateInFlight = null
+    }
   },
 }))
 

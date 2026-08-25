@@ -244,6 +244,37 @@ export interface ListSchedulesResponse {
   schedules: Schedule[]
 }
 
+export interface CreateScheduleBody {
+  name: string
+  agent: string
+  prompt: string
+  cron: string
+  enabled?: boolean
+}
+
+export interface CreateScheduleResponse {
+  id: number
+  schedule?: Schedule
+}
+
+export interface UpdateScheduleBody {
+  name?: string
+  agent?: string
+  prompt?: string
+  cron?: string
+  enabled?: boolean
+}
+
+export interface UpdateScheduleResponse {
+  ok: true
+  schedule?: Schedule
+}
+
+export interface DeleteScheduleResponse {
+  ok: true
+  id: number
+}
+
 /* ============================================================
  * Outbox — delivery queue for IM platform replies. Each row
  * represents one outbound message; status moves

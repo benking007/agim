@@ -109,6 +109,23 @@ describe('client', () => {
     expect(loc.setHref.mock.calls[0]?.[0]).toMatch(/\/login\?next=/)
   })
 
+  it('on 401 from /api/me/sessions → does not kick Portal to /login', async () => {
+    localStorage.setItem(TOKEN_KEY, 'keep-me')
+    const loc = mockLocation('/m/chat')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'AUTH_INVALID', error: 'login required' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    await expect(client.get('/api/me/sessions')).rejects.toMatchObject({
+      code: 'AUTH_INVALID',
+      status: 401,
+    })
+    expect(localStorage.getItem(TOKEN_KEY)).toBe('keep-me')
+    expect(loc.setHref).not.toHaveBeenCalled()
+  })
+
   it('on AUTH_ADMIN_REQUIRED in Portal → keeps token and does NOT redirect', async () => {
     localStorage.setItem(TOKEN_KEY, 'keep-me')
     const loc = mockLocation('/m/chat')

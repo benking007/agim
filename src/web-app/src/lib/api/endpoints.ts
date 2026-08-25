@@ -81,6 +81,11 @@ import type {
   ListRemindersResponse,
   ListSchedulesQuery,
   ListSchedulesResponse,
+  CreateScheduleBody,
+  CreateScheduleResponse,
+  UpdateScheduleBody,
+  UpdateScheduleResponse,
+  DeleteScheduleResponse,
   ListSubtasksQuery,
   ListSubtasksResponse,
   LoginBody,
@@ -415,6 +420,25 @@ export const api = {
   /** GET /api/schedules */
   listSchedules: (query: ListSchedulesQuery) =>
     client.get<ListSchedulesResponse>('/api/schedules', { query }),
+
+  /** POST /api/schedules */
+  createSchedule: (body: CreateScheduleBody) =>
+    client.post<CreateScheduleResponse>('/api/schedules', { body }),
+
+  /** PATCH /api/schedules/:id */
+  updateSchedule: (id: number, body: UpdateScheduleBody) =>
+    client.patch<UpdateScheduleResponse>(`/api/schedules/${id}`, { body }),
+
+  /** DELETE /api/schedules/:id */
+  deleteSchedule: (id: number) =>
+    client.delete<DeleteScheduleResponse>(`/api/schedules/${id}`),
+
+  /** PATCH /api/agim-skills/:name/enabled */
+  setAgimSkillEnabled: (name: string, body: { enabled: boolean }) =>
+    client.patch<{ name: string; enabled: boolean; rebuilding: boolean }>(
+      `/api/agim-skills/${encodeURIComponent(name)}/enabled`,
+      { body },
+    ),
 
   /** POST /api/service/restart */
   restartService: () =>

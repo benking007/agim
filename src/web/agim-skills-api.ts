@@ -7,6 +7,7 @@
 // Endpoints:
 //   GET    /api/agim-skills                       -> { skills, count }
 //   GET    /api/agim-skills/:name                 -> { meta, body }
+//   PATCH  /api/agim-skills/:name/enabled         body { enabled } -> 200 { name, enabled, rebuilding }
 //   POST   /api/agim-skills                       body { name, body } -> 201 { meta }
 //   PUT    /api/agim-skills/:name                 body { body } -> 200 { meta }
 //   DELETE /api/agim-skills/:name                 -> 200 / 404
@@ -19,15 +20,20 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { getRequestUserId, isRequestAdmin } from './auth.js'
 import { runWithAccountUser } from '../core/accounts.js'
+import { logger as rootLogger } from '../core/logger.js'
 import {
   listSkills, getSkillByName, readSkillBody, invalidateSkillsCache,
   writeSkillFile, deleteSkill,
   MAX_SKILL_BODY_CHARS,
   buildAutoInjectionBlock,
+  buildSkillsSummary,
   readInjectionOverride, writeInjectionOverride, deleteInjectionOverride,
   injectionOverridePath,
   rankSkillBucket,
 } from '../core/skills/loader.js'
+import { isSkillEnabled, setSkillEnabled } from '../core/skills/disabled-set.js'
+
+const log = rootLogger.child({ component: 'agim-skills-api' })
 
 function send(res: ServerResponse, code: number, body: unknown): void {
   res.statusCode = code
@@ -83,6 +89,10 @@ async function handleAgimSkillsApiInner(
   if (p === '/api/agim-skills/injection' && m === 'DELETE') {
     await handleInjectionDelete(res); return true
   }
+  const skillEnabledMatch = p.match(/^\/api\/agim-skills\/([A-Za-z0-9._-]+)\/enabled$/)
+  if (skillEnabledMatch && m === 'PATCH') {
+    await handleSetEnabled(req, res, skillEnabledMatch[1]); return true
+  }
   const byName = p.match(/^\/api\/agim-skills\/([A-Za-z0-9._-]+)$/)
   if (byName && m === 'GET')    { await handleGet(res, byName[1]);    return true }
   if (byName && m === 'PUT')    { await handleUpdate(req, res, byName[1]); return true }
@@ -103,6 +113,7 @@ async function handleList(res: ServerResponse): Promise<void> {
     requiresBins: s.requiresBins,
     requiresEnv: s.requiresEnv,
     dir: s.dir,
+    enabled: isSkillEnabled(s.name),
     // v1.2.152 — system-prompt injection bucket (0=agim framework /
     // 1=non-ECC builtin / 2=ECC top picks / 3=workspace / 4=ECC remainder).
     // SPA uses this to group + collapse the installed list so operators
@@ -184,6 +195,33 @@ async function handleDelete(req: IncomingMessage, res: ServerResponse, name: str
   send(res, 200, { name, deleted: true })
 }
 
+async function handleSetEnabled(
+  req: IncomingMessage, res: ServerResponse, name: string,
+): Promise<void> {
+  if (!getSkillByName(name)) {
+    send(res, 404, { error: `no skill named "${name}"` }); return
+  }
+  const body = await readJsonBody<{ enabled?: unknown }>(req)
+  if (!body || typeof body.enabled !== 'boolean') {
+    send(res, 400, { error: 'body { enabled: boolean } required' }); return
+  }
+  const enabled = setSkillEnabled(name, body.enabled)
+  send(res, 200, { name, enabled, rebuilding: true })
+  // Injection scan is slow on large libraries — persist the flag first,
+  // then rebuild the memoized system-prompt block off the request path.
+  setImmediate(() => {
+    try {
+      invalidateSkillsCache()
+      buildSkillsSummary()
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), event: 'skills.injection_rebuild_failed' },
+        'skill injection rebuild failed',
+      )
+    }
+  })
+}
+
 // ─── v1.2.151 — injection override (operator editor) ───────────────────
 
 /** Hard cap on override payload size. The auto block tops out around
@@ -195,7 +233,7 @@ async function handleInjectionGet(res: ServerResponse): Promise<void> {
   // Compute the auto block from the live loader state. Returned even
   // when an override exists so the SPA can preview "what auto would
   // produce right now" alongside the saved override.
-  const all = listSkills()
+  const all = listSkills().filter((s) => isSkillEnabled(s.name))
   const auto = all.length === 0 ? '' : buildAutoInjectionBlock(all)
   const override = readInjectionOverride()
   send(res, 200, {

@@ -129,7 +129,16 @@ export async function handleAccountApi(
 
   if (p === '/api/me/sessions' && m === 'GET') {
     const userId = getRequestUserId(req)
-    if (!userId) { sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true }
+    if (!userId) {
+      // auth-off / loopback admin has no account row; Portal still
+      // calls this to sync the rail. Empty list, not 401 — a 401 would
+      // bounce the SPA to /login in a loop.
+      if (isRequestAdmin(req)) {
+        sendJson(res, 200, { sessions: [] })
+        return true
+      }
+      sendError(res, 401, 'AUTH_INVALID', { message: 'login required' }); return true
+    }
     const sessions = await sessionManager.listUserWebSessions(userId)
     sendJson(res, 200, { sessions })
     return true

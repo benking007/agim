@@ -64,6 +64,11 @@ const dynamicRoutes = {
   userMatch: [['PATCH', '/api/admin/users/:id']],
   invMatch: [['DELETE', '/api/admin/invites/:id']],
   quotaMatch: [['PATCH', '/api/admin/users/:id/points']],
+  skillEnabledMatch: [['PATCH', '/api/agim-skills/:name/enabled']],
+  scheduleIdMatch: [
+    ['PATCH', '/api/schedules/:id'],
+    ['DELETE', '/api/schedules/:id'],
+  ],
 }
 
 const ignoredDynamicMatches = new Set([

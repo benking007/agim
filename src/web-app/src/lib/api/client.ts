@@ -138,8 +138,12 @@ async function request<T>(
     // Relogin policy: HTTP 401 → clear token + /login (session dead).
     // AUTH_ADMIN_REQUIRED is a valid session with the wrong role — stay
     // on the page so members are not kicked out of /settings.
+    // GET/POST /api/me/sessions is optional account sync: auth-off /
+    // loopback operators have no userId, and kicking them to /login
+    // loops Portal (hydrate signs them back in). Failures stay local.
     const needsRelogin = res.status === 401
-    if (needsRelogin && !path.startsWith('/api/auth/')) {
+    const skipRelogin = path.startsWith('/api/auth/') || path.startsWith('/api/me/sessions')
+    if (needsRelogin && !skipRelogin) {
       try { localStorage.removeItem(TOKEN_STORAGE_KEY) } catch { /* private mode */ }
       const next = encodeURIComponent(location.pathname + location.search)
       if (!location.pathname.startsWith('/login')) {

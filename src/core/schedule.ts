@@ -20,6 +20,8 @@ import { createSqliteHelper } from './sqlite-helper.js'
 import { lookup } from 'node:dns/promises'
 import { isPrivateAddr } from './url-guard.js'
 import type { AgentTurnOutcome } from './types.js'
+import { runWithAccountUser } from './accounts.js'
+import { prepareScheduledTurn } from './schedule-run.js'
 
 const SCHED_DB = join(AGIM_HOME, 'schedules.db')
 const TICK_INTERVAL_MS = 30 * 1000
@@ -260,6 +262,45 @@ export function setEnabled(id: number, enabled: boolean, opts: OwnerOpts = {}): 
     .run(enabled ? 1 : 0, id).changes > 0
 }
 
+export interface UpdateScheduleInput {
+  name?: string
+  agent?: string
+  prompt?: string
+  cron?: string
+  enabled?: boolean
+}
+
+/** Patch an existing row. Recomputes next_run when cron changes. */
+export function updateSchedule(
+  id: number,
+  patch: UpdateScheduleInput,
+  opts: OwnerOpts = {},
+): boolean {
+  const row = getSchedule(id, opts)
+  if (!row) return false
+  const d = getDb()
+  if (!d) return false
+  const name = patch.name ?? row.name
+  const agent = patch.agent ?? row.agent
+  const prompt = patch.prompt ?? row.prompt
+  const cron = patch.cron ?? row.cron
+  const enabled = patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : row.enabled
+  let nextRun = row.next_run
+  if (patch.cron !== undefined && patch.cron !== row.cron) {
+    const next = nextOccurrence(parseCron(cron), new Date())
+    if (!next) throw new Error('Cron expression has no future occurrence')
+    nextRun = next.toISOString()
+  }
+  if (opts.creatorId !== undefined) {
+    return d.prepare(
+      "UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, enabled = ?, next_run = ? WHERE id = ? AND (creator_id = ? OR creator_id = '')",
+    ).run(name, agent, prompt, cron, enabled, nextRun, id, opts.creatorId).changes > 0
+  }
+  return d.prepare(
+    'UPDATE schedules SET name = ?, agent = ?, prompt = ?, cron = ?, enabled = ?, next_run = ? WHERE id = ?',
+  ).run(name, agent, prompt, cron, enabled, nextRun, id).changes > 0
+}
+
 /** Find schedules whose next_run is at or before `now` and are enabled. */
 function dueSchedules(d: Database.Database, now: Date): Schedule[] {
   return d.prepare(
@@ -432,28 +473,40 @@ async function fireSchedule(s: Schedule, logger: Logger): Promise<void> {
 
   // Run via Job Board so the result is persisted + bounded concurrency.
   void runJob(jobId, async function* (job, _jobLogger, signal) {
-    const prompt = agent.handlesAgimSkillsPrompt
-      ? job.prompt
-      : `${buildSkillsSummary()}${job.prompt}`
-    const outcomes: AgentTurnOutcome[] = []
-    if (agent instanceof AgentBase) {
-      const text = await agent.spawnAndCollect(prompt, signal, {
-        onOutcome: (value) => { outcomes.push(value) },
+    const runTurn = async (): Promise<string> => {
+      const prepared = prepareScheduledTurn({
+        agent: s.agent,
+        prompt: job.prompt,
+        creatorId: s.creator_id,
       })
-      if (text) yield text
-    } else {
-      for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, prompt, [], {
+      const prompt = agent.handlesAgimSkillsPrompt
+        ? prepared.userPrompt
+        : `${buildSkillsSummary()}${prepared.userPrompt}`
+      const outcomes: AgentTurnOutcome[] = []
+      const sendOpts = {
+        ...prepared.sendOpts,
         signal,
-        onOutcome: (value) => { outcomes.push(value) },
-      })) {
-        if (signal.aborted) break
-        yield chunk
+        onOutcome: (value: AgentTurnOutcome) => { outcomes.push(value) },
       }
+      let text = ''
+      if (agent instanceof AgentBase) {
+        text = await agent.spawnAndCollect(prompt, signal, sendOpts)
+      } else {
+        for await (const chunk of agent.sendPrompt(`schedule-${s.id}-${jobId}`, prompt, [], sendOpts)) {
+          if (signal.aborted) break
+          text += chunk
+        }
+      }
+      const outcome = outcomes.at(-1)
+      if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
+        throw new Error(outcome.error ?? outcome.status)
+      }
+      return text
     }
-    const outcome = outcomes.at(-1)
-    if (outcome && outcome.status !== 'success' && outcome.status !== 'partial') {
-      throw new Error(outcome.error ?? outcome.status)
-    }
+    const text = s.creator_id
+      ? await runWithAccountUser(s.creator_id, () => runTurn())
+      : await runTurn()
+    if (text) yield text
   }, logger).then(() => notifyScheduleWebhook(s, jobId, logger))
     .catch(() => { /* runJob already logged */ })
 }

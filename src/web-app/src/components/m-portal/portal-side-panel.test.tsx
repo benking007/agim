@@ -167,10 +167,19 @@ describe('PortalSidePanel conversations', () => {
     expect(sessionRow?.className).toMatch(/bg-zinc-100/)
   })
 
+  it('merges the brand title with the current agent', () => {
+    renderPanel()
+    const brand = screen.getByTestId('portal-brand-agent')
+    expect(brand).toHaveTextContent('AGIM Space')
+    expect(brand).toHaveTextContent('Agim')
+    expect(screen.queryByText('Active Agent')).not.toBeInTheDocument()
+  })
+
   it('renders an icon-only rail when collapsed', () => {
     const onToggle = vi.fn()
     renderPanel({ railCollapsed: true, onToggleRailCollapsed: onToggle })
     expect(screen.getByTestId('portal-rail-collapsed')).toBeInTheDocument()
+    expect(screen.getByTestId('portal-brand-agent')).toBeInTheDocument()
     expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })

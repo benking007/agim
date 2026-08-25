@@ -64,14 +64,13 @@ export function PortalSidePanel(props: {
   if (railCollapsed) {
     return (
       <div className="flex h-full min-h-0 flex-col items-center py-3" data-testid="portal-rail-collapsed">
-        <button
-          type="button"
-          title={t('chat.portal.brand')}
-          aria-label={t('chat.portal.brand')}
-          className="mb-2 text-teal-500"
+        <div
+          className={cn('mb-2 rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}
+          title={`${t('chat.portal.brand')} · ${displayAgentName(agentId)}`}
+          data-testid="portal-brand-agent"
         >
-          <Sparkles className="h-5 w-5" />
-        </button>
+          <AgentIcon className="h-4 w-4" />
+        </div>
         {onToggleRailCollapsed && (
           <IconRailButton
             dark={dark}
@@ -80,9 +79,6 @@ export function PortalSidePanel(props: {
             icon={<PanelLeftOpen className="h-4 w-4" />}
           />
         )}
-        <div className={cn('mb-3 mt-2 rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)} title={displayAgentName(agentId)}>
-          <AgentIcon className="h-4 w-4" />
-        </div>
         <IconRailButton
           dark={dark}
           active={pane === 'chat'}
@@ -181,13 +177,27 @@ export function PortalSidePanel(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="portal-rail-expanded">
-      <div className="shrink-0 space-y-6">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2 font-bold text-teal-500">
-            <Sparkles className="h-5 w-5 shrink-0" />
-            <span className="truncate text-sm">{t('chat.portal.brand')}</span>
+      <div className="shrink-0 space-y-4">
+        <div
+          className={cn(
+            'flex items-center gap-2 rounded-xl border p-2.5',
+            dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
+          )}
+          data-testid="portal-brand-agent"
+        >
+          <div className={cn('shrink-0 rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
+            <AgentIcon className="h-4 w-4" />
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1 truncate text-[11px] font-bold text-teal-500">
+              <Sparkles className="h-3 w-3 shrink-0" />
+              <span className="truncate">{t('chat.portal.brand')}</span>
+            </p>
+            <h4 className={cn('truncate text-sm font-bold leading-tight', dark ? 'text-zinc-100' : 'text-zinc-900')}>
+              {displayAgentName(agentId)}
+            </h4>
+          </div>
+          <div className="flex shrink-0 items-center self-start">
             {onToggleRailCollapsed && (
               <button
                 type="button"
@@ -208,24 +218,6 @@ export function PortalSidePanel(props: {
                 <X className="h-4 w-4" />
               </button>
             )}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.activeAgent')}</p>
-          <div className={cn(
-            'flex items-center gap-3 rounded-xl border p-3',
-            dark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50',
-          )}>
-            <div className={cn('rounded-lg bg-gradient-to-tr p-2 text-white', visual.color)}>
-              <AgentIcon className="h-4 w-4" />
-            </div>
-            <div className="truncate">
-              <h4 className={cn('text-xs font-bold', dark ? 'text-zinc-200' : 'text-zinc-800')}>
-                {displayAgentName(agentId)}
-              </h4>
-              <p className="truncate text-[10px] text-zinc-400">{visual.tagline}</p>
-            </div>
           </div>
         </div>
 
@@ -267,7 +259,7 @@ export function PortalSidePanel(props: {
       </div>
 
       {pane === 'chat' ? (
-      <div className="mt-6 flex min-h-0 flex-1 flex-col">
+      <div className="mt-4 flex min-h-0 flex-1 flex-col">
         <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
           <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
             {t('chat.portal.workspaces')}

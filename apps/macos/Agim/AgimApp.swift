@@ -4,6 +4,7 @@ import WebKit
 
 @main
 struct AgimApp: App {
+    @NSApplicationDelegateAdaptor(AgimAppDelegate.self) private var appDelegate
     @State private var session = AppSession()
 
     var body: some Scene {
@@ -16,6 +17,7 @@ struct AgimApp: App {
                     session.handleDeepLink(url)
                 }
         }
+        .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 420, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -99,23 +101,5 @@ final class AppSession {
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
         let since = Date(timeIntervalSince1970: 0)
         WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: since) {}
-    }
-}
-
-/// Hide the native "Agim" window title — the Portal header already names the agent.
-private struct WindowTitleHider: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { Self.hideTitle(view) }
-        return view
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        DispatchQueue.main.async { Self.hideTitle(view) }
-    }
-
-    private static func hideTitle(_ view: NSView) {
-        guard let window = view.window else { return }
-        window.titleVisibility = .hidden
     }
 }

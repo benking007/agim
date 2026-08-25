@@ -91,8 +91,10 @@ All notable changes to this project will be documented in this file.
 - **Portal empty session**: switching conversations shows a centered
   spinner (“正在加载会话”) instead of two starter prompt cards, so a
   slow `get-history` no longer looks frozen. Idle empty sessions are
-  blank (no agent title / sample prompts). macOS hides the native
-  window title; the Portal header already shows the agent name.
+  blank (no agent title / sample prompts).
+- **macOS window title**: the native title-bar label “Agim” is hidden
+  (traffic lights stay). SwiftUI kept rewriting `NSWindow.title`; the
+  shell now clears it on attach and whenever the title is set again.
 - **npm publish via Trusted Publishing**: bump + publish run as the
   root `release.yml` workflow (npm OIDC checks that filename, not a
   nested `workflow_call`). Publish uses npm 11.5.1+ and does not set

@@ -4,6 +4,7 @@ import Security
 enum KeychainStore {
     /// Distinct from iOS (`host.iclaw.agim.credentials`) so the two apps
     /// do not overwrite each other when both are installed.
+    /// Payload is `{ "host": "https://…" }` (legacy `token` is ignored on load).
     private static let service = "host.iclaw.agim.mac.credentials"
     private static let account = "default"
 

@@ -2,6 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
+    /// Payload is `{ "host": "https://…" }` (legacy `token` is ignored on load).
     private static let service = "host.iclaw.agim.credentials"
     private static let account = "default"
 

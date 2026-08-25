@@ -80,6 +80,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **macOS / iOS shells** no longer pair with a Mobile QR / API token.
+  They store the host only, read the WKWebView `agim_session` cookie,
+  and open `/m/chat` or `/login?next=/m/chat`. Sign-in is username /
+  password in the WebView; the login page has a native host switcher.
 - **npm publish via Trusted Publishing**: bump + publish run as the
   root `release.yml` workflow (npm OIDC checks that filename, not a
   nested `workflow_call`). Publish uses npm 11.5.1+ and does not set

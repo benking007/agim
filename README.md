@@ -35,7 +35,7 @@ Skip writes `setupSkipped` and leaves `/setup` available. Details: [`docs/first-
 
 - Chat: `/`
 - Mobile Portal: `/m/chat` (`/` Skills·Commands, `@` workspace refs, Focus / Loop docks — see [`docs/portal-composer.md`](docs/portal-composer.md))
-- Native shells: iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos) (both wrap `/m/chat`; see [`docs/macos-shell.md`](docs/macos-shell.md))
+- Native shells: iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos) (both wrap `/m/chat` with host + web session cookie; see [`docs/macos-shell.md`](docs/macos-shell.md))
 - Tasks: `/tasks` (Loop audit at `/tasks/loops`)
 - Settings: `/settings`
 

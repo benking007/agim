@@ -3,19 +3,67 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
+/// Native chrome on `/login` / `/register` so the user can switch hosts
+/// without a token/QR pairing screen.
+struct HostSwitcherBar: View {
+    let host: String
+    var onChangeHost: () -> Void
+    @State private var confirm = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(host)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .textSelection(.enabled)
+            Spacer()
+            Button("更换主机") { confirm = true }
+                .font(.footnote)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+        .confirmationDialog("更换主机将退出当前站点，需重新填写地址。", isPresented: $confirm, titleVisibility: .visible) {
+            Button("更换主机", role: .destructive, action: onChangeHost)
+            Button("取消", role: .cancel) {}
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class ShellChrome {
+    var currentPath: String = ""
+
+    var showHostSwitcher: Bool {
+        SessionProbe.isAuthPath(currentPath)
+    }
+}
+
 /// Native macOS shell: WKWebView loads Agim `/m/chat` (Agent Portal WebUI).
 struct WebShellView: View {
     let credentials: HostCredentials
     let reloadNonce: Int
+    @Environment(AppSession.self) private var session
     @Environment(\.scenePhase) private var scenePhase
+    @State private var chrome = ShellChrome()
 
     var body: some View {
-        WebViewRepresentable(
-            credentials: credentials,
-            reloadNonce: reloadNonce,
-            scenePhase: scenePhase
-        )
-        .background(Color.black)
+        VStack(spacing: 0) {
+            if chrome.showHostSwitcher {
+                HostSwitcherBar(host: credentials.host) {
+                    session.logout()
+                }
+            }
+            WebViewRepresentable(
+                credentials: credentials,
+                reloadNonce: reloadNonce,
+                scenePhase: scenePhase,
+                chrome: chrome
+            )
+            .background(Color.black)
+        }
     }
 }
 
@@ -23,13 +71,15 @@ struct WebViewRepresentable: NSViewRepresentable {
     let credentials: HostCredentials
     let reloadNonce: Int
     var scenePhase: ScenePhase
+    var chrome: ShellChrome
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(credentials: credentials)
+        Coordinator(credentials: credentials, chrome: chrome)
     }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
 
         let prefs = WKWebpagePreferences()
@@ -71,6 +121,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.underPageBackgroundColor = .black
         context.coordinator.webView = webView
+        context.coordinator.startURLObservation(webView)
         context.coordinator.startWakeObserver()
         context.coordinator.loadPortal()
         return webView
@@ -78,6 +129,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.credentials = credentials
+        context.coordinator.chrome = chrome
         context.coordinator.noteScenePhase(scenePhase)
         if context.coordinator.lastReloadNonce != reloadNonce {
             context.coordinator.lastReloadNonce = reloadNonce
@@ -89,20 +141,35 @@ struct WebViewRepresentable: NSViewRepresentable {
         let ucc = nsView.configuration.userContentController
         ucc.removeScriptMessageHandler(forName: "agimSaveFile")
         ucc.removeScriptMessageHandler(forName: "agimShare")
+        coordinator.stopURLObservation()
         coordinator.stopWakeObserver()
         coordinator.scriptBridge = nil
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var credentials: HostCredentials
+        var chrome: ShellChrome
         var lastReloadNonce: Int = 0
         weak var webView: WKWebView?
         var scriptBridge: WeakScriptMessageHandler?
         private var lastScenePhase: ScenePhase?
         private var wakeObserver: NSObjectProtocol?
+        private var urlObservation: NSKeyValueObservation?
 
-        init(credentials: HostCredentials) {
+        init(credentials: HostCredentials, chrome: ShellChrome) {
             self.credentials = credentials
+            self.chrome = chrome
+        }
+
+        func startURLObservation(_ webView: WKWebView) {
+            urlObservation = webView.observe(\.url, options: [.new]) { [weak self] view, _ in
+                self?.applyPath(view.url?.path)
+            }
+        }
+
+        func stopURLObservation() {
+            urlObservation?.invalidate()
+            urlObservation = nil
         }
 
         func startWakeObserver() {
@@ -142,15 +209,35 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         func loadPortal() {
             guard let webView else { return }
-            // Reuse the existing mobile login bridge: cookie + localStorage, then /m/chat.
-            var comps = URLComponents(string: credentials.host)
-            comps?.path = "/m/login"
-            comps?.queryItems = [
-                URLQueryItem(name: "t", value: credentials.token),
-                URLQueryItem(name: "next", value: "/m/chat"),
-            ]
-            guard let url = comps?.url else { return }
-            webView.load(URLRequest(url: url))
+            let host = credentials.host
+            let store = webView.configuration.websiteDataStore.httpCookieStore
+            store.getAllCookies { [weak self] cookies in
+                guard let self else { return }
+                let hasSession = SessionProbe.hasSessionCookie(cookies, host: host)
+                guard let url = PairingParser.entryURL(host: host, hasSession: hasSession) else { return }
+                DispatchQueue.main.async {
+                    self.webView?.load(URLRequest(url: url))
+                }
+            }
+        }
+
+        private func applyPath(_ path: String?) {
+            let next = path ?? ""
+            DispatchQueue.main.async { [weak self] in
+                self?.chrome.currentPath = next
+            }
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            applyPath(webView.url?.path)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            applyPath(webView.url?.path)
+        }
+
+        func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+            applyPath(webView.url?.path)
         }
 
         func webView(

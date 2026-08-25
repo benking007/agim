@@ -4,7 +4,6 @@ struct PairingView: View {
     @Environment(AppSession.self) private var session
     @State private var pastePayload = ""
     @State private var host = ""
-    @State private var token = ""
 
     var body: some View {
         NavigationStack {
@@ -12,14 +11,14 @@ struct PairingView: View {
                 Section {
                     Text("Agim")
                         .font(.largeTitle.bold())
-                    Text("把 Agent Portal（`/m/chat`）装进 macOS 窗口，随时打开。配对方式与 iOS 相同。")
+                    Text("把 Agent Portal（`/m/chat`）装进 macOS 窗口。先填写主机地址；未登录时会打开账号登录页。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Section("粘贴配对链接") {
-                    TextField("https://host/m/login?t=agim_… 或 agim://pair?…", text: $pastePayload, axis: .vertical)
+                Section("粘贴主机地址") {
+                    TextField("https://agent.example.com", text: $pastePayload, axis: .vertical)
                         .lineLimit(2...4)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
@@ -30,16 +29,13 @@ struct PairingView: View {
                     .keyboardShortcut(.defaultAction)
                 }
 
-                Section("手动配对") {
+                Section("手动填写") {
                     TextField("主机 https://agent.example.com", text: $host)
                         .textFieldStyle(.roundedBorder)
-                    SecureField("Token agim_…", text: $token)
-                        .textFieldStyle(.roundedBorder)
                     Button("连接") {
-                        session.pair(host: host, token: token)
+                        session.pair(host: host)
                     }
-                    .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty
-                        || token.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 if let err = session.pairingError {
@@ -52,7 +48,7 @@ struct PairingView: View {
                 }
 
                 Section {
-                    Text("链接来自 Web 控制台：Settings → Mobile（同一套 QR / 登录 URL）。Token 保存在本机 Keychain。菜单栏可「重新加载」或「退出配对」。")
+                    Text("只保存主机地址。登录用网页的用户名/密码，会话 cookie（`agim_session`）留在本机 WebView。菜单栏可「重新加载」或「退出配对」。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -62,7 +58,7 @@ struct PairingView: View {
             .padding(20)
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle("配对 Agim")
+            .navigationTitle("连接 Agim")
         }
     }
 }

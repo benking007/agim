@@ -63,15 +63,16 @@ Build only (no install):
 | Apple Developer Program + **Developer ID** + notarize | Freely share `.app` / `.dmg` with others |
 | Mac App Store | Needs App Store Connect, review, different certs — not set up yet |
 
-This repo’s shell is for **self-host / sideload** (same pairing as iOS). App Store listing is a separate product track.
+This repo’s shell is for **self-host / sideload** (same host + session cookie as iOS). App Store listing is a separate product track.
 
 ## Flow
 
-1. Paste the Mobile login URL from **Settings → Mobile** (or host + token) → Keychain  
-2. Shell opens `{host}/m/login?t=…&next=/m/chat`  
-3. Agent Portal WebUI handles chat / explore / voice  
+1. Enter the Agim origin (`https://agent.example.com`) → Keychain (host only)  
+2. Shell reads WKWebView `agim_session`. With a cookie it opens `{host}/m/chat`; without one it opens `{host}/login?next=/m/chat`  
+3. Sign in with username / password in the WebView; the session cookie stays in the WebView store  
+4. Agent Portal WebUI handles chat / explore / voice  
 
-Also accepts deep links: `agim://pair?t=…&host=https%3A%2F%2F…`
+Also accepts deep links: `agim://pair?host=https%3A%2F%2F…` (legacy `t=` / `c=` query items are ignored).
 
 Menu: **重新加载** (⌘R) / **退出配对…**
 
@@ -81,7 +82,7 @@ Menu: **重新加载** (⌘R) / **退出配对…**
 Agim/
   AgimApp.swift          session + menu commands
   Views/
-    PairingView.swift    paste URL / host+token
+    PairingView.swift    paste / type host URL
     WebShellView.swift   WKWebView (NSViewRepresentable)
     RootView.swift
   Services/

@@ -29,6 +29,7 @@ import {
   historyUpdatedAt,
   slimActivitySteps,
 } from './history-payload.js'
+import { applyWebHistoryRekey } from './ws-history-rekey.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -520,7 +521,7 @@ export async function handleClientMessage(
       runAbort.signal.addEventListener('abort', onParentAbort, { once: true })
 
       try {
-        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath, client.agent)
+        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath, client.agent, accountUserId)
         const routeCtx: RouteContext = {
           threadId: clientId,
           channelId: 'web',
@@ -925,60 +926,32 @@ export async function handleClientMessage(
     }
 
     case 'get-history': {
-      // 2026-05-19: support client-supplied threadId so a browser refresh
-      // (or returning to the chat after a navigation) resumes the existing
-      // conversation instead of starting fresh. Client persists the id in
-      // localStorage; if it provides one, we treat it as the authoritative
-      // session key going forward. We update client.id (so subsequent
-      // `message` / `switch-agent` ops use the persisted thread) but leave
-      // the clients map alone — push-by-clientId is a separate code path
-      // that doesn't rely on the persisted id today.
-      //
-      // R9: before adopting the threadId, validate ownership. The
-      // pre-R9 path accepted any well-formed `web-*` id, letting an
-      // authenticated peer enumerate Date.now()-based ids and hijack
-      // (or wipe via new-conversation) another peer's chat session.
-      // Now the threadId is owned by the tokenId that first claimed it;
-      // a rekey from a different tokenId is refused.
+      // Client persists the id in localStorage; if it provides one, we
+      // treat it as the authoritative session key going forward — but
+      // only after ownership checks (token map + disk ownerUserId).
       const wantedThreadId = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
-      if (wantedThreadId && /^web-[A-Za-z0-9_-]{4,64}$/.test(wantedThreadId) && wantedThreadId !== clientId) {
-        const peer = accountUserId || tokenId || 'anon'
-        const owner = threadOwners?.get(wantedThreadId)
-        const sessionOwner = accountUserId
-          ? (await sessionManager.getExistingSession('web', 'web', wantedThreadId))?.ownerUserId
-          : undefined
-        const sameAccount = Boolean(accountUserId && sessionOwner === accountUserId)
-        if (owner !== undefined && owner !== peer && !sameAccount) {
-          // Stale localStorage from another token (rotated bootstrap,
-          // shared browser profile, …). Do NOT hijack that thread —
-          // keep this connection's already-claimed clientId and tell
-          // the SPA to adopt it as a fresh conversation instead of a
-          // hard error that leaves the chat unusable.
-          webLog.warn({
-            event: 'web.session.rekey_denied',
-            clientId, wantedThreadId, peer, owner,
-          }, 'WS get-history rekey refused — starting fresh thread for this token')
+      const rekey = await applyWebHistoryRekey({
+        wantedThreadId,
+        clientId,
+        accountUserId,
+        tokenId,
+        threadOwners,
+        onAdopt: (nextThreadId) => {
+          const oldId = clientId
+          client.id = nextThreadId
+          clientId = nextThreadId
+          onRekey?.(oldId, nextThreadId)
+        },
+        onRefuse: async () => {
           sendToClient(ws, {
             type: 'thread-reassigned',
             threadId: clientId,
             reason: 'ownership_mismatch',
           })
           await sendSessionHistory(ws, client, defaultAgent)
-          return
-        }
-        // First-claim OK (owner === undefined) or same-owner reconnect.
-        const oldId = clientId
-        client.id = wantedThreadId
-        clientId = wantedThreadId
-        if (threadOwners && (owner === undefined || sameAccount)) {
-          threadOwners.set(wantedThreadId, peer)
-        }
-        if (accountUserId) {
-          void sessionManager.claimWebSessionOwner(wantedThreadId, accountUserId)
-        }
-        onRekey?.(oldId, wantedThreadId)
-        webLog.info({ clientId, oldId, event: 'web.session.rekey' }, 'WS client adopted persisted threadId')
-      }
+        },
+      })
+      if (rekey === 'refused') return
       await sendSessionHistory(ws, client, defaultAgent)
       break
     }
@@ -991,7 +964,7 @@ export async function handleClientMessage(
     // list so the UI repaints the cleared state.
     case 'set-workspace': {
       const raw = typeof msg.workspacePath === 'string' ? msg.workspacePath : ''
-      const resolved = resolvePortalWorkspacePath(raw, client.agent)
+      const resolved = resolvePortalWorkspacePath(raw, client.agent, accountUserId)
       // Prefer getExistingSession so a mere folder bind does not touch
       // lastActivity (which would race get-history and paint "Just now").
       let session = await sessionManager.getExistingSession('web', 'web', clientId)

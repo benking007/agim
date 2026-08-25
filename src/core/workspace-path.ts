@@ -11,22 +11,27 @@
  */
 
 import { isAbsolute, resolve, sep } from 'node:path'
-import { realpathSync, statSync } from 'node:fs'
-import { defaultAgentCwd } from './agent-cwd.js'
+import { mkdirSync, realpathSync, statSync } from 'node:fs'
+import { agentCwdForAccount, defaultAgentCwd, isAccountWorkspaceUserId } from './agent-cwd.js'
 import { isSensitivePath } from './sensitive-paths.js'
 
 export function resolvePortalWorkspacePath(
   raw: string | undefined | null,
   agentName: string,
+  accountUserId?: string,
 ): string | undefined {
   const trimmed = (raw ?? '').trim()
   const agent = (agentName ?? '').trim()
   if (!trimmed || !agent || trimmed.includes('\0')) return undefined
   if (trimmed.split(/[\\/]/).includes('..')) return undefined
 
+  const uid = typeof accountUserId === 'string' ? accountUserId.trim() : ''
+  const rootDir = isAccountWorkspaceUserId(uid) ? agentCwdForAccount(agent, uid) : defaultAgentCwd(agent)
+
   let root: string
   try {
-    root = realpathSync(defaultAgentCwd(agent))
+    mkdirSync(rootDir, { recursive: true })
+    root = realpathSync(rootDir)
   } catch {
     return undefined
   }

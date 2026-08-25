@@ -135,6 +135,28 @@ function dropThread(threadId: string): void {
   try { localStorage.removeItem(histKey(threadId)) } catch { /* ignore */ }
 }
 
+/** Remove one thread's snapshot so a reassigned tab cannot rehydrate it. */
+export function dropCachedHistory(threadId: string): void {
+  const id = threadId.trim()
+  if (!isWebThreadId(id)) return
+  dropThread(id)
+  writeIndex(readIndex().filter((x) => x !== id))
+}
+
+/** Drop every transcript snapshot (account switch / sign-out). */
+export function clearAllCachedHistory(): void {
+  try {
+    for (const id of readIndex()) dropThread(id)
+    const extra: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(HIST_KEY_PREFIX)) extra.push(key)
+    }
+    for (const key of extra) localStorage.removeItem(key)
+    writeIndex([])
+  } catch { /* private mode */ }
+}
+
 function evictOldest(ids: string[], keepId?: string): string[] {
   const next = [...ids]
   let victimAt = -1
@@ -295,6 +317,7 @@ export function applyCachedHistory(init: ChatState, threadId: string): ChatState
     sessionModel: cached.sessionModel || init.sessionModel,
     compactRate: cached.compactRate || init.compactRate,
     historyRevisionAt: cached.revisionAt && cached.revisionAt > 0 ? cached.revisionAt : null,
+    historyLoading: false,
   }
 }
 

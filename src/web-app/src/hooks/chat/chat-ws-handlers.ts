@@ -15,6 +15,7 @@
 import { toast } from 'sonner'
 import i18n from '@/i18n'
 import { adoptThreadId, sessionTitleFromText, upsertSession } from '@/lib/web-sessions'
+import { dropCachedHistory } from '@/lib/web-history-cache'
 import type { ActivityStepEvent, ChatIncoming, HistoryMessage, ApprovalCardOutcome } from '@/types/ws'
 import { isHistoryComplete, historyBelongsToClient, type ChatAction } from './chat-reducer'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat-types'
@@ -371,11 +372,16 @@ export function makeOnIncoming(
         return
       case 'thread-reassigned': {
         // Foreign localStorage threadId — adopt the server-minted session
-        // (already owned by this token) instead of hard-erroring.
+        // (already owned by this token) instead of hard-erroring. Empty
+        // HISTORY must not keep the previous account's bubbles, so reset
+        // the transcript before SET_CLIENT_ID.
+        const previous = opts?.threadIdRef?.current
         const next = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
+        if (previous && previous !== next) dropCachedHistory(previous)
         if (next && /^web-[A-Za-z0-9_-]{4,64}$/.test(next)) {
-          adoptThreadId(next, opts?.threadIdRef?.current)
+          adoptThreadId(next, previous)
           if (opts?.threadIdRef) opts.threadIdRef.current = next
+          dispatch({ kind: 'RESET_CONVERSATION' })
           dispatch({ kind: 'SET_CLIENT_ID', clientId: next })
         }
         if (msg.reason === 'ownership_mismatch') {

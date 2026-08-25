@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 import WebKit
 
 @main
 struct AgimApp: App {
+    @NSApplicationDelegateAdaptor(AgimAppDelegate.self) private var appDelegate
     @State private var session = AppSession()
 
     var body: some Scene {
@@ -10,10 +12,12 @@ struct AgimApp: App {
             RootView()
                 .environment(session)
                 .frame(minWidth: 380, minHeight: 640)
+                .background(WindowTitleHider())
                 .onOpenURL { url in
                     session.handleDeepLink(url)
                 }
         }
+        .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 420, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {}

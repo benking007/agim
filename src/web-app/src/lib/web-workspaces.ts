@@ -122,6 +122,15 @@ function writeIndex(index: WebWorkspaceIndex): WebWorkspaceIndex {
   return index
 }
 
+/** Drop named folders and return to the cloud workspace (account switch). */
+export function resetWorkspaces(): WebWorkspaceIndex {
+  return writeIndex({
+    activeId: CLOUD_WORKSPACE_ID,
+    workspaces: [cloudWorkspace()],
+    collapsed: {},
+  })
+}
+
 export function loadWorkspaceIndex(): WebWorkspaceIndex {
   try {
     const raw = localStorage.getItem(WORKSPACES_KEY)

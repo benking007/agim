@@ -181,6 +181,11 @@ export interface ChatState {
    * transcript moved forward on another device / tab.
    */
   historyRevisionAt: number | null
+  /**
+   * True while this tab is waiting for `get-history` after connect or a
+   * session switch. The empty Portal shows a spinner instead of looking stuck.
+   */
+  historyLoading: boolean
 }
 
 export interface UseChat {

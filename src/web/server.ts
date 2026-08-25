@@ -297,6 +297,7 @@ export async function startWebServer(options: {
       || url.pathname.startsWith('/api/admin/users')
       || url.pathname.startsWith('/api/admin/invites')
       || url.pathname.startsWith('/api/admin/points')
+      || url.pathname.startsWith('/api/admin/model-prices')
       || url.pathname.startsWith('/api/admin/im-bindings')
     ) {
       if (await handleAccountApi(req, res, url)) return

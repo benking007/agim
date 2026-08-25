@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand'
+import { syncWebAccountScope } from '@/lib/web-account-scope'
 
 const TOKEN_KEY = 'agim_token'
 
@@ -72,6 +73,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ token, signedIn: Boolean(token) || Boolean(get().user) })
   },
   setUser: (user) => {
+    if (user?.id) syncWebAccountScope(user.id)
     set({
       user,
       role: user?.role ?? null,
@@ -81,6 +83,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   clear: () => {
     writeToken(null)
+    syncWebAccountScope(null)
     set({ token: null, user: null, role: null, signedIn: false, ready: true })
   },
   hydrate: async () => {
@@ -127,6 +130,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       signedIn = signedIn || Boolean(get().token) || Boolean(get().user)
       user = user ?? get().user
       role = role ?? get().role
+      if (user?.id) syncWebAccountScope(user.id)
 
       // One tick: never publish hasUsers=false while signedIn is still false
       // (that sent AGIM_WEB_AUTH=off visitors to /register before /api/auth/me).

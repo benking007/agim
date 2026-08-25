@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdirSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +15,8 @@ import {
   planImOpsUpsert,
   bootstrapAgentWorkspaces,
   buildAgimImOpsBlock,
+  bindableWorkspacePath,
+  isAccountWorkspaceUserId,
   AGIM_MEMORY_LINK_START,
   AGIM_IM_OPS_START,
   AGIM_IM_OPS_END,
@@ -56,12 +59,61 @@ describe('resolveAgentCwd', () => {
     expect(cwd).toBe(join(tmpRoot, 'users', 'usr_abc123', 'claude-code'))
   })
 
+  it('pins web+usr_* userId even when ALS is empty', () => {
+    expect(resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'usr_abc123',
+    })).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+  })
+
+  it('does not treat web: token ids as Portal accounts', () => {
+    expect(isAccountWorkspaceUserId('web:tok1')).toBe(false)
+    expect(isAccountWorkspaceUserId('usr_abc123')).toBe(true)
+    expect(resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'web:tok1',
+    })).toBe(join(tmpRoot, 'agim'))
+  })
+
+  it('ignores a shared-tree workspacePath once an account is in scope', () => {
+    const stale = join(tmpRoot, 'agim', 'old-proj')
+    mkdirSync(stale, { recursive: true })
+    const cwd = runWithAccountUser('usr_abc123', () => resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'usr_abc123',
+      workspacePath: stale,
+    }))
+    expect(cwd).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+  })
+
+  it('keeps a subdirectory that already lives under the account tree', () => {
+    const child = join(tmpRoot, 'users', 'usr_abc123', 'agim', 'proj')
+    mkdirSync(child, { recursive: true })
+    const cwd = runWithAccountUser('usr_abc123', () => resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'usr_abc123',
+      workspacePath: child,
+    }))
+    expect(cwd).toBe(child)
+  })
+
+  it('bindableWorkspacePath drops shared-tree leftovers for usr_*', () => {
+    expect(bindableWorkspacePath(join(tmpRoot, 'agim', 'x'), 'agim', 'usr_abc123')).toBeUndefined()
+    const child = join(tmpRoot, 'users', 'usr_abc123', 'agim', 'x')
+    expect(bindableWorkspacePath(child, 'agim', 'usr_abc123')).toBe(child)
+  })
+
   it('returns default workspace dir when full IM context is present', () => {
     expect(resolveAgentCwd('claude-code', FULL_IM_OPTS)).toBe(join(tmpRoot, 'claude-code'))
   })
 
   it('resolveAgentFilesRoot uses the account tree when a user id is set', () => {
     expect(resolveAgentFilesRoot('agim', 'usr_abc123')).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+    expect(resolveAgentFilesRoot('agim', 'web:tok1')).toBe(join(tmpRoot, 'agim'))
     expect(resolveAgentFilesRoot('agim')).toBe(join(tmpRoot, 'agim'))
   })
 
@@ -135,6 +187,12 @@ describe('resolveAgentWorkspaceRoot', () => {
     expect(resolveAgentWorkspaceRoot('agim')).toBe(join(tmpRoot, 'agim'))
   })
 
+  it('maps a logged-in account to users/<id>/<agent>', () => {
+    const root = runWithAccountUser('usr_abc123', () => resolveAgentWorkspaceRoot('agim'))
+    expect(root).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+    expect(resolveAgentWorkspaceRoot('agim', 'usr_abc123')).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+  })
+
   it('honors AGIM_<AGENT>_CWD', () => {
     process.env.AGIM_CLAUDE_CODE_CWD = '/srv/explicit'
     expect(resolveAgentWorkspaceRoot('claude-code')).toBe('/srv/explicit')
@@ -167,6 +225,16 @@ describe('buildPortalWorkspaceHint', () => {
     const hint = buildPortalWorkspaceHint('agim', '/tmp/agim-workspaces-hint/agim')
     expect(hint).toContain('Working directory: `/tmp/agim-workspaces-hint/agim`')
     expect(hint).not.toContain('Workspace root:')
+  })
+
+  it('names the account tree as workspace root for a logged-in user', () => {
+    const hint = buildPortalWorkspaceHint(
+      'agim',
+      '/tmp/agim-workspaces-hint/users/usr_abc123/agim/demo-proj',
+      'usr_abc123',
+    )
+    expect(hint).toContain('Workspace root: `/tmp/agim-workspaces-hint/users/usr_abc123/agim`')
+    expect(hint).not.toContain('Workspace root: `/tmp/agim-workspaces-hint/agim`')
   })
 })
 

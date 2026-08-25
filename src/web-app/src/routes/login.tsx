@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
+import { reconnectChatWs } from '@/lib/api/ws'
 import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import {
@@ -97,6 +98,7 @@ export default function LoginRoute(): JSX.Element {
         return
       }
       if (body.user) setUser(body.user)
+      reconnectChatWs()
       toast.success(t('states.saved'))
       navigate(next, { replace: true })
     } catch (err) {

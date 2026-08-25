@@ -200,6 +200,21 @@ export function loadIndex(): WebSessionIndex {
   })
 }
 
+/** Drop the origin-scoped rail and mint a blank tab (account switch / sign-out). */
+export function resetSessionIndex(): WebSessionIndex {
+  try {
+    localStorage.removeItem(SESSIONS_KEY)
+    localStorage.removeItem(THREAD_ID_KEY)
+    sessionStorage.removeItem(TAB_THREAD_KEY)
+  } catch { /* private mode */ }
+  const fresh = mintThreadId()
+  persistTabThreadId(fresh)
+  return writeIndex({
+    activeId: fresh,
+    sessions: [{ id: fresh, updatedAt: Date.now(), workspaceId: CLOUD_WORKSPACE_ID }],
+  })
+}
+
 export function sessionWorkspaceId(entry: WebSessionEntry): string {
   return entry.workspaceId?.trim() || CLOUD_WORKSPACE_ID
 }
@@ -300,16 +315,29 @@ export function replaceIndexFromServer(rows: WebSessionEntry[], activeId?: strin
     seen.add(tabId)
   }
 
-  const horizon = Date.now() - 60_000
-  for (const s of local.sessions) {
-    if (seen.has(s.id) || isSessionArchived(s)) continue
-    if (s.title && s.updatedAt >= horizon) {
-      merged.push(s)
-      seen.add(s.id)
+  // In-flight POST races: keep other recent titled locals only when the
+  // server already returned *some* rows. An empty list is authoritative
+  // for this account — merging the previous user's rail would leak chats
+  // after a sign-in on a shared browser.
+  if (rows.length > 0) {
+    const horizon = Date.now() - 60_000
+    for (const s of local.sessions) {
+      if (seen.has(s.id) || isSessionArchived(s)) continue
+      if (s.title && s.updatedAt >= horizon) {
+        merged.push(s)
+        seen.add(s.id)
+      }
     }
   }
 
-  if (merged.length === 0) return local
+  if (merged.length === 0) {
+    const fresh = mintThreadId()
+    persistTabThreadId(fresh)
+    return writeIndex({
+      activeId: fresh,
+      sessions: [{ id: fresh, updatedAt: Date.now(), workspaceId: CLOUD_WORKSPACE_ID }],
+    })
+  }
 
   const tabEntry = merged.find((s) => s.id === tabId)
   const nextActive = (tabEntry && !isSessionArchived(tabEntry))

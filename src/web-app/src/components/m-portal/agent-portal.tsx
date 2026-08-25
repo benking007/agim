@@ -308,9 +308,6 @@ export function AgentPortal(): JSX.Element {
     }
     sendRef.current(text)
   }, [state.status])
-  const onFillPrompt = useCallback((p: string) => {
-    setInputMessage(p)
-  }, [])
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = useMemo(() => agentVisual(agentId), [agentId])
@@ -332,8 +329,11 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'jump-latest'
   const demoStepReflect = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'step-reflect'
+  const demoSessionLoading = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'session-loading'
   const chatMessages = useMemo(
     () => {
+      if (demoSessionLoading) return []
       if (demoSteer || demoPet) return petDemoMessages()
       if (demoJump) return jumpLatestDemoMessages()
       if (demoStepReflect) return stepReflectDemoMessages()
@@ -351,7 +351,7 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoSteer, demoJump, demoStepReflect, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoSessionLoading, demoSteer, demoJump, demoStepReflect, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)
@@ -799,12 +799,9 @@ export function AgentPortal(): JSX.Element {
   const emptyChatSlot = useMemo(() => (
     <PortalEmptyChat
       dark={theme === 'dark'}
-      agentId={agentId}
-      visual={visual}
-      AgentIcon={AgentIcon}
-      onFillPrompt={onFillPrompt}
+      loading={demoSessionLoading || state.historyLoading}
     />
-  ), [theme, agentId, visual, AgentIcon, onFillPrompt])
+  ), [theme, demoSessionLoading, state.historyLoading])
 
   function selectAgent(id: string): void {
     switchAgent(id)
@@ -982,7 +979,7 @@ export function AgentPortal(): JSX.Element {
           dark={dark}
           active
           chatTurns={chatTurns}
-          isEmpty={chatMessages.length === 0}
+          isEmpty={chatMessages.length === 0 || demoSessionLoading}
           isTyping={isTyping}
           currentReplyId={state.currentReplyId}
           streamingFallback={streamingFallback}

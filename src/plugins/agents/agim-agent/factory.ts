@@ -4,7 +4,7 @@
 // (and unit-testable with injected deps).
 
 import { chmodSync, mkdirSync } from 'node:fs'
-import { resolveAgentCwd, defaultAgentCwd, resolveAgentWorkspaceRoot } from '../../../core/agent-cwd.js'
+import { resolveAgentCwd, defaultAgentCwd, resolveAgentWorkspaceRoot, accountIdForWorkspace } from '../../../core/agent-cwd.js'
 import { AGIM_HOME } from '../../../core/agim-paths.js'
 import {
   configureAgimAgentSessionLifecycle,
@@ -134,7 +134,7 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
           const planThreadKey =
             o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
           const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
-          return buildSystemPrompt(provider, `backend:${provider.name}`, cwd, planThreadKey, resolveAgentWorkspaceRoot('agim'))
+          return buildSystemPrompt(provider, `backend:${provider.name}`, cwd, planThreadKey, resolveAgentWorkspaceRoot('agim', accountIdForWorkspace(o)))
         }
       }
       for (const role of ROLE_CHAIN) {
@@ -143,14 +143,14 @@ export function createNativeAgentAdapter(): NativeAgentAdapter {
         const planThreadKey =
           o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
         const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
-        return buildSystemPrompt(provider, role, cwd, planThreadKey, resolveAgentWorkspaceRoot('agim'))
+        return buildSystemPrompt(provider, role, cwd, planThreadKey, resolveAgentWorkspaceRoot('agim', accountIdForWorkspace(o)))
       }
       const fallback = getAnyProvider()
       if (fallback) {
         const planThreadKey =
           o.platform && o.threadId ? makeThreadKey(o.platform, o.channelId ?? '', o.threadId) : undefined
         const cwd = resolveAgentCwd('agim', o) || defaultAgentCwd('agim')
-        return buildSystemPrompt(fallback, 'auto', cwd, planThreadKey, resolveAgentWorkspaceRoot('agim'))
+        return buildSystemPrompt(fallback, 'auto', cwd, planThreadKey, resolveAgentWorkspaceRoot('agim', accountIdForWorkspace(o)))
       }
       return undefined
     },

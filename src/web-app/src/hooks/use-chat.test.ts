@@ -90,6 +90,16 @@ describe('chatReducer', () => {
     const s = reduce(initialChatState, { kind: 'HISTORY', messages: hist, agent: 'claude' })
     expect(s.messages).toBe(hist)
     expect(s.agent).toBe('claude')
+    expect(s.historyLoading).toBe(false)
+  })
+
+  it('HISTORY for another thread does not clear historyLoading', () => {
+    const s = reduce(
+      { ...initialChatState, clientId: 'web-a', historyLoading: true },
+      { kind: 'HISTORY', threadId: 'web-b', messages: [userMsg('h-1', 'no')], agent: 'agim' },
+    )
+    expect(s.historyLoading).toBe(true)
+    expect(s.messages).toEqual([])
   })
 
   it('HISTORY restores per-message activity accordions', () => {
@@ -136,6 +146,7 @@ describe('chatReducer', () => {
     )
     expect(s.messages).toBe(local)
     expect(s.agent).toBe('agim')
+    expect(s.historyLoading).toBe(false)
   })
 
   it('ACTIVE_RUN restores running activity + streaming target after HISTORY', () => {
@@ -1232,6 +1243,7 @@ describe('chatReducer', () => {
     expect(after.activeRunId).toBeNull()
     expect(after.currentReplyId).toBeNull()
     expect(after.error).toBeNull()
+    expect(after.historyLoading).toBe(true)
     // Preserved
     expect(after.status).toBe('open')
     expect(after.agents).toEqual(['claude', 'codex'])

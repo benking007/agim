@@ -39,9 +39,10 @@
     "src/web/workspace-files-api.ts",
     "src/web/workspace-skills-api.ts",
     "src/web/workspaces-api.ts",
-    "src/web/ws-chat.ts"
+    "src/web/ws-chat.ts",
+    "src/web/ws-history-rekey.ts"
   ],
-  "count": 159,
+  "count": 161,
   "endpoints": [
     {
       "method": "DELETE",
@@ -160,6 +161,12 @@
     {
       "method": "GET",
       "path": "/api/admin/invites",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/model-prices",
       "source": "exact",
       "authRequired": true
     },
@@ -946,6 +953,12 @@
     {
       "method": "POST",
       "path": "/api/workspaces",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/model-prices",
       "source": "exact",
       "authRequired": true
     },

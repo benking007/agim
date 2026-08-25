@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **outbox SQLite flake**: first-failure backoff is 1s and SQLite
+  `datetime('now')` is second precision, so `pickPending` can legally
+  see the row in CI. The test now asserts the schedule, then uses the
+  5s second-failure delay for the exclusion check.
 - **Web chat “stuck Running” after reconnect**: closing the old WebSocket
   no longer deletes a newer peer that rekeyed the same `threadId`, so
   terminal `done` / `run-finish` frames reach the SPA. Streaming no longer

@@ -65,6 +65,7 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     i18nKey: 'navigation.groups.operations',
     tabs: [
       { to: 'policy',     i18nKey: 'tabs.policy',     mounted: true, adminOnly: true },
+      { to: 'pricing',    i18nKey: 'tabs.pricing',    mounted: true, adminOnly: true },
       { to: 'security',   i18nKey: 'tabs.security',   mounted: true, adminOnly: true },
       { to: 'workspaces', i18nKey: 'tabs.workspaces', mounted: true, adminOnly: true },
       { to: 'admins',     i18nKey: 'tabs.admins',     mounted: true, adminOnly: true },

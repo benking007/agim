@@ -264,13 +264,56 @@ export abstract class AgentBase implements AgentAdapter {
       try { opts.onOutcome?.(outcome) } catch { /* observer isolation */ }
     }
 
+    try {
+      const points = await import('./points.js')
+      const billable = points.resolveBillableUserId(opts.platform, opts.userId)
+      if (billable) {
+        points.assertCanSpend(billable)
+        const priced = points.estimateChargeUsd({
+          userId: billable,
+          tokensIn: 1000,
+          tokensOut: 1000,
+          agent: this.name,
+        })
+        if (!priced) {
+          reportOutcome({ status: 'error', providerFailure: false, error: 'no model price' })
+          yield `⚠️ 无法计价：请管理员为 ${this.name} 配置价格后再使用。`
+          return
+        }
+      }
+    } catch (err) {
+      const code = (err as { code?: string }).code
+      if (code === 'POINTS_EXHAUSTED' || code === 'POINTS_NO_PRICE') {
+        reportOutcome({ status: 'error', providerFailure: false, error: (err as Error).message })
+        yield `⚠️ ${(err as Error).message}`
+        return
+      }
+    }
+
+    const usageAcc = { tokensIn: 0, tokensOut: 0, costUsd: 0 }
+    const callOpts: AgentSendOpts = {
+      ...opts,
+      onUsage: (delta) => {
+        if (typeof delta.tokensInput === 'number' && Number.isFinite(delta.tokensInput)) {
+          usageAcc.tokensIn += delta.tokensInput
+        }
+        if (typeof delta.tokensOutput === 'number' && Number.isFinite(delta.tokensOutput)) {
+          usageAcc.tokensOut += delta.tokensOutput
+        }
+        if (typeof delta.costUsd === 'number' && Number.isFinite(delta.costUsd) && delta.costUsd > 0) {
+          usageAcc.costUsd += delta.costUsd
+        }
+        try { opts.onUsage?.(delta) } catch { /* userland callback safety */ }
+      },
+    }
+
     // prepareCommand returns a self-contained plan — args, optional extra env,
     // optional cleanup. No instance state involved, so concurrent spawnStream
     // calls cannot race each other. (Previously setupSpawn() would mutate
     // this.mcpConfigPath etc. between awaits, leading to two parallel claude
     // runs sharing one mcp.json and the second one finding it already deleted.)
     let plan: SpawnPlan
-      plan = await this.prepareCommand(prompt, opts)
+      plan = await this.prepareCommand(prompt, callOpts)
 
     const proc = crossSpawn(this.commandName, plan.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -358,7 +401,7 @@ export abstract class AgentBase implements AgentAdapter {
             // Don't yield error event content alongside extractText
             continue
           }
-          this.inspectEvent(event, opts)
+          this.inspectEvent(event, callOpts)
           const text = this.extractText(event)
           if (text) pendingChunks.push(text)
         } catch {
@@ -511,6 +554,17 @@ export abstract class AgentBase implements AgentAdapter {
       }
       reportOutcome({ status: 'success', providerFailure: false })
     } finally {
+      try {
+        const { chargeTurnUsage } = await import('./points.js')
+        chargeTurnUsage({
+          platform: opts.platform,
+          userId: opts.userId,
+          agent: this.name,
+          tokensIn: usageAcc.tokensIn,
+          tokensOut: usageAcc.tokensOut,
+          costUsd: usageAcc.costUsd > 0 ? usageAcc.costUsd : undefined,
+        })
+      } catch { /* billing must not break cleanup */ }
       if (idleTimer) clearTimeout(idleTimer)
       if (killTimer) clearTimeout(killTimer)
       if (signal) signal.removeEventListener('abort', onAbort)

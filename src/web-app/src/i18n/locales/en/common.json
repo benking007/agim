@@ -453,6 +453,7 @@
       "conversations": "Conversations",
       "untitledConversation": "New conversation",
       "conversationsEmpty": "No conversations yet",
+      "loadingSession": "Loading conversation…",
       "workspaces": "Workspaces",
       "cloudWorkspace": "Cloud",
       "cloudWorkspaceHint": "Server working directory",

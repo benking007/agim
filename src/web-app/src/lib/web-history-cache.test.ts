@@ -42,6 +42,7 @@ describe('web-history-cache', () => {
     expect(hydrated.agent).toBe('agim')
     expect(hydrated.thinkVariant).toBe('high')
     expect(hydrated.clientId).toBe(threadId)
+    expect(hydrated.historyLoading).toBe(false)
   })
 
   it('persists revisionAt (server clock) separately from savedAt', () => {

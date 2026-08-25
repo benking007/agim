@@ -272,9 +272,6 @@ export function AgentPortal(): JSX.Element {
     }
     sendRef.current(text)
   }, [state.status])
-  const onFillPrompt = useCallback((p: string) => {
-    setInputMessage(p)
-  }, [])
 
   const agentId = state.agent || state.agents[0] || 'agim'
   const visual = useMemo(() => agentVisual(agentId), [agentId])
@@ -766,9 +763,9 @@ export function AgentPortal(): JSX.Element {
       agentId={agentId}
       visual={visual}
       AgentIcon={AgentIcon}
-      onFillPrompt={onFillPrompt}
+      loading={state.historyLoading}
     />
-  ), [theme, agentId, visual, AgentIcon, onFillPrompt])
+  ), [theme, agentId, visual, AgentIcon, state.historyLoading])
 
   function selectAgent(id: string): void {
     switchAgent(id)

@@ -82,15 +82,33 @@ describe('PortalSidePanel conversations', () => {
     expect(onSwitchSession).toHaveBeenCalledWith('web-bbbb2222')
   })
 
-  it('keeps New conversation as the only shortcut and hides Explore', async () => {
+  it('keeps New task as a shortcut and hides Explore', async () => {
     const user = userEvent.setup()
     const { onNew, onSwitchSession } = renderPanel()
-    expect(screen.getByRole('button', { name: 'New conversation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New task' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skills' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Automation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Library' })).toBeInTheDocument()
     expect(screen.queryByText('Explore Agents Directory')).not.toBeInTheDocument()
     expect(screen.queryByText('Interactive Chat')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'New conversation' }))
+    await user.click(screen.getByRole('button', { name: 'New task' }))
     expect(onNew).toHaveBeenCalled()
     expect(onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('switches pane without creating a conversation', async () => {
+    const user = userEvent.setup()
+    const onPaneChange = vi.fn()
+    const { onNew } = renderPanel({ onPaneChange })
+    await user.click(screen.getByRole('button', { name: 'Library' }))
+    expect(onPaneChange).toHaveBeenCalledWith('library')
+    expect(onNew).not.toHaveBeenCalled()
+  })
+
+  it('hides the workspace tree on non-chat panes', () => {
+    renderPanel({ pane: 'library' })
+    expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
+    expect(screen.queryByText('First chat')).not.toBeInTheDocument()
   })
 
   it('nests sessions under their workspace and opens the directory picker', async () => {

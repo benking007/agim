@@ -47,6 +47,7 @@ import { fileURLToPath } from 'node:url'
 import { logger as rootLogger } from '../logger.js'
 import { AGIM_HOME } from '../agim-paths.js'
 import { currentAccountUserId } from '../accounts.js'
+import { isSkillEnabled } from './disabled-set.js'
 
 const log = rootLogger.child({ component: 'skills-loader' })
 
@@ -111,6 +112,7 @@ interface CacheEntry {
 }
 
 let cache: CacheEntry | null = null
+let summaryMemo: { sig: string; text: string } | null = null
 
 /** Default cache TTL — skills don't change often, but we re-scan
  *  every 5 minutes so operators don't have to `/skill refresh` after
@@ -239,6 +241,7 @@ function builtinSkillsDir(): string {
 /** Force a fresh disk scan on next call. Returned by /skill refresh. */
 export function invalidateSkillsCache(): void {
   cache = null
+  summaryMemo = null
 }
 
 /**
@@ -867,6 +870,17 @@ export function buildAutoInjectionBlock(all: ReadonlyArray<SkillMeta>): string {
   return lines.join('\n')
 }
 
+function enabledSkills(): SkillMeta[] {
+  return listSkills().filter((s) => isSkillEnabled(s.name))
+}
+
+function skillsSummarySignature(all: SkillMeta[], override: string | null): string {
+  const uid = currentAccountUserId() ?? ''
+  const scannedAt = ensureCache().scannedAt
+  const names = all.map((s) => `${s.name}:${s.available ? 1 : 0}:${s.always ? 1 : 0}`).join(',')
+  return `${uid}\0${scannedAt}\0${names}\0${override ?? ''}`
+}
+
 export function buildSkillsSummary(): string {
   // v1.2.151 — operator override path: if `~/.agim/skill-injection-
   // override.md` exists, return its body verbatim (still wrapped by
@@ -874,18 +888,24 @@ export function buildSkillsSummary(): string {
   // suppressed; the operator gets full editorial control. The SPA at
   // `/settings/skill-injection` is the recommended way to author this.
   const override = readInjectionOverride()
-  const all = listSkills()
+  const all = enabledSkills()
+  const sig = skillsSummarySignature(all, override)
+  if (summaryMemo?.sig === sig) return summaryMemo.text
+
+  let text = ''
   if (override) {
     const lines: string[] = [SKILLS_ROUTING_HEADER, '', override]
     appendAlwaysOnBodies(all, lines)
-    return `${lines.join('\n')}\n`
+    text = `${lines.join('\n')}\n`
+  } else if (all.length === 0) {
+    text = ''
+  } else {
+    const lines: string[] = [SKILLS_ROUTING_HEADER, '', buildAutoInjectionBlock(all)]
+    appendAlwaysOnBodies(all, lines)
+    text = `${lines.join('\n')}\n`
   }
-
-  if (all.length === 0) return ''
-
-  const lines: string[] = [SKILLS_ROUTING_HEADER, '', buildAutoInjectionBlock(all)]
-  appendAlwaysOnBodies(all, lines)
-  return `${lines.join('\n')}\n`
+  summaryMemo = { sig, text }
+  return text
 }
 
 // ─── Scanning ────────────────────────────────────────────────────────

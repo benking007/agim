@@ -7,7 +7,7 @@
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
-  Archive, ChevronDown, ChevronRight, Cloud, Folder, FolderPlus,
+  Archive, BookOpen, CalendarClock, ChevronDown, ChevronRight, Cloud, Folder, FolderPlus, FolderTree,
   Languages, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
@@ -18,6 +18,7 @@ import { sessionWorkspaceId, type WebSessionEntry } from '@/lib/web-sessions'
 import type { WebWorkspace } from '@/lib/web-workspaces'
 import type { Lang } from '@/stores/prefs'
 import { displayAgentName, type AgentVisual } from './agent-visuals'
+import type { PortalPane } from '@/lib/portal-pane'
 
 export function PortalSidePanel(props: {
   dark: boolean
@@ -32,6 +33,8 @@ export function PortalSidePanel(props: {
   onToggleRailCollapsed?: () => void
   onClose: () => void
   onNew: () => void
+  pane?: PortalPane
+  onPaneChange?: (pane: PortalPane) => void
   onToggleLang: () => void
   sessions: WebSessionEntry[]
   activeSessionId: string
@@ -51,6 +54,7 @@ export function PortalSidePanel(props: {
     dark, agentId, visual, AgentIcon, status, lang, showClose,
     railCollapsed = false, onToggleRailCollapsed,
     onClose, onNew, onToggleLang,
+    pane = 'chat', onPaneChange,
     sessions, activeSessionId, onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
     onToggleWorkspace, onSelectWorkspace, onNewWorkspace,
@@ -81,17 +85,34 @@ export function PortalSidePanel(props: {
         </div>
         <IconRailButton
           dark={dark}
-          label={t('chat.portal.newConversation')}
-          onClick={onNew}
+          active={pane === 'chat'}
+          label={t('chat.portal.navNewTask')}
+          onClick={() => { if (pane === 'chat') onNew(); else onPaneChange?.('chat') }}
           icon={<Plus className="h-4 w-4" />}
         />
         <IconRailButton
           dark={dark}
-          label={t('chat.portal.newWorkspace')}
-          onClick={onNewWorkspace}
-          icon={<FolderPlus className="h-4 w-4" />}
+          active={pane === 'skills'}
+          label={t('chat.portal.navSkills')}
+          onClick={() => onPaneChange?.('skills')}
+          icon={<BookOpen className="h-4 w-4" />}
+        />
+        <IconRailButton
+          dark={dark}
+          active={pane === 'automation'}
+          label={t('chat.portal.navAutomation')}
+          onClick={() => onPaneChange?.('automation')}
+          icon={<CalendarClock className="h-4 w-4" />}
+        />
+        <IconRailButton
+          dark={dark}
+          active={pane === 'library'}
+          label={t('chat.portal.navLibrary')}
+          onClick={() => onPaneChange?.('library')}
+          icon={<FolderTree className="h-4 w-4" />}
         />
         <div className="my-2 h-px w-8 bg-zinc-700/40" />
+        {pane === 'chat' ? (
         <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
           {workspaces.map((workspace) => {
             const selected = workspace.id === activeWorkspaceId
@@ -126,6 +147,9 @@ export function PortalSidePanel(props: {
             )
           })}
         </nav>
+        ) : (
+          <div className="min-h-0 flex-1" />
+        )}
         <div className="mt-auto flex flex-col items-center gap-1 pt-2">
           <IconRailButton
             dark={dark}
@@ -208,15 +232,41 @@ export function PortalSidePanel(props: {
         <nav className="space-y-1">
           <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{t('chat.portal.shortcuts')}</p>
           <SideNavButton
-            active={false}
+            active={pane === 'chat'}
             dark={dark}
             icon={<Plus className="h-4 w-4" />}
-            label={t('chat.portal.newConversation')}
-            onClick={onNew}
+            label={t('chat.portal.navNewTask')}
+            onClick={() => { if (pane === 'chat') onNew(); else onPaneChange?.('chat') }}
+            testId="portal-nav-chat"
+          />
+          <SideNavButton
+            active={pane === 'skills'}
+            dark={dark}
+            icon={<BookOpen className="h-4 w-4" />}
+            label={t('chat.portal.navSkills')}
+            onClick={() => onPaneChange?.('skills')}
+            testId="portal-nav-skills"
+          />
+          <SideNavButton
+            active={pane === 'automation'}
+            dark={dark}
+            icon={<CalendarClock className="h-4 w-4" />}
+            label={t('chat.portal.navAutomation')}
+            onClick={() => onPaneChange?.('automation')}
+            testId="portal-nav-automation"
+          />
+          <SideNavButton
+            active={pane === 'library'}
+            dark={dark}
+            icon={<FolderTree className="h-4 w-4" />}
+            label={t('chat.portal.navLibrary')}
+            onClick={() => onPaneChange?.('library')}
+            testId="portal-nav-library"
           />
         </nav>
       </div>
 
+      {pane === 'chat' ? (
       <div className="mt-6 flex min-h-0 flex-1 flex-col">
         <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
           <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
@@ -352,6 +402,9 @@ export function PortalSidePanel(props: {
           })}
         </nav>
       </div>
+      ) : (
+        <div className="min-h-0 flex-1" />
+      )}
 
       <div className="mt-4 shrink-0 space-y-3">
         <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>
@@ -481,12 +534,14 @@ function SideNavButton(props: {
   icon: React.ReactNode
   label: string
   onClick: () => void
+  testId?: string
 }): JSX.Element {
-  const { active, dark, icon, label, onClick } = props
+  const { active, dark, icon, label, onClick, testId } = props
   return (
     <button
       type="button"
       onClick={onClick}
+      data-testid={testId}
       className={cn(
         'flex w-full items-center gap-3 rounded-xl p-2.5 text-xs font-semibold transition-all',
         active

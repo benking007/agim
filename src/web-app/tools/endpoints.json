@@ -26,6 +26,7 @@
     "src/web/messengers-api.ts",
     "src/web/onboarding-api.ts",
     "src/web/outbox-a2a-api.ts",
+    "src/web/schedule-api.ts",
     "src/web/search-api.ts",
     "src/web/serial-queue.ts",
     "src/web/server.ts",
@@ -40,7 +41,7 @@
     "src/web/workspaces-api.ts",
     "src/web/ws-chat.ts"
   ],
-  "count": 155,
+  "count": 159,
   "endpoints": [
     {
       "method": "DELETE",
@@ -105,6 +106,12 @@
     {
       "method": "DELETE",
       "path": "/api/memos/:id",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/schedules/:id",
       "source": "dynamic",
       "authRequired": true
     },
@@ -602,8 +609,20 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/agim-skills/:name/enabled",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
       "path": "/api/me/sessions",
       "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/schedules/:id",
+      "source": "dynamic",
       "authRequired": true
     },
     {
@@ -880,6 +899,12 @@
       "method": "POST",
       "path": "/api/reminders/:id/snooze",
       "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/schedules",
+      "source": "exact",
       "authRequired": true
     },
     {

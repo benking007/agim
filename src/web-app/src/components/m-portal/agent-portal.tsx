@@ -17,7 +17,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, Mic, Square } from 'lucide-react'
 import { toast } from 'sonner'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useChat } from '@/hooks/use-chat'
 import { useWebWorkspaces } from '@/hooks/use-web-workspaces'
@@ -59,6 +59,18 @@ const PortalScheduledLoopDock = lazy(async () => {
   const module = await import('./portal-scheduled-loop-dock')
   return { default: module.PortalScheduledLoopDock }
 })
+const PortalLibraryPane = lazy(async () => {
+  const module = await import('./portal-library-pane')
+  return { default: module.PortalLibraryPane }
+})
+const PortalSkillsPane = lazy(async () => {
+  const module = await import('./portal-skills-pane')
+  return { default: module.PortalSkillsPane }
+})
+const PortalAutomationPane = lazy(async () => {
+  const module = await import('./portal-automation-pane')
+  return { default: module.PortalAutomationPane }
+})
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
@@ -93,6 +105,7 @@ import {
   widthDemoMessages,
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
+import { parsePortalPane, type PortalPane } from '@/lib/portal-pane'
 import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
 import { PortalWorkspacePicker } from './portal-workspace-picker'
 import { PortalPet, type PetTaskItem } from './portal-pet'
@@ -114,6 +127,29 @@ import { PortalMessageList } from './portal-message-list'
 export function AgentPortal(): JSX.Element {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const pane = parsePortalPane(searchParams.get('pane'))
+  const libraryPath = searchParams.get('path') ?? ''
+  const setPortalPane = useCallback((next: PortalPane, path?: string) => {
+    setSearchParams((prev) => {
+      const n = new URLSearchParams(prev)
+      if (next === 'chat') {
+        n.delete('pane')
+        n.delete('path')
+      } else {
+        n.set('pane', next)
+        if (next === 'library') {
+          if (path !== undefined) {
+            if (path) n.set('path', path)
+            else n.delete('path')
+          }
+        } else {
+          n.delete('path')
+        }
+      }
+      return n
+    }, { replace: true })
+  }, [setSearchParams])
   const prefs = usePrefs()
   const theme = resolveTheme(prefs.theme)
   const setTheme = (next: Theme): void => {
@@ -790,10 +826,16 @@ export function AgentPortal(): JSX.Element {
     onToggleRailCollapsed: () => setRailCollapsed((v) => !v),
     onClose: () => setSidebarOpen(false),
     onNew: () => { newConversation(); setSidebarOpen(false) },
+    pane,
+    onPaneChange: (next: PortalPane) => {
+      setPortalPane(next)
+      setSidebarOpen(false)
+    },
     onToggleLang: toggleLang,
     sessions,
     activeSessionId,
     onSwitchSession: (threadId: string) => {
+      setPortalPane('chat')
       switchSession(threadId)
       setSidebarOpen(false)
     },
@@ -917,6 +959,25 @@ export function AgentPortal(): JSX.Element {
           onToggleTheme={() => setTheme(dark ? 'light' : 'dark')}
         />
 
+        {pane !== 'chat' ? (
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <Suspense fallback={(
+              <div className="p-4 text-xs text-zinc-400">{t('states.loading')}</div>
+            )}>
+              {pane === 'skills' && <PortalSkillsPane dark={dark} />}
+              {pane === 'automation' && <PortalAutomationPane dark={dark} defaultAgent={agentId} />}
+              {pane === 'library' && (
+                <PortalLibraryPane
+                  dark={dark}
+                  agentId={agentId}
+                  path={libraryPath}
+                  onPathChange={(nextPath) => setPortalPane('library', nextPath)}
+                />
+              )}
+            </Suspense>
+          </div>
+        ) : (
+          <>
         <PortalMessageList
           dark={dark}
           active
@@ -1195,6 +1256,8 @@ export function AgentPortal(): JSX.Element {
               </div>
             </div>
           </div>
+          </>
+        )}
       </div>
 
       {/* Mobile drawer — lg+ uses the persistent rail instead */}

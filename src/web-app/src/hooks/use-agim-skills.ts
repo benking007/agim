@@ -14,13 +14,14 @@ import { client } from '@/lib/api/client'
 export interface AgimSkillMeta {
   name: string
   description: string
-  source: 'workspace' | 'builtin'
+  source: 'workspace' | 'builtin' | 'user'
   always: boolean
   available: boolean
   unavailableReason?: string
   requiresBins: string[]
   requiresEnv: string[]
   dir: string
+  enabled?: boolean
   /** v1.2.152 — system-prompt injection bucket (0–4). See loader.ts
    *  `rankSkillBucket`. SPA uses this to group + collapse the installed
    *  list. Optional for backward compat with older agim builds. */
@@ -92,6 +93,19 @@ export function useAgimSkillsRefresh() {
   const qc = useQueryClient()
   return useMutation<{ count: number }, Error, void>({
     mutationFn: () => client.post('/api/agim-skills/refresh'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: skillKeys.all }),
+  })
+}
+
+export function useAgimSkillSetEnabled() {
+  const qc = useQueryClient()
+  return useMutation<
+    { name: string; enabled: boolean; rebuilding: boolean },
+    Error,
+    { name: string; enabled: boolean }
+  >({
+    mutationFn: ({ name, enabled }) =>
+      client.patch(`/api/agim-skills/${encodeURIComponent(name)}/enabled`, { body: { enabled } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: skillKeys.all }),
   })
 }

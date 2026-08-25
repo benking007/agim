@@ -137,10 +137,11 @@ export function useRemoveAdmin() {
 
 /* ─────────────── App config ─────────────── */
 
-export function useConfig() {
+export function useConfig(opts: { enabled?: boolean } = {}) {
   return useQuery<AppConfig>({
     queryKey: settingsKeys.config,
     queryFn: () => api.getConfig(),
+    enabled: opts.enabled !== false,
   })
 }
 

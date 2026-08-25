@@ -497,22 +497,18 @@ export async function startWebServer(options: {
       const handled = await handleMcpApi(req, res, url)
       if (handled) return
     }
-    // P1 follow-up — admin overview of per-thread background
-    // primitives (heartbeat bindings / pending asks). Cross-
-    // thread, user-typed content — require admin on every method.
+    // P1 follow-up — per-thread background primitives (heartbeat /
+    // pending asks). Members see their own threads; admins see all.
     if (url.pathname.startsWith('/api/heartbeat/')
         || url.pathname.startsWith('/api/asks/')) {
-      if (!requireAdmin(req, res)) return
       const handled = await handleBackgroundTasksApi(req, res, url)
       if (handled) return
     }
-    // P1 follow-up — agim skills editor (SKILL.md CRUD). Mutations stay
-    // admin-gated (bodies inject into every agent prompt). GET list/detail
-    // are readable by any authenticated peer so Portal `/` skill picker works.
+    // P1 follow-up — agim skills editor. Per-account skill CRUD is open
+    // to the signed-in user; the injection-block editor stays admin-only.
     if (url.pathname === '/api/agim-skills' || url.pathname.startsWith('/api/agim-skills/')) {
-      const method = (req.method || 'GET').toUpperCase()
       const injection = url.pathname.startsWith('/api/agim-skills/injection')
-      if (method !== 'GET' && injection && !requireAdmin(req, res)) return
+      if (injection && !requireAdmin(req, res)) return
       const handled = await handleAgimSkillsApi(req, res, url)
       if (handled) return
     }

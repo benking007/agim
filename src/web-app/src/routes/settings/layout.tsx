@@ -6,15 +6,15 @@
  * core setup path before advanced capability and operations pages.
  */
 
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { WorkbenchFrame } from '@/components/shell/workbench-frame'
-import { AdminRequiredBanner } from '@/components/common/admin-required-banner'
+import { NoPermissionPanel } from '@/components/shell/no-permission'
 import { Badge } from '@/components/ui/badge'
 import { useConfig } from '@/hooks/use-settings'
 import { isAdminRequiredError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/stores/auth'
+import { useIsAdmin } from '@/stores/auth'
 
 interface SubTab {
   to: string
@@ -35,7 +35,7 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
     id: 'start',
     i18nKey: 'navigation.groups.start',
     tabs: [
-      { to: 'start', i18nKey: 'tabs.start', mounted: true, recommended: true },
+      { to: 'start', i18nKey: 'tabs.start', mounted: true, recommended: true, adminOnly: true },
       { to: 'account', i18nKey: 'tabs.account', mounted: true },
     ],
   },
@@ -76,15 +76,22 @@ const SUB_TAB_GROUPS: SubTabGroup[] = [
   },
 ]
 
+function isAdminSettingsPath(pathname: string): boolean {
+  const rest = pathname.replace(/^\/settings\/?/, '')
+  const [head, ...tail] = rest.split('/').filter(Boolean)
+  if (!head) return false
+  if (head === 'agim-skills' && tail[0] === 'injection') return true
+  const tab = SUB_TAB_GROUPS.flatMap((g) => g.tabs).find((t) => t.to === head)
+  return Boolean(tab?.adminOnly)
+}
+
 export default function SettingsLayout(): JSX.Element {
   const { t } = useTranslation('settings')
-  const role = useAuth((s) => s.role)
-  const isAdmin = role !== 'user'
-  // Shared with child routes via react-query. When the session is a
-  // Mobile QR / role=user token, GET /api/config returns 403 and IM /
-  // Agents pages used to look blank — surface the gate once at the shell.
-  const cfgQuery = useConfig()
-  const needsAdmin = isAdminRequiredError(cfgQuery.error)
+  const location = useLocation()
+  const isAdmin = useIsAdmin()
+  const cfgQuery = useConfig({ enabled: isAdmin })
+  const needsAdmin = isAdmin && isAdminRequiredError(cfgQuery.error)
+  const blocked = !isAdmin && isAdminSettingsPath(location.pathname)
 
   return (
     <WorkbenchFrame contentClassName="space-y-4">
@@ -97,24 +104,34 @@ export default function SettingsLayout(): JSX.Element {
             )}
             aria-label={t('pageTitle')}
           >
-            {SUB_TAB_GROUPS.map((group) => (
+            {SUB_TAB_GROUPS.map((group) => {
+              const tabs = group.tabs.filter((tab) => tab.mounted && (isAdmin || !tab.adminOnly))
+              if (!tabs.length) return null
+              return (
               <section key={group.id} className="min-w-max xl:min-w-0">
                 <h2 className="px-2 text-[11px] font-semibold uppercase leading-5 text-text-muted">
                   {t(group.i18nKey)}
                 </h2>
                 <div className="mt-1 flex gap-1 xl:flex-col">
-                  {group.tabs.filter((tab) => tab.mounted && (isAdmin || !tab.adminOnly)).map((tab) => (
+                  {tabs.map((tab) => (
                     <SettingsNavLink key={tab.to} tab={tab} />
                   ))}
                 </div>
               </section>
-            ))}
+              )
+            })}
           </nav>
         </aside>
 
         <section className="min-w-0 space-y-4 pb-safe">
-          {needsAdmin ? <AdminRequiredBanner /> : null}
-          <Outlet />
+          {needsAdmin ? (
+            <p role="alert" className="text-sm text-text-dim">
+              {t('adminGate.hint', {
+                defaultValue: 'This control-plane page needs an administrator account.',
+              })}
+            </p>
+          ) : null}
+          {blocked ? <NoPermissionPanel /> : <Outlet />}
         </section>
       </div>
     </WorkbenchFrame>

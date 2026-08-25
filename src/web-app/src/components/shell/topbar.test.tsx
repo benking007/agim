@@ -1,9 +1,7 @@
 /**
  * Topbar — verify:
- *   * Brand link always renders and goes to /dashboard
- *   * Primary nav is Chat / Tasks / Memory / Workspace / Settings
- *   * Active route gets the brand workbench style
- *   * children slot renders between nav and theme controls
+ *   * Members: Chat / Tasks / Workspace / Settings; brand → /
+ *   * Admins: also Memory; brand → /dashboard
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -36,24 +34,35 @@ describe('Topbar', () => {
     expect(screen.queryByText('System adaptive')).not.toBeInTheDocument()
   })
 
-  it('renders only the mounted nav links', () => {
+  it('renders member nav without Memory and sends brand to chat', () => {
+    useAuth.getState().setUser({
+      id: 'usr_m',
+      username: 'member',
+      displayName: 'member',
+      role: 'user',
+    })
     renderAt('/')
     const nav = screen.getByRole('navigation', { name: 'Agim' })
     expect(screen.getByRole('link', { name: 'Chat' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Memory' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Agent Files' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
     expect(nav.querySelector('a[href="/dashboard"]')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Agim' })).toHaveAttribute('href', '/')
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Reminders' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Memos' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Observability' })).not.toBeInTheDocument()
   })
 
-  it('sends the brand mark to the dashboard', () => {
+  it('renders admin nav including Memory and sends brand to dashboard', () => {
+    useAuth.getState().setUser({
+      id: 'usr_1',
+      username: 'tester',
+      displayName: 'tester',
+      role: 'admin',
+    })
     renderAt('/')
+    expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
     const brand = screen.getByRole('link', { name: 'Agim' })
     expect(brand).toHaveAttribute('href', '/dashboard')
     expect(brand).toHaveAttribute('title', 'Home workbench')

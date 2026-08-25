@@ -4,7 +4,7 @@
 //   GET  /api/loop
 //   POST /api/loop/confirm-met
 //
-// Tasks audit (admin):
+// Tasks audit (admin sees all; members see their web threads):
 //   GET  /api/loops
 //   GET  /api/loops/:id
 
@@ -24,7 +24,7 @@ import {
   type LoopStatus,
 } from '../core/loop-run.js'
 import { sessionManager } from '../core/session.js'
-import { requireAdmin } from './auth.js'
+import { requireWebThreadAccess, emptyMemberScope, resolveMemberScope } from './member-scope.js'
 import { readBody, sendJson } from './http-utils.js'
 
 /**
@@ -39,7 +39,7 @@ export async function handleLoopApi(
   const m = req.method ?? 'GET'
 
   if (p === '/api/loop' && m === 'GET') {
-    await handleGetLoop(res, url)
+    await handleGetLoop(req, res, url)
     return true
   }
   if (p === '/api/loop/confirm-met' && m === 'POST') {
@@ -47,27 +47,24 @@ export async function handleLoopApi(
     return true
   }
   if (p === '/api/loops' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleListLoops(res, url)
+    await handleListLoops(req, res, url)
     return true
   }
   // Named *Match bindings are scraped into tools/endpoints.json.
   const loopReportMatch = p.match(/^\/api\/loops\/([^/]+)\/report$/)
   if (loopReportMatch && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleGetLoopReport(res, decodeURIComponent(loopReportMatch[1]!))
+    await handleGetLoopReport(req, res, decodeURIComponent(loopReportMatch[1]!))
     return true
   }
   const loopIdMatch = p.match(/^\/api\/loops\/([^/]+)$/)
   if (loopIdMatch && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
-    await handleGetLoopById(res, url, decodeURIComponent(loopIdMatch[1]!))
+    await handleGetLoopById(req, res, url, decodeURIComponent(loopIdMatch[1]!))
     return true
   }
   return false
 }
 
-async function handleGetLoop(res: ServerResponse, url: URL): Promise<void> {
+async function handleGetLoop(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   const threadId = (url.searchParams.get('threadId') || '').trim().slice(0, 120)
   if (!threadId) {
     sendJson(res, 400, { error: 'threadId required' })
@@ -75,6 +72,7 @@ async function handleGetLoop(res: ServerResponse, url: URL): Promise<void> {
   }
   const platform = (url.searchParams.get('platform') || 'web').trim().slice(0, 40) || 'web'
   const channelId = (url.searchParams.get('channelId') || 'web').trim().slice(0, 40) || 'web'
+  if (!(await requireWebThreadAccess(req, res, threadId, platform, channelId))) return
   const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'zh'
 
   // Active wall truncate on poll — exit must not wait for loop_verdict.
@@ -95,7 +93,12 @@ async function handleGetLoop(res: ServerResponse, url: URL): Promise<void> {
   sendJson(res, 200, { ok: true, loop: toLoopStatusDto(run, lang) })
 }
 
-async function handleListLoops(res: ServerResponse, url: URL): Promise<void> {
+async function handleListLoops(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const scope = await resolveMemberScope(req)
+  if (emptyMemberScope(scope)) {
+    sendJson(res, 200, { ok: true, count: 0, loops: [] })
+    return
+  }
   const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'zh'
   const statusRaw = (url.searchParams.get('status') || '').trim()
   const platform = (url.searchParams.get('platform') || '').trim().slice(0, 40) || undefined
@@ -109,6 +112,7 @@ async function handleListLoops(res: ServerResponse, url: URL): Promise<void> {
   else if (statusRaw) status = statusRaw as LoopStatus
 
   const runs = listLoopRuns({ status, platform, threadId, sessionKey, limit })
+    .filter((r) => scope.kind === 'admin' || (r.platform === 'web' && scope.threadIds.includes(r.threadId)))
   sendJson(res, 200, {
     ok: true,
     count: runs.length,
@@ -117,6 +121,7 @@ async function handleListLoops(res: ServerResponse, url: URL): Promise<void> {
 }
 
 async function handleGetLoopById(
+  req: IncomingMessage,
   res: ServerResponse,
   url: URL,
   runId: string,
@@ -132,10 +137,12 @@ async function handleGetLoopById(
     sendJson(res, 404, { ok: false, error: 'not_found' })
     return
   }
+  if (!(await requireWebThreadAccess(req, res, run.threadId, run.platform, run.channelId))) return
   sendJson(res, 200, { ok: true, loop: toLoopAuditDto(run, lang) })
 }
 
 async function handleGetLoopReport(
+  req: IncomingMessage,
   res: ServerResponse,
   runId: string,
 ): Promise<void> {
@@ -144,6 +151,12 @@ async function handleGetLoopReport(
     sendJson(res, 400, { error: 'id required' })
     return
   }
+  const run = getLoopRunById(id)
+  if (!run) {
+    sendJson(res, 404, { ok: false, error: 'not_found' })
+    return
+  }
+  if (!(await requireWebThreadAccess(req, res, run.threadId, run.platform, run.channelId))) return
   const r = readLoopReportMarkdown(id)
   if (!r.ok) {
     sendJson(res, r.error === 'no_report' ? 404 : 500, { ok: false, error: r.error })
@@ -180,6 +193,7 @@ async function handleConfirmMet(req: IncomingMessage, res: ServerResponse): Prom
   const channelId = typeof body.channelId === 'string' && body.channelId.trim()
     ? body.channelId.trim().slice(0, 40)
     : 'web'
+  if (!(await requireWebThreadAccess(req, res, threadId, platform, channelId))) return
   const action = body.action === 'continue' ? 'continue' : body.action === 'end' ? 'end' : null
   if (!action) {
     sendJson(res, 400, { error: 'action must be end|continue' })

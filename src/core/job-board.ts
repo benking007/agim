@@ -642,6 +642,13 @@ export interface OwnerOpts {
    *  Web /tasks Jobs tab uses this to give the operator a clean
    *  explicit-only vs inline-only view. */
   kind?: JobKind
+  /**
+   * Web-member visibility: `(creator_id = creatorId OR thread_key IN keys)`.
+   * Passing this array (even empty) disables the legacy "ownerless
+   * creator_id = '' is visible" clause so members cannot see other
+   * people's jobs or pre-migration rows.
+   */
+  threadKeys?: string[]
 }
 
 export interface CreateJobOpts {
@@ -725,6 +732,29 @@ export function getJob(id: number, opts: OwnerOpts = {}): Job | null {
   return row || null
 }
 
+function appendOwnerConditions(conditions: string[], params: unknown[], opts: OwnerOpts): void {
+  if (opts.threadKeys !== undefined) {
+    const keys = opts.threadKeys.filter((k) => typeof k === 'string' && k.length > 0)
+    if (opts.creatorId && keys.length) {
+      conditions.push(`(creator_id = ? OR thread_key IN (${keys.map(() => '?').join(',')}))`)
+      params.push(opts.creatorId, ...keys)
+    } else if (opts.creatorId) {
+      conditions.push('creator_id = ?')
+      params.push(opts.creatorId)
+    } else if (keys.length) {
+      conditions.push(`thread_key IN (${keys.map(() => '?').join(',')})`)
+      params.push(...keys)
+    } else {
+      conditions.push('1 = 0')
+    }
+    return
+  }
+  if (opts.creatorId !== undefined) {
+    conditions.push("(creator_id = ? OR creator_id = '')")
+    params.push(opts.creatorId)
+  }
+}
+
 export function listJobs(limit = 20, status?: JobStatus, opts: OwnerOpts = {}): Job[] {
   const d = getDb()
   if (!d) return []
@@ -732,10 +762,7 @@ export function listJobs(limit = 20, status?: JobStatus, opts: OwnerOpts = {}): 
   const conditions: string[] = []
   const params: unknown[] = []
   if (status) { conditions.push('status = ?'); params.push(status) }
-  if (opts.creatorId !== undefined) {
-    conditions.push("(creator_id = ? OR creator_id = '')")
-    params.push(opts.creatorId)
-  }
+  appendOwnerConditions(conditions, params, opts)
   if (opts.agent) { conditions.push('agent = ?'); params.push(opts.agent) }
   if (opts.kind) { conditions.push('kind = ?'); params.push(opts.kind) }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -1213,11 +1240,15 @@ export function pruneOldJobs(d: Database.Database | null = getDb(), daysRetentio
   }
 }
 
-export function getJobStats(): { total: number; pending: number; running: number; completed: number; failed: number } {
+export function getJobStats(opts: OwnerOpts = {}): { total: number; pending: number; running: number; completed: number; failed: number } {
   const empty = { total: 0, pending: 0, running: 0, completed: 0, failed: 0 }
   const d = getDb()
   if (!d) return empty
   try {
+    const conditions: string[] = []
+    const params: unknown[] = []
+    appendOwnerConditions(conditions, params, opts)
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const row = d.prepare(`
       SELECT
         COUNT(*) as total,
@@ -1226,7 +1257,8 @@ export function getJobStats(): { total: number; pending: number; running: number
         SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
         SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed
       FROM jobs
-    `).get() as Record<string, number>
+      ${where}
+    `).get(...params) as Record<string, number>
     return {
       total: row.total || 0, pending: row.pending || 0, running: row.running || 0,
       completed: row.completed || 0, failed: row.failed || 0,

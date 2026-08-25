@@ -3,7 +3,7 @@
 // invoke the dispatcher directly with mock req/res so we don't need
 // the whole HTTP server.
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { EventEmitter } from 'node:events'
 
 const { handleBackgroundTasksApi } = await import('./background-tasks-api.js')
@@ -14,6 +14,7 @@ interface MockRes {
   headers: Record<string, string>
   body: string
   setHeader(k: string, v: string): void
+  writeHead(status: number, headers?: Record<string, string>): void
   end(b: string): void
 }
 
@@ -38,6 +39,10 @@ function makeRes(): MockRes {
     headers: {},
     body: '',
     setHeader(k: string, v: string) { r.headers[k] = v },
+    writeHead(status: number, headers?: Record<string, string>) {
+      r.statusCode = status
+      if (headers) Object.assign(r.headers, headers)
+    },
     end(b: string) { r.body = b },
   }
   return r
@@ -51,8 +56,17 @@ function asRes(r: MockRes): import('node:http').ServerResponse {
   return r as unknown as import('node:http').ServerResponse
 }
 
+const saved: Record<string, string | undefined> = {}
+
 beforeEach(() => {
   _resetAskBusForTests()
+  saved.AGIM_WEB_AUTH = process.env.AGIM_WEB_AUTH
+  process.env.AGIM_WEB_AUTH = 'off'
+})
+
+afterEach(() => {
+  if (saved.AGIM_WEB_AUTH === undefined) delete process.env.AGIM_WEB_AUTH
+  else process.env.AGIM_WEB_AUTH = saved.AGIM_WEB_AUTH
 })
 
 describe('handleBackgroundTasksApi — heartbeat list', () => {

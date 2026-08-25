@@ -20,9 +20,11 @@
 // future per-tenant deployments.
 
 import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
 import { mkdir, writeFile, access, readFile, appendFile } from 'node:fs/promises'
 import type { AgentSendOpts } from './types.js'
 import { AGIM_WORKSPACES } from './agim-paths.js'
+import { currentAccountUserId } from './accounts.js'
 
 /** Portable bgjob wrapper expression for role books / prompts.
  *  Shell expands this to an absolute path on any user home (Linux / macOS).
@@ -43,6 +45,31 @@ export function defaultAgentCwd(agentName: string): string {
   // Naming v2: registry id `agim` (legacy `native` maps to the same tree).
   const id = (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
   return join(agimWorkspacesRoot(), id)
+}
+
+/** Filesystem-safe account id for `~/.agim-workspaces/users/<id>/`. */
+export function sanitizeAccountWorkspaceId(userId: string): string {
+  const trimmed = userId.trim()
+  if (!trimmed) return 'unknown'
+  return trimmed.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'unknown'
+}
+
+/** Per-account agent cwd: `~/.agim-workspaces/users/<userId>/<agent>/`. */
+export function agentCwdForAccount(agentName: string, userId: string): string {
+  const id = (agentName === 'native' || agentName === 'agim') ? 'agim' : agentName
+  return join(agimWorkspacesRoot(), 'users', sanitizeAccountWorkspaceId(userId), id)
+}
+
+/**
+ * Root shown in Agent Files. Env `AGIM_<AGENT>_CWD` still wins; otherwise
+ * a logged-in account gets its own tree so members cannot browse each
+ * others' files (or the shared IM workspace).
+ */
+export function resolveAgentFilesRoot(agentName: string, accountUserId?: string): string {
+  const explicit = process.env[envKeyFor(agentName)]
+  if (explicit?.trim()) return explicit.trim()
+  if (accountUserId) return agentCwdForAccount(agentName, accountUserId)
+  return defaultAgentCwd(agentName)
 }
 
 /**
@@ -375,6 +402,12 @@ export function resolveAgentCwd(agentName: string, opts: AgentSendOpts): string 
   if (portal) return portal
 
   if (opts.threadId && opts.platform) {
+    const accountUserId = currentAccountUserId()
+    if (accountUserId) {
+      const dir = agentCwdForAccount(agentName, accountUserId)
+      try { mkdirSync(dir, { recursive: true }) } catch { /* spawn still gets the path */ }
+      return dir
+    }
     return defaultAgentCwd(agentName)
   }
 

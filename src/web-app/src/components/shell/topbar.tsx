@@ -20,16 +20,18 @@ import { SignedInUser } from '@/components/shell/signed-in-user'
 import { ThemeAndLangControls } from '@/components/shell/theme-lang-controls'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
+import { useIsAdmin } from '@/stores/auth'
 
 interface NavEntry {
   to: string
   i18nKey: string
+  adminOnly?: boolean
 }
 
 const NAV: NavEntry[] = [
   { to: '/',          i18nKey: 'nav.chat' },
   { to: '/tasks',     i18nKey: 'nav.tasks' },
-  { to: '/memory',    i18nKey: 'nav.memory' },
+  { to: '/memory',    i18nKey: 'nav.memory', adminOnly: true },
   { to: '/workspace', i18nKey: 'nav.workspace' },
   { to: '/settings',  i18nKey: 'nav.settings' },
 ]
@@ -44,6 +46,9 @@ export interface TopbarProps {
 
 export function Topbar({ children }: TopbarProps): JSX.Element {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
+  const navItems = NAV.filter((n) => isAdmin || !n.adminOnly)
+  const brandTo = isAdmin ? '/dashboard' : '/'
   // R10: render nav exactly once. Pre-R10 we rendered it both in the
   // `hidden sm:flex` desktop slot AND a `sm:hidden` mobile row, relying
   // on CSS to hide one. That left two copies in the accessibility tree
@@ -59,7 +64,7 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
       )}
       aria-label={t('appName')}
     >
-      {NAV.map((n) => (
+      {navItems.map((n) => (
         <NavLink
           key={n.to}
           to={n.to}
@@ -96,7 +101,7 @@ export function Topbar({ children }: TopbarProps): JSX.Element {
         )}
       >
         <NavLink
-          to="/dashboard"
+          to={brandTo}
           title={t('dashboard.title')}
           aria-label={t('appName')}
           className="flex shrink-0 items-center gap-2.5 no-underline"

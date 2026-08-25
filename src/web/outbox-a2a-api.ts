@@ -2,19 +2,25 @@
 // Extracted from server.ts; follows the dispatcher pattern used by config-api.ts.
 //
 // Endpoints:
-//   GET  /api/outbox              → list outbox rows             — admin only
+//   GET  /api/outbox              → list outbox rows (members: own threads)
 //   GET  /api/outbox/stats        → aggregate stats              — admin only
-//   POST /api/outbox/:id/retry    → retry giving_up row          — admin only
-//   GET  /api/a2a/stats           → A2A aggregate stats          — open (no sensitive data)
-//   GET  /api/a2a/recent          → recent A2A calls             — open
-//   GET  /api/a2a/tree/:id        → tree walk from root job      — open
-//   GET  /api/artifacts/:id       → list artifacts for job       — open
-//   GET  /api/artifacts/:id/file/:name → download artifact file  — open
+//   POST /api/outbox/:id/retry    → retry giving_up row (members: own threads)
+//   GET  /api/a2a/stats           → A2A aggregate stats (members: own jobs)
+//   GET  /api/a2a/recent          → recent A2A calls (members: own jobs)
+//   GET  /api/a2a/tree/:id        → tree walk from root job (owned)
+//   GET  /api/artifacts/:id       → list artifacts for job (owned)
+//   GET  /api/artifacts/:id/file/:name → download artifact file (owned)
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { logger as rootLogger } from '../core/logger.js'
 import { sendJson } from './http-utils.js'
-import { requireAdmin } from './auth.js'
+import { requireAdmin, isRequestAdmin } from './auth.js'
+import {
+  emptyMemberScope,
+  jobVisibleToScope,
+  resolveMemberScope,
+  sendForbidden,
+} from './member-scope.js'
 
 /**
  * Match-and-handle dispatcher. Returns `true` when the request was
@@ -29,7 +35,6 @@ export async function handleOutboxA2AApi(
   const m = req.method ?? 'GET'
 
   if (p === '/api/outbox' && m === 'GET') {
-    if (!requireAdmin(req, res)) return true
     await handleListOutbox(req, res, url); return true
   }
   if (p === '/api/outbox/stats' && m === 'GET') {
@@ -38,7 +43,6 @@ export async function handleOutboxA2AApi(
   }
   const outboxRetryMatch = p.match(/^\/api\/outbox\/(\d+)\/retry$/)
   if (outboxRetryMatch && m === 'POST') {
-    if (!requireAdmin(req, res)) return true
     await handleOutboxRetry(req, res, parseInt(outboxRetryMatch[1], 10)); return true
   }
   if (p === '/api/a2a/stats' && m === 'GET') {
@@ -82,8 +86,10 @@ export async function openJobsDbReadOnly(): Promise<import('better-sqlite3').Dat
   }
 }
 
-async function handleListOutbox(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+async function handleListOutbox(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
+    const scope = await resolveMemberScope(req)
+    if (emptyMemberScope(scope)) { sendJson(res, 200, { rows: [] }); return }
     const { listOutbox } = await import('../core/outbox.js')
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
     const statusRaw = url.searchParams.get('status') || ''
@@ -91,8 +97,15 @@ async function handleListOutbox(_req: IncomingMessage, res: ServerResponse, url:
       ? (statusRaw as 'pending' | 'delivered' | 'giving_up')
       : undefined
     const threadKey = url.searchParams.get('thread') || undefined
+    if (scope.kind === 'user' && threadKey && !scope.threadKeys.includes(threadKey)) {
+      sendJson(res, 200, { rows: [] })
+      return
+    }
     const rows = listOutbox({ limit, status, threadKey })
-    sendJson(res, 200, { rows })
+    const visible = scope.kind === 'admin'
+      ? rows
+      : rows.filter((r) => scope.threadKeys.includes(r.thread_key || ''))
+    sendJson(res, 200, { rows: visible })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }
@@ -107,9 +120,17 @@ async function handleOutboxStats(_req: IncomingMessage, res: ServerResponse): Pr
   }
 }
 
-async function handleOutboxRetry(_req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
+async function handleOutboxRetry(req: IncomingMessage, res: ServerResponse, id: number): Promise<void> {
   try {
-    const { retryGivingUp } = await import('../core/outbox.js')
+    const { retryGivingUp, getOutbox } = await import('../core/outbox.js')
+    if (!isRequestAdmin(req)) {
+      const scope = await resolveMemberScope(req)
+      const row = getOutbox(id)
+      if (!row || scope.kind !== 'user' || !scope.threadKeys.includes(row.thread_key || '')) {
+        sendForbidden(res)
+        return
+      }
+    }
     const ok = retryGivingUp(id)
     if (!ok) {
       sendJson(res, 404, { ok: false, error: `outbox #${id} not found or not in giving_up state` })
@@ -121,25 +142,42 @@ async function handleOutboxRetry(_req: IncomingMessage, res: ServerResponse, id:
   }
 }
 
-async function handleA2AStats(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleA2AStats(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const scope = await resolveMemberScope(req)
+  if (emptyMemberScope(scope)) {
+    sendJson(res, 200, { total: 0, recent24h: 0, maxDepth: 0, byStatus: [], byAgent: [] })
+    return
+  }
   const d = await openJobsDbReadOnly()
   if (!d) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
   try {
+    const extra: string[] = []
+    const params: unknown[] = []
+    if (scope.kind === 'user') {
+      if (scope.threadKeys.length) {
+        extra.push(`AND (creator_id = ? OR thread_key IN (${scope.threadKeys.map(() => '?').join(',')}))`)
+        params.push(scope.userId, ...scope.threadKeys)
+      } else {
+        extra.push('AND creator_id = ?')
+        params.push(scope.userId)
+      }
+    }
+    const owner = extra.join(' ')
     const total = (d.prepare(
-      "SELECT COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL"
-    ).get() as { n: number }).n
+      `SELECT COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL ${owner}`,
+    ).get(...params) as { n: number }).n
     const recent24h = (d.prepare(
-      "SELECT COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL AND created_at >= datetime('now','-1 day')"
-    ).get() as { n: number }).n
+      `SELECT COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL AND created_at >= datetime('now','-1 day') ${owner}`,
+    ).get(...params) as { n: number }).n
     const maxDepth = (d.prepare(
-      "SELECT MAX(call_depth) AS m FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL"
-    ).get() as { m: number | null }).m ?? 0
+      `SELECT MAX(call_depth) AS m FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL ${owner}`,
+    ).get(...params) as { m: number | null }).m ?? 0
     const byStatus = d.prepare(
-      "SELECT status, COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL GROUP BY status"
-    ).all() as Array<{ status: string; n: number }>
+      `SELECT status, COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL ${owner} GROUP BY status`,
+    ).all(...params) as Array<{ status: string; n: number }>
     const byAgent = d.prepare(
-      "SELECT agent, COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL GROUP BY agent ORDER BY n DESC LIMIT 10"
-    ).all() as Array<{ agent: string; n: number }>
+      `SELECT agent, COUNT(*) AS n FROM jobs WHERE kind='inline' AND parent_id IS NOT NULL ${owner} GROUP BY agent ORDER BY n DESC LIMIT 10`,
+    ).all(...params) as Array<{ agent: string; n: number }>
     sendJson(res, 200, { total, recent24h, maxDepth, byStatus, byAgent })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -148,11 +186,25 @@ async function handleA2AStats(_req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-async function handleA2ARecent(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+async function handleA2ARecent(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const scope = await resolveMemberScope(req)
+  if (emptyMemberScope(scope)) { sendJson(res, 200, { rows: [] }); return }
   const d = await openJobsDbReadOnly()
   if (!d) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
   try {
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 1), 200)
+    const extra: string[] = []
+    const params: unknown[] = []
+    if (scope.kind === 'user') {
+      if (scope.threadKeys.length) {
+        extra.push(`AND (creator_id = ? OR thread_key IN (${scope.threadKeys.map(() => '?').join(',')}))`)
+        params.push(scope.userId, ...scope.threadKeys)
+      } else {
+        extra.push('AND creator_id = ?')
+        params.push(scope.userId)
+      }
+    }
+    params.push(limit)
     const rows = d.prepare(
       `SELECT id, agent, parent_id, call_depth, status,
               substr(prompt, 1, 200) AS prompt,
@@ -160,10 +212,10 @@ async function handleA2ARecent(_req: IncomingMessage, res: ServerResponse, url: 
               error,
               created_at, started_at, completed_at, delivered_at
          FROM jobs
-        WHERE kind='inline' AND parent_id IS NOT NULL
+        WHERE kind='inline' AND parent_id IS NOT NULL ${extra.join(' ')}
         ORDER BY id DESC
         LIMIT ?`,
-    ).all(limit)
+    ).all(...params)
     sendJson(res, 200, { rows })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -172,7 +224,27 @@ async function handleA2ARecent(_req: IncomingMessage, res: ServerResponse, url: 
   }
 }
 
-async function handleA2ATree(_req: IncomingMessage, res: ServerResponse, rootId: number): Promise<void> {
+async function requireVisibleJob(
+  req: IncomingMessage,
+  res: ServerResponse,
+  jobId: number,
+): Promise<boolean> {
+  const { getJob } = await import('../core/job-board.js')
+  const job = getJob(jobId)
+  if (!job) {
+    sendJson(res, 404, { error: `job #${jobId} not found` })
+    return false
+  }
+  const scope = await resolveMemberScope(req)
+  if (!jobVisibleToScope(job, scope)) {
+    sendForbidden(res)
+    return false
+  }
+  return true
+}
+
+async function handleA2ATree(req: IncomingMessage, res: ServerResponse, rootId: number): Promise<void> {
+  if (!(await requireVisibleJob(req, res, rootId))) return
   const dMaybe = await openJobsDbReadOnly()
   if (!dMaybe) { sendJson(res, 503, { error: 'jobs.db not available' }); return }
   const d = dMaybe  // captured non-null binding for nested async closures
@@ -220,8 +292,9 @@ async function handleA2ATree(_req: IncomingMessage, res: ServerResponse, rootId:
   }
 }
 
-async function handleArtifactsList(_req: IncomingMessage, res: ServerResponse, jobId: number): Promise<void> {
+async function handleArtifactsList(req: IncomingMessage, res: ServerResponse, jobId: number): Promise<void> {
   try {
+    if (!(await requireVisibleJob(req, res, jobId))) return
     const { statJob } = await import('../core/artifacts.js')
     const s = await statJob(jobId)
     sendJson(res, 200, { jobId, inputs: s.inputs, outputs: s.outputs, totalBytes: s.bytes })
@@ -231,9 +304,10 @@ async function handleArtifactsList(_req: IncomingMessage, res: ServerResponse, j
 }
 
 async function handleArtifactsFile(
-  _req: IncomingMessage, res: ServerResponse, jobId: number, name: string,
+  req: IncomingMessage, res: ServerResponse, jobId: number, name: string,
 ): Promise<void> {
   try {
+    if (!(await requireVisibleJob(req, res, jobId))) return
     const { readOutput, getArtifactsDir } = await import('../core/artifacts.js')
     let buf = await readOutput(jobId, name)
     if (!buf) {

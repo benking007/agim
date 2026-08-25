@@ -125,6 +125,56 @@ describe('GET /api/jobs/:id chat-user Subagent read', () => {
     const url = new URL(`http://localhost/api/jobs/${id}`)
     expect(await handleJobsApi(req, res, url)).toBe(true)
     expect(res.statusCode).toBe(403)
-    expect(res.body).toMatch(/admin role required/)
+    expect(res.body).toMatch(/FORBIDDEN|not allowed/)
+  })
+
+  it('lists only jobs owned by the member (creator_id or thread_key)', async () => {
+    const { createInlineJob, getJob } = await import('../../src/core/job-board.js')
+    const mine = createInlineJob({
+      agent: 'agim',
+      prompt: 'member job',
+      threadKey: 'web:web:web-memberThread01',
+      creatorId: 'usr_member01',
+    })
+    const theirs = createInlineJob({
+      agent: 'agim',
+      prompt: 'admin job',
+      threadKey: 'web:web:web-adminThread01',
+      creatorId: 'usr_admin01',
+    })
+    const ownerless = createInlineJob({
+      agent: 'agim',
+      prompt: 'legacy job',
+      threadKey: 'web:web:web-legacyThread01',
+      creatorId: '',
+    })
+    if (!(typeof mine === 'number' && mine > 0 && getJob(mine))) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') {
+        throw new Error('expected createInlineJob to persist under Node sqlite suite')
+      }
+      return
+    }
+
+    const tokenModule = await import('../../src/core/access-token.js')
+    bindTokenModule(tokenModule)
+    const user = tokenModule.createToken('member-list', { role: 'user', userId: 'usr_member01' })
+
+    const req = {
+      method: 'GET',
+      url: '/api/jobs',
+      headers: {
+        authorization: `Bearer ${user.raw}`,
+        'x-forwarded-for': '203.0.113.9',
+      },
+      socket: { remoteAddress: '10.0.0.2' },
+    } as unknown as IncomingMessage
+    const res = mockRes()
+    expect(await handleJobsApi(req, res, new URL('http://localhost/api/jobs'))).toBe(true)
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body) as { jobs: Array<{ id: number; prompt: string }> }
+    const ids = body.jobs.map((j) => j.id)
+    expect(ids).toContain(mine)
+    expect(ids).not.toContain(theirs)
+    expect(ids).not.toContain(ownerless)
   })
 })

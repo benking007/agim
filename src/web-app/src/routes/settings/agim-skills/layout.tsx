@@ -13,25 +13,34 @@
  * so bookmarks keep working.
  */
 
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { useIsAdmin } from '@/stores/auth'
+import { NoPermissionPanel } from '@/components/shell/no-permission'
 
 interface SubTab {
   to: string
   i18nKey: string
   end?: boolean
+  adminOnly?: boolean
 }
 
 const SUB_TABS: SubTab[] = [
   { to: '.', i18nKey: 'agimSkills.tab.overview', end: true },
   { to: 'installed', i18nKey: 'agimSkills.tab.installed' },
-  // v1.2.151 — system-prompt skill block editor (operator override).
-  { to: 'injection', i18nKey: 'agimSkills.tab.injection' },
+  { to: 'injection', i18nKey: 'agimSkills.tab.injection', adminOnly: true },
 ]
 
 export default function SettingsAgimSkillsLayout(): JSX.Element {
   const { t } = useTranslation(['settings'])
+  const isAdmin = useIsAdmin()
+  const location = useLocation()
+  const onInjection = /\/agim-skills\/injection\/?$/.test(location.pathname)
+  const tabs = SUB_TABS.filter((tab) => isAdmin || !tab.adminOnly)
+  if (!isAdmin && onInjection) {
+    return <NoPermissionPanel />
+  }
   return (
     <div className="flex flex-col gap-4">
       <nav
@@ -43,7 +52,7 @@ export default function SettingsAgimSkillsLayout(): JSX.Element {
         )}
         aria-label={t('agimSkills.title')}
       >
-        {SUB_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}

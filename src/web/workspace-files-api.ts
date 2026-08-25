@@ -2,16 +2,17 @@
 // Extracted from server.ts; follows the dispatcher pattern used by config-api.ts.
 //
 // Endpoints:
-//   GET /api/workspace-files   → list dir or read file — any authenticated peer
-//   PUT /api/workspace-files   → write file content    — admin only
+//   GET /api/workspace-files   → list dir or read file — authenticated
+//   PUT /api/workspace-files   → write file content    — authenticated
+// Paths resolve to the caller's per-account agent cwd when they have a user id.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open } from 'node:fs/promises'
+import { readdir, stat, readFile, writeFile, rename, unlink, realpath, open, mkdir } from 'node:fs/promises'
 import { resolve as resolvePath, sep as pathSep, relative as relativePath, dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { registry } from '../core/registry.js'
 import { readBody, sendJson } from './http-utils.js'
-import { requireAdmin } from './auth.js'
+import { getRequestUserId } from './auth.js'
 
 /** Hard cap on file content we'll ship over the wire. */
 const WORKSPACE_FILE_MAX_BYTES = 1 * 1024 * 1024
@@ -34,7 +35,6 @@ export async function handleWorkspaceFilesApi(
     await handleWorkspaceFiles(req, res, url); return true
   }
   if (p === '/api/workspace-files' && m === 'PUT') {
-    if (!requireAdmin(req, res)) return true
     await handleWorkspaceFileWrite(req, res, url); return true
   }
   return false
@@ -74,7 +74,15 @@ export async function validateWorkspacePath(
   return real
 }
 
-async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+async function resolveFilesBase(req: IncomingMessage, agent: string): Promise<string> {
+  const { resolveAgentFilesRoot } = await import('../core/agent-cwd.js')
+  const userId = getRequestUserId(req)
+  const base = resolvePath(resolveAgentFilesRoot(agent, userId))
+  await mkdir(base, { recursive: true })
+  return base
+}
+
+async function handleWorkspaceFiles(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const agent = url.searchParams.get('agent') || ''
     const userPath = url.searchParams.get('path') || ''
@@ -89,8 +97,7 @@ async function handleWorkspaceFiles(_req: IncomingMessage, res: ServerResponse, 
       return
     }
 
-    const { defaultAgentCwd } = await import('../core/agent-cwd.js')
-    const base = resolvePath(defaultAgentCwd(agent))
+    const base = await resolveFilesBase(req, agent)
     const target = await validateWorkspacePath(base, userPath, res)
     if (!target) return
 
@@ -191,8 +198,7 @@ async function handleWorkspaceFileWrite(req: IncomingMessage, res: ServerRespons
       return
     }
 
-    const { defaultAgentCwd } = await import('../core/agent-cwd.js')
-    const base = resolvePath(defaultAgentCwd(agent))
+    const base = await resolveFilesBase(req, agent)
 
     const logicalTarget = resolvePath(base, userPath)
     if (logicalTarget !== base && !logicalTarget.startsWith(base + pathSep)) {

@@ -66,6 +66,11 @@
     "selectAll": "Select all rows",
     "selectRow": "Select row"
   },
+  "noPermission": {
+    "title": "No permission",
+    "body": "This page is for administrators. Your account can still use Chat, Tasks, Agent Files, and Settings.",
+    "backToChat": "Back to chat"
+  },
   "login": {
     "intro": "Sign in with your username and password.",
     "submit": "Sign in",

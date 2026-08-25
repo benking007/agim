@@ -169,6 +169,7 @@ export const initialChatState: ChatState = {
   contextTokensMeasured: null,
   clientId: null,
   historyRevisionAt: null,
+  historyLoading: true,
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +454,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       return { ...s, clientId: a.clientId }
     case 'HISTORY': {
       if (!historyBelongsToClient(a.threadId, s.clientId)) return s
+      s = { ...s, historyLoading: false }
       // Non-empty history is authoritative (refresh / reconnect).
       // Empty history must NOT wipe in-memory bubbles: after MESSAGES_TTL
       // the server drops .log but the tab may still show the transcript,
@@ -1211,6 +1213,7 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         contextTokensMeasured: null,
         preferredWorkerAgent: '',
         historyRevisionAt: null,
+        historyLoading: true,
       }
     case 'CLEAR_ERROR':
       return { ...s, error: null }

@@ -295,6 +295,7 @@ export function applyCachedHistory(init: ChatState, threadId: string): ChatState
     sessionModel: cached.sessionModel || init.sessionModel,
     compactRate: cached.compactRate || init.compactRate,
     historyRevisionAt: cached.revisionAt && cached.revisionAt > 0 ? cached.revisionAt : null,
+    historyLoading: false,
   }
 }
 

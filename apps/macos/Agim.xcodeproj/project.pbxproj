@@ -11,11 +11,13 @@
 		744EBA94C367E396424FCE3E /* HostCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D21B09B465104787320B40 /* HostCredentials.swift */; };
 		AADCF34815332463D9650932 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA7632ABAE81039AA2FA3243 /* KeychainStore.swift */; };
 		1EAFBDA176D0C1875ACC7282 /* PairingParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02B218A379254332CD7014D8 /* PairingParser.swift */; };
+		75FAA6257B8BC79914E7564D /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3093677F6DB45BCFC8F6E5 /* WindowChrome.swift */; };
 		2117D91FBBEC7A706D43CB61 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D366EBA9CC6F53AF79AC8C71 /* PairingView.swift */; };
 		035158678EB6CE3E349405DC /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C8292754A79140B5B34FE1 /* RootView.swift */; };
 		DFE77130F1A221F8EDBD1BCD /* WebShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91659C57FC6E8265615DBAD /* WebShellView.swift */; };
 		1E1C83100F4FA20552975BAA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44F7ACA3D8428CE2C120AB32 /* Assets.xcassets */; };
 		98FDB2A86DC709E63D03D77A /* PairingParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C85DA805D22B5F55B8A411 /* PairingParserTests.swift */; };
+		441FFF16C0B1FAD4D47B1767 /* WindowChromeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1CC6244375C9216F3DE4CCE /* WindowChromeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,10 +27,12 @@
 		F9D21B09B465104787320B40 /* HostCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/HostCredentials.swift"; sourceTree = "<group>"; };
 		EA7632ABAE81039AA2FA3243 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/KeychainStore.swift"; sourceTree = "<group>"; };
 		02B218A379254332CD7014D8 /* PairingParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PairingParser.swift"; sourceTree = "<group>"; };
+		8F3093677F6DB45BCFC8F6E5 /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/WindowChrome.swift"; sourceTree = "<group>"; };
 		D366EBA9CC6F53AF79AC8C71 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/PairingView.swift"; sourceTree = "<group>"; };
 		A4C8292754A79140B5B34FE1 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/RootView.swift"; sourceTree = "<group>"; };
 		F91659C57FC6E8265615DBAD /* WebShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/WebShellView.swift"; sourceTree = "<group>"; };
 		72C85DA805D22B5F55B8A411 /* PairingParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PairingParserTests.swift"; sourceTree = "<group>"; };
+		B1CC6244375C9216F3DE4CCE /* WindowChromeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowChromeTests.swift"; sourceTree = "<group>"; };
 		44F7ACA3D8428CE2C120AB32 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		25EEE36A2240E5CD54F67CF8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7B4C11879D3F371D8F68AB9D /* Agim.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Agim.entitlements; sourceTree = "<group>"; };
@@ -70,6 +74,7 @@
 				F9D21B09B465104787320B40 /* HostCredentials.swift */,
 				EA7632ABAE81039AA2FA3243 /* KeychainStore.swift */,
 				02B218A379254332CD7014D8 /* PairingParser.swift */,
+				8F3093677F6DB45BCFC8F6E5 /* WindowChrome.swift */,
 				D366EBA9CC6F53AF79AC8C71 /* PairingView.swift */,
 				A4C8292754A79140B5B34FE1 /* RootView.swift */,
 				F91659C57FC6E8265615DBAD /* WebShellView.swift */,
@@ -84,6 +89,7 @@
 			isa = PBXGroup;
 			children = (
 				72C85DA805D22B5F55B8A411 /* PairingParserTests.swift */,
+				B1CC6244375C9216F3DE4CCE /* WindowChromeTests.swift */,
 			);
 			path = AgimTests;
 			sourceTree = "<group>";
@@ -200,6 +206,7 @@
 				744EBA94C367E396424FCE3E /* HostCredentials.swift in Sources */,
 				AADCF34815332463D9650932 /* KeychainStore.swift in Sources */,
 				1EAFBDA176D0C1875ACC7282 /* PairingParser.swift in Sources */,
+				75FAA6257B8BC79914E7564D /* WindowChrome.swift in Sources */,
 				2117D91FBBEC7A706D43CB61 /* PairingView.swift in Sources */,
 				035158678EB6CE3E349405DC /* RootView.swift in Sources */,
 				DFE77130F1A221F8EDBD1BCD /* WebShellView.swift in Sources */,
@@ -211,6 +218,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				98FDB2A86DC709E63D03D77A /* PairingParserTests.swift in Sources */,
+				441FFF16C0B1FAD4D47B1767 /* WindowChromeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

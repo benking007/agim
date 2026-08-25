@@ -453,6 +453,7 @@
       "conversations": "会话",
       "untitledConversation": "新对话",
       "conversationsEmpty": "暂无历史会话",
+      "loadingSession": "正在加载会话…",
       "workspaces": "工作区",
       "cloudWorkspace": "云端",
       "cloudWorkspaceHint": "服务器工作目录",

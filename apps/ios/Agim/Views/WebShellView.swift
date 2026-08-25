@@ -2,29 +2,81 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
+/// Native chrome on `/login` / `/register` so the user can switch hosts
+/// without a token/QR pairing screen.
+struct HostSwitcherBar: View {
+    let host: String
+    var onChangeHost: () -> Void
+    @State private var confirm = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(host)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer()
+            Button("更换主机") { confirm = true }
+                .font(.footnote)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+        .confirmationDialog("更换主机将退出当前站点，需重新填写地址。", isPresented: $confirm, titleVisibility: .visible) {
+            Button("更换主机", role: .destructive, action: onChangeHost)
+            Button("取消", role: .cancel) {}
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class ShellChrome {
+    var currentPath: String = ""
+
+    var showHostSwitcher: Bool {
+        SessionProbe.isAuthPath(currentPath)
+    }
+}
+
 /// Native shell: WKWebView loads Agim `/m/chat` (Agent Portal WebUI).
 struct WebShellView: View {
     let credentials: HostCredentials
+    @Environment(AppSession.self) private var session
     @Environment(\.scenePhase) private var scenePhase
+    @State private var chrome = ShellChrome()
 
     var body: some View {
-        // Full-bleed portal only — no native ellipsis overlay (it covered
-        // the web theme toggle in the portal header).
-        WebViewRepresentable(credentials: credentials, scenePhase: scenePhase)
+        VStack(spacing: 0) {
+            if chrome.showHostSwitcher {
+                HostSwitcherBar(host: credentials.host) {
+                    session.logout()
+                }
+            }
+            // Portal stays full-bleed — no native ellipsis overlay (it covered
+            // the web theme toggle in the portal header).
+            WebViewRepresentable(
+                credentials: credentials,
+                scenePhase: scenePhase,
+                chrome: chrome
+            )
             .ignoresSafeArea(edges: .bottom)
+        }
     }
 }
 
 struct WebViewRepresentable: UIViewRepresentable {
     let credentials: HostCredentials
     var scenePhase: ScenePhase
+    var chrome: ShellChrome
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(credentials: credentials)
+        Coordinator(credentials: credentials, chrome: chrome)
     }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
         config.allowsInlineMediaPlayback = true
         config.defaultWebpagePreferences.allowsContentJavaScript = true
 
@@ -76,12 +128,14 @@ struct WebViewRepresentable: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .black
         context.coordinator.webView = webView
+        context.coordinator.startURLObservation(webView)
         context.coordinator.loadPortal()
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.credentials = credentials
+        context.coordinator.chrome = chrome
         context.coordinator.noteScenePhase(scenePhase)
     }
 
@@ -89,17 +143,32 @@ struct WebViewRepresentable: UIViewRepresentable {
         let ucc = uiView.configuration.userContentController
         ucc.removeScriptMessageHandler(forName: "agimSaveFile")
         ucc.removeScriptMessageHandler(forName: "agimShare")
+        coordinator.stopURLObservation()
         coordinator.scriptBridge = nil
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var credentials: HostCredentials
+        var chrome: ShellChrome
         weak var webView: WKWebView?
         var scriptBridge: WeakScriptMessageHandler?
         private var lastScenePhase: ScenePhase?
+        private var urlObservation: NSKeyValueObservation?
 
-        init(credentials: HostCredentials) {
+        init(credentials: HostCredentials, chrome: ShellChrome) {
             self.credentials = credentials
+            self.chrome = chrome
+        }
+
+        func startURLObservation(_ webView: WKWebView) {
+            urlObservation = webView.observe(\.url, options: [.new]) { [weak self] view, _ in
+                self?.applyPath(view.url?.path)
+            }
+        }
+
+        func stopURLObservation() {
+            urlObservation?.invalidate()
+            urlObservation = nil
         }
 
         /// WKWebView often keeps WebSocket.readyState=OPEN after a long
@@ -117,15 +186,35 @@ struct WebViewRepresentable: UIViewRepresentable {
 
         func loadPortal() {
             guard let webView else { return }
-            // Reuse the existing mobile login bridge: sets cookie + localStorage, then /m/chat.
-            var comps = URLComponents(string: credentials.host)
-            comps?.path = "/m/login"
-            comps?.queryItems = [
-                URLQueryItem(name: "t", value: credentials.token),
-                URLQueryItem(name: "next", value: "/m/chat"),
-            ]
-            guard let url = comps?.url else { return }
-            webView.load(URLRequest(url: url))
+            let host = credentials.host
+            let store = webView.configuration.websiteDataStore.httpCookieStore
+            store.getAllCookies { [weak self] cookies in
+                guard let self else { return }
+                let hasSession = SessionProbe.hasSessionCookie(cookies, host: host)
+                guard let url = PairingParser.entryURL(host: host, hasSession: hasSession) else { return }
+                DispatchQueue.main.async {
+                    self.webView?.load(URLRequest(url: url))
+                }
+            }
+        }
+
+        private func applyPath(_ path: String?) {
+            let next = path ?? ""
+            DispatchQueue.main.async { [weak self] in
+                self?.chrome.currentPath = next
+            }
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            applyPath(webView.url?.path)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            applyPath(webView.url?.path)
+        }
+
+        func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+            applyPath(webView.url?.path)
         }
 
         func webView(

@@ -1,6 +1,6 @@
 # Agim macOS 桌面壳
 
-原生 SwiftUI + WKWebView 薄壳，把 Agent Portal（`/m/chat`）装进可常驻的 macOS 窗口。设计对齐 iOS 壳（`apps/ios`），共用同一套登录桥。
+原生 SwiftUI + WKWebView 薄壳，把 Agent Portal（`/m/chat`）装进可常驻的 macOS 窗口。设计对齐 iOS 壳（`apps/ios`）：只保存主机地址，登录走网页账号与 `agim_session` cookie。
 
 ## 入口
 
@@ -37,24 +37,17 @@ cd apps/macos
 
 首次打开若被拦截：在 Finder 里对 `Agim.app` **右键 → 打开**，或在「隐私与安全性」里允许。有 Apple Developer 账号时可在 Xcode Signing 填 Team，并用 Developer ID + 公证后再分发。
 
-## 配对与加载
+## 主机与会话
 
-1. 在 Web 控制台 **Settings → Mobile** 生成 QR / 登录链接  
-2. 在 Mac 应用中粘贴登录链接，或分别填写主机 + Token  
-3. 凭证写入 Keychain（`host.iclaw.agim.mac.credentials`）  
-4. WebView 打开登录桥 → cookie / localStorage → `/m/chat`
+1. 在 Mac 应用中填写或粘贴主机（`https://agent.example.com`）  
+2. 主机写入 Keychain（`host.iclaw.agim.mac.credentials`）；**不再保存 API token**  
+3. 壳读取 WKWebView 的 `agim_session` cookie：有会话则打开 `/m/chat`，否则打开 `/login?next=/m/chat`  
+4. 在 WebView 里用用户名 / 密码登录；cookie 留在默认 `WKWebsiteDataStore`  
+5. 登录 / 注册页顶部可「更换主机」。已登录后 Portal 全屏
 
-**现行主路径**（#220）：QR / 链接使用短 TTL 一次性兑换码：
+旧的 `/m/login?t=` / `?c=` 扫码配对已不再使用。粘贴这类链接时只取主机。
 
-```text
-https://host/m/login?c=<exchange-code>&next=/m/chat
-```
-
-页面会 `POST /api/auth/exchange-mobile` 兑换真正的 access token（码用一次即失效）。
-
-兼容旧链接仍可用：`/m/login?t=<raw-token>&next=/m/chat`（不推荐新配对继续发 raw token）。
-
-深链：`agim://pair?c=<code>&host=<urlencoded origin>`（旧 `?t=` 仍兼容）。
+深链：`agim://pair?host=<urlencoded origin>`（遗留的 `t=` / `c=` 会被忽略）。
 
 ## 后台唤醒 / 会话恢复
 
@@ -69,14 +62,14 @@ Mac 合盖、iPhone 切走一段时间后再打开，WKWebView 里的 WebSocket 
 2. SPA（`src/web-app/src/lib/api/ws.ts`）在 `visibilitychange` / `pageshow` / `agim-resume` / `online` 上 **强制重新握手**（1.5s 去抖，避免冷启动连打）
 3. `useChat` 在每次 WS `open` 发 `get-history { threadId }`，把当前会话拉回来
 
-若仍空白，菜单 **重新加载（⌘R）** 会重走 `/m/login` → `/m/chat`。
+若仍空白，菜单 **重新加载（⌘R）** 会重新探测 cookie，再打开 `/m/chat` 或 `/login`。
 
 ## 菜单
 
 | 命令 | 作用 |
 |------|------|
-| 重新加载（⌘R） | 重新走 `/m/login` → `/m/chat` |
-| 退出配对… | 清空 Keychain，并清除 WKWebView 网站数据 |
+| 重新加载（⌘R） | 重新探测 `agim_session`，打开 `/m/chat` 或 `/login` |
+| 退出配对… | 清空 Keychain，并清除 WKWebView 网站数据（含会话 cookie） |
 
 ## 附件选择（拍照 / 照片 / 文件）
 
@@ -116,15 +109,14 @@ Web：`src/web-app/src/lib/share-content.ts`。长文在系统面板内会截断
 
 | | iOS | macOS |
 |--|-----|-------|
-| 配对 | 扫码 + 手动 | 粘贴链接 / 手动（无相机扫码） |
+| 连接主机 | 填写 / 扫描 https 地址 | 粘贴 / 填写主机（无相机） |
 | WebView 封装 | `UIViewRepresentable` | `NSViewRepresentable` |
 | Keychain service | `host.iclaw.agim.credentials` | `host.iclaw.agim.mac.credentials` |
 | 沙箱 | （无独立 entitlements 文件） | App Sandbox + `network.client` |
 
 ## 依赖的主机公共路径
 
-- `/m/login`（公开登录桥；优先 `?c=`，兼容 `?t=`）
-- `/m/chat`（Portal SPA）
+- `/login`、`/register`（账号登录 / 首个用户注册；公开）
+- `/m/chat`（Portal SPA；无 `agim_session` 时服务端 302 到 `/login`）
 - `/fonts/`（CJK 字体，不可 302 到登录页）
-- `POST /api/auth/exchange-mobile`（兑换 QR 短码；公开）
-- `/api/auth/login`、`/ws`（由 WebUI 使用）
+- `/api/auth/login`、`/api/auth/me`、`/ws`（由 WebUI 使用）

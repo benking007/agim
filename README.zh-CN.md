@@ -35,7 +35,7 @@ agim
 
 - 对话：`/`
 - 移动端 Portal：`/m/chat`（`/` Skills·Commands、`@` 工作区、Focus / Loop 底栏等，见 [`docs/portal-composer.md`](docs/portal-composer.md)）
-- 原生壳：iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos)（均包装 `/m/chat`，见 [`docs/macos-shell.md`](docs/macos-shell.md)）
+- 原生壳：iOS [`apps/ios`](apps/ios) · macOS [`apps/macos`](apps/macos)（均包装 `/m/chat`，用主机 + 网页会话 cookie 登录，见 [`docs/macos-shell.md`](docs/macos-shell.md)）
 - 任务：`/tasks`（Loop 审计：`/tasks/loops`）
 - 设置：`/settings`
 

@@ -49,7 +49,7 @@
 - [`im-workspaces-guide.md`](./im-workspaces-guide.md)：IM 工作区使用指南
 - [`keyring-integration.md`](./keyring-integration.md)：keyring/dbus 集成（高级）
 - [`viewer-modes.md`](./viewer-modes.md)：长内容 viewer 模式
-- [`macos-shell.md`](./macos-shell.md)：macOS 桌面壳（WKWebView；配对优先 `?c=` 兑换码）
+- [`macos-shell.md`](./macos-shell.md)：macOS 桌面壳（WKWebView；主机 + `agim_session`）
 
 ## 能力专题
 

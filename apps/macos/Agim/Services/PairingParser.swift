@@ -1,24 +1,28 @@
 import Foundation
 
-/// Parse pairing payloads from Mobile QR / deep links / pasted URLs.
-/// Same contract as the iOS shell (`apps/ios`).
+/// Parse a host URL for the native WKWebView shell.
+/// Token / QR pairing is retired: the shell stores the origin only and
+/// follows `agim_session` (or `/login` when the cookie is missing).
 enum PairingParser {
     struct Result: Equatable {
         var host: String
-        var token: String
     }
 
     static func parse(_ raw: String) -> Result? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        // Bare API tokens are no longer a pairing method.
+        if trimmed.hasPrefix("agim_") {
+            return nil
+        }
+
         if let url = URL(string: trimmed), let fromURL = parseURL(url) {
             return fromURL
         }
 
-        // Bare token — host must be supplied separately by the UI.
-        if trimmed.hasPrefix("agim_") {
-            return nil
+        if let host = normalizeHost(trimmed) {
+            return Result(host: host)
         }
         return nil
     }
@@ -27,28 +31,23 @@ enum PairingParser {
         let scheme = (url.scheme ?? "").lowercased()
 
         if scheme == "agim" {
-            // agim://pair?t=…&host=https%3A%2F%2F…
+            // agim://pair?host=https%3A%2F%2F…  (legacy t=/c= ignored)
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let token = items.first(where: { $0.name == "t" || $0.name == "token" })?.value
             let hostRaw = items.first(where: { $0.name == "host" })?.value
-            guard let token, !token.isEmpty else { return nil }
             guard let hostRaw, let host = normalizeHost(hostRaw) else { return nil }
-            return Result(host: host, token: token)
+            return Result(host: host)
         }
 
         if scheme == "http" || scheme == "https" {
-            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let token = items.first(where: { $0.name == "t" || $0.name == "token" })?.value
-            guard let token, !token.isEmpty else { return nil }
             guard let host = normalizeHost(url) else { return nil }
-            return Result(host: host, token: token)
+            return Result(host: host)
         }
 
         return nil
     }
 
     static func normalizeHost(_ raw: String) -> String? {
-        if let url = URL(string: raw), url.scheme != nil {
+        if let url = URL(string: raw), url.scheme != nil, url.host != nil {
             return normalizeHost(url)
         }
         if let url = URL(string: "https://\(raw)") {
@@ -70,16 +69,47 @@ enum PairingParser {
         return out
     }
 
-    static func wsURL(host: String, token: String? = nil) -> URL? {
+    /// Portal vs login entry. Missing `agim_session` → `/login?next=/m/chat`.
+    static func entryURL(host: String, hasSession: Bool) -> URL? {
+        guard var comps = URLComponents(string: host) else { return nil }
+        comps.fragment = nil
+        if hasSession {
+            comps.path = "/m/chat"
+            comps.query = nil
+        } else {
+            comps.path = "/login"
+            comps.queryItems = [URLQueryItem(name: "next", value: "/m/chat")]
+        }
+        return comps.url
+    }
+
+    static func wsURL(host: String) -> URL? {
         guard var comps = URLComponents(string: host) else { return nil }
         comps.scheme = (comps.scheme?.lowercased() == "https") ? "wss" : "ws"
         comps.path = "/ws"
         comps.fragment = nil
-        if let token, !token.isEmpty {
-            comps.queryItems = [URLQueryItem(name: "token", value: token)]
-        } else {
-            comps.query = nil
-        }
+        comps.query = nil
         return comps.url
+    }
+}
+
+enum SessionProbe {
+    static let cookieName = "agim_session"
+
+    static func isAuthPath(_ path: String) -> Bool {
+        path == "/login" || path == "/register"
+            || path.hasPrefix("/login/") || path.hasPrefix("/register/")
+    }
+
+    static func cookieBelongs(_ cookie: HTTPCookie, toHost host: String) -> Bool {
+        guard cookie.name == cookieName else { return false }
+        guard let hostName = URL(string: host)?.host?.lowercased() else { return false }
+        var domain = cookie.domain.lowercased()
+        if domain.hasPrefix(".") { domain.removeFirst() }
+        return hostName == domain || hostName.hasSuffix(".\(domain)")
+    }
+
+    static func hasSessionCookie(_ cookies: [HTTPCookie], host: String) -> Bool {
+        cookies.contains { cookieBelongs($0, toHost: host) }
     }
 }

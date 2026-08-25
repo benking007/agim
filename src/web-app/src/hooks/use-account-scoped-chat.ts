@@ -10,11 +10,16 @@ import { loadTabThreadId } from '@/lib/web-sessions'
 import type { ChatOutgoing } from '@/types/ws'
 import type { ChatAction } from './chat/chat-reducer'
 
+interface AccountScopedWs {
+  send: (msg: ChatOutgoing) => boolean
+  reconnect?: () => void
+}
+
 export function useAccountScopedChat(
   threadIdRef: MutableRefObject<string>,
   currentReplyIdRef: MutableRefObject<string | null>,
   dispatch: Dispatch<ChatAction>,
-  wsRef: { readonly current: { send: (msg: ChatOutgoing) => boolean } },
+  wsRef: { readonly current: AccountScopedWs },
   pullRemoteRef: MutableRefObject<() => Promise<void>>,
 ): void {
   const authReady = useAuth((s) => s.ready)
@@ -36,7 +41,13 @@ export function useAccountScopedChat(
     currentReplyIdRef.current = null
     dispatch({ kind: 'RESET_CONVERSATION' })
     dispatch({ kind: 'SET_CLIENT_ID', clientId: next })
-    wsRef.current.send({ type: 'get-history', threadId: next })
+    // Upgrade-time `_agimUserId` is sticky. Re-handshake so the new
+    // account's cookie pins cwd to `users/<usr_*>/<agent>/`.
+    if (typeof wsRef.current.reconnect === 'function') {
+      wsRef.current.reconnect()
+    } else {
+      wsRef.current.send({ type: 'get-history', threadId: next })
+    }
     void pullRemoteRef.current()
   }, [
     authReady,

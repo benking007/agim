@@ -25,6 +25,10 @@ vi.mock('@/lib/api/ws', () => ({
     },
     status: () => 'open' as const,
     close: () => {},
+    reconnect: () => {
+      for (const fn of mocks.statusListeners) fn('connecting')
+      for (const fn of mocks.statusListeners) fn('open')
+    },
     subscribe: (l: { type: string; fn: (x: never) => void }) => {
       if (l.type === 'status') {
         mocks.statusListeners.add(l.fn as (s: WsStatus) => void)

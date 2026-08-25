@@ -12,7 +12,7 @@
 
 import { isAbsolute, resolve, sep } from 'node:path'
 import { mkdirSync, realpathSync, statSync } from 'node:fs'
-import { agentCwdForAccount, defaultAgentCwd } from './agent-cwd.js'
+import { agentCwdForAccount, defaultAgentCwd, isAccountWorkspaceUserId } from './agent-cwd.js'
 import { isSensitivePath } from './sensitive-paths.js'
 
 export function resolvePortalWorkspacePath(
@@ -26,7 +26,7 @@ export function resolvePortalWorkspacePath(
   if (trimmed.split(/[\\/]/).includes('..')) return undefined
 
   const uid = typeof accountUserId === 'string' ? accountUserId.trim() : ''
-  const rootDir = uid ? agentCwdForAccount(agent, uid) : defaultAgentCwd(agent)
+  const rootDir = isAccountWorkspaceUserId(uid) ? agentCwdForAccount(agent, uid) : defaultAgentCwd(agent)
 
   let root: string
   try {

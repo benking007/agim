@@ -62,12 +62,18 @@ export function agentCwdForAccount(agentName: string, userId: string): string {
 
 const ACCOUNT_USER_RE = /^usr_[A-Za-z0-9_-]+$/
 
+/** True for a Portal login id (`usr_*`). Ignores `web:` token/loopback ids. */
+export function isAccountWorkspaceUserId(userId: string | undefined | null): userId is string {
+  const uid = typeof userId === 'string' ? userId.trim() : ''
+  return Boolean(uid && ACCOUNT_USER_RE.test(uid))
+}
+
 /** Logged-in Portal / web account id from ALS or `opts.userId` (`usr_*` only). */
 export function accountIdForWorkspace(opts?: { userId?: string }): string | undefined {
   const als = currentAccountUserId()?.trim()
-  if (als && ACCOUNT_USER_RE.test(als)) return als
+  if (isAccountWorkspaceUserId(als)) return als
   const uid = typeof opts?.userId === 'string' ? opts.userId.trim() : ''
-  if (uid && ACCOUNT_USER_RE.test(uid)) return uid
+  if (isAccountWorkspaceUserId(uid)) return uid
   return undefined
 }
 
@@ -92,8 +98,8 @@ export function bindableWorkspacePath(
 ): string | undefined {
   const trimmed = typeof raw === 'string' ? raw.trim() : ''
   if (!trimmed) return undefined
-  const uid = (accountUserId?.trim() || currentAccountUserId()?.trim() || '')
-  if (!uid || !ACCOUNT_USER_RE.test(uid)) return trimmed
+  const uid = accountUserId?.trim() || currentAccountUserId()?.trim() || ''
+  if (!isAccountWorkspaceUserId(uid)) return trimmed
   const root = agentCwdForAccount(agentName, uid)
   return isInsideDir(root, trimmed) ? trimmed : undefined
 }
@@ -106,7 +112,8 @@ export function bindableWorkspacePath(
 export function resolveAgentFilesRoot(agentName: string, accountUserId?: string): string {
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit?.trim()) return explicit.trim()
-  if (accountUserId) return agentCwdForAccount(agentName, accountUserId)
+  const uid = accountUserId?.trim()
+  if (isAccountWorkspaceUserId(uid)) return agentCwdForAccount(agentName, uid)
   return defaultAgentCwd(agentName)
 }
 
@@ -121,7 +128,7 @@ export function resolveAgentWorkspaceRoot(agentName: string, accountUserId?: str
   const explicit = process.env[envKeyFor(agentName)]
   if (explicit?.trim()) return explicit.trim()
   const uid = accountUserId?.trim() || currentAccountUserId()?.trim()
-  if (uid && ACCOUNT_USER_RE.test(uid)) return agentCwdForAccount(agentName, uid)
+  if (isAccountWorkspaceUserId(uid)) return agentCwdForAccount(agentName, uid)
   return defaultAgentCwd(agentName)
 }
 
@@ -129,9 +136,13 @@ export function resolveAgentWorkspaceRoot(agentName: string, accountUserId?: str
  * Ephemeral hint when Portal binds a subdirectory as the working directory.
  * Project files follow `workspacePath`; AGENTS.md / MEMORY.md stay at root.
  */
-export function buildPortalWorkspaceHint(agentName: string, workspacePath: string): string {
+export function buildPortalWorkspaceHint(
+  agentName: string,
+  workspacePath: string,
+  accountUserId?: string,
+): string {
   const cwd = workspacePath.trim()
-  const root = resolveAgentWorkspaceRoot(agentName)
+  const root = resolveAgentWorkspaceRoot(agentName, accountUserId)
   const lines = [
     '## Portal workspace',
     `Working directory: \`${cwd}\``,

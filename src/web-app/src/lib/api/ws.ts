@@ -38,6 +38,8 @@ interface ChatWsHandle {
   send: (msg: ChatOutgoing) => boolean
   subscribe: (l: Listener) => () => void
   status: () => WsStatus
+  /** Tear down the current socket and handshake again (new cookie / account). */
+  reconnect: () => void
   close: () => void
 }
 
@@ -214,10 +216,17 @@ export function openChatWs(): ChatWsHandle {
 
   connect()
 
+  function reconnectNow(): void {
+    if (closed) return
+    attempt = 0
+    connect()
+  }
+
   singleton = {
     send,
     subscribe,
     status: () => status,
+    reconnect: reconnectNow,
     close: () => {
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pageshow', onPageShow)
@@ -227,4 +236,9 @@ export function openChatWs(): ChatWsHandle {
     },
   }
   return singleton
+}
+
+/** Handshake again so the upgrade carries the current login cookie. */
+export function reconnectChatWs(): void {
+  singleton?.reconnect()
 }

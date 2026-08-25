@@ -90,6 +90,8 @@ describe('resolvePortalWorkspacePath', () => {
         .toBe(realpathSync(accountChild))
       expect(resolvePortalWorkspacePath(join(root, 'agim', 'proj'), 'agim', 'usr_abc123'))
         .toBeUndefined()
+      expect(resolvePortalWorkspacePath('proj', 'agim', 'web:tok1'))
+        .toBe(realpathSync(join(root, 'agim', 'proj')))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

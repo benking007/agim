@@ -297,6 +297,7 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'session-loading'
   const chatMessages = useMemo(
     () => {
+      if (demoSessionLoading) return []
       if (demoSteer || demoPet) return petDemoMessages()
       if (demoJump) return jumpLatestDemoMessages()
       if (demoStepReflect) return stepReflectDemoMessages()
@@ -314,7 +315,7 @@ export function AgentPortal(): JSX.Element {
       }
       return state.messages.filter((m) => !m.approval)
     },
-    [demoSteer, demoJump, demoStepReflect, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
+    [demoSessionLoading, demoSteer, demoJump, demoStepReflect, demoTodo, demoPet, demoWidth, demoCollapse, demoMedia, state.messages],
   )
   const chatTurns = useMemo(() => groupChatTurns(chatMessages), [chatMessages])
   const currentReplyInList = chatMessages.some((m) => m.id === state.currentReplyId)

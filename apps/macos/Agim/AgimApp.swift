@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WebKit
 
@@ -10,6 +11,7 @@ struct AgimApp: App {
             RootView()
                 .environment(session)
                 .frame(minWidth: 380, minHeight: 640)
+                .background(WindowTitleHider())
                 .onOpenURL { url in
                     session.handleDeepLink(url)
                 }
@@ -97,5 +99,23 @@ final class AppSession {
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
         let since = Date(timeIntervalSince1970: 0)
         WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: since) {}
+    }
+}
+
+/// Hide the native "Agim" window title — the Portal header already names the agent.
+private struct WindowTitleHider: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { Self.hideTitle(view) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { Self.hideTitle(view) }
+    }
+
+    private static func hideTitle(_ view: NSView) {
+        guard let window = view.window else { return }
+        window.titleVisibility = .hidden
     }
 }

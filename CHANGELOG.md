@@ -88,10 +88,11 @@ All notable changes to this project will be documented in this file.
   They store the host only, read the WKWebView `agim_session` cookie,
   and open `/m/chat` or `/login?next=/m/chat`. Sign-in is username /
   password in the WebView; the login page has a native host switcher.
-- **Portal empty session**: switching conversations shows a spinner
-  (“正在加载会话”) instead of two starter prompt cards, so a slow
-  `get-history` no longer looks frozen. Idle empty sessions keep a
-  small agent mark only.
+- **Portal empty session**: switching conversations shows a centered
+  spinner (“正在加载会话”) instead of two starter prompt cards, so a
+  slow `get-history` no longer looks frozen. Idle empty sessions are
+  blank (no agent title / sample prompts). macOS hides the native
+  window title; the Portal header already shows the agent name.
 - **npm publish via Trusted Publishing**: bump + publish run as the
   root `release.yml` workflow (npm OIDC checks that filename, not a
   nested `workflow_call`). Publish uses npm 11.5.1+ and does not set

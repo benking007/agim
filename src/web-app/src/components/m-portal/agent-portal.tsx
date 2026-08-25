@@ -293,6 +293,8 @@ export function AgentPortal(): JSX.Element {
     && new URLSearchParams(window.location.search).get('demo') === 'jump-latest'
   const demoStepReflect = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('demo') === 'step-reflect'
+  const demoSessionLoading = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('demo') === 'session-loading'
   const chatMessages = useMemo(
     () => {
       if (demoSteer || demoPet) return petDemoMessages()
@@ -760,12 +762,9 @@ export function AgentPortal(): JSX.Element {
   const emptyChatSlot = useMemo(() => (
     <PortalEmptyChat
       dark={theme === 'dark'}
-      agentId={agentId}
-      visual={visual}
-      AgentIcon={AgentIcon}
-      loading={state.historyLoading}
+      loading={demoSessionLoading || state.historyLoading}
     />
-  ), [theme, agentId, visual, AgentIcon, state.historyLoading])
+  ), [theme, demoSessionLoading, state.historyLoading])
 
   function selectAgent(id: string): void {
     switchAgent(id)
@@ -918,7 +917,7 @@ export function AgentPortal(): JSX.Element {
           dark={dark}
           active
           chatTurns={chatTurns}
-          isEmpty={chatMessages.length === 0}
+          isEmpty={chatMessages.length === 0 || demoSessionLoading}
           isTyping={isTyping}
           currentReplyId={state.currentReplyId}
           streamingFallback={streamingFallback}

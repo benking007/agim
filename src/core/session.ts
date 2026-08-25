@@ -98,6 +98,32 @@ function messagesTtlFor(platform: string): number {
 const DEFAULT_TTL = metaTtl()
 const CLEANUP_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
+type WebSessionListListener = (userId: string) => void
+const webSessionListListeners = new Set<WebSessionListListener>()
+
+/** Account-level rail changed (new title, archive, first user turn). */
+export function onWebSessionListChanged(fn: WebSessionListListener): () => void {
+  webSessionListListeners.add(fn)
+  return () => { webSessionListListeners.delete(fn) }
+}
+
+function emitWebSessionListChanged(userId: string): void {
+  if (!userId) return
+  for (const fn of webSessionListListeners) {
+    try { fn(userId) } catch (err) {
+      log.warn({ event: 'session.list_listener_failed', err: String(err) })
+    }
+  }
+}
+
+/** Rail title from the first user line. Matches the SPA `sessionTitleFromText`. */
+export function webSessionTitleFromText(text: string, max = 36): string {
+  const one = text.replace(/\s+/g, ' ').trim()
+  if (!one) return ''
+  if (one.length <= max) return one
+  return `${one.slice(0, max).trimEnd()}…`
+}
+
 function metaStale(s: { lastActivity: Date }, now: number = Date.now()): boolean {
   return now - s.lastActivity.getTime() > metaTtl()
 }
@@ -479,6 +505,19 @@ class SessionManager {
         : { ...message, id: mintChatMessageId() }
       session.messages.push(stored)
       session.lastActivity = new Date()
+      let titleJustSet = false
+      if (
+        platform === 'web'
+        && stored.role === 'user'
+        && !session.title
+        && typeof stored.content === 'string'
+      ) {
+        const title = webSessionTitleFromText(stored.content)
+        if (title) {
+          session.title = title
+          titleJustSet = true
+        }
+      }
       this.sessions.set(key, session)
       // Append-only log avoids rewriting the entire history per turn.
       // Security: explicit mode 0o600 so session history isn't readable
@@ -500,6 +539,9 @@ class SessionManager {
       }
       // Persist metadata only (now small & cheap).
       await this.saveSessionMeta(key, session)
+      if (titleJustSet && session.ownerUserId) {
+        emitWebSessionListChanged(session.ownerUserId)
+      }
     })
   }
 
@@ -1172,18 +1214,30 @@ class SessionManager {
       if (!name.endsWith('.json')) continue
       try {
         const raw = await readFile(join(SESSIONS_DIR, name), 'utf-8')
-        const parsed = JSON.parse(raw) as Partial<Session> & { usage?: { turns?: number } }
+        const parsed = JSON.parse(raw) as PersistedSession & { usage?: { turns?: number } }
         if (parsed.platform !== 'web' || parsed.channelId !== 'web') continue
         if (parsed.ownerUserId !== userId) continue
         if (!parsed.threadId) continue
+        const turns = typeof parsed.usage?.turns === 'number' ? parsed.usage.turns : 0
+        const messageCount = typeof parsed.messageCount === 'number' ? parsed.messageCount : -1
+        const title = typeof parsed.title === 'string' && parsed.title.trim()
+          ? parsed.title.trim()
+          : undefined
+        const archivedAt = typeof parsed.archivedAt === 'number' && Number.isFinite(parsed.archivedAt)
+          ? parsed.archivedAt
+          : undefined
+        // Skip never-sent "New conversation" shells so each device's
+        // empty mint does not pollute every other client.
+        const emptyShell = !title && archivedAt === undefined && messageCount === 0 && turns === 0
+        if (emptyShell) continue
         const lastActivity = parsePersistedDate(parsed.lastActivity)
         out.push({
           id: parsed.threadId,
-          title: parsed.title,
+          title,
           updatedAt: lastActivity ? lastActivity.getTime() : 0,
           agent: parsed.agent || undefined,
-          archivedAt: parsed.archivedAt,
-          turns: typeof parsed.usage?.turns === 'number' ? parsed.usage.turns : 0,
+          archivedAt,
+          turns,
         })
       } catch {
         /* skip */
@@ -1231,10 +1285,40 @@ class SessionManager {
     threadId: string,
     patch: { title?: string; archivedAt?: number; clearArchived?: boolean; agent?: string },
   ): Promise<boolean> {
+    return this.upsertUserWebSession(userId, threadId, patch)
+  }
+
+  /** Create-or-update a web session owned by `userId`. Foreign owners lose. */
+  async upsertUserWebSession(
+    userId: string,
+    threadId: string,
+    patch: { title?: string; archivedAt?: number; clearArchived?: boolean; agent?: string },
+  ): Promise<boolean> {
     const key = `web:web:${threadId}`
     return this.withLock(key, async () => {
-      const session = this.sessions.get(key) || await this.loadSession(key)
-      if (!session || session.ownerUserId !== userId) return false
+      let session = this.sessions.get(key) || await this.loadSession(key)
+      if (!session) {
+        const now = new Date()
+        const agent = typeof patch.agent === 'string' && patch.agent.trim()
+          ? patch.agent.trim()
+          : 'agim'
+        session = {
+          id: `web-web-${threadId}-${Date.now()}-${randomBytes(4).toString('hex')}`,
+          channelId: 'web',
+          threadId,
+          platform: 'web',
+          agent,
+          createdAt: now,
+          lastActivity: now,
+          ttl: DEFAULT_TTL,
+          messages: [],
+          ownerUserId: userId,
+        }
+      } else if (session.ownerUserId && session.ownerUserId !== userId) {
+        return false
+      } else if (!session.ownerUserId) {
+        session.ownerUserId = userId
+      }
       if (typeof patch.title === 'string') {
         const t = patch.title.trim()
         if (t) session.title = t
@@ -1245,6 +1329,7 @@ class SessionManager {
       if (typeof patch.agent === 'string' && patch.agent.trim()) session.agent = patch.agent.trim()
       this.sessions.set(key, session)
       await this.saveSessionMeta(key, session)
+      emitWebSessionListChanged(userId)
       return true
     })
   }

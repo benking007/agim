@@ -18,6 +18,7 @@ import {
   sessionTitleFromText,
   setActiveId,
   upsertSession,
+  replaceIndexFromServer,
 } from './web-sessions'
 import { addLocalWorkspace } from './web-workspaces'
 
@@ -159,5 +160,59 @@ describe('web-sessions', () => {
     }))
     expect(loadIndex().activeId).toBe(other)
     expect(loadTabThreadId()).toBe(mine)
+  })
+
+  it('replaceIndexFromServer keeps the current empty tab and merges server rows', () => {
+    const localId = loadIndex().activeId
+    replaceIndexFromServer([
+      { id: 'web-serverthreadxx', title: 'From Mac', updatedAt: Date.now(), agent: 'agim' },
+    ], localId)
+    const listed = listSessions()
+    expect(listed.some((s) => s.id === localId)).toBe(true)
+    expect(listed.some((s) => s.id === 'web-serverthreadxx' && s.title === 'From Mac')).toBe(true)
+    expect(loadTabThreadId()).toBe(localId)
+  })
+
+  it('replaceIndexFromServer drops stale local threads not on the server', () => {
+    const first = loadIndex().activeId
+    const stale = mintThreadId()
+    upsertSession({ id: stale, title: 'old local', updatedAt: 1 })
+    replaceIndexFromServer([
+      { id: 'web-onlyserverxxxx', title: 'server', updatedAt: Date.now() },
+    ], first)
+    expect(listSessions().some((s) => s.id === stale)).toBe(false)
+    expect(listSessions().some((s) => s.id === first)).toBe(true)
+    expect(listSessions().some((s) => s.id === 'web-onlyserverxxxx')).toBe(true)
+  })
+
+  it('replaceIndexFromServer preserves local workspaceId', () => {
+    const ws = addLocalWorkspace({ name: 'ceshi', path: '/tmp/ceshi-sync' })
+    const id = mintThreadId()
+    upsertSession({ id, title: 'in ceshi', workspaceId: ws.id, updatedAt: Date.now() })
+    setActiveId(id)
+    replaceIndexFromServer([
+      { id, title: 'in ceshi', updatedAt: Date.now() },
+    ], id)
+    expect(findSession(id)?.workspaceId).toBe(ws.id)
+    expect(loadTabThreadId()).toBe(id)
+  })
+
+  it('replaceIndexFromServer hides sessions archived on the server', () => {
+    const first = loadIndex().activeId
+    const other = mintThreadId()
+    upsertSession({ id: other, title: 'gone', updatedAt: Date.now() })
+    replaceIndexFromServer([
+      { id: other, title: 'gone', updatedAt: Date.now(), archivedAt: Date.now() },
+    ], first)
+    expect(listSessions().some((s) => s.id === other)).toBe(false)
+    expect(findSession(other)?.archivedAt).toBeGreaterThan(0)
+    expect(loadTabThreadId()).toBe(first)
+  })
+
+  it('replaceIndexFromServer keeps a just-sent titled session missing from the payload', () => {
+    const first = loadIndex().activeId
+    upsertSession({ id: first, title: 'just sent', updatedAt: Date.now() })
+    replaceIndexFromServer([], first)
+    expect(listSessions().some((s) => s.id === first && s.title === 'just sent')).toBe(true)
   })
 })

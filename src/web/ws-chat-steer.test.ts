@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import type { WebSocket } from 'ws'
 import { sessionManager } from '../core/session.js'
 import { _resetTurnSteer, registerLiveSteer } from '../core/turn-steer.js'
-import { handleClientMessage, webRunAborts } from './ws-chat.js'
+import { handleClientMessage, webRunAborts, bindWsClients, notifyAccountSessionsChanged } from './ws-chat.js'
 
 function fakeWs(): { ws: WebSocket; sent: Record<string, unknown>[] } {
   const sent: Record<string, unknown>[] = []
@@ -63,5 +63,27 @@ describe('handleClientMessage steer', () => {
     expect(sent.some((m) => (
       m.type === 'error' && String(m.message).includes('不支持本轮补充')
     ))).toBe(true)
+  })
+})
+
+describe('notifyAccountSessionsChanged', () => {
+  it('fans out sessions-changed to the same account only', () => {
+    const a = fakeWs()
+    const b = fakeWs()
+    const c = fakeWs()
+    const clients = new Map([
+      ['web-a', { ws: a.ws, id: 'web-a', agent: 'agim', userId: 'u1' }],
+      ['web-b', { ws: b.ws, id: 'web-b', agent: 'agim', userId: 'u1' }],
+      ['web-c', { ws: c.ws, id: 'web-c', agent: 'agim', userId: 'u2' }],
+    ])
+    bindWsClients(clients)
+    try {
+      notifyAccountSessionsChanged('u1')
+      expect(a.sent).toEqual([{ type: 'sessions-changed' }])
+      expect(b.sent).toEqual([{ type: 'sessions-changed' }])
+      expect(c.sent).toEqual([])
+    } finally {
+      bindWsClients(new Map())
+    }
   })
 })

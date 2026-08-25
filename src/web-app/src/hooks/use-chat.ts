@@ -33,7 +33,6 @@ import {
   listSessions,
   loadTabThreadId,
   mintThreadId,
-  replaceIndexFromServer,
   sessionTitleFromText,
   setActiveId,
   subscribeSessions,
@@ -60,6 +59,8 @@ import { makeOnIncoming } from './chat/chat-ws-handlers'
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
+import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
+import type { ChatIncoming } from '@/types/ws'
 
 // ---------------------------------------------------------------------------
 // Re-export everything the existing consumers import from this module.
@@ -123,6 +124,8 @@ export function useChat(): UseChat {
   const threadIdRef = useRef(loadTabThreadId())
   const messagesRef = useRef(state.messages)
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
+  const followIfRemoteSwitchedRef = useRef<() => void>(() => {})
+  const pullRemoteRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
     currentReplyIdRef.current = state.currentReplyId
@@ -140,17 +143,26 @@ export function useChat(): UseChat {
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/api/me/sessions', { credentials: 'same-origin' }).then(async (res) => {
-      if (!res.ok || cancelled) return
-      const body = await res.json() as {
-        sessions?: Array<{ id: string; title?: string; updatedAt: number; agent?: string; archivedAt?: number }>
-      }
-      const rows = (body.sessions ?? []).filter((s) => isWebThreadId(s.id))
-      if (rows.length === 0) return
-      replaceIndexFromServer(rows, threadIdRef.current)
-      if (!cancelled) setSessionSnap(snapshotSessions())
-    }).catch(() => { /* keep local index */ })
-    return () => { cancelled = true }
+    const pull = (): void => {
+      if (cancelled) return
+      void pullRemoteRef.current()
+    }
+    pull()
+    function onVis(): void {
+      if (document.visibilityState === 'visible') pull()
+    }
+    function onFocus(): void { pull() }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', onFocus)
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') pull()
+    }, 15_000)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('focus', onFocus)
+      window.clearInterval(timer)
+    }
   }, [])
 
   useEffect(() => {
@@ -187,7 +199,16 @@ export function useChat(): UseChat {
       flushChunks,
       { threadIdRef },
     )
-    const off2 = ws.subscribe({ type: 'message', fn: onIncoming })
+    const off2 = ws.subscribe({
+      type: 'message',
+      fn: (msg: ChatIncoming) => {
+        if (msg.type === 'sessions-changed') {
+          void pullRemoteRef.current()
+          return
+        }
+        onIncoming(msg)
+      },
+    })
 
     // Persist this tab's threadId so refresh resumes the same server
     // session. Shared localStorage last-focused id is only a seed for
@@ -261,11 +282,17 @@ export function useChat(): UseChat {
       })
     }
     const existing = findSession(threadIdRef.current)
+    const title = existing?.title || sessionTitleFromText(trimmed)
     upsertSession({
       id: threadIdRef.current,
       updatedAt: Date.now(),
       agent: state.agent,
-      ...(existing?.title ? {} : { title: sessionTitleFromText(trimmed) }),
+      ...(existing?.title ? {} : { title }),
+    })
+    void pushAccountSession({
+      threadId: threadIdRef.current,
+      ...(title ? { title } : {}),
+      agent: state.agent,
     })
   }
 
@@ -461,6 +488,7 @@ export function useChat(): UseChat {
     if (!isWebThreadId(id)) return
     const wasActive = id === threadIdRef.current
     const index = markSessionArchived(id)
+    void pushAccountSession({ threadId: id, archivedAt: Date.now() })
     if (!wasActive) return
     followVisibleSession(index.activeId)
   }
@@ -469,7 +497,12 @@ export function useChat(): UseChat {
     const id = workspaceId.trim()
     if (!id || id === CLOUD_WORKSPACE_ID) return
     const currentId = threadIdRef.current
+    const toArchive = listSessions(id)
     archiveSessionsForWorkspace(id)
+    const now = Date.now()
+    for (const s of toArchive) {
+      void pushAccountSession({ threadId: s.id, archivedAt: now })
+    }
     const next = archiveLocalWorkspace(id)
     const current = findSession(currentId)
     if (!current || isSessionArchived(current)) {
@@ -507,6 +540,19 @@ export function useChat(): UseChat {
     const threadId = threadIdRef.current
     if (!threadId) return false
     return wsRef.current.send({ type: 'get-history', threadId })
+  }
+
+  followIfRemoteSwitchedRef.current = () => {
+    const next = loadTabThreadId()
+    if (!isWebThreadId(next) || next === threadIdRef.current) return
+    setActiveWorkspace(findSession(next)?.workspaceId || CLOUD_WORKSPACE_ID)
+    activateThread(next)
+    syncWorkspace(activeWorkspacePath())
+  }
+  pullRemoteRef.current = async () => {
+    const ok = await pullAccountSessions(threadIdRef.current)
+    if (!ok) return
+    followIfRemoteSwitchedRef.current()
   }
 
   return {

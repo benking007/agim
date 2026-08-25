@@ -13,6 +13,8 @@ import type { WsStatus } from '@/lib/api/ws'
 const mocks = vi.hoisted(() => ({
   sent: [] as ChatOutgoing[],
   statusListeners: new Set<(s: WsStatus) => void>(),
+  pullAccountSessions: vi.fn(async () => false),
+  pushAccountSession: vi.fn(async () => true),
 }))
 
 vi.mock('@/lib/api/ws', () => ({
@@ -34,6 +36,11 @@ vi.mock('@/lib/api/ws', () => ({
   }),
 }))
 
+vi.mock('@/lib/web-session-sync', () => ({
+  pullAccountSessions: (...args: unknown[]) => mocks.pullAccountSessions(...args),
+  pushAccountSession: (...args: unknown[]) => mocks.pushAccountSession(...args),
+}))
+
 import { useChat } from './use-chat'
 import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
 import { addLocalWorkspace, listWorkspaces } from '@/lib/web-workspaces'
@@ -45,6 +52,8 @@ describe('useChat multi-session', () => {
     sessionStorage.clear()
     mocks.sent.length = 0
     mocks.statusListeners.clear()
+    mocks.pullAccountSessions.mockClear()
+    mocks.pushAccountSession.mockClear()
   })
 
   it('does not mint a second empty thread on New conversation', () => {
@@ -227,6 +236,27 @@ describe('useChat multi-session', () => {
     })
     expect(result.current.activeSessionId).toBe(previousId)
     expect(result.current.sessions).toHaveLength(before)
+    unmount()
+  })
+
+  it('send and archive push the session to the account API', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const firstId = result.current.activeSessionId
+    act(() => { result.current.send('hello sync') })
+    expect(mocks.pushAccountSession).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: firstId,
+      title: 'hello sync',
+    }))
+
+    act(() => { result.current.newConversation() })
+    const secondId = result.current.activeSessionId
+    act(() => { result.current.send('archive me') })
+    mocks.pushAccountSession.mockClear()
+    act(() => { result.current.archiveSession(secondId) })
+    expect(mocks.pushAccountSession).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: secondId,
+      archivedAt: expect.any(Number),
+    }))
     unmount()
   })
 })

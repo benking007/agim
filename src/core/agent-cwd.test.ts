@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdirSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +15,7 @@ import {
   planImOpsUpsert,
   bootstrapAgentWorkspaces,
   buildAgimImOpsBlock,
+  bindableWorkspacePath,
   AGIM_MEMORY_LINK_START,
   AGIM_IM_OPS_START,
   AGIM_IM_OPS_END,
@@ -54,6 +56,44 @@ describe('resolveAgentCwd', () => {
   it('pins IM+account ALS to ~/.agim-workspaces/users/<id>/<agent>', () => {
     const cwd = runWithAccountUser('usr_abc123', () => resolveAgentCwd('claude-code', FULL_IM_OPTS))
     expect(cwd).toBe(join(tmpRoot, 'users', 'usr_abc123', 'claude-code'))
+  })
+
+  it('pins web+usr_* userId even when ALS is empty', () => {
+    expect(resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'usr_abc123',
+    })).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+  })
+
+  it('ignores a shared-tree workspacePath once an account is in scope', () => {
+    const stale = join(tmpRoot, 'agim', 'old-proj')
+    mkdirSync(stale, { recursive: true })
+    const cwd = runWithAccountUser('usr_abc123', () => resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'usr_abc123',
+      workspacePath: stale,
+    }))
+    expect(cwd).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+  })
+
+  it('keeps a subdirectory that already lives under the account tree', () => {
+    const child = join(tmpRoot, 'users', 'usr_abc123', 'agim', 'proj')
+    mkdirSync(child, { recursive: true })
+    const cwd = runWithAccountUser('usr_abc123', () => resolveAgentCwd('agim', {
+      threadId: 'web-thread1',
+      platform: 'web',
+      userId: 'usr_abc123',
+      workspacePath: child,
+    }))
+    expect(cwd).toBe(child)
+  })
+
+  it('bindableWorkspacePath drops shared-tree leftovers for usr_*', () => {
+    expect(bindableWorkspacePath(join(tmpRoot, 'agim', 'x'), 'agim', 'usr_abc123')).toBeUndefined()
+    const child = join(tmpRoot, 'users', 'usr_abc123', 'agim', 'x')
+    expect(bindableWorkspacePath(child, 'agim', 'usr_abc123')).toBe(child)
   })
 
   it('returns default workspace dir when full IM context is present', () => {
@@ -133,6 +173,12 @@ describe('resolveAgentWorkspaceRoot', () => {
   it('maps native to the agim tree', () => {
     expect(resolveAgentWorkspaceRoot('native')).toBe(join(tmpRoot, 'agim'))
     expect(resolveAgentWorkspaceRoot('agim')).toBe(join(tmpRoot, 'agim'))
+  })
+
+  it('maps a logged-in account to users/<id>/<agent>', () => {
+    const root = runWithAccountUser('usr_abc123', () => resolveAgentWorkspaceRoot('agim'))
+    expect(root).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
+    expect(resolveAgentWorkspaceRoot('agim', 'usr_abc123')).toBe(join(tmpRoot, 'users', 'usr_abc123', 'agim'))
   })
 
   it('honors AGIM_<AGENT>_CWD', () => {

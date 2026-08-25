@@ -521,7 +521,7 @@ export async function handleClientMessage(
       runAbort.signal.addEventListener('abort', onParentAbort, { once: true })
 
       try {
-        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath, client.agent)
+        const workspacePath = resolvePortalWorkspacePath(msg.workspacePath, client.agent, accountUserId)
         const routeCtx: RouteContext = {
           threadId: clientId,
           channelId: 'web',
@@ -964,7 +964,7 @@ export async function handleClientMessage(
     // list so the UI repaints the cleared state.
     case 'set-workspace': {
       const raw = typeof msg.workspacePath === 'string' ? msg.workspacePath : ''
-      const resolved = resolvePortalWorkspacePath(raw, client.agent)
+      const resolved = resolvePortalWorkspacePath(raw, client.agent, accountUserId)
       // Prefer getExistingSession so a mere folder bind does not touch
       // lastActivity (which would race get-history and paint "Just now").
       let session = await sessionManager.getExistingSession('web', 'web', clientId)

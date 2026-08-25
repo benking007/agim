@@ -44,7 +44,7 @@ import { buildContextSnippet as buildReminderContextSnippet } from './reminders.
 import { buildViewerHintSnippet } from './render-router.js'
 import { getViewerConfig, isViewerEnabledForPlatform } from './viewer-config.js'
 import { expandInlineChannelReply, needsFullInlineDelivery } from './inline-delivery.js'
-import { buildPortalWorkspaceHint, defaultAgentCwd, resolveAgentCwd } from './agent-cwd.js'
+import { buildPortalWorkspaceHint, bindableWorkspacePath, defaultAgentCwd, resolveAgentCwd } from './agent-cwd.js'
 import { buildPersonaSnippet } from './persona.js'
 import { handleApprovalCommand } from './commands/approval.js'
 import { handlePlanCommand } from './commands/plan.js'
@@ -816,10 +816,11 @@ export async function callAgentWithHistory(
     if (sess?.compactRate) compactRate = normalizeCompactRate(sess.compactRate)
     preferredWorkerAgent = resolvePreferredWorkerAgent(sess?.agent ?? agent.name, sess?.preferredWorkerAgent)
     if (!ctx.workspacePath && sess?.workspacePath) ctx.workspacePath = sess.workspacePath
-    if (ctx.workspacePath && ctx.workspacePath !== sess?.workspacePath) {
+    ctx.workspacePath = bindableWorkspacePath(ctx.workspacePath, agent.name)
+    if ((ctx.workspacePath || '') !== (sess?.workspacePath || '')) {
       await sessionManager.patchSession(
         ctx.platform, ctx.channelId, storageThreadId,
-        { workspacePath: ctx.workspacePath },
+        { workspacePath: ctx.workspacePath || '' },
       )
     }
     // Skip preferred CLI when probe/quarantine says it cannot run — do not

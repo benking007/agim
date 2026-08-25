@@ -82,7 +82,14 @@ skipIfNoDb('outbox CRUD', () => {
     expect(row.status).toBe('pending')
     expect(row.last_error).toBe('boom')
     expect(row.next_attempt_at).not.toBeNull()
-    // pickPending excludes rows whose next_attempt_at is in the future
+    expect(row.last_attempt_at).not.toBeNull()
+    // First backoff is 1s and SQLite datetime('now') is second precision, so
+    // pickPending can legally return this row if the clock ticks. Assert the
+    // schedule, then use the 5s second-failure delay for the exclusion check.
+    expect(row.next_attempt_at! > row.last_attempt_at!).toBe(true)
+    const res2 = outbox.markFailed(id, 'boom2')
+    expect(res2.gaveUp).toBe(false)
+    expect(res2.attempts).toBe(2)
     expect(outbox.pickPending(10)).toEqual([])
   })
 

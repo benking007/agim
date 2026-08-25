@@ -63,3 +63,30 @@ export function cronDailyAt(hhmm: string): string {
   const minute = m ? Math.min(59, Math.max(0, Number(m[2]))) : 0
   return `${minute} ${hour} * * *`
 }
+
+export type ScheduleCronUi = {
+  mode: 'interval' | 'daily'
+  minutes: string
+  time: string
+}
+
+/** Reverse the Portal cron builders so the edit form can be prefilled. */
+export function parseScheduleCron(cron: string): ScheduleCronUi {
+  const raw = (cron || '').trim()
+  const every = /^\*\/(\d{1,2})\s+\*\s+\*\s+\*\s+\*$/.exec(raw)
+  if (every) {
+    const n = Math.min(59, Math.max(1, Number(every[1])))
+    return { mode: 'interval', minutes: String(n), time: '09:00' }
+  }
+  const daily = /^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$/.exec(raw)
+  if (daily) {
+    const minute = Math.min(59, Math.max(0, Number(daily[1])))
+    const hour = Math.min(23, Math.max(0, Number(daily[2])))
+    return {
+      mode: 'daily',
+      minutes: '30',
+      time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+    }
+  }
+  return { mode: 'daily', minutes: '30', time: '09:00' }
+}

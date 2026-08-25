@@ -1,5 +1,5 @@
 // schedule-api — member-writable REST for cron schedules.
-// GET /api/schedules stays on jobs-api.ts (list + member scope).
+// GET /api/schedules stays on jobs-api.ts (per signed-in owner, including admins).
 // Model / artifacts are NOT columns — Portal wraps them into `prompt`.
 //
 // Endpoints:
@@ -11,7 +11,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registry } from '../core/registry.js'
 import { parseCron } from '../core/cron.js'
 import { readBody, sendJson, sendError } from './http-utils.js'
-import { getRequestUserId, isRequestAdmin } from './auth.js'
+import { ownerIdIsAccount, requestOwnerId } from './member-scope.js'
 
 /**
  * Match-and-handle dispatcher. Returns true when the request was served.
@@ -43,8 +43,8 @@ function asNonEmptyString(value: unknown, max: number): string | null {
 }
 
 async function handleCreate(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const userId = getRequestUserId(req)
-  if (!userId && !isRequestAdmin(req)) {
+  const ownerId = requestOwnerId(req)
+  if (!ownerId) {
     sendError(res, 401, 'AUTH_REQUIRED', { message: 'login required' })
     return
   }
@@ -83,7 +83,7 @@ async function handleCreate(req: IncomingMessage, res: ServerResponse): Promise<
       cron,
       prompt,
       enabled: body.enabled !== false,
-      creatorId: userId || '',
+      creatorId: ownerId,
     })
     sendJson(res, 201, { id, schedule: getSchedule(id) })
   } catch (err) {
@@ -108,9 +108,15 @@ async function loadOwned(
     sendJson(res, 404, { error: 'not found' })
     return null
   }
-  if (isRequestAdmin(req)) return row
-  const userId = getRequestUserId(req)
-  if (!userId || row.creator_id !== userId) {
+  const ownerId = requestOwnerId(req)
+  if (!ownerId) {
+    sendError(res, 401, 'AUTH_REQUIRED', { message: 'login required' })
+    return null
+  }
+  const creator = row.creator_id || ''
+  const ownRow = creator === ownerId
+    || (!creator && !ownerIdIsAccount(ownerId))
+  if (!ownRow) {
     sendError(res, 403, 'FORBIDDEN', { message: 'not allowed' })
     return null
   }

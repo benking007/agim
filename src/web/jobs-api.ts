@@ -13,7 +13,7 @@
 //   GET    /api/bgjobs                      → { roots, groups }
 //   GET    /api/bgjobs/:id                  → { job }
 //   GET    /api/subtasks                    → { subtasks }
-//   GET    /api/schedules                   → { schedules }
+//   GET    /api/schedules                   → { schedules }  (current account only)
 //   POST   /api/schedules                   → { id }          (schedule-api.ts)
 //   PATCH  /api/schedules/:id               → { ok }          (schedule-api.ts)
 //   DELETE /api/schedules/:id               → { ok }          (schedule-api.ts)
@@ -39,6 +39,8 @@ import {
 import {
   emptyMemberScope,
   jobVisibleToScope,
+  ownerIdIsAccount,
+  requestOwnerId,
   resolveMemberScope,
   sendForbidden,
 } from './member-scope.js'
@@ -136,14 +138,21 @@ export async function handleJobsApi(
 
 // ─── handlers ───────────────────────────────────────────────────────
 
+function wantsMineOnly(url: URL): boolean {
+  const raw = (url.searchParams.get('mine') || '').trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes'
+}
+
 async function handleListJobs(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
     const jb = await import('../core/job-board.js')
     type JobStatus = import('../core/job-board.js').JobStatus
     type JobKind = import('../core/job-board.js').JobKind
-    const scope = await resolveMemberScope(req)
-    if (emptyMemberScope(scope)) {
-      sendJson(res, 200, { jobs: [], stats: { total: 0, pending: 0, running: 0, completed: 0, failed: 0 } })
+    const emptyStats = { total: 0, pending: 0, running: 0, completed: 0, failed: 0 }
+    const mine = wantsMineOnly(url)
+    const scope = mine ? null : await resolveMemberScope(req)
+    if (scope && emptyMemberScope(scope)) {
+      sendJson(res, 200, { jobs: [], stats: emptyStats })
       return
     }
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 500)
@@ -159,12 +168,24 @@ async function handleListJobs(req: IncomingMessage, res: ServerResponse, url: UR
     const opts: { agent?: string; kind?: JobKind; creatorId?: string; threadKeys?: string[] } = {}
     if (agent) opts.agent = agent
     if (kind) opts.kind = kind
-    if (scope.kind === 'user') {
+    if (mine) {
+      const ownerId = requestOwnerId(req)
+      if (!ownerId) {
+        sendJson(res, 200, { jobs: [], stats: emptyStats })
+        return
+      }
+      opts.creatorId = ownerId
+      if (ownerIdIsAccount(ownerId)) opts.threadKeys = []
+    } else if (scope?.kind === 'user') {
       opts.creatorId = scope.userId
       opts.threadKeys = scope.threadKeys
     }
     const jobs = jb.listJobs(limit, status, opts)
-    const stats = jb.getJobStats(scope.kind === 'user' ? { creatorId: scope.userId, threadKeys: scope.threadKeys } : {})
+    const stats = jb.getJobStats(
+      mine && opts.creatorId
+        ? (opts.threadKeys ? { creatorId: opts.creatorId, threadKeys: opts.threadKeys } : { creatorId: opts.creatorId })
+        : (scope?.kind === 'user' ? { creatorId: scope.userId, threadKeys: scope.threadKeys } : {}),
+    )
     sendJson(res, 200, { jobs, stats })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -317,14 +338,15 @@ async function handleCreateJob(req: IncomingMessage, res: ServerResponse): Promi
 
 async function handleListSchedules(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   try {
-    const scope = await resolveMemberScope(req)
-    if (emptyMemberScope(scope)) { sendJson(res, 200, { schedules: [] }); return }
+    const ownerId = requestOwnerId(req)
+    if (!ownerId) { sendJson(res, 200, { schedules: [] }); return }
     const { listSchedules } = await import('../core/schedule.js')
     const agent = url.searchParams.get('agent') || undefined
-    const rows = listSchedules(50, agent ? { agent } : {})
-    const schedules = scope.kind === 'admin'
-      ? rows
-      : rows.filter((s) => (s.creator_id || '') === scope.userId)
+    const schedules = listSchedules(50, {
+      creatorId: ownerId,
+      strictOwner: ownerIdIsAccount(ownerId),
+      ...(agent ? { agent } : {}),
+    })
     sendJson(res, 200, { schedules })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })

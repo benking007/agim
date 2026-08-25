@@ -75,6 +75,8 @@ export interface ListJobsQuery extends PageQuery {
   status?: JobStatus
   agent?: string
   kind?: JobKind
+  /** Portal automation: restrict to the signed-in account, including admins. */
+  mine?: boolean
 }
 
 export interface ListJobsResponse {

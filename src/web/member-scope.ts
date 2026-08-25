@@ -1,9 +1,11 @@
 // member-scope — resolve a web request into an admin vs member visibility
-// window. Admins see the whole instance. Members see rows tied to their
-// account id or to web threads they own. Ownerless / foreign rows stay hidden.
+// window. Admins still see instance-wide ops surfaces (jobs board, reminders).
+// Portal automations use requestOwnerId() so even an admin only sees their
+// own scheduled tasks. Members see rows tied to their account id or to web
+// threads they own. Ownerless / foreign rows stay hidden.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { getRequestUserId, isRequestAdmin } from './auth.js'
+import { getRequestActor, getRequestUserId, isRequestAdmin } from './auth.js'
 import { sendError } from './http-utils.js'
 
 const MAX_THREAD_KEYS = 400
@@ -39,6 +41,27 @@ export function sendForbidden(res: ServerResponse, message = 'not allowed'): voi
 /** List/read APIs: empty result rather than 403 when the actor has no account. */
 export function emptyMemberScope(scope: MemberScope): scope is { kind: 'none' } {
   return scope.kind === 'none'
+}
+
+/**
+ * Owner key for Portal-owned rows (scheduled tasks, "mine" job lists).
+ * Logged-in accounts — including admins — are scoped to their `usr_*` id
+ * so one person's automations never appear in another person's list.
+ * Loopback / auth-off without a user id fall back to the stable actor
+ * string (`web:loopback` / `web:auth-off`).
+ */
+export function requestOwnerId(req: IncomingMessage): string | undefined {
+  const userId = getRequestUserId(req)
+  if (userId) return userId
+  if (!isRequestAdmin(req)) return undefined
+  const actor = getRequestActor(req)
+  if (!actor || actor === 'web:unknown') return undefined
+  return actor
+}
+
+/** `usr_*` rows must not mix with legacy ownerless (`creator_id = ''`) rows. */
+export function ownerIdIsAccount(ownerId: string): boolean {
+  return ownerId.startsWith('usr_')
 }
 
 export function scopeOwnsThread(

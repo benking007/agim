@@ -42,6 +42,7 @@ export default defineConfig({
       'src/core/commands/loop-parent-gate.test.ts',
       'src/web/background-tasks-api.test.ts',
       'src/web/schedule-api.test.ts',
+      'src/web/schedule-owner-scope.test.ts',
       'test/unit/audit-events.test.ts',
       'test/unit/goal-evidence.test.ts',
       'test/unit/goals-migration.test.ts',

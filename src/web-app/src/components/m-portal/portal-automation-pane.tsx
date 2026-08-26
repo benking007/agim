@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Folder, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -29,6 +29,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { Job, Schedule } from '@/types/api'
 import { PortalSwitch } from './portal-switch'
+import { PortalWorkspacePicker } from './portal-workspace-picker'
 
 type EditorState = { mode: 'create' } | { mode: 'edit'; row: Schedule }
 
@@ -243,6 +244,7 @@ function ScheduleEditorDialog(props: {
   const [time, setTime] = useState('09:00')
   const [prompt, setPrompt] = useState('')
   const [artifacts, setArtifacts] = useState('PROJECTS/schedule-output')
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -298,9 +300,21 @@ function ScheduleEditorDialog(props: {
     )
   }
 
+  function handleOpenChange(next: boolean): void {
+    if (!next && pickerOpen) return
+    if (!next) setPickerOpen(false)
+    onOpenChange(next)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+    <>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="max-w-md"
+        onPointerDownOutside={(e) => { if (pickerOpen) e.preventDefault() }}
+        onFocusOutside={(e) => { if (pickerOpen) e.preventDefault() }}
+        onInteractOutside={(e) => { if (pickerOpen) e.preventDefault() }}
+      >
         <DialogHeader>
           <DialogTitle>
             {editing ? t('chat.portal.automationEdit') : t('chat.portal.automationNew')}
@@ -381,16 +395,29 @@ function ScheduleEditorDialog(props: {
             />
           </Field>
           <Field label={t('chat.portal.automationArtifacts')}>
-            <Input
-              value={artifacts}
-              onChange={(e) => setArtifacts(e.target.value)}
-              placeholder={t('chat.portal.automationArtifactsPlaceholder')}
-            />
+            <div className="flex gap-2">
+              <Input
+                data-testid="automation-artifacts-input"
+                value={artifacts}
+                onChange={(e) => setArtifacts(e.target.value)}
+                placeholder={t('chat.portal.automationArtifactsPlaceholder')}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                data-testid="automation-artifacts-browse"
+                className="shrink-0 gap-1.5"
+                onClick={() => setPickerOpen(true)}
+              >
+                <Folder className="h-4 w-4" />
+                {t('chat.portal.automationArtifactsBrowse')}
+              </Button>
+            </div>
             <p className="text-[11px] text-zinc-400">{t('chat.portal.automationArtifactsHint')}</p>
           </Field>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('actions.cancel')}</Button>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>{t('actions.cancel')}</Button>
           <Button
             onClick={submit}
             disabled={!name.trim() || !prompt.trim() || pending || (isAgim && !selectedModel)}
@@ -402,6 +429,15 @@ function ScheduleEditorDialog(props: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <PortalWorkspacePicker
+      open={pickerOpen}
+      agentId={agent}
+      pathKind="relative"
+      initialPath={artifacts}
+      onOpenChange={setPickerOpen}
+      onPicked={(dir) => setArtifacts(dir.path)}
+    />
+    </>
   )
 }
 

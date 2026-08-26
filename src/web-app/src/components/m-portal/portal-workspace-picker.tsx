@@ -32,8 +32,13 @@ export function PortalWorkspacePicker(props: {
   agentId: string
   onOpenChange: (open: boolean) => void
   onPicked: (dir: { name: string; path: string }) => void
+  /** `relative` returns a workspace-relative path (schedule artifacts). */
+  pathKind?: 'absolute' | 'relative'
+  /** Prefill / start listing at this workspace-relative path. */
+  initialPath?: string
 }): JSX.Element {
-  const { open, agentId, onOpenChange, onPicked } = props
+  const { open, agentId, onOpenChange, onPicked, pathKind = 'absolute', initialPath } = props
+  const relative = pathKind === 'relative'
   const { t } = useTranslation()
   const [relPath, setRelPath] = useState('')
   const [typed, setTyped] = useState('')
@@ -42,18 +47,25 @@ export function PortalWorkspacePicker(props: {
 
   useEffect(() => {
     if (!open) return
-    setRelPath('')
-    setTyped('')
+    const start = sanitizeRel(initialPath || '')
+    setRelPath(parentRel(start))
+    setTyped(start)
     setError('')
     setBusy(false)
-  }, [open])
+  }, [open, initialPath])
 
   const listing = useQuery({
     queryKey: ['portal', 'workspace-picker', agentId, relPath],
     queryFn: () => api.getWorkspaceFiles({ agent: agentId, path: relPath || undefined }),
     enabled: open && !!agentId,
     staleTime: 15_000,
+    retry: false,
   })
+
+  useEffect(() => {
+    if (!open || !listing.isError || !relPath) return
+    setRelPath('')
+  }, [open, listing.isError, relPath])
 
   const dir: WorkspaceDirListing | undefined = (() => {
     const data = listing.data
@@ -70,6 +82,16 @@ export function PortalWorkspacePicker(props: {
     const next = path.trim()
     if (!next) {
       setError(t('chat.portal.workspacePickerRootHint'))
+      return
+    }
+    if (relative) {
+      const rel = sanitizeRel(next) || (dir?.base ? toWorkspaceRel(next, dir.base) : null)
+      if (!rel) {
+        setError(t('chat.portal.workspacePickerRootHint'))
+        return
+      }
+      onPicked({ name: workspaceBasename(rel), path: rel })
+      onOpenChange(false)
       return
     }
     setBusy(true)
@@ -108,7 +130,11 @@ export function PortalWorkspacePicker(props: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg" data-testid="workspace-picker">
+      <DialogContent
+        className="z-[70] sm:max-w-lg"
+        overlayClassName="z-[60]"
+        data-testid="workspace-picker"
+      >
         <DialogHeader>
           <DialogTitle>{t('chat.portal.workspacePickerTitle')}</DialogTitle>
           <DialogDescription>
@@ -196,7 +222,7 @@ export function PortalWorkspacePicker(props: {
         {error && <p className="text-sm text-danger" role="alert">{error}</p>}
 
         <DialogFooter>
-          {canPickDirectory() && (
+          {canPickDirectory() && !relative && (
             <Button type="button" variant="outline" disabled={busy} onClick={() => { void pickLocal() }}>
               {t('chat.portal.workspacePickerBrowseLocal')}
             </Button>
@@ -256,4 +282,28 @@ export function joinRel(...parts: string[]): string {
     .flatMap((p) => p.split(/[\\/]/))
     .filter((p) => p && p !== '.')
     .join('/')
+}
+
+/** Workspace-relative path, or empty when the value is missing / escapes. */
+export function sanitizeRel(raw: string): string {
+  const trimmed = raw.trim().replace(/\\/g, '/')
+  if (!trimmed || trimmed.startsWith('/') || /^[A-Za-z]:/.test(trimmed)) return ''
+  const parts = trimmed.split('/').filter((p) => p && p !== '.')
+  if (parts.length === 0 || parts.some((p) => p === '..')) return ''
+  return parts.join('/')
+}
+
+export function parentRel(rel: string): string {
+  const parts = sanitizeRel(rel).split('/').filter(Boolean)
+  parts.pop()
+  return parts.join('/')
+}
+
+/** Strip `base` from an absolute workspace path. Root itself is not a subfolder. */
+export function toWorkspaceRel(absPath: string, base: string): string | null {
+  const abs = absPath.replace(/\\/g, '/').replace(/\/+$/, '')
+  const root = base.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!abs || !root || abs === root) return null
+  if (!abs.startsWith(`${root}/`)) return null
+  return sanitizeRel(abs.slice(root.length + 1)) || null
 }

@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import '@/i18n'
-import { PortalWorkspacePicker, joinRel } from './portal-workspace-picker'
+import { PortalWorkspacePicker, joinRel, parentRel, sanitizeRel, toWorkspaceRel } from './portal-workspace-picker'
 
 const getWorkspaceFiles = vi.fn()
 const resolveWorkspacePath = vi.fn()
@@ -40,7 +40,10 @@ const PROJ = {
   ],
 }
 
-function renderPicker(onPicked = vi.fn()) {
+function renderPicker(
+  onPicked = vi.fn(),
+  extra: { pathKind?: 'absolute' | 'relative'; initialPath?: string } = {},
+) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -51,6 +54,8 @@ function renderPicker(onPicked = vi.fn()) {
         agentId="agim"
         onOpenChange={() => {}}
         onPicked={onPicked}
+        pathKind={extra.pathKind}
+        initialPath={extra.initialPath}
       />
     </QueryClientProvider>,
   )
@@ -62,6 +67,27 @@ describe('joinRel', () => {
     expect(joinRel('', 'proj')).toBe('proj')
     expect(joinRel('proj', 'src')).toBe('proj/src')
     expect(joinRel('proj/src', '')).toBe('proj/src')
+  })
+})
+
+describe('sanitizeRel / parentRel / toWorkspaceRel', () => {
+  it('keeps workspace-relative folders and drops escapes', () => {
+    expect(sanitizeRel('PROJECTS/gold-daily')).toBe('PROJECTS/gold-daily')
+    expect(sanitizeRel('../etc')).toBe('')
+    expect(sanitizeRel('/tmp/x')).toBe('')
+    expect(parentRel('PROJECTS/gold-daily')).toBe('PROJECTS')
+    expect(parentRel('PROJECTS')).toBe('')
+  })
+
+  it('strips the workspace base from an absolute path', () => {
+    expect(toWorkspaceRel(
+      '/home/u/.agim-workspaces/agim/PROJECTS/gold',
+      '/home/u/.agim-workspaces/agim',
+    )).toBe('PROJECTS/gold')
+    expect(toWorkspaceRel(
+      '/home/u/.agim-workspaces/agim',
+      '/home/u/.agim-workspaces/agim',
+    )).toBeNull()
   })
 })
 
@@ -154,5 +180,24 @@ describe('PortalWorkspacePicker', () => {
       expect(screen.getByRole('alert').textContent).toMatch(/subdirectory/i)
     })
     expect(onPicked).not.toHaveBeenCalled()
+  })
+
+  it('returns a workspace-relative path without resolving', async () => {
+    getWorkspaceFiles.mockResolvedValue(ROOT)
+    const user = userEvent.setup()
+    const onPicked = renderPicker(vi.fn(), { pathKind: 'relative' })
+
+    await waitFor(() => {
+      expect(screen.getByText('proj')).toBeInTheDocument()
+    })
+    const useButtons = screen.getAllByRole('button', { name: 'Use this folder' })
+    const enabled = useButtons.find((b) => !(b as HTMLButtonElement).disabled)
+    if (!enabled) throw new Error('expected a row-level Use this folder button')
+    await user.click(enabled)
+
+    await waitFor(() => {
+      expect(onPicked).toHaveBeenCalledWith({ name: 'proj', path: 'proj' })
+    })
+    expect(resolveWorkspacePath).not.toHaveBeenCalled()
   })
 })

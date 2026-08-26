@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '@/i18n'
 
 const getWorkspaceFiles = vi.fn()
+const updateMutate = vi.fn()
 
 vi.mock('@/lib/api/endpoints', () => ({
   api: {
@@ -30,7 +31,7 @@ vi.mock('@/hooks/use-schedules', () => ({
       ],
     },
   }),
-  useUpdateSchedule: () => ({ isPending: false, mutate: vi.fn() }),
+  useUpdateSchedule: () => ({ isPending: false, mutate: updateMutate }),
   useDeleteSchedule: () => ({ mutate: vi.fn() }),
   useCreateSchedule: () => ({ isPending: false, mutate: vi.fn() }),
 }))
@@ -87,6 +88,7 @@ function renderPane(): void {
 describe('PortalAutomationPane', () => {
   afterEach(() => {
     getWorkspaceFiles.mockReset()
+    updateMutate.mockReset()
   })
 
   it('lists a schedule with its artifacts path', () => {
@@ -126,5 +128,31 @@ describe('PortalAutomationPane', () => {
     await waitFor(() => {
       expect(screen.getByTestId('automation-artifacts-input')).toHaveValue('PROJECTS/gold-daily')
     })
+  })
+
+  it('opens the editor with existing fields and saves a PATCH', async () => {
+    const user = userEvent.setup()
+    renderPane()
+    await user.click(screen.getByTestId('portal-schedule-edit-7'))
+    expect(screen.getByRole('heading', { name: 'Edit scheduled task' })).toBeInTheDocument()
+    const nameInput = screen.getByDisplayValue('gold-daily')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'gold-evening')
+    const prompt = screen.getByDisplayValue('写日报')
+    await user.clear(prompt)
+    await user.type(prompt, '写晚报')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(updateMutate).toHaveBeenCalledTimes(1)
+    const arg = updateMutate.mock.calls[0]?.[0] as {
+      id: number
+      body: { name: string; agent: string; cron: string; prompt: string }
+    }
+    expect(arg.id).toBe(7)
+    expect(arg.body.name).toBe('gold-evening')
+    expect(arg.body.agent).toBe('agim')
+    expect(arg.body.cron).toBe('30 9 * * *')
+    expect(arg.body.prompt).toContain('写晚报')
+    expect(arg.body.prompt).toContain('deepseek-v4-pro')
+    expect(arg.body.prompt).toContain('PROJECTS/gold-daily')
   })
 })

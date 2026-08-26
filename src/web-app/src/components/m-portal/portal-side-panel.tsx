@@ -108,7 +108,6 @@ export function PortalSidePanel(props: {
           icon={<FolderTree className="h-4 w-4" />}
         />
         <div className="my-2 h-px w-8 bg-zinc-700/40" />
-        {pane === 'chat' ? (
         <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" aria-label={t('chat.portal.workspaces')}>
           {workspaces.map((workspace) => {
             const selected = workspace.id === activeWorkspaceId
@@ -143,9 +142,6 @@ export function PortalSidePanel(props: {
             )
           })}
         </nav>
-        ) : (
-          <div className="min-h-0 flex-1" />
-        )}
         <div className="mt-auto flex flex-col items-center gap-1 pt-2">
           <IconRailButton
             dark={dark}
@@ -258,7 +254,6 @@ export function PortalSidePanel(props: {
         </nav>
       </div>
 
-      {pane === 'chat' ? (
       <div className="mt-4 flex min-h-0 flex-1 flex-col">
         <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
           <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
@@ -394,9 +389,6 @@ export function PortalSidePanel(props: {
           })}
         </nav>
       </div>
-      ) : (
-        <div className="min-h-0 flex-1" />
-      )}
 
       <div className="mt-4 shrink-0 space-y-3">
         <div className={cn('flex items-center justify-between gap-2 border-t pt-4', dark ? 'border-zinc-800' : 'border-zinc-200')}>

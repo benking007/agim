@@ -9,10 +9,11 @@
  * stream doesn't render 60 times a second (each setState costs
  * roughly a reconciliation pass — at 60fps that's the budget gone).
  *
- * The user-driven `send` API is intentionally optimistic: appending
- * the user message + an empty assistant placeholder happens
- * immediately, then the WS chunk/done events fill in the assistant
- * text. If the WS isn't OPEN we surface an error toast (caller).
+ * The user-driven `send` API is optimistic: the user bubble + empty
+ * assistant placeholder appear immediately, then WS chunk/done events
+ * fill the reply. The bubble stays `pending` until `message-accepted`
+ * (or `run-start`); a timeout rolls it back so a zombie socket cannot
+ * look like a published turn.
  *
  * Implementation is split across sibling modules:
  *   chat/chat-types.ts       — shared types + constants
@@ -23,7 +24,8 @@
 
 import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
-import { openChatWs } from '@/lib/api/ws'
+import { toast } from 'sonner'
+import { openChatWs, reconnectChatWs } from '@/lib/api/ws'
 import {
   archiveSession as markSessionArchived,
   archiveSessionsForWorkspace,
@@ -58,7 +60,7 @@ import { chatReducer, initialChatState } from './chat/chat-reducer'
 import { makeOnIncoming } from './chat/chat-ws-handlers'
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { useAccountScopedChat } from './use-account-scoped-chat'
-import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
+import { APPROVAL_DISMISS_AFTER_MS, SEND_ACK_TIMEOUT_MS } from './chat/chat-types'
 import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
 import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
 import type { ChatIncoming } from '@/types/ws'
@@ -80,7 +82,7 @@ export type {
   UseChat,
 } from './chat/chat-types'
 export type { WebSessionEntry } from '@/lib/web-sessions'
-export { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
+export { APPROVAL_DISMISS_AFTER_MS, SEND_ACK_TIMEOUT_MS } from './chat/chat-types'
 export { chatReducer, initialChatState, isCloudHistoryNewer, historyBelongsToClient } from './chat/chat-reducer'
 export type { ChatAction } from './chat/chat-reducer'
 
@@ -127,6 +129,12 @@ export function useChat(): UseChat {
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
   const followIfRemoteSwitchedRef = useRef<() => void>(() => {})
   const pullRemoteRef = useRef<() => Promise<void>>(async () => {})
+  const pendingSendsRef = useRef(new Map<string, {
+    replyId: string
+    text: string
+    timer: ReturnType<typeof setTimeout>
+  }>())
+  const confirmPendingSendRef = useRef<(id: string) => void>(() => {})
 
   useEffect(() => {
     currentReplyIdRef.current = state.currentReplyId
@@ -208,6 +216,14 @@ export function useChat(): UseChat {
           void pullRemoteRef.current()
           return
         }
+        if (msg.type === 'message-accepted' && msg.clientMsgId) {
+          confirmPendingSendRef.current(msg.clientMsgId)
+        }
+        if (msg.type === 'run-start') {
+          for (const id of [...pendingSendsRef.current.keys()]) {
+            confirmPendingSendRef.current(id)
+          }
+        }
         onIncoming(msg)
       },
     })
@@ -250,6 +266,40 @@ export function useChat(): UseChat {
     return () => { off1(); off2(); off3() }
   }, [])
 
+  function publishSessionAfterAck(text: string): void {
+    const existing = findSession(threadIdRef.current)
+    const title = existing?.title || sessionTitleFromText(text)
+    upsertSession({
+      id: threadIdRef.current,
+      updatedAt: Date.now(),
+      agent: existing?.agent || state.agent,
+      ...(existing?.title ? {} : { title }),
+    })
+    void pushAccountSession({
+      threadId: threadIdRef.current,
+      ...(title ? { title } : {}),
+      agent: existing?.agent || state.agent,
+    })
+  }
+
+  function confirmPendingSend(clientMsgId: string): void {
+    const pending = pendingSendsRef.current.get(clientMsgId)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pendingSendsRef.current.delete(clientMsgId)
+    publishSessionAfterAck(pending.text)
+  }
+  confirmPendingSendRef.current = confirmPendingSend
+
+  function failPendingSend(clientMsgId: string, replyId: string, message: string): void {
+    const pending = pendingSendsRef.current.get(clientMsgId)
+    if (pending) {
+      clearTimeout(pending.timer)
+      pendingSendsRef.current.delete(clientMsgId)
+    }
+    dispatch({ kind: 'SEND_FAILED', clientMsgId, replyId, message })
+  }
+
   function send(text: string): void {
     const trimmed = text.trim()
     if (!trimmed) return
@@ -261,7 +311,13 @@ export function useChat(): UseChat {
     currentReplyIdRef.current = replyId
     dispatch({
       kind: 'SEND_USER',
-      message: { id: userId, role: 'user', content: trimmed, timestamp: Date.now() },
+      message: {
+        id: userId,
+        role: 'user',
+        content: trimmed,
+        timestamp: Date.now(),
+        sendStatus: 'pending',
+      },
       placeholder: {
         id: replyId,
         role: 'assistant',
@@ -275,27 +331,24 @@ export function useChat(): UseChat {
       type: 'message',
       text: trimmed,
       agent: state.agent,
+      clientMsgId: userId,
       ...(workspacePath ? { workspacePath } : {}),
     })
     if (!ok) {
-      dispatch({
-        kind: 'ERROR',
-        message: i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }),
-      })
+      const message = i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' })
+      failPendingSend(userId, replyId, message)
+      return
     }
-    const existing = findSession(threadIdRef.current)
-    const title = existing?.title || sessionTitleFromText(trimmed)
-    upsertSession({
-      id: threadIdRef.current,
-      updatedAt: Date.now(),
-      agent: state.agent,
-      ...(existing?.title ? {} : { title }),
-    })
-    void pushAccountSession({
-      threadId: threadIdRef.current,
-      ...(title ? { title } : {}),
-      agent: state.agent,
-    })
+    const timer = setTimeout(() => {
+      const dropped = i18n.t('chat.sendDropped', {
+        ns: 'common',
+        defaultValue: 'Message did not reach the server. Please retry.',
+      })
+      failPendingSend(userId, replyId, dropped)
+      toast.error(dropped)
+      reconnectChatWs()
+    }, SEND_ACK_TIMEOUT_MS)
+    pendingSendsRef.current.set(userId, { replyId, text: trimmed, timer })
   }
 
   function steer(text: string): void {

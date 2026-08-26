@@ -7,7 +7,8 @@
 
 import { randomBytes } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { mkdir, realpath, writeFile } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { mkdir, realpath, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, extname, join, resolve, sep } from 'node:path'
 import { AGIM_HOME } from './agim-paths.js'
@@ -50,19 +51,11 @@ export interface SavedWebMedia {
   kind: 'image' | 'file'
 }
 
-export async function saveWebChatMedia(opts: {
+async function prepareWebMediaPath(opts: {
   threadId: string
   filename: string
   mime: string
-  body: Buffer
-}): Promise<SavedWebMedia> {
-  if (opts.body.byteLength === 0) {
-    throw Object.assign(new Error('empty body'), { code: 'EMPTY' })
-  }
-  if (opts.body.byteLength > WEB_MEDIA_MAX_BYTES) {
-    throw Object.assign(new Error('file too large'), { code: 'TOO_LARGE' })
-  }
-
+}): Promise<{ abs: string; mime: string; safeName: string }> {
   const root = getWebMediaRoot()
   const subdir = join('web', sanitizeThreadId(opts.threadId))
   const dir = join(root, subdir)
@@ -77,17 +70,82 @@ export async function saveWebChatMedia(opts: {
   if (!abs.startsWith(root)) {
     throw Object.assign(new Error('path escape'), { code: 'PATH' })
   }
+  return { abs, mime, safeName }
+}
 
-  await writeFile(abs, opts.body)
+function savedFromDisk(abs: string, bytes: number, mime: string, safeName: string): SavedWebMedia {
   const kind: 'image' | 'file' = mime.startsWith('image/') ? 'image' : 'file'
-  log.info({ path: abs, bytes: opts.body.byteLength, mime, kind }, 'web chat media saved')
-  return {
-    path: abs,
-    bytes: opts.body.byteLength,
-    mime,
-    name: safeName,
-    kind,
+  log.info({ path: abs, bytes, mime, kind }, 'web chat media saved')
+  return { path: abs, bytes, mime, name: safeName, kind }
+}
+
+export async function saveWebChatMedia(opts: {
+  threadId: string
+  filename: string
+  mime: string
+  body: Buffer
+}): Promise<SavedWebMedia> {
+  if (opts.body.byteLength === 0) {
+    throw Object.assign(new Error('empty body'), { code: 'EMPTY' })
   }
+  if (opts.body.byteLength > WEB_MEDIA_MAX_BYTES) {
+    throw Object.assign(new Error('file too large'), { code: 'TOO_LARGE' })
+  }
+  const dest = await prepareWebMediaPath(opts)
+  await writeFile(dest.abs, opts.body)
+  return savedFromDisk(dest.abs, opts.body.byteLength, dest.mime, dest.safeName)
+}
+
+/** Stream the request body to disk so a 20 MiB upload is not held twice in RAM. */
+export async function saveWebChatMediaFromStream(opts: {
+  threadId: string
+  filename: string
+  mime: string
+  source: NodeJS.ReadableStream
+  maxBytes?: number
+}): Promise<SavedWebMedia> {
+  const maxBytes = opts.maxBytes ?? WEB_MEDIA_MAX_BYTES
+  const dest = await prepareWebMediaPath(opts)
+  let bytes = 0
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const out = createWriteStream(dest.abs)
+      let settled = false
+      const fail = (err: Error): void => {
+        if (settled) return
+        settled = true
+        opts.source.unpipe?.(out)
+        if ('destroy' in opts.source && typeof opts.source.destroy === 'function') {
+          opts.source.destroy()
+        }
+        out.destroy()
+        reject(err)
+      }
+      opts.source.on('data', (chunk: Buffer) => {
+        bytes += chunk.length
+        if (bytes > maxBytes) {
+          fail(Object.assign(new Error('file too large'), { code: 'TOO_LARGE' }))
+        }
+      })
+      opts.source.on('error', fail)
+      out.on('error', fail)
+      out.on('finish', () => {
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+      })
+      opts.source.pipe(out)
+    })
+  } catch (err) {
+    await unlink(dest.abs).catch(() => {})
+    throw err
+  }
+  if (bytes === 0) {
+    await unlink(dest.abs).catch(() => {})
+    throw Object.assign(new Error('empty body'), { code: 'EMPTY' })
+  }
+  return savedFromDisk(dest.abs, bytes, dest.mime, dest.safeName)
 }
 
 export function formatMediaMarker(saved: SavedWebMedia): string {

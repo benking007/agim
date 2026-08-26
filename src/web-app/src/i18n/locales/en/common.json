@@ -268,6 +268,9 @@
     },
     "notConnected": "Not connected. Reconnecting…",
     "notConnectedRetry": "Not connected. Reconnecting — try again in a moment.",
+    "sendDropped": "Message did not reach the server. Please retry.",
+    "sendFailed": "Send failed",
+    "sending": "Sending…",
     "threadReassigned": "Previous chat belongs to another login — started a new conversation.",
     "connecting": "Connecting to agim…",
     "disconnected": "Disconnected. Reconnecting automatically — input is paused until the socket is back.",
@@ -674,6 +677,8 @@
       "attach": {
         "max": "Up to 8 attachments",
         "uploadFailed": "Attachment upload failed",
+        "uploadTimeout": "Upload timed out. Try a smaller image or a more stable network.",
+        "uploadCloudflare": "Gateway timeout (524). The image is too large or the network is too slow.",
         "preview": "Preview image",
         "closePreview": "Close preview",
         "loading": "Loading…",

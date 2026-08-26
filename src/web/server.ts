@@ -881,6 +881,21 @@ export async function startWebServer(options: {
         )
         return
       }
+      if (msgType === 'message') {
+        // Ack before the serial queue so a zombie / dropped frame is
+        // distinguishable from "queued behind a long turn". The SPA
+        // rolls back the optimistic bubble if this never arrives.
+        const inbound = msg as { text?: unknown; clientMsgId?: unknown }
+        const clientMsgId = typeof inbound.clientMsgId === 'string' ? inbound.clientMsgId : undefined
+        if (typeof inbound.text === 'string' && inbound.text.trim()) {
+          sendToClient(ws, {
+            type: 'message-accepted',
+            ...(clientMsgId ? { clientMsgId } : {}),
+            queued: true,
+            threadId: client.id,
+          })
+        }
+      }
       enqueueInbound(async () => {
         try {
           // Pass an onRekey callback so handleClientMessage can keep

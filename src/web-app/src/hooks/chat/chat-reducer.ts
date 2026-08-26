@@ -113,6 +113,10 @@ export type ChatAction =
   | { kind: 'AGENTS'; agents: string[] }
   | { kind: 'AGENT_SWITCHED'; agent: string; preferredWorkerAgent?: string }
   | { kind: 'SEND_USER'; message: ChatMessage; placeholder: ChatMessage }
+  /** Server acked the WS frame — mark the optimistic user bubble sent. */
+  | { kind: 'MESSAGE_ACCEPTED'; clientMsgId: string }
+  /** No server ack / WS drop — mark the user bubble failed and drop the empty placeholder. */
+  | { kind: 'SEND_FAILED'; clientMsgId: string; replyId?: string; message: string }
   /** Insert a user bubble before the streaming assistant (mid-turn steer). */
   | { kind: 'APPEND_USER'; message: ChatMessage }
   | { kind: 'CHUNK'; replyId: string; text: string }
@@ -725,6 +729,33 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
         currentReplyId: a.placeholder.id,
         error: null,
       }
+    case 'MESSAGE_ACCEPTED': {
+      const idx = s.messages.findIndex((m) => m.id === a.clientMsgId && m.role === 'user')
+      if (idx < 0) return s
+      const target = s.messages[idx]
+      if (!target || target.sendStatus === 'sent') return s
+      const next = [...s.messages]
+      next[idx] = { ...target, sendStatus: 'sent' }
+      return { ...s, messages: next }
+    }
+    case 'SEND_FAILED': {
+      const messages = s.messages.filter((m) => {
+        if (a.replyId && m.id === a.replyId && m.role === 'assistant' && !m.content.trim()) {
+          return false
+        }
+        return true
+      }).map((m) => (
+        m.id === a.clientMsgId && m.role === 'user'
+          ? { ...m, sendStatus: 'failed' as const }
+          : m
+      ))
+      return {
+        ...s,
+        messages,
+        error: a.message,
+        currentReplyId: s.currentReplyId === a.replyId ? null : s.currentReplyId,
+      }
+    }
     case 'APPEND_USER': {
       let idx = findActivityMessageIndex(s.messages, {
         replyId: s.currentReplyId,
@@ -1031,6 +1062,9 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
           if (currentReplyId == null) currentReplyId = msg.id
         }
       }
+      messages = messages.map((m) => (
+        m.role === 'user' && m.sendStatus === 'pending' ? { ...m, sendStatus: 'sent' as const } : m
+      ))
       return {
         ...s,
         messages,

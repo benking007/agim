@@ -455,6 +455,11 @@ export function makeOnIncoming(
       case 'steer-accepted':
         // Optimistic APPEND_USER already painted the bubble.
         return
+      case 'message-accepted':
+        if (msg.clientMsgId) {
+          dispatch({ kind: 'MESSAGE_ACCEPTED', clientMsgId: msg.clientMsgId })
+        }
+        return
       default:
         return
     }

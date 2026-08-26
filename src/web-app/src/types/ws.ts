@@ -12,7 +12,7 @@
 
 /** Client → Server */
 export type ChatOutgoing =
-  | { type: 'message'; text: string; agent?: string; workspacePath?: string }
+  | { type: 'message'; text: string; agent?: string; workspacePath?: string; clientMsgId?: string }
   | { type: 'set-workspace'; workspacePath?: string }
   | { type: 'switch-agent'; agent: string }
   | { type: 'get-agents' }
@@ -114,6 +114,8 @@ export type ChatIncoming =
   | { type: 'active-run-gone'; threadId?: string }
   /** Ack that a mid-turn supplement was persisted / handed to the harness. */
   | { type: 'steer-accepted'; text: string; mode: 'live' | 'queued'; threadId?: string }
+  /** Server received the chat frame (before the serial handler / job start). */
+  | { type: 'message-accepted'; clientMsgId?: string; queued?: boolean; threadId?: string }
   /**
    * Server refused rekey to a foreign threadId (owned by another token).
    * SPA must persist `threadId` and continue — history for the new

@@ -704,22 +704,36 @@ export function createInlineJob(opts: {
   callDepth?: number
 }): number {
   if (process.env.AGIM_INLINE_JOB_TRACKING === '0') return -1
-  try {
-    return createJob(opts.agent, opts.prompt, {
-      kind: 'inline',
-      threadKey: opts.threadKey,
-      creatorId: opts.creatorId,
-      workspaceId: opts.workspaceId,
-      parentId: opts.parentId ?? null,
-      callDepth: opts.callDepth ?? 0,
-    })
-  } catch (err) {
-    rootLogger.warn(
-      { component: 'job-board', event: 'job-board.inline_create_failed', err: err instanceof Error ? err.message : String(err) },
-      'createInlineJob fell back to in-memory path',
-    )
-    return -1
+  const payload = {
+    kind: 'inline' as const,
+    threadKey: opts.threadKey,
+    creatorId: opts.creatorId,
+    workspaceId: opts.workspaceId,
+    parentId: opts.parentId ?? null,
+    callDepth: opts.callDepth ?? 0,
   }
+  let lastErr: unknown
+  // SQLITE_BUSY is common when the board and session log write together.
+  // One immediate retry usually lands the row; a hard miss still falls
+  // back to the in-memory path so the user turn is not dropped.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return createJob(opts.agent, opts.prompt, payload)
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/SQLITE_BUSY|database is locked/i.test(msg)) break
+    }
+  }
+  rootLogger.warn(
+    {
+      component: 'job-board',
+      event: 'job-board.inline_create_failed',
+      err: lastErr instanceof Error ? lastErr.message : String(lastErr),
+    },
+    'createInlineJob fell back to in-memory path',
+  )
+  return -1
 }
 
 export function getJob(id: number, opts: OwnerOpts = {}): Job | null {

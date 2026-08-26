@@ -7,15 +7,29 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ChatOutgoing } from '@/types/ws'
+import type { ChatIncoming, ChatOutgoing } from '@/types/ws'
 import type { WsStatus } from '@/lib/api/ws'
 
 const mocks = vi.hoisted(() => ({
   sent: [] as ChatOutgoing[],
   statusListeners: new Set<(s: WsStatus) => void>(),
+  messageListeners: new Set<(msg: ChatIncoming) => void>(),
   pullAccountSessions: vi.fn(async () => false),
   pushAccountSession: vi.fn(async () => true),
 }))
+
+function emitIncoming(msg: ChatIncoming): void {
+  for (const fn of mocks.messageListeners) fn(msg)
+}
+
+/** Server ack that the last optimistic send actually entered the inbound queue. */
+function ackLastSend(): void {
+  const last = [...mocks.sent].reverse().find((m) => m.type === 'message' && m.clientMsgId)
+  if (!last || last.type !== 'message' || !last.clientMsgId) {
+    throw new Error('no pending chat message to ack')
+  }
+  emitIncoming({ type: 'message-accepted', clientMsgId: last.clientMsgId })
+}
 
 vi.mock('@/lib/api/ws', () => ({
   openChatWs: () => ({
@@ -34,6 +48,10 @@ vi.mock('@/lib/api/ws', () => ({
         mocks.statusListeners.add(l.fn as (s: WsStatus) => void)
         ;(l.fn as (s: WsStatus) => void)('open')
         return () => { mocks.statusListeners.delete(l.fn as (s: WsStatus) => void) }
+      }
+      if (l.type === 'message') {
+        mocks.messageListeners.add(l.fn as (msg: ChatIncoming) => void)
+        return () => { mocks.messageListeners.delete(l.fn as (msg: ChatIncoming) => void) }
       }
       return () => {}
     },
@@ -60,6 +78,7 @@ describe('useChat multi-session', () => {
     })
     mocks.sent.length = 0
     mocks.statusListeners.clear()
+    mocks.messageListeners.clear()
     mocks.pullAccountSessions.mockClear()
     mocks.pushAccountSession.mockClear()
   })
@@ -269,6 +288,8 @@ describe('useChat multi-session', () => {
     const { result, unmount } = renderHook(() => useChat())
     const firstId = result.current.activeSessionId
     act(() => { result.current.send('hello sync') })
+    expect(mocks.pushAccountSession).not.toHaveBeenCalled()
+    act(() => { ackLastSend() })
     expect(mocks.pushAccountSession).toHaveBeenCalledWith(expect.objectContaining({
       threadId: firstId,
       title: 'hello sync',

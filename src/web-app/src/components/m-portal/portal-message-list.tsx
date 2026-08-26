@@ -71,12 +71,17 @@ export const PortalMessageList = memo(function PortalMessageList({
             {turn.user && (
               <div
                 data-user-message
+                data-send-status={turn.user.sendStatus || 'sent'}
                 className={cn(
                   'sticky top-0 z-10 w-full min-w-0 overflow-hidden rounded-xl border px-4 py-3 text-left text-base font-medium leading-relaxed',
                   'whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]',
                   dark
                     ? 'border-zinc-700 bg-zinc-800 text-zinc-100'
                     : 'border-zinc-200 bg-white text-zinc-900',
+                  turn.user.sendStatus === 'pending' && 'opacity-70',
+                  turn.user.sendStatus === 'failed' && (dark
+                    ? 'border-red-500/60 bg-red-950/40'
+                    : 'border-red-300 bg-red-50'),
                 )}
                 style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
               >
@@ -86,6 +91,16 @@ export const PortalMessageList = memo(function PortalMessageList({
                   messageId={turn.user.id}
                   threadId={portalThreadId || undefined}
                 />
+                {turn.user.sendStatus === 'pending' && (
+                  <div className={cn('mt-2 text-xs font-normal', dark ? 'text-zinc-400' : 'text-zinc-500')}>
+                    {t('chat.sending', { defaultValue: 'Sending…' })}
+                  </div>
+                )}
+                {turn.user.sendStatus === 'failed' && (
+                  <div className={cn('mt-2 text-xs font-normal', dark ? 'text-red-300' : 'text-red-600')}>
+                    {t('chat.sendFailed', { defaultValue: 'Send failed' })}
+                  </div>
+                )}
               </div>
             )}
             {turn.replies.map((msg) => (

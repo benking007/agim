@@ -509,6 +509,8 @@
       "automationArtifactsPlaceholder": "PROJECTS/schedule-output",
       "automationEnabled": "启用",
       "automationCreate": "创建",
+      "automationEdit": "编辑定时任务",
+      "automationSave": "保存",
       "automationDelete": "删除",
       "automationNoModel": "请先在设置里添加一个模型",
       "automationRunsEmpty": "还没有执行记录",

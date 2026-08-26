@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 
 import '@/i18n'
 
+const updateMutate = vi.fn()
+
 vi.mock('@/hooks/use-schedules', () => ({
   useSchedules: () => ({
     isLoading: false,
@@ -20,7 +22,7 @@ vi.mock('@/hooks/use-schedules', () => ({
       ],
     },
   }),
-  useUpdateSchedule: () => ({ isPending: false, mutate: vi.fn() }),
+  useUpdateSchedule: () => ({ isPending: false, mutate: updateMutate }),
   useDeleteSchedule: () => ({ mutate: vi.fn() }),
   useCreateSchedule: () => ({ isPending: false, mutate: vi.fn() }),
 }))
@@ -66,5 +68,32 @@ describe('PortalAutomationPane', () => {
     await user.click(screen.getByRole('button', { name: 'Run history' }))
     expect(screen.getByTestId('portal-schedule-run-99')).toBeInTheDocument()
     expect(screen.getByText(/PROJECTS\/gold-daily/)).toBeInTheDocument()
+  })
+
+  it('opens the editor with existing fields and saves a PATCH', async () => {
+    const user = userEvent.setup()
+    updateMutate.mockReset()
+    render(<PortalAutomationPane dark={false} defaultAgent="agim" />)
+    await user.click(screen.getByTestId('portal-schedule-edit-7'))
+    expect(screen.getByRole('heading', { name: 'Edit scheduled task' })).toBeInTheDocument()
+    const nameInput = screen.getByDisplayValue('gold-daily')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'gold-evening')
+    const prompt = screen.getByDisplayValue('写日报')
+    await user.clear(prompt)
+    await user.type(prompt, '写晚报')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(updateMutate).toHaveBeenCalledTimes(1)
+    const arg = updateMutate.mock.calls[0]?.[0] as {
+      id: number
+      body: { name: string; agent: string; cron: string; prompt: string }
+    }
+    expect(arg.id).toBe(7)
+    expect(arg.body.name).toBe('gold-evening')
+    expect(arg.body.agent).toBe('agim')
+    expect(arg.body.cron).toBe('30 9 * * *')
+    expect(arg.body.prompt).toContain('写晚报')
+    expect(arg.body.prompt).toContain('deepseek-v4-pro')
+    expect(arg.body.prompt).toContain('PROJECTS/gold-daily')
   })
 })

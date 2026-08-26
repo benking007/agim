@@ -3,9 +3,9 @@
  * Model/artifacts are stored in the prompt prefix (no extra API fields).
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -24,11 +24,13 @@ import {
 } from '@/hooks/use-schedules'
 import { useLlmList } from '@/hooks/use-llm-admin'
 import {
-  cronDailyAt, cronEveryMinutes, parseSchedulePrompt, wrapSchedulePrompt,
+  cronDailyAt, cronEveryMinutes, parseScheduleCron, parseSchedulePrompt, wrapSchedulePrompt,
 } from '@/lib/schedule-prompt'
 import { cn } from '@/lib/utils'
-import type { Job } from '@/types/api'
+import type { Job, Schedule } from '@/types/api'
 import { PortalSwitch } from './portal-switch'
+
+type EditorState = { mode: 'create' } | { mode: 'edit'; row: Schedule }
 
 export function PortalAutomationPane(props: {
   dark: boolean
@@ -37,9 +39,9 @@ export function PortalAutomationPane(props: {
   const { t } = useTranslation()
   const { dark, defaultAgent } = props
   const [tab, setTab] = useState<'tasks' | 'runs'>('tasks')
-  const [createOpen, setCreateOpen] = useState(false)
+  const [editor, setEditor] = useState<EditorState | null>(null)
   const schedulesQuery = useSchedules({})
-  const jobsQuery = useJobs({ limit: 80, offset: 0 })
+  const jobsQuery = useJobs({ limit: 80, offset: 0, mine: true })
   const update = useUpdateSchedule()
   const remove = useDeleteSchedule()
   const schedules = schedulesQuery.data?.schedules ?? []
@@ -56,7 +58,7 @@ export function PortalAutomationPane(props: {
         </h2>
         <button
           type="button"
-          onClick={() => setCreateOpen(true)}
+          onClick={() => setEditor({ mode: 'create' })}
           className={cn(
             'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold',
             dark ? 'bg-zinc-800 text-teal-400 hover:bg-zinc-700' : 'bg-zinc-100 text-teal-600 hover:bg-zinc-200',
@@ -120,6 +122,15 @@ export function PortalAutomationPane(props: {
                       />
                       <button
                         type="button"
+                        onClick={() => setEditor({ mode: 'edit', row })}
+                        className={cn('rounded-md p-1', dark ? 'text-zinc-500 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100')}
+                        aria-label={t('chat.portal.automationEdit')}
+                        data-testid={`portal-schedule-edit-${row.id}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => remove.mutate(row.id)}
                         className={cn('rounded-md p-1', dark ? 'text-zinc-500 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100')}
                         aria-label={t('chat.portal.automationDelete')}
@@ -164,10 +175,9 @@ export function PortalAutomationPane(props: {
           </ul>
         )}
       </div>
-      <CreateScheduleDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        dark={dark}
+      <ScheduleEditorDialog
+        editor={editor}
+        onOpenChange={(open) => { if (!open) setEditor(null) }}
         defaultAgent={defaultAgent}
       />
     </div>
@@ -210,17 +220,19 @@ function Loading(_props: { dark: boolean }): JSX.Element {
   )
 }
 
-function CreateScheduleDialog(props: {
-  open: boolean
+function ScheduleEditorDialog(props: {
+  editor: EditorState | null
   onOpenChange: (open: boolean) => void
-  dark: boolean
   defaultAgent: string
 }): JSX.Element {
   const { t } = useTranslation()
-  const { open, onOpenChange, defaultAgent } = props
+  const { editor, onOpenChange, defaultAgent } = props
+  const open = editor !== null
+  const editing = editor?.mode === 'edit' ? editor.row : null
   const agentsQuery = useAgentsStatus()
   const llm = useLlmList()
   const create = useCreateSchedule()
+  const update = useUpdateSchedule()
   const agentNames = Object.keys(agentsQuery.data ?? {}).sort()
   const backends = llm.data?.backends ?? []
   const [name, setName] = useState('')
@@ -232,14 +244,34 @@ function CreateScheduleDialog(props: {
   const [prompt, setPrompt] = useState('')
   const [artifacts, setArtifacts] = useState('PROJECTS/schedule-output')
 
-  const isAgim = agent === 'agim' || agent === 'native'
-  const selectedModel = model || backends[0]?.name || ''
-
-  function reset(): void {
+  useEffect(() => {
+    if (!open) return
+    if (editing) {
+      const parsed = parseSchedulePrompt(editing.prompt)
+      const cronUi = parseScheduleCron(editing.cron)
+      setName(editing.name)
+      setAgent(editing.agent || defaultAgent || 'agim')
+      setModel(parsed.meta.model || '')
+      setMode(cronUi.mode)
+      setMinutes(cronUi.minutes)
+      setTime(cronUi.time)
+      setPrompt(parsed.body)
+      setArtifacts(parsed.meta.artifacts || '')
+      return
+    }
     setName('')
+    setAgent(defaultAgent || 'agim')
+    setModel('')
+    setMode('daily')
+    setMinutes('30')
+    setTime('09:00')
     setPrompt('')
     setArtifacts('PROJECTS/schedule-output')
-  }
+  }, [open, editing, defaultAgent])
+
+  const isAgim = agent === 'agim' || agent === 'native'
+  const selectedModel = model || backends[0]?.name || ''
+  const pending = create.isPending || update.isPending
 
   function submit(): void {
     const cron = mode === 'interval' ? cronEveryMinutes(Number(minutes) || 30) : cronDailyAt(time)
@@ -247,13 +279,20 @@ function CreateScheduleDialog(props: {
       model: isAgim ? selectedModel : undefined,
       artifacts,
     })
+    if (editing) {
+      update.mutate(
+        { id: editing.id, body: { name: name.trim(), agent, cron, prompt: wrapped } },
+        {
+          onSuccess: () => onOpenChange(false),
+          onError: (err) => toast.error(err.message),
+        },
+      )
+      return
+    }
     create.mutate(
       { name: name.trim(), agent, cron, prompt: wrapped, enabled: true },
       {
-        onSuccess: () => {
-          onOpenChange(false)
-          reset()
-        },
+        onSuccess: () => onOpenChange(false),
         onError: (err) => toast.error(err.message),
       },
     )
@@ -263,7 +302,9 @@ function CreateScheduleDialog(props: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{t('chat.portal.automationNew')}</DialogTitle>
+          <DialogTitle>
+            {editing ? t('chat.portal.automationEdit') : t('chat.portal.automationNew')}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <Field label={t('chat.portal.automationName')}>
@@ -352,9 +393,11 @@ function CreateScheduleDialog(props: {
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t('actions.cancel')}</Button>
           <Button
             onClick={submit}
-            disabled={!name.trim() || !prompt.trim() || create.isPending || (isAgim && !selectedModel)}
+            disabled={!name.trim() || !prompt.trim() || pending || (isAgim && !selectedModel)}
           >
-            {create.isPending ? t('states.saving') : t('chat.portal.automationCreate')}
+            {pending
+              ? t('states.saving')
+              : editing ? t('chat.portal.automationSave') : t('chat.portal.automationCreate')}
           </Button>
         </DialogFooter>
       </DialogContent>

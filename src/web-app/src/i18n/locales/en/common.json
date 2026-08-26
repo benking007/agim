@@ -509,6 +509,8 @@
       "automationArtifactsPlaceholder": "PROJECTS/schedule-output",
       "automationEnabled": "Enabled",
       "automationCreate": "Create",
+      "automationEdit": "Edit scheduled task",
+      "automationSave": "Save",
       "automationDelete": "Delete",
       "automationNoModel": "Add a model in Settings first",
       "automationRunsEmpty": "No runs yet",

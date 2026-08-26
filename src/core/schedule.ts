@@ -133,6 +133,12 @@ export interface OwnerOpts {
   creatorId?: string
   /** Optional agent-name filter, mirrors job-board.OwnerOpts.agent. */
   agent?: string
+  /**
+   * When true with `creatorId`, match that owner only — do not also
+   * surface legacy rows whose `creator_id` is empty. Web Portal lists
+   * use this so logged-in accounts never mix other people's tasks.
+   */
+  strictOwner?: boolean
 }
 
 /**
@@ -221,7 +227,7 @@ export function listSchedules(limit = 50, opts: OwnerOpts = {}): Schedule[] {
   const conditions: string[] = []
   const params: unknown[] = []
   if (opts.creatorId !== undefined) {
-    conditions.push("(creator_id = ? OR creator_id = '')")
+    conditions.push(opts.strictOwner ? 'creator_id = ?' : "(creator_id = ? OR creator_id = '')")
     params.push(opts.creatorId)
   }
   if (opts.agent) { conditions.push('agent = ?'); params.push(opts.agent) }

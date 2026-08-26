@@ -217,8 +217,7 @@ export function useChat(): UseChat {
           return
         }
         if (msg.type === 'message-accepted' && msg.clientMsgId) {
-          const tid = msg.threadId
-          if (!tid || tid === threadIdRef.current) confirmPendingSendRef.current(msg.clientMsgId)
+          confirmPendingSendRef.current(msg.clientMsgId)
         }
         if (msg.type === 'run-start') {
           for (const id of [...pendingSendsRef.current.keys()]) {

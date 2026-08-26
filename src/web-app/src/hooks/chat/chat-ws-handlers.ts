@@ -56,7 +56,6 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'loop-changed',
   'loop-schedule-changed',
   'steer-accepted',
-  'message-accepted',
 ])
 
 function incomingThreadId(msg: ChatIncoming): string | undefined {

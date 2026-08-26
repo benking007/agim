@@ -27,6 +27,8 @@ import {
   listLoopRuns,
   noteLoopDispatch,
   noteLoopRoundJob,
+  noteLoopUserSteer,
+  interruptLoopSend,
   notifyLoopJobTerminal,
   countLoopChildJobs,
   parseExitConstraints,
@@ -1379,5 +1381,98 @@ describe('loop confirm timeout (AGIM_LOOP_CONFIRM_TIMEOUT_MS)', () => {
       else process.env.AGIM_LOOP_CONFIRM_TIMEOUT_ACTION = savedAction
       try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
     }
+  })
+})
+
+describe('loop user interrupt (打断发送)', () => {
+  it('writes steer into the Loop snippet so later rounds still see it', () => {
+    reset()
+    const threadId = 'loop-user-steer'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好超时；退出条件为验收通过或最多3轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    const noted = noteLoopUserSteer(base.platform, base.channelId, threadId, {
+      text: '停，改查 nginx 日志',
+    })
+    expect(noted).toBeTruthy()
+    const snippet = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snippet).toContain('USER INTERRUPT')
+    expect(snippet).toContain('停，改查 nginx 日志')
+    expect(formatLoopStatus(noted!)).toContain('停，改查 nginx 日志')
+    const reloaded = getLoopRun(base.platform, base.channelId, threadId)
+    expect(reloaded?.userSteers?.some((s) => s.text.includes('nginx'))).toBe(true)
+  })
+
+  it('dedupes the same steer within 2s', () => {
+    reset()
+    const threadId = 'loop-user-steer-dedupe'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好超时；退出条件为最多3轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    noteLoopUserSteer(base.platform, base.channelId, threadId, { text: 'same' })
+    noteLoopUserSteer(base.platform, base.channelId, threadId, { text: 'same' })
+    const run = getActiveLoop(base.platform, base.channelId, threadId)
+    expect(run?.userSteers).toHaveLength(1)
+  })
+
+  it('records Stop as abort without ending the Loop', () => {
+    reset()
+    const threadId = 'loop-user-abort'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好超时；退出条件为最多3轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    const noted = noteLoopUserSteer(base.platform, base.channelId, threadId, {
+      kind: 'abort',
+      text: '用户打断了执行',
+    })
+    expect(noted?.status).not.toBe('ended')
+    expect(getActiveLoop(base.platform, base.channelId, threadId)?.status).not.toBe('ended')
+    const snippet = buildLoopSnippet(base.platform, base.channelId, threadId)
+    expect(snippet).toContain('[stop round')
+    expect(snippet).toContain('用户打断了执行')
+  })
+
+  it('interruptLoopSend cancels live Subagents on the thread', () => {
+    reset()
+    const threadId = 'loop-interrupt-cancel'
+    const started = startLoop({
+      ...base,
+      threadId,
+      text: '修好超时；退出条件为最多3轮',
+    })
+    if (!started.ok) {
+      if (process.env.AGIM_TEST_REQUIRE_SQLITE === '1') throw new Error(started.error)
+      return
+    }
+    const tk = jobThreadKey(base.platform, base.channelId, threadId)
+    const jobId = createInlineJob({
+      agent: 'agim',
+      prompt: 'worker',
+      threadKey: tk,
+      callDepth: 1,
+    })
+    if (jobId <= 0) return
+    expect(markJobRunning(jobId)).toBe(true)
+    interruptLoopSend(base.platform, base.channelId, threadId, '先停下来')
+    expect(getJob(jobId)?.status).toBe('cancelled')
+    expect(buildLoopSnippet(base.platform, base.channelId, threadId)).toContain('先停下来')
   })
 })

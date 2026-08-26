@@ -214,6 +214,18 @@ export interface LoopTimelineEntry {
   summary: string
 }
 
+/** Portal "打断发送" / Stop while a Loop parent turn is live. */
+export interface LoopUserSteer {
+  at: number
+  round: number
+  kind: 'steer' | 'abort'
+  text: string
+}
+
+export const LOOP_USER_ABORT_TEXT = '用户打断了本轮发送'
+const USER_STEER_TEXT_MAX = 2_000
+const USER_STEER_KEEP = 8
+
 export interface LoopRun {
   id: string
   /** Stable store key: platform__channel__thread (also the json basename). */
@@ -285,6 +297,12 @@ export interface LoopRun {
   updatedAt: number
   lastVerdict?: LoopVerdict
   timeline: LoopTimelineEntry[]
+  /**
+   * Mid-turn user interrupts (Portal 打断发送 / Stop). Persisted so the
+   * next hop and later rounds' snippets still see the interrupt — L2
+   * harness.steer alone is not visible to Loop L3.
+   */
+  userSteers?: LoopUserSteer[]
   /**
    * Epoch ms when the Loop entered `pending_user_confirm`. Used by the
    * confirm-timeout escape (AGIM_LOOP_CONFIRM_TIMEOUT_MS, opt-in): without
@@ -561,6 +579,19 @@ function normalizeRun(raw: LoopRun): LoopRun {
     raw.mission = null
   }
   if (!Array.isArray(raw.timeline)) raw.timeline = []
+  if (!Array.isArray(raw.userSteers)) {
+    raw.userSteers = []
+  } else {
+    raw.userSteers = raw.userSteers
+      .filter((s): s is LoopUserSteer => !!s && typeof s === 'object' && typeof s.text === 'string')
+      .map((s) => ({
+        at: Number(s.at) || 0,
+        round: Math.max(0, Number(s.round) || 0),
+        kind: s.kind === 'abort' ? 'abort' as const : 'steer' as const,
+        text: String(s.text).slice(0, USER_STEER_TEXT_MAX),
+      }))
+      .slice(-USER_STEER_KEEP)
+  }
   if (!raw.maxRounds || raw.maxRounds < 1) raw.maxRounds = defaultMaxRounds()
   if (typeof raw.dispatchesThisRound !== 'number' || raw.dispatchesThisRound < 0) {
     raw.dispatchesThisRound = 0
@@ -1615,6 +1646,7 @@ export function startLoop(input: {
     createdAt: now,
     updatedAt: now,
     timeline: [],
+    userSteers: [],
     ...(input.source === 'scheduled' ? { source: 'scheduled' as const } : {}),
   }
   syncMissionMirrors(run)
@@ -1717,6 +1749,86 @@ export function setLoopBody(
   pushTimeline(run, 'user', `body: ${text.slice(0, 120)}`)
   writeRun(run)
   return { ok: true, run }
+}
+
+function formatUserSteersForSnippet(run: LoopRun): string[] {
+  const items = Array.isArray(run.userSteers) ? run.userSteers : []
+  if (items.length === 0) return []
+  const lines = [
+    'USER INTERRUPT (hard — supersedes HARD WAIT / in-flight send):',
+    'The user interrupted the current send. Do NOT continue cancelled output as if nothing happened.',
+    'Honor the latest interrupt before dispatch, sleep/wait, or loop_verdict.',
+  ]
+  for (const item of items.slice(-4)) {
+    const tag = item.kind === 'abort' ? 'stop' : 'steer'
+    lines.push(`  - [${tag} round ${item.round}] ${item.text}`)
+  }
+  return lines
+}
+
+/**
+ * Record a Portal mid-turn interrupt so Loop L3 (snippet / next round)
+ * sees it. No-op when no Loop is active. Dedupes identical text within 2s
+ * so WS + live-harness callbacks can both call this.
+ */
+export function noteLoopUserSteer(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  input: { text: string; kind?: LoopUserSteer['kind'] },
+): LoopRun | null {
+  const run = getActiveLoop(platform, channelId, threadId)
+  if (!run) return null
+  const kind = input.kind === 'abort' ? 'abort' : 'steer'
+  const text = (input.text || '').trim().slice(0, USER_STEER_TEXT_MAX)
+    || (kind === 'abort' ? LOOP_USER_ABORT_TEXT : '')
+  if (!text) return run
+  const now = Date.now()
+  const list = Array.isArray(run.userSteers) ? run.userSteers : []
+  const last = list[list.length - 1]
+  if (last && last.kind === kind && last.text === text && now - last.at < 2_000) {
+    return run
+  }
+  list.push({ at: now, round: run.round, kind, text })
+  run.userSteers = list.slice(-USER_STEER_KEEP)
+  run.updatedAt = now
+  pushTimeline(
+    run,
+    'user',
+    kind === 'abort'
+      ? `interrupted send: ${text.slice(0, 120)}`
+      : `steer: ${text.slice(0, 120)}`,
+  )
+  writeRun(run)
+  return run
+}
+
+/**
+ * 打断发送 while Loop is live: persist the user text, then cancel in-flight
+ * Subagents so the parent is not stuck in HARD WAIT on cancelled work.
+ */
+export function interruptLoopSend(
+  platform: string,
+  channelId: string,
+  threadId: string,
+  text: string,
+): LoopRun | null {
+  const run = noteLoopUserSteer(platform, channelId, threadId, { text, kind: 'steer' })
+  if (!run) return null
+  const cancelled = cancelActiveChildJobsByThread(
+    jobThreadKey(platform, channelId, threadId),
+    'cancelled: user interrupted send',
+  )
+  if (cancelled > 0) {
+    log.info({
+      event: 'loop.user_interrupt_cancelled_subagents',
+      threadId,
+      cancelled,
+    }, `cancelled ${cancelled} live Subagent job(s) on user interrupt`)
+    pushTimeline(run, 'system', `cancelled ${cancelled} Subagent(s) after user interrupt`)
+    writeRun(run)
+  }
+  return run
 }
 
 export function confirmLoopMission(
@@ -2257,6 +2369,7 @@ export function buildLoopSnippet(
       'Ask the user (mcp__agim__ask_user) to confirm BOTH objective and exit condition. '
       + 'Suggest they can also reply with `/loop objective …` / `/loop exit …` then `/loop confirm`.',
     )
+    lines.push(...formatUserSteersForSnippet(run))
     lines.push('')
     return lines.join('\n')
   }
@@ -2273,6 +2386,7 @@ export function buildLoopSnippet(
         + 'conclusion / 核心结论 / tables into chat. Portal dock owns the summary; '
         + 'user must pick 确认结束 or 继续下一轮. One short nudge sentence max.',
     )
+    lines.push(...formatUserSteersForSnippet(run))
     lines.push('')
     return lines.join('\n')
   }
@@ -2292,6 +2406,10 @@ export function buildLoopSnippet(
     lines.push(view.body.length > 2_000 ? `${view.body.slice(0, 2_000)}…` : view.body)
   }
   if (view.acceptance) lines.push(`Acceptance: ${view.acceptance}`)
+  const userSteerLines = formatUserSteersForSnippet(run)
+  if (userSteerLines.length > 0) {
+    lines.push(...userSteerLines)
+  }
   if (view.minRounds) {
     lines.push(
       `HARD exit floor: minRounds=${view.minRounds} — met=true stop is refused until round ≥ minRounds.`,
@@ -2450,6 +2568,11 @@ export function formatLoopStatus(run: LoopRun): string {
       `累计用量：派工 ${usage.dispatchCount} · 独立验收 ${usage.evaluatorCount}`
       + ` · continue ${usage.continueCount} · revise ${usage.reviseCount}`,
     )
+    const steers = Array.isArray(run.userSteers) ? run.userSteers : []
+    if (steers.length > 0) {
+      const last = steers[steers.length - 1]!
+      lines.push(`用户打断：${last.kind === 'abort' ? '停止发送' : '补充'} — ${last.text}`)
+    }
     if (run.lastPlan?.tasks?.length) {
       lines.push('最近计划：')
       for (const t of run.lastPlan.tasks.slice(0, 5)) {

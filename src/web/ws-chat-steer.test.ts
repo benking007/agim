@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type { WebSocket } from 'ws'
 import { sessionManager } from '../core/session.js'
+import { startLoop, getActiveLoop } from '../core/loop-run.js'
+import { setFocus } from '../core/focus.js'
 import { _resetTurnSteer, registerLiveSteer } from '../core/turn-steer.js'
 import { handleClientMessage, webRunAborts, bindWsClients, notifyAccountSessionsChanged } from './ws-chat.js'
 
@@ -63,6 +65,31 @@ describe('handleClientMessage steer', () => {
     expect(sent.some((m) => (
       m.type === 'error' && String(m.message).includes('不支持本轮补充')
     ))).toBe(true)
+  })
+
+  it('records 打断发送 on an active Loop so the snippet sees it', async () => {
+    const threadId = `web-loop-steer-${Date.now()}`
+    setFocus({ platform: 'web', channelId: 'web', threadId, userId: 'u1', title: 'loop' })
+    const started = startLoop({
+      platform: 'web',
+      channelId: 'web',
+      threadId,
+      userId: 'u1',
+      text: '修好超时；退出条件为最多3轮',
+    })
+    if (!started.ok) return
+    await sessionManager.getOrCreateSession('web', 'web', threadId, 'agim')
+    webRunAborts.set(threadId, new AbortController())
+    const unreg = registerLiveSteer(`web:web:${threadId}`, async () => {})
+    const { ws } = fakeWs()
+    await handleClientMessage(
+      { ws, id: threadId, agent: 'agim' },
+      { type: 'steer', text: '停，改查 nginx' },
+      'agim',
+    )
+    unreg()
+    const run = getActiveLoop('web', 'web', threadId)
+    expect(run?.userSteers?.some((s) => s.text.includes('nginx'))).toBe(true)
   })
 })
 

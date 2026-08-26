@@ -495,6 +495,24 @@ export function useChat(): UseChat {
     followVisibleSession(index.activeId)
   }
 
+  function renameSession(threadId: string, title: string): void {
+    const id = threadId.trim()
+    const next = title.trim().slice(0, 80)
+    if (!isWebThreadId(id) || !next) return
+    const existing = findSession(id)
+    upsertSession({
+      id,
+      title: next,
+      updatedAt: Date.now(),
+      agent: existing?.agent || state.agent,
+    })
+    void pushAccountSession({
+      threadId: id,
+      title: next,
+      agent: existing?.agent || state.agent,
+    })
+  }
+
   function archiveWorkspace(workspaceId: string): void {
     const id = workspaceId.trim()
     if (!id || id === CLOUD_WORKSPACE_ID) return
@@ -570,6 +588,7 @@ export function useChat(): UseChat {
     newConversation,
     switchSession,
     archiveSession,
+    renameSession,
     archiveWorkspace,
     syncWorkspace,
     createWorkspace,

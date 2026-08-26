@@ -56,12 +56,14 @@ function renderChat(
   const hook: UseChat = {
     state,
     send: vi.fn(),
+    steer: vi.fn(),
     switchAgent: vi.fn(),
     approvalClick: vi.fn(() => true),
     choiceSubmit: vi.fn(() => true),
     newConversation: vi.fn(),
     switchSession: vi.fn(),
     archiveSession: vi.fn(),
+    renameSession: vi.fn(),
     archiveWorkspace: vi.fn(),
     syncWorkspace: vi.fn(),
     createWorkspace: vi.fn(),
@@ -69,6 +71,7 @@ function renderChat(
     activeSessionId: 'web-test',
     stop: vi.fn(),
     stopSubagent: vi.fn(() => true),
+    refreshHistory: vi.fn(() => true),
     clearError: vi.fn(),
   }
   mocks.useChat.mockReturnValue(hook)

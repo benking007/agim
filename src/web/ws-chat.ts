@@ -21,6 +21,7 @@ import {
   sanitizeUserText,
 } from '../core/logger.js'
 import { dispatchTurnSteer, threadSteerKey } from '../core/turn-steer.js'
+import { interruptLoopSend, noteLoopUserSteer } from '../core/loop-run.js'
 import { isAgimAgentId } from '../core/naming-migrate.js'
 import type { ChatMessage } from '../core/types.js'
 import { isStepReflectDisabled, isStepReflectEnabled } from '../core/llm/step-reflect.js'
@@ -509,6 +510,10 @@ export async function handleClientMessage(
       const runAbort = new AbortController()
       webRunAborts.set(sessionThreadId, runAbort)
       const onParentAbort = (): void => {
+        noteLoopUserSteer('web', 'web', sessionThreadId, {
+          text: USER_INTERRUPTED_TEXT,
+          kind: 'abort',
+        })
         void import('../core/job-board.js').then(({ abortChildJobsForParentTurn }) => {
           abortChildJobsForParentTurn(
             'web',
@@ -853,6 +858,9 @@ export async function handleClientMessage(
           content: text,
           timestamp: new Date(),
         })
+        // Loop L3 must see 打断发送 even if the harness only absorbs after
+        // the current stream/tool batch (or the parent turn is aborted).
+        interruptLoopSend('web', 'web', clientId, text)
         const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', clientId), text)
         emit({ type: 'steer-accepted', text, mode })
       } catch (err) {

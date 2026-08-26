@@ -69,8 +69,10 @@ import {
   markLoopParentTurnActive,
 } from '../../../core/loop-parent-turn.js'
 import {
+  buildLoopSnippet,
   forceLoopExitSkippedVerify,
   formatLoopEndedSummary,
+  interruptLoopSend,
   maybeEnforceLoopExit,
 } from '../../../core/loop-run.js'
 import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
@@ -2093,10 +2095,24 @@ export class NativeAgentAdapter implements AgentAdapter {
         ? threadSteerKey(opts.platform, opts.channelId ?? '', opts.threadId)
         : `agim:${sessionId}`
       unregisterSteer = registerLiveSteer(steerKey, async (text) => {
-        ephemeralSteer = [
-          ephemeralSteer,
-          '用户刚通过本轮补充加入了新的约束。先停一下读完补充，再决定是否调整方案，然后继续本轮工作。',
-        ].filter(Boolean).join('\n\n')
+        if (loopScope) {
+          interruptLoopSend(loopScope.platform, loopScope.channelId, loopScope.threadId, text)
+          const nextSnippet = buildLoopSnippet(
+            loopScope.platform,
+            loopScope.channelId,
+            loopScope.threadId,
+          )
+          ephemeralSteer = [
+            ephemeralSteer,
+            '【用户打断了本轮发送】先停下来读用户补充。这优先于本轮 HARD WAIT / 在途派工。不要把已取消的发送当成仍有效。',
+            nextSnippet,
+          ].filter(Boolean).join('\n\n')
+        } else {
+          ephemeralSteer = [
+            ephemeralSteer,
+            '用户刚通过本轮补充加入了新的约束。先停一下读完补充，再决定是否调整方案，然后继续本轮工作。',
+          ].filter(Boolean).join('\n\n')
+        }
         await harness.steer(formatMidTurnSteer(text))
       })
       // Covers abort between the final pre-check and listener registration.

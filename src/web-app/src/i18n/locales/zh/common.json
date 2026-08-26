@@ -268,6 +268,9 @@
     },
     "notConnected": "未连接，正在重连…",
     "notConnectedRetry": "未连接，正在重连，请稍后重试。",
+    "sendDropped": "消息未送达服务器，请重试。",
+    "sendFailed": "发送失败",
+    "sending": "发送中…",
     "threadReassigned": "原会话属于其他登录身份，已为你开启新对话。",
     "connecting": "正在连接 agim…",
     "disconnected": "已断开，正在自动重连。重连完成前输入框不可用。",
@@ -674,6 +677,8 @@
       "attach": {
         "max": "最多 8 个附件",
         "uploadFailed": "附件上传失败",
+        "uploadTimeout": "上传超时，请压缩图片或换更稳的网络后再试。",
+        "uploadCloudflare": "网关超时（524），图片太大或网络过慢。请改用较小的图。",
         "preview": "预览图片",
         "closePreview": "关闭预览",
         "loading": "加载中…",

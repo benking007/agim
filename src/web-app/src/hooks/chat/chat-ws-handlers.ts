@@ -56,6 +56,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'loop-changed',
   'loop-schedule-changed',
   'steer-accepted',
+  'message-accepted',
 ])
 
 function incomingThreadId(msg: ChatIncoming): string | undefined {
@@ -454,6 +455,11 @@ export function makeOnIncoming(
         return
       case 'steer-accepted':
         // Optimistic APPEND_USER already painted the bubble.
+        return
+      case 'message-accepted':
+        if (msg.clientMsgId) {
+          dispatch({ kind: 'MESSAGE_ACCEPTED', clientMsgId: msg.clientMsgId })
+        }
         return
       default:
         return

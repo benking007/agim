@@ -395,7 +395,7 @@ async function handleChatMediaUpload(
   res: ServerResponse,
   url: URL,
 ): Promise<void> {
-  const { formatMediaMarker, saveWebChatMedia, WEB_MEDIA_MAX_BYTES } = await import('../core/web-media-upload.js')
+  const { formatMediaMarker, saveWebChatMediaFromStream, WEB_MEDIA_MAX_BYTES } = await import('../core/web-media-upload.js')
   const filenameHeader = req.headers['x-agim-filename']
   const mimeHeader = req.headers['x-agim-mime']
   const filenameRaw = Array.isArray(filenameHeader) ? filenameHeader[0] : filenameHeader
@@ -410,12 +410,12 @@ async function handleChatMediaUpload(
   }
   const threadId = (url.searchParams.get('threadId') || 'web').slice(0, 120)
   try {
-    const body = await readBinaryBody(req, res, Math.max(WEB_MEDIA_MAX_BYTES, MAX_CHAT_MEDIA_BYTES))
-    const saved = await saveWebChatMedia({
+    const saved = await saveWebChatMediaFromStream({
       threadId,
       filename,
       mime: mime || 'application/octet-stream',
-      body,
+      source: req,
+      maxBytes: Math.max(WEB_MEDIA_MAX_BYTES, MAX_CHAT_MEDIA_BYTES),
     })
     sendJson(res, 200, {
       path: saved.path,

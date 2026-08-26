@@ -240,6 +240,42 @@ describe('chatReducer', () => {
     expect(s.error).toBeNull()
   })
 
+  it('MESSAGE_ACCEPTED marks a pending user bubble sent', () => {
+    const u = { ...userMsg('u-1', 'hi'), sendStatus: 'pending' as const }
+    const base = reduce(initialChatState, {
+      kind: 'SEND_USER', message: u, placeholder: asstMsg('p-1'),
+    })
+    const s = reduce(base, { kind: 'MESSAGE_ACCEPTED', clientMsgId: 'u-1' })
+    expect(s.messages[0]?.sendStatus).toBe('sent')
+    expect(s.currentReplyId).toBe('p-1')
+  })
+
+  it('SEND_FAILED marks the user bubble failed and drops the empty placeholder', () => {
+    const u = { ...userMsg('u-1', 'hi'), sendStatus: 'pending' as const }
+    const base = reduce(initialChatState, {
+      kind: 'SEND_USER', message: u, placeholder: asstMsg('p-1'),
+    })
+    const s = reduce(base, {
+      kind: 'SEND_FAILED', clientMsgId: 'u-1', replyId: 'p-1', message: 'dropped',
+    })
+    expect(s.messages).toHaveLength(1)
+    expect(s.messages[0]?.sendStatus).toBe('failed')
+    expect(s.currentReplyId).toBeNull()
+    expect(s.error).toBe('dropped')
+  })
+
+  it('RUN_START flips pending user bubbles to sent', () => {
+    const u = { ...userMsg('u-1', 'hi'), sendStatus: 'pending' as const }
+    const base = reduce(initialChatState, {
+      kind: 'SEND_USER', message: u, placeholder: asstMsg('p-1'),
+    })
+    const s = reduce(base, {
+      kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1,
+    })
+    expect(s.messages[0]?.sendStatus).toBe('sent')
+    expect(s.activeRunId).toBe('run-1')
+  })
+
   it('CHUNK appends to the matching message; ignored if replyId absent', () => {
     const base = reduce(initialChatState, {
       kind: 'SEND_USER', message: userMsg('u-1', 'hi'), placeholder: asstMsg('p-1'),

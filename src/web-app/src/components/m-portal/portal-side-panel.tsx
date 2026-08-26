@@ -4,11 +4,12 @@
  * focused on wiring and layout.
  */
 
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
   Archive, BookOpen, CalendarClock, ChevronDown, ChevronRight, Cloud, Folder, FolderPlus, FolderTree,
-  Languages, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, User, X,
+  Languages, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Sparkles, User, X,
 } from 'lucide-react'
 
 import { signedInName, signOut } from '@/lib/sign-out'
@@ -46,6 +47,7 @@ export function PortalSidePanel(props: {
   onSelectWorkspace: (id: string) => void
   onNewWorkspace: () => void
   onArchiveSession: (threadId: string) => void
+  onRenameSession: (threadId: string, title: string) => void
   onArchiveWorkspace: (id: string) => void
 }): JSX.Element {
   const { t } = useTranslation()
@@ -58,7 +60,7 @@ export function PortalSidePanel(props: {
     sessions, activeSessionId, onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
     onToggleWorkspace, onSelectWorkspace, onNewWorkspace,
-    onArchiveSession, onArchiveWorkspace,
+    onArchiveSession, onRenameSession, onArchiveWorkspace,
   } = props
 
   if (railCollapsed) {
@@ -342,46 +344,22 @@ export function PortalSidePanel(props: {
                       <p className="px-2.5 py-1.5 text-[11px] text-zinc-400">
                         {t('chat.portal.workspaceEmpty')}
                       </p>
-                    ) : childSessions.map((session) => {
-                      const active = session.id === activeSessionId
-                      const title = session.title?.trim() || t('chat.portal.untitledConversation')
-                      return (
-                        <div
-                          key={session.id}
-                          className={cn(
-                            'group/session flex w-full items-start gap-1 rounded-xl p-1.5 transition-all',
-                            active
-                              ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
-                              : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => onSwitchSession(session.id)}
-                            title={title}
-                            aria-label={title}
-                            aria-current={active ? 'true' : undefined}
-                            className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg p-1 text-left"
-                          >
-                            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs font-semibold">{title}</span>
-                              <span className={cn(
-                                'mt-0.5 block truncate text-[10px] font-medium',
-                                active ? 'text-teal-500/80' : 'text-zinc-400',
-                              )}>
-                                {formatSessionAge(session.updatedAt, lang, t('chat.portal.justNow'))}
-                              </span>
-                            </span>
-                          </button>
-                          <ArchiveRowButton
-                            dark={dark}
-                            label={t('chat.portal.archiveSession')}
-                            onClick={() => onArchiveSession(session.id)}
-                          />
-                        </div>
-                      )
-                    })}
+                    ) : childSessions.map((session) => (
+                      <SessionRow
+                        key={session.id}
+                        dark={dark}
+                        lang={lang}
+                        session={session}
+                        active={session.id === activeSessionId}
+                        untitled={t('chat.portal.untitledConversation')}
+                        justNow={t('chat.portal.justNow')}
+                        renameLabel={t('chat.portal.renameSession')}
+                        archiveLabel={t('chat.portal.archiveSession')}
+                        onSwitchSession={onSwitchSession}
+                        onRenameSession={onRenameSession}
+                        onArchiveSession={onArchiveSession}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -460,6 +438,163 @@ function formatSessionAge(ts: number, lang: Lang, justNow: string, now = Date.no
   })
 }
 
+const SESSION_TITLE_MAX = 80
+
+function SessionRow(props: {
+  dark: boolean
+  lang: Lang
+  session: WebSessionEntry
+  active: boolean
+  untitled: string
+  justNow: string
+  renameLabel: string
+  archiveLabel: string
+  onSwitchSession: (threadId: string) => void
+  onRenameSession: (threadId: string, title: string) => void
+  onArchiveSession: (threadId: string) => void
+}): JSX.Element {
+  const {
+    dark, lang, session, active, untitled, justNow,
+    renameLabel, archiveLabel, onSwitchSession, onRenameSession, onArchiveSession,
+  } = props
+  const title = session.title?.trim() || untitled
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(title)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function startEdit(): void {
+    setDraft(title)
+    setEditing(true)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+  }
+
+  function commit(): void {
+    const next = draft.trim().slice(0, SESSION_TITLE_MAX)
+    setEditing(false)
+    if (!next || next === title) return
+    onRenameSession(session.id, next)
+  }
+
+  function cancel(): void {
+    setEditing(false)
+    setDraft(title)
+  }
+
+  return (
+    <div
+      className={cn(
+        'group/session flex w-full items-start gap-1 rounded-xl p-1.5 transition-all',
+        active
+          ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
+          : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
+      )}
+    >
+      {editing ? (
+        <div className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg p-1">
+          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <input
+            ref={inputRef}
+            value={draft}
+            maxLength={SESSION_TITLE_MAX}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commit()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                cancel()
+              }
+            }}
+            aria-label={renameLabel}
+            data-testid="portal-session-title-input"
+            className={cn(
+              'min-w-0 flex-1 rounded-md border px-1.5 py-0.5 text-xs font-semibold outline-none',
+              dark
+                ? 'border-zinc-700 bg-zinc-950 text-zinc-100'
+                : 'border-zinc-300 bg-white text-zinc-800',
+            )}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onSwitchSession(session.id)}
+          onDoubleClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            startEdit()
+          }}
+          title={title}
+          aria-label={title}
+          aria-current={active ? 'true' : undefined}
+          className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg p-1 text-left"
+        >
+          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold">{title}</span>
+            <span className={cn(
+              'mt-0.5 block truncate text-[10px] font-medium',
+              active ? 'text-teal-500/80' : 'text-zinc-400',
+            )}>
+              {formatSessionAge(session.updatedAt, lang, justNow)}
+            </span>
+          </span>
+        </button>
+      )}
+      {!editing ? (
+        <RowIconButton
+          dark={dark}
+          label={renameLabel}
+          testId="portal-session-rename"
+          onClick={startEdit}
+        >
+          <Pencil className="h-3 w-3" />
+        </RowIconButton>
+      ) : null}
+      <RowIconButton
+        dark={dark}
+        label={archiveLabel}
+        onClick={() => onArchiveSession(session.id)}
+      >
+        <Archive className="h-3 w-3" />
+      </RowIconButton>
+    </div>
+  )
+}
+
+function RowIconButton(props: {
+  dark: boolean
+  label: string
+  onClick: () => void
+  testId?: string
+  children: ReactNode
+}): JSX.Element {
+  const { dark, label, onClick, testId, children } = props
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      title={label}
+      aria-label={label}
+      className={cn(
+        'mt-0.5 shrink-0 rounded-md p-1 opacity-70 transition hover:opacity-100',
+        dark ? 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 function ArchiveRowButton(props: {
   dark: boolean
   label: string
@@ -488,7 +623,7 @@ function ArchiveRowButton(props: {
 function IconRailButton(props: {
   dark: boolean
   label: string
-  icon: React.ReactNode
+  icon: ReactNode
   onClick: () => void
   active?: boolean
 }): JSX.Element {
@@ -515,7 +650,7 @@ function IconRailButton(props: {
 function SideNavButton(props: {
   active: boolean
   dark: boolean
-  icon: React.ReactNode
+  icon: ReactNode
   label: string
   onClick: () => void
   testId?: string

@@ -162,7 +162,7 @@ export function AgentPortal(): JSX.Element {
 
   const {
     state, send, steer, stop, stopSubagent, refreshHistory, switchAgent, approvalClick, choiceSubmit,
-    newConversation, switchSession, archiveSession, archiveWorkspace, syncWorkspace, createWorkspace,
+    newConversation, switchSession, archiveSession, renameSession, archiveWorkspace, syncWorkspace, createWorkspace,
     sessions, activeSessionId, clearError,
   } = useChat()
   const {
@@ -850,6 +850,9 @@ export function AgentPortal(): JSX.Element {
       const session = findSession(threadId)
       const title = session?.title?.trim() || t('chat.portal.untitledConversation')
       setArchiveConfirm({ kind: 'session', id: threadId, title })
+    },
+    onRenameSession: (threadId: string, title: string) => {
+      renameSession(threadId, title)
     },
     onArchiveWorkspace: (id: string) => {
       const ws = findWorkspace(id)

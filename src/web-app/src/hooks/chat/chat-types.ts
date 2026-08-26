@@ -220,6 +220,8 @@ export interface UseChat {
   switchSession: (threadId: string) => void
   /** Hide a thread from the Portal rail. */
   archiveSession: (threadId: string) => void
+  /** Persist a custom rail title for this thread. */
+  renameSession: (threadId: string, title: string) => void
   /** Hide a named workspace and its sessions from the Portal rail. */
   archiveWorkspace: (workspaceId: string) => void
   /** Bind this thread's agent cwd to a Portal workspace path (empty = cloud). */

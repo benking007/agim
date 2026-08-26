@@ -1320,7 +1320,7 @@ class SessionManager {
         session.ownerUserId = userId
       }
       if (typeof patch.title === 'string') {
-        const t = patch.title.trim()
+        const t = patch.title.trim().slice(0, 120)
         if (t) session.title = t
         else delete session.title
       }

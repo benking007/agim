@@ -31,6 +31,7 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
   const onSelectWorkspace = vi.fn()
   const onToggleWorkspace = vi.fn()
   const onArchiveSession = vi.fn()
+  const onRenameSession = vi.fn()
   const onArchiveWorkspace = vi.fn()
   const view = render(
     <PortalSidePanel
@@ -57,11 +58,15 @@ function renderPanel(over: Partial<Parameters<typeof PortalSidePanel>[0]> = {}) 
       onSelectWorkspace={onSelectWorkspace}
       onNewWorkspace={onNewWorkspace}
       onArchiveSession={onArchiveSession}
+      onRenameSession={onRenameSession}
       onArchiveWorkspace={onArchiveWorkspace}
       {...over}
     />,
   )
-  return { onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace, onArchiveSession, onArchiveWorkspace, unmount: view.unmount }
+  return {
+    onSwitchSession, onNew, onNewWorkspace, onSelectWorkspace, onToggleWorkspace,
+    onArchiveSession, onRenameSession, onArchiveWorkspace, unmount: view.unmount,
+  }
 }
 
 afterEach(() => {
@@ -144,6 +149,20 @@ describe('PortalSidePanel conversations', () => {
     expect(older).toBeTruthy()
     await user.click(older)
     expect(onArchiveSession).toHaveBeenCalledWith('web-bbbb2222')
+    expect(onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('renames a session from the row button without switching', async () => {
+    const user = userEvent.setup()
+    const { onRenameSession, onSwitchSession } = renderPanel()
+    const buttons = screen.getAllByTestId('portal-session-rename')
+    expect(buttons).toHaveLength(2)
+    await user.click(buttons[1]!)
+    const input = screen.getByTestId('portal-session-title-input')
+    await user.clear(input)
+    await user.type(input, 'Renamed older')
+    await user.keyboard('{Enter}')
+    expect(onRenameSession).toHaveBeenCalledWith('web-bbbb2222', 'Renamed older')
     expect(onSwitchSession).not.toHaveBeenCalled()
   })
 

@@ -170,6 +170,18 @@ describe('useChat multi-session', () => {
     unmount()
   })
 
+  it('renameSession updates the rail title and pushes to the account', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const id = result.current.activeSessionId
+    act(() => { result.current.send('first prompt becomes title') })
+    act(() => { result.current.renameSession(id, 'My custom name') })
+    expect(findSession(id)?.title).toBe('My custom name')
+    expect(mocks.pushAccountSession).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: id, title: 'My custom name' }),
+    )
+    unmount()
+  })
+
   it('archiveWorkspace hides the folder and its sessions', () => {
     const ws = addLocalWorkspace({ name: 'proj', path: '/tmp/proj-archive' })
     const { result, unmount } = renderHook(() => useChat())

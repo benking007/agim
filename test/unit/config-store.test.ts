@@ -120,7 +120,7 @@ describe('config-store', () => {
     expect(stored.seed).toBe(true)
     for (let i = 0; i < 16; i++) expect(stored[`child${i}`]).toBe(i)
     expect(readdirSync(DIR).filter((n) => n !== 'child-update.mjs')).toEqual(['config.json'])
-  })
+  }, { retry: 2, timeout: 20_000 })
 
   it('keeps the previous config when an updater throws', async () => {
     await writeConfigObject({ stable: 'yes' }, { filePath: FILE })

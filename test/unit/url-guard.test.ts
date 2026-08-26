@@ -185,4 +185,12 @@ describe('assertSafeUrl', () => {
       expect((err as UnsafeUrlError).reason).toBe('url_parse')
     }
   })
+
+  it('test preload stubs DNS so reserved .invalid hostnames do not hit the network', async () => {
+    const u = await assertSafeUrl(
+      'https://this-host-does-not-exist-agim-test.invalid/v1',
+      { forwardsCredentials: false },
+    )
+    expect(u.hostname).toBe('this-host-does-not-exist-agim-test.invalid')
+  })
 })

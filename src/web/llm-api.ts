@@ -381,9 +381,18 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
     send(res, 400, { error: 'baseUrl must be an http(s) URL' })
     return
   }
+  if (!model) {
+    send(res, 400, { error: 'model is required' })
+    return
+  }
+  if (!apiKey) {
+    send(res, 400, { error: 'apiKey is required (non-empty string)' })
+    return
+  }
   // CR P1a — shared SSRF posture. API keys are stored separately, so we
   // don't force https here (local Ollama often uses http);
   // private / link-local / metadata addresses still require AGIM_URL_ALLOW_PRIVATE=1.
+  // Cheap field checks run first so a missing model/key does not wait on DNS.
   {
     const { assertSafeUrl, UnsafeUrlError } = await import('../core/url-guard.js')
     try {
@@ -395,14 +404,6 @@ async function handleAddBackend(req: IncomingMessage, res: ServerResponse): Prom
       }
       throw err
     }
-  }
-  if (!model) {
-    send(res, 400, { error: 'model is required' })
-    return
-  }
-  if (!apiKey) {
-    send(res, 400, { error: 'apiKey is required (non-empty string)' })
-    return
   }
   const temperature = parseOptionalNumber(body.temperature, 'temperature', 0, 2)
   if (typeof temperature === 'object' && temperature !== null && 'error' in temperature) {

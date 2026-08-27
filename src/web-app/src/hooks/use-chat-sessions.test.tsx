@@ -18,19 +18,6 @@ const mocks = vi.hoisted(() => ({
   pushAccountSession: vi.fn(async () => true),
 }))
 
-function emitIncoming(msg: ChatIncoming): void {
-  for (const fn of mocks.messageListeners) fn(msg)
-}
-
-/** Server ack that the last optimistic send actually entered the inbound queue. */
-function ackLastSend(): void {
-  const last = [...mocks.sent].reverse().find((m) => m.type === 'message' && m.clientMsgId)
-  if (!last || last.type !== 'message' || !last.clientMsgId) {
-    throw new Error('no pending chat message to ack')
-  }
-  emitIncoming({ type: 'message-accepted', clientMsgId: last.clientMsgId })
-}
-
 vi.mock('@/lib/api/ws', () => ({
   openChatWs: () => ({
     send: (msg: ChatOutgoing) => {
@@ -288,8 +275,6 @@ describe('useChat multi-session', () => {
     const { result, unmount } = renderHook(() => useChat())
     const firstId = result.current.activeSessionId
     act(() => { result.current.send('hello sync') })
-    expect(mocks.pushAccountSession).not.toHaveBeenCalled()
-    act(() => { ackLastSend() })
     expect(mocks.pushAccountSession).toHaveBeenCalledWith(expect.objectContaining({
       threadId: firstId,
       title: 'hello sync',

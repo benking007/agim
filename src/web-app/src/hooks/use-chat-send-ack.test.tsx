@@ -1,6 +1,6 @@
 /**
- * useChat send ack: a late timeout must not paint "发送失败" after the
- * server already accepted the turn (or started running it).
+ * useChat send: once the frame is handed to the socket, missing server
+ * ack must not paint「发送失败」. No delivery watchdog.
  *
  * @vitest-environment jsdom
  */
@@ -9,27 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatIncoming, ChatOutgoing } from '@/types/ws'
 import type { WsStatus } from '@/lib/api/ws'
-import { SEND_ACK_TIMEOUT_MS } from './chat/chat-types'
 
 const mocks = vi.hoisted(() => ({
   sent: [] as ChatOutgoing[],
   statusListeners: new Set<(s: WsStatus) => void>(),
   messageListeners: new Set<(msg: ChatIncoming) => void>(),
-  ackOnSend: false,
+  sendOk: true,
   reconnect: vi.fn(),
   toastError: vi.fn(),
 }))
 
 function emitIncoming(msg: ChatIncoming): void {
   for (const fn of mocks.messageListeners) fn(msg)
-}
-
-function lastClientMsgId(): string {
-  const last = [...mocks.sent].reverse().find((m) => m.type === 'message' && m.clientMsgId)
-  if (!last || last.type !== 'message' || !last.clientMsgId) {
-    throw new Error('no chat message with clientMsgId')
-  }
-  return last.clientMsgId
 }
 
 vi.mock('sonner', () => ({
@@ -45,16 +36,7 @@ vi.mock('@/lib/api/ws', () => ({
   openChatWs: () => ({
     send: (msg: ChatOutgoing) => {
       mocks.sent.push(msg)
-      if (mocks.ackOnSend && msg.type === 'message' && msg.clientMsgId) {
-        emitIncoming({ type: 'message-accepted', clientMsgId: msg.clientMsgId })
-        emitIncoming({
-          type: 'run-start',
-          runId: 'run-1',
-          agent: 'agim',
-          startedAt: new Date().toISOString(),
-        })
-      }
-      return true
+      return mocks.sendOk
     },
     status: () => 'open' as const,
     close: () => {},
@@ -83,7 +65,7 @@ vi.mock('@/lib/web-session-sync', () => ({
 import { useChat } from './use-chat'
 import { useAuth } from '@/stores/auth'
 
-describe('useChat send ack', () => {
+describe('useChat send (no ack watchdog)', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
@@ -93,7 +75,7 @@ describe('useChat send ack', () => {
     mocks.sent.length = 0
     mocks.statusListeners.clear()
     mocks.messageListeners.clear()
-    mocks.ackOnSend = false
+    mocks.sendOk = true
     mocks.reconnect.mockClear()
     mocks.toastError.mockClear()
     vi.useFakeTimers()
@@ -106,26 +88,28 @@ describe('useChat send ack', () => {
     })
   })
 
-  it('does not mark failed when ack arrives in the same tick as send', () => {
-    mocks.ackOnSend = true
+  it('marks the bubble sent as soon as the frame is handed to the socket', () => {
     const { result, unmount } = renderHook(() => useChat())
-    act(() => { result.current.send('我们讨论下自动化任务的触发逻辑') })
+    act(() => { result.current.send('盯住兴业银锡的股价') })
     const user = result.current.state.messages.find((m) => m.role === 'user')
     expect(user?.sendStatus).toBe('sent')
+    expect(mocks.sent.some((m) => m.type === 'message')).toBe(true)
+    unmount()
+  })
 
-    act(() => { vi.advanceTimersByTime(SEND_ACK_TIMEOUT_MS + 50) })
-    const again = result.current.state.messages.find((m) => m.role === 'user')
-    expect(again?.sendStatus).toBe('sent')
+  it('does not paint 发送失败 when the server never acks', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    act(() => { result.current.send('hello') })
+    act(() => { vi.advanceTimersByTime(30_000) })
+    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('sent')
     expect(mocks.toastError).not.toHaveBeenCalled()
     expect(mocks.reconnect).not.toHaveBeenCalled()
     unmount()
   })
 
-  it('does not mark failed after a late run-start once the watchdog is armed', () => {
+  it('keeps the bubble sent when run-start arrives later', () => {
     const { result, unmount } = renderHook(() => useChat())
     act(() => { result.current.send('盘点当前逻辑') })
-    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('pending')
-
     act(() => {
       emitIncoming({
         type: 'run-start',
@@ -135,36 +119,16 @@ describe('useChat send ack', () => {
       })
     })
     expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('sent')
-
-    act(() => { vi.advanceTimersByTime(SEND_ACK_TIMEOUT_MS + 50) })
-    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('sent')
-    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(result.current.state.activeRunId).toBe('run-2')
     unmount()
   })
 
-  it('rolls back only when the server never acks', () => {
+  it('toasts not-connected without painting 发送失败 when the socket is closed', () => {
+    mocks.sendOk = false
     const { result, unmount } = renderHook(() => useChat())
     act(() => { result.current.send('hello') })
-    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('pending')
-
-    act(() => { vi.advanceTimersByTime(SEND_ACK_TIMEOUT_MS + 50) })
-    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('failed')
+    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('sent')
     expect(mocks.toastError).toHaveBeenCalled()
-    expect(mocks.reconnect).toHaveBeenCalled()
-    unmount()
-  })
-
-  it('normal ack after send clears the watchdog', () => {
-    const { result, unmount } = renderHook(() => useChat())
-    act(() => { result.current.send('hello') })
-    act(() => {
-      emitIncoming({ type: 'message-accepted', clientMsgId: lastClientMsgId() })
-    })
-    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('sent')
-
-    act(() => { vi.advanceTimersByTime(SEND_ACK_TIMEOUT_MS + 50) })
-    expect(result.current.state.messages.find((m) => m.role === 'user')?.sendStatus).toBe('sent')
-    expect(mocks.reconnect).not.toHaveBeenCalled()
     unmount()
   })
 })

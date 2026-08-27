@@ -270,7 +270,6 @@
     "notConnectedRetry": "Not connected. Reconnecting — try again in a moment.",
     "sendDropped": "Message did not reach the server. Please retry.",
     "sendFailed": "Send failed",
-    "sending": "Sending…",
     "threadReassigned": "Previous chat belongs to another login — started a new conversation.",
     "connecting": "Connecting to agim…",
     "disconnected": "Disconnected. Reconnecting automatically — input is paused until the socket is back.",

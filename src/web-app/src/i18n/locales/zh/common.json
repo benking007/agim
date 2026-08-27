@@ -270,7 +270,6 @@
     "notConnectedRetry": "未连接，正在重连，请稍后重试。",
     "sendDropped": "消息未送达服务器，请重试。",
     "sendFailed": "发送失败",
-    "sending": "发送中…",
     "threadReassigned": "原会话属于其他登录身份，已为你开启新对话。",
     "connecting": "正在连接 agim…",
     "disconnected": "已断开，正在自动重连。重连完成前输入框不可用。",

@@ -499,6 +499,10 @@ export interface Approval {
   input: Record<string, unknown>
   fingerprint: string
   autoAllow: boolean
+  /** True for one-shot human decisions (e.g. plan-mode exit). */
+  requiresExplicitDecision?: boolean
+  allowSessionPin?: boolean
+  approverUserId?: string
   /** Epoch ms when the bus accepted the request. */
   registeredAt: number
   /** Server-computed age at fetch time (ms). The UI shows

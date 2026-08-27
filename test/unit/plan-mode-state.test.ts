@@ -74,3 +74,21 @@ describe('plan-mode-state — env defaults', () => {
     expect(effectivePlanModeOn()).toBe(true)
   })
 })
+
+describe('plan-mode-state — live in-flight override', () => {
+  afterEach(() => {
+    planMod._resetLivePlanModeForTests()
+    delete process.env.AGIM_PLAN_MODE
+  })
+
+  it('live override beats env and is cleared by reset', () => {
+    process.env.AGIM_PLAN_MODE = 'on'
+    expect(planMod.effectivePlanModeOn('t-live')).toBe(true)
+    planMod.setLivePlanMode('t-live', false)
+    expect(planMod.effectivePlanModeOn('t-live')).toBe(false)
+    expect(planMod.getLivePlanMode('t-live')).toBe(false)
+    planMod._resetLivePlanModeForTests()
+    expect(planMod.getLivePlanMode('t-live')).toBeUndefined()
+    expect(planMod.effectivePlanModeOn('t-live')).toBe(true)
+  })
+})

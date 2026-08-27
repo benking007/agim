@@ -24,6 +24,7 @@ import {
   uninstall,
   tryHandleApprovalReply,
   bindButtonHandlerForPlatform,
+  listPendingApprovalCards,
 } from './approval-router.js'
 import type { MessengerAdapter, ButtonCallback, ApprovalCardOutcome } from './types.js'
 import { handleAskOp, _resetAskBusForTests } from './ask-user-rpc.js'
@@ -733,5 +734,48 @@ describe('handleButtonCallback — orphan click (v1.2.113 regression)', () => {
       threadId: 't', userId: 'u', messageId: 'm',
       ack: async () => {},
     })).resolves.toBeUndefined()
+  })
+})
+
+describe('listPendingApprovalCards', () => {
+  let savedAuto: string | undefined
+
+  beforeEach(() => {
+    savedAuto = process.env.AGIM_AUTO_APPROVE
+    process.env.AGIM_AUTO_APPROVE = '0'
+  })
+
+  afterEach(async () => {
+    approvalBus.setNotifier(null)
+    await approvalBus.stop().catch(() => {})
+    if (savedAuto === undefined) delete process.env.AGIM_AUTO_APPROVE
+    else process.env.AGIM_AUTO_APPROVE = savedAuto
+  })
+
+  it('replays explicit plan-exit cards for the matching web thread', async () => {
+    const threadId = `web-replay-${Date.now().toString(36)}`
+    approvalBus.setNotifier(async () => {})
+    await approvalBus.registerSyntheticPending({
+      runId: 'run-replay',
+      reqId: 'req-replay-1',
+      toolName: 'agim_exit_plan_mode',
+      input: { plan: '- implement' },
+      requiresExplicitDecision: true,
+      ctx: {
+        platform: 'web',
+        channelId: 'web',
+        threadId,
+        userId: 'usr_alice',
+      },
+      dispatch: () => {},
+    })
+
+    const mine = listPendingApprovalCards({ platform: 'web', threadId })
+    expect(mine).toHaveLength(1)
+    expect(mine[0]?.prompt.reqId).toBe('req-replay-1')
+    expect(mine[0]?.prompt.toolName).toBe('agim_exit_plan_mode')
+    expect(mine[0]?.prompt.mode).toBe('explicit')
+    expect(mine[0]?.prompt.inputJson).toContain('implement')
+    expect(listPendingApprovalCards({ platform: 'web', threadId: 'other' })).toHaveLength(0)
   })
 })

@@ -229,3 +229,63 @@ describe('web serial queue — steer bypass', () => {
     expect(d.events).toContain('chat:end')
   })
 })
+
+// Mid-turn `/plan off` as a chat `message` must bypass the serial queue
+// the same way steer does — otherwise the command sits behind a turn
+// blocked on agim_exit_plan_mode and never lands.
+describe('web serial queue — plan slash bypass', () => {
+  function makeDispatcher() {
+    const enqueue = createSerialQueue()
+    const events: string[] = []
+    let chatRunning = false
+    let planWhileChatRunning = false
+
+    async function handleChatMessage(): Promise<void> {
+      chatRunning = true
+      events.push('chat:start')
+      await new Promise((r) => setTimeout(r, 80))
+      events.push('chat:end')
+      chatRunning = false
+    }
+
+    function handlePlan(): void {
+      planWhileChatRunning = chatRunning
+      events.push('plan')
+    }
+
+    function dispatch(msg: { type: string; text?: string; runInFlight?: boolean }): void {
+      if (msg.type === 'steer') {
+        handlePlan()
+        return
+      }
+      if (
+        msg.type === 'message'
+        && typeof msg.text === 'string'
+        && /^\/plan(?:\s|$|-)/i.test(msg.text.trim())
+        && msg.runInFlight
+      ) {
+        handlePlan()
+        return
+      }
+      enqueue(async () => { await handleChatMessage() })
+    }
+
+    return { dispatch, events, get planWhileChatRunning() { return planWhileChatRunning } }
+  }
+
+  it('plan slash message runs while a slow chat handler is still in the queue', async () => {
+    const d = makeDispatcher()
+    d.dispatch({ type: 'message', text: 'hi' })
+    await new Promise((r) => setTimeout(r, 1))
+    expect(d.events).toEqual(['chat:start'])
+
+    d.dispatch({ type: 'message', text: '/plan off', runInFlight: true })
+    await new Promise((r) => setTimeout(r, 1))
+    expect(d.events).toContain('plan')
+    expect(d.events).not.toContain('chat:end')
+    expect(d.planWhileChatRunning).toBe(true)
+
+    await new Promise((r) => setTimeout(r, 120))
+    expect(d.events).toContain('chat:end')
+  })
+})

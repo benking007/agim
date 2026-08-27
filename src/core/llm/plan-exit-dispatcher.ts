@@ -31,6 +31,7 @@ import { sessionManager } from '../session.js'
 import {
   effectivePlanModeOn,
   setPlanModeForThread,
+  setLivePlanMode,
 } from '../plan-mode-state.js'
 import type { ToolDef } from './provider-base.js'
 import type { DispatcherResult, ToolDispatcher } from './tool-dispatcher.js'
@@ -226,6 +227,7 @@ export function buildPlanExitDispatcher(ctx: PlanExitCtx): ToolDispatcher {
       //     Use setPlanModeForThread(false) — explicit "this thread is
       //     out", which beats the env default even if env says ON.
       setPlanModeForThread(ctx.threadKey, false)
+      setLivePlanMode(ctx.threadKey, false)
       try {
         const patched = await sessionManager.patchSession(
           platform,

@@ -5,6 +5,7 @@
 import { randomBytes } from 'node:crypto'
 import { type WebSocket } from 'ws'
 import { parseMessage, routeMessage, type RouteContext } from '../core/router.js'
+import { handlePlanCommand, parsePlanSlashArgs } from '../core/commands/plan.js'
 import { sessionManager } from '../core/session.js'
 import { registry } from '../core/registry.js'
 import {
@@ -31,6 +32,7 @@ import {
   slimActivitySteps,
 } from './history-payload.js'
 import { applyWebHistoryRekey } from './ws-history-rekey.js'
+import { webChatActorUserId } from './web-actor.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -93,6 +95,40 @@ export function formatWebAgentUnavailableMessage(agentName: string): string {
     ].join(' ')
   }
   return formatAgentNotAvailableError(agentName)
+}
+
+async function applyWebPlanSlash(opts: {
+  client: ClientConnection
+  text: string
+  args: string
+  accountUserId?: string
+  emit: (data: Record<string, unknown>) => void
+}): Promise<string> {
+  const threadId = opts.client.id
+  const traceId = generateTraceId()
+  const logger = createLogger({ traceId, platform: 'web', component: 'web' })
+  const ctx: RouteContext = {
+    threadId,
+    channelId: 'web',
+    platform: 'web',
+    defaultAgent: opts.client.agent,
+    traceId,
+    logger,
+    userId: webChatActorUserId(opts.accountUserId, threadId),
+  }
+  const reply = await handlePlanCommand(opts.args, ctx)
+  const now = new Date()
+  try {
+    await sessionManager.addMessage('web', 'web', threadId, {
+      role: 'user', content: opts.text, timestamp: now,
+    })
+    await sessionManager.addMessage('web', 'web', threadId, {
+      role: 'assistant', content: reply, timestamp: now, agent: opts.client.agent,
+    })
+  } catch { /* best-effort persist */ }
+  const sess = await sessionManager.getExistingSession('web', 'web', threadId)
+  opts.emit({ type: 'plan-mode', enabled: !!sess?.planMode })
+  return reply
 }
 
 // ─── Send helpers ─────────────────────────────────────────────────────────────
@@ -298,6 +334,20 @@ export async function sendSessionHistory(
       })
     }
   } catch { /* ask bus optional during early boot */ }
+  // Same class of bug as ask_user: approval-card is ephemeral. Refresh /
+  // sleep-wake would leave agim_exit_plan_mode spinning with an empty dock.
+  try {
+    const { listPendingApprovalCards } = await import('../core/approval-router.js')
+    for (const card of listPendingApprovalCards({ platform: 'web', threadId })) {
+      if (ws.readyState !== ws.OPEN) break
+      sendToClient(ws, {
+        type: 'approval-card',
+        messageId: card.messageId,
+        prompt: card.prompt,
+        threadId,
+      })
+    }
+  } catch { /* approval router optional during early boot */ }
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────
@@ -388,13 +438,35 @@ export async function handleClientMessage(
 
       const parsed = parseMessage(text)
 
+      // Mid-turn `/plan on|off` must NOT abort the live harness (the
+      // default message path aborts + starts a new run). Portal busy
+      // composer uses steer; this is the fallback when `send('/plan off')`
+      // arrives while a turn is blocked on agim_exit_plan_mode.
+      if (parsed.type === 'plan' && webRunAborts.has(sessionThreadId)) {
+        try {
+          await applyWebPlanSlash({
+            client,
+            text,
+            args: parsed.args,
+            accountUserId,
+            emit,
+          })
+        } catch (err) {
+          emit({
+            type: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+        return
+      }
+
       try {
         const { tryHandleScheduledLoopTurn } = await import('../core/loop-schedule-intent.js')
         const loopCard = await tryHandleScheduledLoopTurn({
           platform: 'web',
           channelId: 'web',
           threadId: sessionThreadId,
-          userId: accountUserId || `web:${sessionThreadId}`,
+          userId: webChatActorUserId(accountUserId, sessionThreadId),
           text,
           surface: 'dock',
         })
@@ -534,7 +606,7 @@ export async function handleClientMessage(
           defaultAgent: client.agent,
           traceId,
           logger,
-          userId: accountUserId || `web:${clientId}`,
+          userId: webChatActorUserId(accountUserId, clientId),
           webRunId: runId,
           ...(workspacePath ? { workspacePath } : {}),
           signal: runAbort.signal,
@@ -846,6 +918,27 @@ export async function handleClientMessage(
       if (!text) break
       if (!webRunAborts.get(clientId)) {
         emit({ type: 'error', message: '当前没有正在执行的任务' })
+        break
+      }
+      const planArgs = parsePlanSlashArgs(text)
+      if (planArgs !== null) {
+        // `/plan off` typed while busy used to land as 【本轮补充】, so the
+        // harness stay ON and agim_write_file kept hard-denying.
+        try {
+          await applyWebPlanSlash({
+            client,
+            text,
+            args: planArgs,
+            accountUserId,
+            emit,
+          })
+          emit({ type: 'steer-accepted', text, mode: 'live' })
+        } catch (err) {
+          emit({
+            type: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
         break
       }
       if (!isAgimAgentId(client.agent)) {

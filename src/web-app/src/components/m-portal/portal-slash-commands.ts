@@ -268,3 +268,15 @@ export function workspaceFileMarker(relPath: string, isDir: boolean): string {
   const tag = isDir ? '工作区目录' : '工作区文件'
   return `[${tag}：${relPath}]`
 }
+
+/** Peel Portal `[技能：…]` / attachment markers so `/plan` still matches. */
+function peelLeadingMarkers(text: string): string {
+  return text.trim().replace(/^(?:\[[^\]]+\]\s*)+/u, '').trim()
+}
+
+const PLAN_SLASH_RE = /^\/(plan(?:-?on|-?off)?|planon|planoff)(?:\s|$)/i
+
+/** True for `/plan`, `/plan on|off`, `/plan-off`, `/planoff`. */
+export function isPlanModeSlashCommand(text: string): boolean {
+  return PLAN_SLASH_RE.test(peelLeadingMarkers(text))
+}

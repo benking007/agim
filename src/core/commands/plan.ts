@@ -22,15 +22,59 @@
 
 import type { RouteContext } from '../router.js'
 import { sessionManager } from '../session.js'
-import { threadKey as makeThreadKey } from '../approval-bus.js'
+import { approvalBus, threadKey as makeThreadKey } from '../approval-bus.js'
+import { PLAN_EXIT_TOOL_NAME } from '../llm/plan-exit-dispatcher.js'
 import {
   setPlanModeForThread,
   clearPlanModeForThread,
   resolvePlanModeEnvPolicy,
+  setLivePlanMode,
+  getLivePlanMode,
 } from '../plan-mode-state.js'
 
 const ON_TOKENS = new Set(['on', 'enter', 'start', 'enable', '开', '开启'])
 const OFF_TOKENS = new Set(['off', 'exit', 'stop', 'disable', '关', '关闭'])
+
+/** Peel Portal `[技能：…]` / attachment markers so `/plan` still matches. */
+function peelLeadingMarkers(text: string): string {
+  return text.trim().replace(/^(?:\[[^\]]+\]\s*)+/u, '').trim()
+}
+
+const PLAN_SLASH_RE = /^\/(plan(?:-?on|-?off)?|planon|planoff)(?:\s+([\s\S]*))?$/i
+
+/** True for `/plan`, `/plan on|off`, `/plan-off`, `/planoff` (and on aliases). */
+export function isPlanModeSlashCommand(text: string): boolean {
+  return PLAN_SLASH_RE.test(peelLeadingMarkers(text))
+}
+
+/**
+ * Args to feed `handlePlanCommand`, or `null` when `text` is not a plan slash.
+ * `/plan-off` / `/planoff` map to `off`; `/plan-on` / `/planon` map to `on`.
+ */
+export function parsePlanSlashArgs(text: string): string | null {
+  const match = peelLeadingMarkers(text).match(PLAN_SLASH_RE)
+  if (!match) return null
+  const cmd = match[1].toLowerCase()
+  if (cmd === 'plan-off' || cmd === 'planoff') return 'off'
+  if (cmd === 'plan-on' || cmd === 'planon') return 'on'
+  return (match[2] ?? '').trim()
+}
+
+/** Approve any in-flight `agim_exit_plan_mode` card on this thread. */
+function resolvePendingPlanExits(ctx: RouteContext): number {
+  const pending = approvalBus.listPending().filter((row) => (
+    row.threadId === ctx.threadId
+    && row.platform === ctx.platform
+    && row.toolName === PLAN_EXIT_TOOL_NAME
+  ))
+  let n = 0
+  for (const row of pending) {
+    const actor = row.approverUserId || ctx.userId || ''
+    const info = approvalBus.resolvePendingByReqId(row.reqId, { behavior: 'allow' }, actor)
+    if (info) n += 1
+  }
+  return n
+}
 
 /** Agents that genuinely honor session.planMode at adapter level.
  *  - claude-code: --permission-mode plan
@@ -109,6 +153,9 @@ plan 模式下文件不会被修改，适合先讨论方案再动手。${agentNo
   const tkey = makeThreadKey(ctx.platform, ctx.channelId, ctx.threadId)
 
   if (ON_TOKENS.has(token)) {
+    // Seed the in-flight harness even when session is already on, so a
+    // mid-turn `/plan on` hard-denies writes for the rest of this turn.
+    setLivePlanMode(tkey, true)
     if (existing?.planMode) return `✅ Plan 模式已开启（无变化）。${capabilityNote}`
     await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { planMode: true })
     // v1.2.120 — also write to plan-mode-state so the native agent
@@ -119,11 +166,21 @@ plan 模式下文件不会被修改，适合先讨论方案再动手。${agentNo
   }
 
   if (OFF_TOKENS.has(token)) {
-    if (!existing?.planMode) return 'ℹ️ Plan 模式本来就是关闭状态。'
-    await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { planMode: false })
+    const liveWasOn = getLivePlanMode(tkey) === true
+    // Always knock down the live gate first: intent auto-enter only sets
+    // opts.planMode for this turn and never writes session.planMode, so
+    // "session already off" must still unlock in-flight writes.
+    setLivePlanMode(tkey, false)
+    const resolvedExits = resolvePendingPlanExits(ctx)
+    if (existing?.planMode) {
+      await sessionManager.patchSession(ctx.platform, ctx.channelId, ctx.threadId, { planMode: false })
+    }
     // v1.2.120 — drop the per-thread row so the env default applies
     // again (don't write `false`; that would override env=on too).
     clearPlanModeForThread(tkey)
+    if (!existing?.planMode && !liveWasOn && resolvedExits === 0) {
+      return 'ℹ️ Plan 模式本来就是关闭状态。'
+    }
     return '✅ Plan 模式已关闭 — 恢复正常执行模式。'
   }
 

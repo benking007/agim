@@ -465,6 +465,9 @@ export class ApprovalBus {
     input: Record<string, unknown>
     fingerprint: string
     autoAllow: boolean
+    requiresExplicitDecision: boolean
+    allowSessionPin: boolean
+    approverUserId: string
     registeredAt: number
     ageMs: number
   }> {
@@ -481,6 +484,9 @@ export class ApprovalBus {
         input: p.input,
         fingerprint: p.fingerprint,
         autoAllow: p.autoAllow,
+        requiresExplicitDecision: p.requiresExplicitDecision === true,
+        allowSessionPin: p.allowSessionPin === true,
+        approverUserId: p.approverUserId,
         registeredAt: p.registeredAt,
         ageMs: now - p.registeredAt,
       })

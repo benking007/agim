@@ -11,6 +11,7 @@ import {
 } from '@/components/m-portal/portal-composer-input'
 import {
   filterSlashCommands,
+  isPlanModeSlashCommand,
   skillMarker,
   workspaceFileMarker,
   workspaceMarker,
@@ -113,5 +114,16 @@ describe('backspace deletes trailing chip', () => {
     expect(parsed.chips).toHaveLength(2)
     const after = serializeComposer(parsed.chips.slice(0, -1), parsed.text)
     expect(chipsFromValue(after).chips.map((c) => c.kind)).toEqual(['workspace'])
+  })
+})
+
+describe('isPlanModeSlashCommand', () => {
+  it('matches /plan variants and ignores ordinary text', () => {
+    expect(isPlanModeSlashCommand('/plan off')).toBe(true)
+    expect(isPlanModeSlashCommand('/plan-off')).toBe(true)
+    expect(isPlanModeSlashCommand('/planon')).toBe(true)
+    expect(isPlanModeSlashCommand('[技能：x]\n/plan off')).toBe(true)
+    expect(isPlanModeSlashCommand('also run tests')).toBe(false)
+    expect(isPlanModeSlashCommand('/planet')).toBe(false)
   })
 })

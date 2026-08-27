@@ -17,6 +17,7 @@ import {
 } from '../../../core/llm/todo-dispatcher.js'
 import { composeDeliveredAssistantText, type NativeModelBinding, NativeAgentAdapter } from './index.js'
 import { _resetTurnSteer, dispatchTurnSteer } from '../../../core/turn-steer.js'
+import { setLivePlanMode } from '../../../core/plan-mode-state.js'
 
 const regs: Array<{ unregister(): void }> = []
 afterEach(() => {
@@ -513,6 +514,52 @@ describe('NativeAgentAdapter (agim AgentAdapter contract)', () => {
 
     const out = await collect(adapter.sendPrompt('plan-exit', 'plan then implement', undefined, { planMode: true }))
     expect(dispatched).toEqual(['agim_exit_plan_mode', 'agim_write_file'])
+    expect(out).toBe('implemented')
+  })
+
+  it('honors mid-turn live Plan Mode off so writes are not hard-denied', async () => {
+    const sessionId = 'plan-live-off'
+    const reg = faux()
+    reg.setResponses([
+      fauxAssistantMessage(fauxToolCall('agim_sleep_ms', { ms: 1 }, { id: 's1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage(fauxToolCall('agim_write_file', { path: '/x', content: 'x' }, { id: 'w1' }), { stopReason: 'toolUse' }),
+      fauxAssistantMessage('implemented'),
+    ])
+    const dispatched: string[] = []
+    const tools: ToolDef[] = [
+      {
+        name: 'agim_sleep_ms',
+        description: 'sleep',
+        parameters: {
+          type: 'object',
+          properties: { ms: { type: 'number' } },
+          required: ['ms'],
+        },
+      },
+      {
+        name: 'agim_write_file',
+        description: 'write',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' }, content: { type: 'string' } },
+          required: ['path', 'content'],
+        },
+      },
+    ]
+    const dispatch: ToolDispatcher = async (call) => {
+      dispatched.push(call.name)
+      if (call.name === 'agim_sleep_ms') {
+        setLivePlanMode(`agim:${sessionId}`, false)
+      }
+      return { text: 'ok', isError: false }
+    }
+    const adapter = new NativeAgentAdapter({
+      sessionsRoot: mkdtempSync(join(tmpdir(), 'pi-plan-live-')),
+      resolveModel: async () => bindingFromFaux(reg),
+      resolveTools: () => ({ tools, dispatch }),
+    })
+    const out = await collect(adapter.sendPrompt(sessionId, 'plan then write', undefined, { planMode: true }))
+    expect(dispatched).toEqual(['agim_sleep_ms', 'agim_write_file'])
     expect(out).toBe('implemented')
   })
 

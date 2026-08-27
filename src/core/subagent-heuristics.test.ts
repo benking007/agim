@@ -8,6 +8,10 @@ import {
 } from './subagent-heuristics.js'
 
 describe('subagent heuristics (Phase A3)', () => {
+  it('keeps call_agent tool description compact', () => {
+    expect(CALL_AGENT_TOOL_DESCRIPTION.length).toBeLessThan(1100)
+  })
+
   it('tool description carries key decompose keywords', () => {
     const lower = CALL_AGENT_TOOL_DESCRIPTION.toLowerCase()
     for (const kw of SUBAGENT_HEURISTIC_KEYWORDS) {
@@ -22,12 +26,23 @@ describe('subagent heuristics (Phase A3)', () => {
     }
   })
 
-  it('keeps brief four-piece and anti-over-spawn rules explicit', () => {
+  it('keeps brief four-piece and delegate-first rules explicit', () => {
     expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/Objective/)
-    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/do not spawn for trivial/i)
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/delegate first/i)
+    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/do not re-delegate/i)
     expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/do not parallel-write/i)
     expect(buildSubagentDelegationGuidance()).toMatch(/Brief four-piece/)
     expect(buildSubagentDelegationGuidance()).toMatch(/same-family/)
+    expect(buildSubagentDelegationGuidance()).toMatch(/delegate first/i)
+    expect(buildSubagentDelegationGuidance()).toMatch(/do not re-delegate/i)
+  })
+
+  it('embeds live preferred picks when provided', () => {
+    const g = buildSubagentDelegationGuidance({
+      livePreferredPicks: 'Live preferred picks (available now):\n  - coding → agent=codex (strong)',
+    })
+    expect(g).toMatch(/Live preferred picks/)
+    expect(g).toMatch(/agent=codex \(strong\)/)
   })
 
   it('locks Subagent deliverable contract (findings in message + path + no empty see above)', () => {

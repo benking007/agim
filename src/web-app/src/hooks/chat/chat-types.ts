@@ -24,14 +24,11 @@ export type ApprovalChoice = 'y' | 'n' | 'a'
 /** Optimistic send lifecycle for a user bubble. */
 export type ChatSendStatus = 'pending' | 'sent' | 'failed'
 
-/** How long the SPA waits for `message-accepted` before rolling back. */
-export const SEND_ACK_TIMEOUT_MS = 8000
-
 export interface ChatMessage {
   id: string
   role: MessageRole
   content: string
-  /** User bubbles start pending until the server acks the WS frame. */
+  /** User bubbles are `sent` once handed to the socket. No ack watchdog. */
   sendStatus?: ChatSendStatus
   agent?: string
   timestamp: number

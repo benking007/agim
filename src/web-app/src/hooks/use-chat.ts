@@ -11,9 +11,8 @@
  *
  * The user-driven `send` API is optimistic: the user bubble + empty
  * assistant placeholder appear immediately, then WS chunk/done events
- * fill the reply. The bubble stays `pending` until `message-accepted`
- * (or `run-start`); a timeout rolls it back so a zombie socket cannot
- * look like a published turn.
+ * fill the reply. Once the frame is handed to the socket we do not
+ * invent a timeout「发送失败」if the server never acks.
  *
  * Implementation is split across sibling modules:
  *   chat/chat-types.ts       — shared types + constants
@@ -25,7 +24,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
 import { toast } from 'sonner'
-import { openChatWs, reconnectChatWs } from '@/lib/api/ws'
+import { openChatWs } from '@/lib/api/ws'
 import {
   archiveSession as markSessionArchived,
   archiveSessionsForWorkspace,
@@ -60,7 +59,7 @@ import { chatReducer, initialChatState } from './chat/chat-reducer'
 import { makeOnIncoming } from './chat/chat-ws-handlers'
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { useAccountScopedChat } from './use-account-scoped-chat'
-import { APPROVAL_DISMISS_AFTER_MS, SEND_ACK_TIMEOUT_MS } from './chat/chat-types'
+import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
 import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
 import type { ChatIncoming } from '@/types/ws'
@@ -82,7 +81,7 @@ export type {
   UseChat,
 } from './chat/chat-types'
 export type { WebSessionEntry } from '@/lib/web-sessions'
-export { APPROVAL_DISMISS_AFTER_MS, SEND_ACK_TIMEOUT_MS } from './chat/chat-types'
+export { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 export { chatReducer, initialChatState, isCloudHistoryNewer, historyBelongsToClient } from './chat/chat-reducer'
 export type { ChatAction } from './chat/chat-reducer'
 
@@ -129,12 +128,6 @@ export function useChat(): UseChat {
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
   const followIfRemoteSwitchedRef = useRef<() => void>(() => {})
   const pullRemoteRef = useRef<() => Promise<void>>(async () => {})
-  const pendingSendsRef = useRef(new Map<string, {
-    replyId: string
-    text: string
-    timer: ReturnType<typeof setTimeout>
-  }>())
-  const confirmPendingSendRef = useRef<(id: string) => void>(() => {})
 
   useEffect(() => {
     currentReplyIdRef.current = state.currentReplyId
@@ -216,22 +209,6 @@ export function useChat(): UseChat {
           void pullRemoteRef.current()
           return
         }
-        if (msg.type === 'message-accepted' && msg.clientMsgId) {
-          confirmPendingSendRef.current(msg.clientMsgId)
-        }
-        // Any evidence the server started the turn means the WS frame
-        // landed. Confirm even if `message-accepted` was lost or arrived
-        // before the pending map was registered.
-        if (
-          msg.type === 'run-start'
-          || msg.type === 'active-run'
-          || msg.type === 'activity-step'
-          || msg.type === 'chunk'
-        ) {
-          for (const id of [...pendingSendsRef.current.keys()]) {
-            confirmPendingSendRef.current(id)
-          }
-        }
         onIncoming(msg)
       },
     })
@@ -290,26 +267,6 @@ export function useChat(): UseChat {
     })
   }
 
-  function confirmPendingSend(clientMsgId: string): void {
-    const pending = pendingSendsRef.current.get(clientMsgId)
-    if (!pending) return
-    clearTimeout(pending.timer)
-    pendingSendsRef.current.delete(clientMsgId)
-    dispatch({ kind: 'MESSAGE_ACCEPTED', clientMsgId })
-    publishSessionAfterAck(pending.text)
-  }
-  confirmPendingSendRef.current = confirmPendingSend
-
-  function failPendingSend(clientMsgId: string, replyId: string, message: string): void {
-    const pending = pendingSendsRef.current.get(clientMsgId)
-    // Already acked / run started — a late timer must not paint "failed"
-    // over a bubble the agent is already answering.
-    if (!pending) return
-    clearTimeout(pending.timer)
-    pendingSendsRef.current.delete(clientMsgId)
-    dispatch({ kind: 'SEND_FAILED', clientMsgId, replyId, message })
-  }
-
   function send(text: string): void {
     const trimmed = text.trim()
     if (!trimmed) return
@@ -326,7 +283,7 @@ export function useChat(): UseChat {
         role: 'user',
         content: trimmed,
         timestamp: Date.now(),
-        sendStatus: 'pending',
+        sendStatus: 'sent',
       },
       placeholder: {
         id: replyId,
@@ -336,21 +293,7 @@ export function useChat(): UseChat {
         timestamp: Date.now(),
       },
     })
-    // Register the watchdog BEFORE ws.send. A same-tick `message-accepted`
-    // / `run-start` (fast loopback, tests, or a flushed receive buffer)
-    // must be able to clear this timer; otherwise the 8s rollback paints
-    // "发送失败" on a turn the agent is already running.
-    const timer = setTimeout(() => {
-      if (!pendingSendsRef.current.has(userId)) return
-      const dropped = i18n.t('chat.sendDropped', {
-        ns: 'common',
-        defaultValue: 'Message did not reach the server. Please retry.',
-      })
-      failPendingSend(userId, replyId, dropped)
-      toast.error(dropped)
-      reconnectChatWs()
-    }, SEND_ACK_TIMEOUT_MS)
-    pendingSendsRef.current.set(userId, { replyId, text: trimmed, timer })
+    publishSessionAfterAck(trimmed)
     const workspacePath = activeWorkspacePath()
     const ok = ws.send({
       type: 'message',
@@ -360,8 +303,7 @@ export function useChat(): UseChat {
       ...(workspacePath ? { workspacePath } : {}),
     })
     if (!ok) {
-      const message = i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' })
-      failPendingSend(userId, replyId, message)
+      toast.error(i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' }))
     }
   }
 

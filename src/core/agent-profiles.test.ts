@@ -73,6 +73,20 @@ describe('agent profiles', () => {
     expect(text).toMatch(/finance=medium\(非专长\)/)
   })
 
+  it('does not dump all builtin ids when nothing is enabled', () => {
+    expect(formatAgentProfilesForPrompt(mergeAgentProfiles())).toBe('')
+  })
+
+  it('intersects enabled with available when availability is known', () => {
+    const text = formatAgentProfilesForPrompt(mergeAgentProfiles(), {
+      enabledAgents: ['codex', 'claude-code'],
+      availableAgents: ['codex'],
+      availabilityKnown: true,
+    })
+    expect(text).toContain('codex:')
+    expect(text).not.toContain('claude-code:')
+  })
+
   it('normalizeAgentProfile cleans lists and capabilities', () => {
     const p = normalizeAgentProfile({
       summary: '  hi  ',

@@ -407,7 +407,7 @@ export function getAgimTools(): ToolDef[] {
               'Self-contained Subagent brief: Objective + Output format + Boundaries + Done-when. '
               + 'Output format MUST require key findings in the child FINAL message; '
               + 'if files are written, require absolute path citation; forbid empty「见上文」/see above. '
-              + 'Do not spawn for trivial one-step work; child does not see parent chat history.',
+              + 'Delegate first when a worker exists. Child does not see parent chat history.',
           },
           backend: {
             type: 'string',

@@ -25,6 +25,7 @@ import {
 } from './capability-dims.js'
 import { isAgimAgentId, normalizeAgentId } from './naming-migrate.js'
 import { getLiveConfig } from './live-config.js'
+import { peekAgentAvailabilitySnapshot } from './onboarding.js'
 
 export interface AgentProfile {
   /** One-line specialty (shown in Settings + injected into prompts). */
@@ -405,19 +406,41 @@ export function profilesEqual(a: AgentProfile, b: AgentProfile): boolean {
 }
 
 /**
- * Compact catalog for system / tool prompts. Prefer enabled agents when
- * provided; always skip Agim (orchestrator, not a Subagent specialty).
+ * Compact catalog for system / tool prompts.
+ * List only enabled ∩ (available when known) CLI agents. Never dump the
+ * full builtin roster when `config.agents` is empty.
+ * Always skip Agim (orchestrator, not a Subagent specialty).
  */
 export function formatAgentProfilesForPrompt(
   profiles: Record<string, AgentProfile>,
-  opts?: { enabledAgents?: string[]; maxAgents?: number },
+  opts?: {
+    enabledAgents?: string[]
+    availableAgents?: string[]
+    availabilityKnown?: boolean
+    maxAgents?: number
+  },
 ): string {
   const enabled = new Set(
     (opts?.enabledAgents || [])
       .map((a) => normalizeAgentId(a))
       .filter((a) => a && !isAgimAgentId(a)),
   )
-  const ids = NON_AGIM_AGENT_IDS.filter((id) => enabled.size === 0 || enabled.has(id))
+  const available = new Set(
+    (opts?.availableAgents || [])
+      .map((a) => normalizeAgentId(a))
+      .filter((a) => a && !isAgimAgentId(a)),
+  )
+  let ids: NonAgimAgentId[]
+  if (enabled.size > 0) {
+    ids = NON_AGIM_AGENT_IDS.filter((id) => enabled.has(id))
+  } else if (opts?.availabilityKnown && available.size > 0) {
+    ids = NON_AGIM_AGENT_IDS.filter((id) => available.has(id))
+  } else {
+    ids = []
+  }
+  if (opts?.availabilityKnown) {
+    ids = ids.filter((id) => available.has(id))
+  }
   const capped = typeof opts?.maxAgents === 'number' ? ids.slice(0, opts.maxAgents) : ids
   if (capped.length === 0) return ''
 
@@ -470,11 +493,14 @@ export function getAgentProfilesCatalogForPrompt(): string {
   try {
     const cfg = getLiveConfig()
     const profiles = resolveAgentProfiles(cfg)
+    const snap = peekAgentAvailabilitySnapshot()
     cli = formatAgentProfilesForPrompt(profiles, {
       enabledAgents: cfg?.agents,
+      availableAgents: snap.available,
+      availabilityKnown: snap.known,
     })
   } catch {
-    cli = formatAgentProfilesForPrompt(mergeAgentProfiles())
+    cli = formatAgentProfilesForPrompt(mergeAgentProfiles(), { availabilityKnown: false })
   }
   const backends = getBackendProfilesCatalogForPrompt()
   return [cli, backends].filter((s) => s.trim()).join('\n\n')

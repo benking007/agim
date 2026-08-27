@@ -360,6 +360,39 @@ export function formatAgentDispatchUnavailable(
 }
 
 /**
+ * Sync snapshot of the last bulk availability probe.
+ * Used by system-prompt catalog / live preferred picks so we do not
+ * `await --version` while assembling a prompt.
+ * `known: false` when no probe has run yet (do not invent a full CLI roster).
+ */
+export function peekAgentAvailabilitySnapshot(): {
+  known: boolean
+  available: string[]
+  missing: string[]
+} {
+  if (!agentCheckCache) {
+    return { known: false, available: [], missing: [] }
+  }
+  return {
+    known: true,
+    available: [...agentCheckCache.result.available],
+    missing: [...agentCheckCache.result.missing],
+  }
+}
+
+/** Test helper: seed the bulk availability cache without spawning CLIs. */
+export function seedAgentAvailabilityCacheForTest(result: AgentCheckResult): void {
+  agentCheckCache = {
+    result: {
+      available: [...result.available],
+      missing: [...result.missing],
+      allMissing: result.available.length === 0,
+    },
+    timestamp: Date.now(),
+  }
+}
+
+/**
  * Check which agents are available.
  * Result is cached with a 2-minute TTL.
  */

@@ -32,6 +32,7 @@ import { buildSkillsSummary } from '../../../core/skills/loader.js'
 import { buildSubagentDelegationGuidance } from '../../../core/subagent-heuristics.js'
 import { getAgentProfilesCatalogForPrompt } from '../../../core/agent-profiles.js'
 import { getDispatchCheatSheetForPrompt } from '../../../core/dispatch-routes.js'
+import { getLivePreferredPicksForPrompt } from '../../../core/dispatch-rank.js'
 import { logger as rootLogger } from '../../../core/logger.js'
 
 const log = rootLogger.child({ component: 'native-agent' })
@@ -152,7 +153,7 @@ export function buildSystemPrompt(
     '  - Subagents must NOT call ask_user / loop_verdict — escalate via FINAL message to the parent.',
     '  - Destructive ops (delete/overwrite/outbound send): state impact, get confirmation first.',
     '  - When the user references something they told the bot before, search memos via mcp__agim__search_memos.',
-    '  - For file/list/search/fetch requests, use native tools first; spawn a Subagent (call_agent / call_agents) only when isolation, a cheaper/other model, a vision model, or another CLI is genuinely needed.',
+    '  - You are the orchestrator. Delegate first: if a dispatchable worker exists (see live preferred picks / catalog), call_agent / call_agents and do not write/edit/exec yourself. Hands-on only for greetings, single-fact answers, or when no worker is available.',
     '  - Closure rule: the FINAL assistant message (the hop with no more tool calls) MUST contain the full user-readable conclusion in Chinese — findings and next steps. Do NOT end with only a status line like「盘点完成」/「已完成」/「报告输出完毕」.',
     '  - Never end with empty cross-refs like「见上文输出」/「see above」/「详见文件」without pasting the substance (or a compact summary) in THIS message.',
     '  - If you write a report file (agim_write_file / etc.): still put key findings in the final message AND cite the absolute path.',
@@ -176,6 +177,7 @@ export function buildSystemPrompt(
     buildSubagentDelegationGuidance({
       agentProfilesCatalog: getAgentProfilesCatalogForPrompt(),
       dispatchCheatSheet: getDispatchCheatSheetForPrompt(),
+      livePreferredPicks: getLivePreferredPicksForPrompt(),
     }),
   )
   return lines.join('\n')

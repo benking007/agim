@@ -117,7 +117,7 @@ function decide(body) {
     toolsN,
     userHead: user.slice(0, 160).replace(/\s+/g, ' '),
     toolResults,
-    hasSubagentHeuristics: /Subagent delegation|do not spawn for trivial|Brief four-piece|do not parallel-write|Objective \+ Output format/i.test(heuristicHaystack),
+    hasSubagentHeuristics: /Subagent delegation|delegate first|Brief four-piece|do not parallel-write|Objective \+ Output format/i.test(heuristicHaystack),
     systemHasCallAgent: /mcp__agim__call_agent|call_agent/i.test(heuristicHaystack),
     systemHasCallAgents: /mcp__agim__call_agents|call_agents/i.test(heuristicHaystack),
     systemHead: sys.slice(0, 240).replace(/\s+/g, ' '),

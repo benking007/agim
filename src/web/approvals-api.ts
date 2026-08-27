@@ -83,10 +83,14 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
       return
     }
     const { approvalBus } = await import('../core/approval-bus.js')
+    const pending = approvalBus.listPending().find((p) => p.reqId === reqId)
+    if (!pending) {
+      sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
+      return
+    }
     if (!isRequestAdmin(req)) {
       const scope = await resolveMemberScope(req)
-      const pending = approvalBus.listPending().find((p) => p.reqId === reqId)
-      if (!pending || !approvalVisible(pending, scope)) {
+      if (!approvalVisible(pending, scope)) {
         sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
         return
       }
@@ -94,7 +98,14 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
     const decision = parsed.behavior === 'allow'
       ? { behavior: 'allow' as const, autoAllowFurther: parsed.autoAllowFurther === true }
       : { behavior: 'deny' as const, message: parsed.message || 'denied via dashboard' }
-    const resolved = approvalBus.resolvePendingByReqId(reqId, decision)
+    // Pass the stored approver: HTTP auth already verified the caller may
+    // act. Omitting actorUserId used to no-op requiresExplicitDecision
+    // tools (plan-exit) because the bus treats a missing actor as mismatch.
+    const resolved = approvalBus.resolvePendingByReqId(
+      reqId,
+      decision,
+      pending.approverUserId,
+    )
     if (!resolved) {
       sendJson(res, 404, { ok: false, error: 'Approval not pending (may have already resolved or timed out)' })
       return

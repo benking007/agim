@@ -109,6 +109,35 @@ describe('ApprovalBus.registerSyntheticPending', () => {
     expect(bus.getAutoAllowKeys(KEY)).toEqual([])
   })
 
+  it('logged-in web actor web:<thread> cannot resolve plan-exit stamped with account id', async () => {
+    const notifications: ApprovalNotification[] = []
+    bus.setNotifier(async (n) => { notifications.push(n) })
+    const decisions: Decision[] = []
+    const accountId = 'usr_alice'
+    const threadId = 'web-threadbbbb'
+    const webAnon = `web:${threadId}`
+
+    await bus.registerSyntheticPending({
+      runId: 'plan-web-1',
+      reqId: 'plan-exit-web-1',
+      toolName: 'agim_exit_plan_mode',
+      input: { plan: '- implement' },
+      requiresExplicitDecision: true,
+      ctx: { ...RUN_CTX, threadId, userId: accountId, platform: 'web', channelId: 'web' },
+      dispatch: (d) => decisions.push(d),
+    })
+
+    const key = threadKey('web', 'web', threadId)
+    expect(bus.resolvePendingByReqId('plan-exit-web-1', { behavior: 'allow' }, webAnon)).toBeNull()
+    expect(bus.resolvePendingByReqId('plan-exit-web-1', { behavior: 'allow' })).toBeNull()
+    expect(decisions).toEqual([])
+    expect(bus.hasPendingFor(key)).toBe(true)
+
+    bus.resolvePendingByReqId('plan-exit-web-1', { behavior: 'allow' }, accountId)
+    expect(decisions).toEqual([{ behavior: 'allow' }])
+    expect(notifications[0]?.requiresExplicitDecision).toBe(true)
+  })
+
   it('explicit-decision requests deny on timeout even when timeout default is allow', async () => {
     process.env.AGIM_AUTO_APPROVE = '1'
     process.env.AGIM_TIMEOUT_DEFAULT = 'allow'

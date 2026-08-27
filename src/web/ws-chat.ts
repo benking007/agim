@@ -31,6 +31,7 @@ import {
   slimActivitySteps,
 } from './history-payload.js'
 import { applyWebHistoryRekey } from './ws-history-rekey.js'
+import { webChatActorUserId } from './web-actor.js'
 
 const webLog = rootLogger.child({ component: 'web' })
 
@@ -298,6 +299,20 @@ export async function sendSessionHistory(
       })
     }
   } catch { /* ask bus optional during early boot */ }
+  // Same class of bug as ask_user: approval-card is ephemeral. Refresh /
+  // sleep-wake would leave agim_exit_plan_mode spinning with an empty dock.
+  try {
+    const { listPendingApprovalCards } = await import('../core/approval-router.js')
+    for (const card of listPendingApprovalCards({ platform: 'web', threadId })) {
+      if (ws.readyState !== ws.OPEN) break
+      sendToClient(ws, {
+        type: 'approval-card',
+        messageId: card.messageId,
+        prompt: card.prompt,
+        threadId,
+      })
+    }
+  } catch { /* approval router optional during early boot */ }
 }
 
 // ─── Main message dispatcher ──────────────────────────────────────────────────
@@ -394,7 +409,7 @@ export async function handleClientMessage(
           platform: 'web',
           channelId: 'web',
           threadId: sessionThreadId,
-          userId: accountUserId || `web:${sessionThreadId}`,
+          userId: webChatActorUserId(accountUserId, sessionThreadId),
           text,
           surface: 'dock',
         })
@@ -534,7 +549,7 @@ export async function handleClientMessage(
           defaultAgent: client.agent,
           traceId,
           logger,
-          userId: accountUserId || `web:${clientId}`,
+          userId: webChatActorUserId(accountUserId, clientId),
           webRunId: runId,
           ...(workspacePath ? { workspacePath } : {}),
           signal: runAbort.signal,

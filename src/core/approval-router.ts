@@ -810,3 +810,38 @@ function sendReceiptIfAny(info: ResolvedInfo, decision: Decision): void {
 
 /** Test helper — not exported from index. */
 export function _isInstalled(): boolean { return installed !== null }
+
+/**
+ * Rebuild live approval-card prompts for a thread. Used by web get-history
+ * so refresh / reconnect can restore ApprovalDock while the agent is still
+ * blocked on agim_exit_plan_mode (or any other pending).
+ */
+export function listPendingApprovalCards(filter?: {
+  platform?: string
+  threadId?: string
+}): Array<{ messageId: string; prompt: ApprovalCardPrompt }> {
+  const out: Array<{ messageId: string; prompt: ApprovalCardPrompt }> = []
+  for (const p of approvalBus.listPending()) {
+    if (filter?.platform && p.platform !== filter.platform) continue
+    if (filter?.threadId && p.threadId !== filter.threadId) continue
+    const card = activeCards.get(p.reqId)
+    const mode: ApprovalCardPrompt['mode'] = p.autoAllow
+      ? 'auto-allow'
+      : p.requiresExplicitDecision
+        ? 'explicit'
+        : 'normal'
+    out.push({
+      messageId: card?.messageId ?? `web-replay-${p.reqId}`,
+      prompt: {
+        reqId: p.reqId,
+        toolName: p.toolName,
+        inputJson: safeStringify(p.input, MAX_INPUT_PREVIEW_CARD),
+        mode,
+        ...(p.requiresExplicitDecision && p.allowSessionPin && !p.autoAllow
+          ? { canPin: true }
+          : {}),
+      },
+    })
+  }
+  return out
+}

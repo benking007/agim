@@ -58,6 +58,7 @@ import {
   bindWsClients,
   notifyAccountSessionsChanged,
 } from './ws-chat.js'
+import { webChatActorUserId } from './web-actor.js'
 import { unregisterClientIfCurrent } from './unregister-client.js'
 import { serveStatic, servePageHtml, PUBLIC_DIR } from './static-serve.js'
 
@@ -815,8 +816,16 @@ export async function startWebServer(options: {
         // to render after click. approval-router dispatches both `apv:`
         // and `ask:` data, so one handler serves approvals and asks.
         await webButtonHandler({
-          data: actionData, threadId: liveId, userId: `web:${liveId}`,
-          userDisplay: 'Web', messageId, ack: async () => {},
+          data: actionData,
+          threadId: liveId,
+          // Must match RouteContext.userId used when the pending was
+          // registered. `web:${liveId}` used to ignore logged-in account
+          // ids, so agim_exit_plan_mode (requiresExplicitDecision) dropped
+          // Approve clicks and the tool spinner never resolved.
+          userId: webChatActorUserId(accountUserId ?? client.userId, liveId),
+          userDisplay: 'Web',
+          messageId,
+          ack: async () => {},
         })
         webLog.info({ event: 'button.web.click_resolved', clientId: liveId, data: actionData })
       } catch (err) {
@@ -1011,9 +1020,18 @@ export async function startWebServer(options: {
     async sendApprovalCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
-      if (c && c.ws.readyState === c.ws.OPEN) {
-        sendToClient(c.ws, { type: 'approval-card', messageId, prompt, threadId })
+      if (!c || c.ws.readyState !== c.ws.OPEN) {
+        // Match sendChoiceCard: throwing lets the bus deny instead of
+        // waiting 10 minutes on a card the browser never received.
+        webLog.warn({
+          event: 'approval.card_undelivered',
+          threadId,
+          hasClient: Boolean(c),
+          readyState: c?.ws.readyState,
+        }, 'web approval-card undelivered — no OPEN WS client')
+        throw new Error(`web approval-card undelivered: no OPEN client for thread ${threadId}`)
       }
+      sendToClient(c.ws, { type: 'approval-card', messageId, prompt, threadId })
       return { messageId }
     },
     async editApprovalCard(threadId, messageId, outcome) {

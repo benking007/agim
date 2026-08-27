@@ -264,6 +264,37 @@ describe('chatReducer', () => {
     expect(s.error).toBe('dropped')
   })
 
+  it('SEND_FAILED does not clobber a bubble already marked sent', () => {
+    const u = { ...userMsg('u-1', 'hi'), sendStatus: 'pending' as const }
+    const accepted = reduce(
+      reduce(initialChatState, { kind: 'SEND_USER', message: u, placeholder: asstMsg('p-1') }),
+      { kind: 'MESSAGE_ACCEPTED', clientMsgId: 'u-1' },
+    )
+    expect(accepted.messages[0]?.sendStatus).toBe('sent')
+    const s = reduce(accepted, {
+      kind: 'SEND_FAILED', clientMsgId: 'u-1', replyId: 'p-1', message: 'dropped',
+    })
+    expect(s.messages[0]?.sendStatus).toBe('sent')
+    expect(s.messages).toHaveLength(2)
+    expect(s.error).toBeNull()
+    expect(s.currentReplyId).toBe('p-1')
+  })
+
+  it('SEND_FAILED after RUN_START leaves the in-flight turn intact', () => {
+    const u = { ...userMsg('u-1', 'hi'), sendStatus: 'pending' as const }
+    const running = reduce(
+      reduce(initialChatState, { kind: 'SEND_USER', message: u, placeholder: asstMsg('p-1') }),
+      { kind: 'RUN_START', runId: 'run-1', agent: 'agim', startedAt: 1 },
+    )
+    expect(running.messages[0]?.sendStatus).toBe('sent')
+    const s = reduce(running, {
+      kind: 'SEND_FAILED', clientMsgId: 'u-1', replyId: 'p-1', message: 'dropped',
+    })
+    expect(s.messages[0]?.sendStatus).toBe('sent')
+    expect(s.activeRunId).toBe('run-1')
+    expect(s.error).toBeNull()
+  })
+
   it('RUN_START flips pending user bubbles to sent', () => {
     const u = { ...userMsg('u-1', 'hi'), sendStatus: 'pending' as const }
     const base = reduce(initialChatState, {

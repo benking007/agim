@@ -739,6 +739,10 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       return { ...s, messages: next }
     }
     case 'SEND_FAILED': {
+      const target = s.messages.find((m) => m.id === a.clientMsgId && m.role === 'user')
+      // Late timeout after message-accepted / run-start must not clobber
+      // a bubble that already landed (agent may already be answering).
+      if (!target || target.sendStatus !== 'pending') return s
       const messages = s.messages.filter((m) => {
         if (a.replyId && m.id === a.replyId && m.role === 'assistant' && !m.content.trim()) {
           return false

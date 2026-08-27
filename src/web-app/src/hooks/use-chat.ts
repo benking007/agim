@@ -219,7 +219,15 @@ export function useChat(): UseChat {
         if (msg.type === 'message-accepted' && msg.clientMsgId) {
           confirmPendingSendRef.current(msg.clientMsgId)
         }
-        if (msg.type === 'run-start') {
+        // Any evidence the server started the turn means the WS frame
+        // landed. Confirm even if `message-accepted` was lost or arrived
+        // before the pending map was registered.
+        if (
+          msg.type === 'run-start'
+          || msg.type === 'active-run'
+          || msg.type === 'activity-step'
+          || msg.type === 'chunk'
+        ) {
           for (const id of [...pendingSendsRef.current.keys()]) {
             confirmPendingSendRef.current(id)
           }
@@ -287,16 +295,18 @@ export function useChat(): UseChat {
     if (!pending) return
     clearTimeout(pending.timer)
     pendingSendsRef.current.delete(clientMsgId)
+    dispatch({ kind: 'MESSAGE_ACCEPTED', clientMsgId })
     publishSessionAfterAck(pending.text)
   }
   confirmPendingSendRef.current = confirmPendingSend
 
   function failPendingSend(clientMsgId: string, replyId: string, message: string): void {
     const pending = pendingSendsRef.current.get(clientMsgId)
-    if (pending) {
-      clearTimeout(pending.timer)
-      pendingSendsRef.current.delete(clientMsgId)
-    }
+    // Already acked / run started — a late timer must not paint "failed"
+    // over a bubble the agent is already answering.
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pendingSendsRef.current.delete(clientMsgId)
     dispatch({ kind: 'SEND_FAILED', clientMsgId, replyId, message })
   }
 
@@ -326,6 +336,21 @@ export function useChat(): UseChat {
         timestamp: Date.now(),
       },
     })
+    // Register the watchdog BEFORE ws.send. A same-tick `message-accepted`
+    // / `run-start` (fast loopback, tests, or a flushed receive buffer)
+    // must be able to clear this timer; otherwise the 8s rollback paints
+    // "发送失败" on a turn the agent is already running.
+    const timer = setTimeout(() => {
+      if (!pendingSendsRef.current.has(userId)) return
+      const dropped = i18n.t('chat.sendDropped', {
+        ns: 'common',
+        defaultValue: 'Message did not reach the server. Please retry.',
+      })
+      failPendingSend(userId, replyId, dropped)
+      toast.error(dropped)
+      reconnectChatWs()
+    }, SEND_ACK_TIMEOUT_MS)
+    pendingSendsRef.current.set(userId, { replyId, text: trimmed, timer })
     const workspacePath = activeWorkspacePath()
     const ok = ws.send({
       type: 'message',
@@ -337,18 +362,7 @@ export function useChat(): UseChat {
     if (!ok) {
       const message = i18n.t('chat.notConnected', { ns: 'common', defaultValue: 'Not connected. Reconnecting…' })
       failPendingSend(userId, replyId, message)
-      return
     }
-    const timer = setTimeout(() => {
-      const dropped = i18n.t('chat.sendDropped', {
-        ns: 'common',
-        defaultValue: 'Message did not reach the server. Please retry.',
-      })
-      failPendingSend(userId, replyId, dropped)
-      toast.error(dropped)
-      reconnectChatWs()
-    }, SEND_ACK_TIMEOUT_MS)
-    pendingSendsRef.current.set(userId, { replyId, text: trimmed, timer })
   }
 
   function steer(text: string): void {

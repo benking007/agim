@@ -53,9 +53,7 @@ import {
   type DeepSeekResponsesResult,
 } from './deepseek-api.js'
 import {
-  DEEPSEEK_VISION_MODEL,
   isDeepSeekBaseUrl,
-  isDeepSeekVisionModel,
   isKimiBaseUrl,
   isKimiK2Model,
   isKimiK3Model,
@@ -376,9 +374,7 @@ export class OpenAICompatProvider extends LlmProvider {
   ): Record<string, unknown> {
     const vision = resolveOpenAiVisionMode({
       configuredVision: this.vision,
-      baseUrl: this.baseUrl,
       model: opts.model,
-      messages,
     })
     const body: Record<string, unknown> = {
       model: vision.model,
@@ -669,21 +665,11 @@ function isAbortError(err: unknown): boolean {
 
 // ─── Stage 2 — tool-call serialization / deserialization ─────────────
 
-/** DeepSeek text SKUs 400 on images — swap to the vision model for that request. */
+/** Honor the provider's configured vision flag only — never swap model id. */
 function resolveOpenAiVisionMode(opts: {
   configuredVision: boolean
-  baseUrl?: string
   model: string
-  messages: LlmMessage[]
 }): { enabled: boolean; model: string } {
-  const hasUserMedia = opts.messages.some(
-    (m) => m.role === 'user' && Array.isArray(m.media) && m.media.length > 0,
-  )
-  if (!hasUserMedia) return { enabled: opts.configuredVision, model: opts.model }
-  const deepseek = isDeepSeekBaseUrl(opts.baseUrl) || /^deepseek/i.test(opts.model)
-  if (deepseek && !isDeepSeekVisionModel(opts.model)) {
-    return { enabled: true, model: DEEPSEEK_VISION_MODEL }
-  }
   return { enabled: opts.configuredVision, model: opts.model }
 }
 

@@ -20,7 +20,6 @@ import {
   type LlmRole,
 } from '../../../core/llm/registry.js'
 import {
-  applyDeepSeekVisionModel,
   DEEPSEEK_BETA_BASE,
   DEEPSEEK_THINKING_LEVEL_MAP,
   isDeepSeekStrictToolsEnabled,
@@ -346,21 +345,6 @@ function resolvePiInputModalities(opts: {
   }
   if (catalog) return catalog
   return opts.kimi || opts.zhipu || opts.mimo ? ['text', 'image'] : ['text']
-}
-
-/**
- * DeepSeek only accepts images on `deepseek-v4-flash-vision-exp` (other
- * SKUs 400 with "This model does not support image"). When this turn
- * has images, reuse the same key/host and swap the model id.
- */
-export function applyDeepSeekVisionRoute(
-  binding: NativeModelBinding,
-  hasImages: boolean,
-): NativeModelBinding {
-  return {
-    ...binding,
-    model: applyDeepSeekVisionModel(binding.model, hasImages),
-  }
 }
 
 /** Conservative context window for models missing from the pi catalog.

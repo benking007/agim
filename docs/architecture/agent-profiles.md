@@ -149,14 +149,16 @@ Settings → **LLM → 任务派发速查**：三行下拉（编码 agent；金�
 
 - **完整目录只进 system**，避免把长 catalog 塞进每个 tool schema（token / 体积）。  
 - 工具侧只提醒「要按画像选」，模型去读 system 里的 catalog。  
-- 目录优先列出 `config.agents` **已启用**的非 Agim CLI；若 `agents` 为空则列出全部内置 id（兜底）。
+- 目录只列出 **已启用 ∩ 此刻可派** 的非 Agim CLI；`agents` 为空时不再倒全部内置 id。  
+- system 另注入 **live preferred picks**：按 `caps` 维排序（strong > medium > weak）；编码维同分优先 CLI。
 
 伪代码：
 
 ```text
 effective = merge(DEFAULT_AGENT_PROFILES, config.agentProfiles)
-catalog   = format(effective, enabledAgents=config.agents)   // skip Agim
-system   += Subagent heuristics + catalog
+catalog   = format(effective, enabled ∩ available)   // skip Agim; never dump all builtins
+picks     = rank(caps, coding prefers CLI)
+system   += Subagent heuristics + live picks + cheat sheet + catalog
 toolDesc += "Prefer agent= by specialty fit (see system specialty catalog)."
 ```
 
@@ -174,7 +176,7 @@ toolDesc += "Prefer agent= by specialty fit (see system specialty catalog)."
 | 能力 | 画像做什么 | 不做什么 |
 |------|------------|----------|
 | **Subagent 跨 adapter** | 指引父模型选 `claude-code` / `codex` / … | 不替代 brief 四件套；不同族 spawn 规则 |
-| **Loop 派工** | 父在 DISPATCH 时按 fit 选 Subagent | 不强制硬匹配分数；无结构化 scorer（后续可选） |
+| **Loop 派工** | 父在 DISPATCH 时按 live picks / catalog 选 Subagent | 运行时按维排序写入 prompt；仍不是硬切模型 |
 | **可用性** | — | 登录/订阅/`spawn` 失败仍靠探测与 quarantine；画像≠「已登录」 |
 | **Sticky handoff** | — | `/cc` 换主会话不是 Subagent，不读画像派工 |
 
@@ -190,8 +192,8 @@ toolDesc += "Prefer agent= by specialty fit (see system specialty catalog)."
 
 ## 5. 非目标（本轮）
 
-- 自动 ranking API / 硬匹配分数（仍靠 prompt catalog + 模型选型；capabilities 是可比矩阵，不是打分器）  
-- 把完整 catalog 塞进每个 `call_agent(s)` tool JSON schema  
+- 硬切模型的 coding router（看图已有硬路由；编码仍由父规划后 `call_agent`）  
+- 把完整 catalog 塞进每个 `call_agent(s)` tool JSON schema（live picks 只进 system）  
 - 为 Agim **编排者本身**建 specialty 行（工人用 backend= / agent=）  
 - 用画像代替 CLI auth / version 探测  
 - Portal `/`「子代理」脚手架句自动展开某 Agent 名（仍是引导句；真实选型靠父模型 + catalog）
@@ -202,7 +204,7 @@ toolDesc += "Prefer agent= by specialty fit (see system specialty catalog)."
 
 - 默认 10 个非 Agim id 均有 builtin profile  
 - Settings 改 `codex.summary` → 稀疏写入 → GET 生效值变、其余保持默认  
-- Agim system prompt 含 `CLI Subagent specialty catalog` 且优先已启用 agents  
+- Agim system prompt 含 live preferred picks + 可派 CLI catalog（不倒全部 builtin id）  
 - `call_agent` / `call_agents` description 含 specialty-fit 短提示（非全文 dump）  
 - 单测：`src/core/agent-profiles.test.ts`；Settings：`agents.test.tsx`
 

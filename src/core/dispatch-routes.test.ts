@@ -51,6 +51,18 @@ describe('dispatch-routes', () => {
     expect(text.toLowerCase()).not.toMatch(/deepseek/)
   })
 
+  it('drops coding CLIs that are not enabled or not available', () => {
+    const r = resolveDispatchRoutes({
+      roles: {},
+      enabledAgents: ['codex', 'agim'],
+      availableAgents: ['codex'],
+    })
+    expect(r.codingAgents).toEqual(['codex'])
+    expect(formatDispatchCheatSheetForPrompt(
+      resolveDispatchRoutes({ roles: {}, enabledAgents: ['agim'] }),
+    )).toMatch(/no coding CLI available/)
+  })
+
   it('unbound finance asks operator to pick a backend in Settings', () => {
     const text = formatDispatchCheatSheetForPrompt(resolveDispatchRoutes({ roles: {} }))
     expect(text).toMatch(/llmRoles\.finance/)

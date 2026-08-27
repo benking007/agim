@@ -13,6 +13,7 @@
 import { isAgimAgentId, normalizeAgentId } from './naming-migrate.js'
 import { getLiveConfig } from './live-config.js'
 import { describeRegistry } from './llm/registry.js'
+import { peekAgentAvailabilitySnapshot } from './onboarding.js'
 
 /** llmRoles key for 中文金融分析 / 报告. */
 export const DISPATCH_FINANCE_ROLE = 'finance' as const
@@ -98,6 +99,8 @@ export function resolveDispatchRoutes(opts: {
   roles?: Record<string, string>
   /** When set, coding agents are intersected with this enabled list. */
   enabledAgents?: string[]
+  /** When set, coding agents are also intersected with live-available CLIs. */
+  availableAgents?: string[]
 }): EffectiveDispatchRoutes {
   const stored = readDispatchRoutesStored(opts.config)
   const roles = opts.roles ?? {}
@@ -110,10 +113,13 @@ export function resolveDispatchRoutes(opts: {
     const enabled = new Set(
       opts.enabledAgents.map((a) => normalizeAgentId(a)).filter(Boolean),
     )
-    const filtered = codingAgents.filter((a) => enabled.has(a))
-    // Keep configured order; if none enabled, fall back to configured list
-    // (prompt still shows intent; availability is checked at spawn time).
-    if (filtered.length > 0) codingAgents = filtered
+    codingAgents = codingAgents.filter((a) => enabled.has(a))
+  }
+  if (opts.availableAgents) {
+    const available = new Set(
+      opts.availableAgents.map((a) => normalizeAgentId(a)).filter(Boolean),
+    )
+    codingAgents = codingAgents.filter((a) => available.has(a))
   }
 
   const financeAgent =
@@ -163,7 +169,7 @@ function formatTarget(agent: string, backend: string | null, role: string): stri
 export function formatDispatchCheatSheetForPrompt(routes: EffectiveDispatchRoutes): string {
   const coding = routes.codingAgents.length > 0
     ? routes.codingAgents.map((a) => `agent=${a}`).join(' / ')
-    : 'agent=codex / agent=claude-code'
+    : 'no coding CLI available — same-family isolate/backend, or do it yourself'
 
   const lines = [
     'Task → dispatch cheat sheet (operator-configured; prefer these over habit):',
@@ -189,10 +195,12 @@ export function getDispatchCheatSheetForPrompt(): string {
   try {
     const cfg = getLiveConfig()
     const roles = describeRegistry().roles
+    const snap = peekAgentAvailabilitySnapshot()
     const effective = resolveDispatchRoutes({
       config: cfg,
       roles,
       enabledAgents: cfg?.agents,
+      availableAgents: snap.known ? snap.available : undefined,
     })
     return formatDispatchCheatSheetForPrompt(effective)
   } catch {

@@ -153,7 +153,7 @@ Portal/桌面：**N 条** Subagent 行；同族与跨 adapter 同一列表。
 **落地（2026-07-24）：**
 
 - SSOT：`src/core/subagent-heuristics.ts`（`CALL_AGENT_TOOL_DESCRIPTION` + `buildSubagentDelegationGuidance`）。  
-- `mcp__agim__call_agent` description 与 `buildSystemPrompt` 注入同一套 §5 启发式（四件套 brief、trivial 不派、same-family/A2A、勿并行写同文件、synthesize）。  
+- `mcp__agim__call_agent` description 与 `buildSystemPrompt` 注入同一套 §5 启发式（四件套 brief、delegate-first、same-family/A2A、勿并行写同文件、synthesize；子禁止再派）。  
 - 未新增独立「分解 Agent」服务。
 
 #### A4. 触点（预估）

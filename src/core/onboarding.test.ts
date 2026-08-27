@@ -12,6 +12,8 @@ import {
   isAgentAvailableCached,
   looksLikeAgentAuthFailure,
   markAgentUnavailable,
+  peekAgentAvailabilitySnapshot,
+  seedAgentAvailabilityCacheForTest,
   type Config,
 } from './onboarding.js'
 
@@ -163,6 +165,27 @@ describe('dispatch probe / quarantine', () => {
     expect(msg).toContain('codex')
     expect(msg).toContain('login expired')
     clearAgentCache()
+  })
+
+  it('peekAgentAvailabilitySnapshot is unknown until seeded', () => {
+    clearAgentCache()
+    expect(peekAgentAvailabilitySnapshot()).toEqual({
+      known: false,
+      available: [],
+      missing: [],
+    })
+    seedAgentAvailabilityCacheForTest({
+      available: ['codex'],
+      missing: ['claude-code'],
+      allMissing: false,
+    })
+    expect(peekAgentAvailabilitySnapshot()).toEqual({
+      known: true,
+      available: ['codex'],
+      missing: ['claude-code'],
+    })
+    clearAgentCache()
+    expect(peekAgentAvailabilitySnapshot().known).toBe(false)
   })
 })
 

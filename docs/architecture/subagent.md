@@ -77,7 +77,7 @@
 | **委派质量决定成败** | brief 要含目标 / 输出格式 / 工具边界 / 完成条件 | **核心难点**；靠 prompt + 可选结构化字段，不是再造调度器 |
 | **按复杂度缩放** | 简单题 0 子代理；对比 2–4；广搜才更多 | 写入父 system / 工具 description；硬 cap 防爆 |
 | **并行是加速器不是定义** | Research 用 3–5 并行；编码任务往往并行点更少 | Phase B 门控并行；先串行可观测（Phase A） |
-| **贵** | 多代理常数倍～十余倍 token | 默认偏保守；cheap role 优先子任务 |
+| **贵** | 多代理常数倍～十余倍 token | 父编排、子干活；cheap role 优先广搜子任务 |
 | **编码场景慎用无脑 fan-out** | Anthropic：多数 coding 不如 research 那么可并行 | Loop（观察者）与「广搜 fan-out」分开设计 |
 
 **结论：最难的不是进程模型，而是「何时拆、怎么写 brief、何时停」。**  
@@ -195,7 +195,8 @@
 
 | 任务类型 | 建议 |
 |---|---|
-| 单事实 / 短改 | **0** subagent，自己干 |
+| 寒暄 / 单事实 / 无可派工人 | **0** subagent，自己干 |
+| 编码 / 金融 / 中文长文 / 短编辑（有可派工人） | **必须派**；父只写 brief + 合成 |
 | 可独立的 2–3 路调研或验证 | 1–3 串行或并行 subagent |
 | 广搜 / 多目录只读探索 | 可 fan-out；子用 cheap |
 | 强依赖写同一文件 | **不要**并行写；串行或划目录 |
@@ -211,16 +212,15 @@
 ### 5.3 决策流程（父模型心里的清单）
 
 ```text
-这个子问题是否会污染主上下文 / 很长 / 可独立？
-  否 → 自己用工具做完
-  是 → 写自包含 brief
-        → 先对照 Task → dispatch cheat sheet（Settings→LLM 下拉配置）
-             · 编码 → codingAgents（如 codex / claude-code）
-             · 金融分析/报告 → financeAgent + llmRoles.finance（backend=）
-             · 批量采集 → dataAgent + llmRoles.cheap（backend=）
-        → 需要别家 CLI 能力？ → 查 specialty catalog（agent-profiles）选 adapter（A2A）
-        → 只需隔离上下文或换便宜模型？ → 同族 agim + role/backend
-        → 多路独立？ → call_agents 一次派出多个
+先拆泳道
+  → 对照 live preferred picks（按 caps 排序、只含可派）
+  → 有目标 → call_agent / call_agents（禁止自己 write/edit/exec）
+       · 编码 → 最高 coding= 的可用 CLI（同分走 cheat sheet 顺序）
+       · 金融分析/报告 → financeAgent + llmRoles.finance（backend=）
+       · 批量采集 → dataAgent + llmRoles.cheap（backend=）
+       · 只需隔离上下文或换模型 → 同族 agim + isolate/backend/role
+  → 无目标 → 自己做，并说明「没有可派工人」
+  → 子回来 → 合成，不把原文甩给用户
 ```
 
 跨 adapter 选型目录见 [`agent-profiles.md`](./agent-profiles.md)（全文在 Agim system；工具 description 仅短提示）。  

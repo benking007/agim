@@ -35,6 +35,7 @@
     "src/web/unregister-client.ts",
     "src/web/viewer-api.ts",
     "src/web/viewer-render.ts",
+    "src/web/web-actor.ts",
     "src/web/workspace-cwd-api.ts",
     "src/web/workspace-files-api.ts",
     "src/web/workspace-skills-api.ts",

@@ -110,6 +110,7 @@ import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
 import { PortalWorkspacePicker } from './portal-workspace-picker'
 import { PortalPet, type PetTaskItem } from './portal-pet'
 import {
+  isPlanModeSlashCommand,
   skillMarker,
   workspaceFileMarker,
   workspaceMarker,
@@ -517,6 +518,13 @@ export function AgentPortal(): JSX.Element {
       setSlashOpen(false)
       setAtOpen(false)
       stickToBottom()
+      if (isPlanModeSlashCommand(body)) {
+        // Mid-turn `/plan off` must not sit in pendingSends → steer as
+        // 【本轮补充】. Steer keeps currentReplyId on the live turn.
+        if (canSteerLive) steer(body)
+        else send(body)
+        return
+      }
       if (canStop) {
         setPendingSends((cur) => [
           ...cur,
@@ -553,6 +561,12 @@ export function AgentPortal(): JSX.Element {
     if (!item || item.flushAfter) return
     if (demoSteer && !liveBusy) {
       setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      return
+    }
+    if (isPlanModeSlashCommand(item.text)) {
+      setPendingSends((cur) => cur.filter((row) => row.id !== id))
+      if (canSteerLive) steer(item.text)
+      else send(item.text)
       return
     }
     if (canSteerLive) {
@@ -675,7 +689,8 @@ export function AgentPortal(): JSX.Element {
         toast.error('Not connected')
         return
       }
-      send(state.planMode ? '/plan off' : '/plan on')
+      if (canSteerLive) steer(state.planMode ? '/plan off' : '/plan on')
+      else send(state.planMode ? '/plan off' : '/plan on')
       return
     }
     if (action.type === 'send') {
@@ -1093,6 +1108,10 @@ export function AgentPortal(): JSX.Element {
                     onSendCommand={(cmd) => {
                       if (state.status !== 'open') {
                         toast.error('Not connected')
+                        return
+                      }
+                      if (isPlanModeSlashCommand(cmd) && canSteerLive) {
+                        steer(cmd)
                         return
                       }
                       send(cmd)

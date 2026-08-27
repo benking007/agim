@@ -8,10 +8,16 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { join } from 'node:path'
 import { unlink, readdir, readFile } from 'node:fs/promises'
 import { sessionManager } from '../session.js'
-import { handlePlanCommand } from './plan.js'
+import { handlePlanCommand, isPlanModeSlashCommand, parsePlanSlashArgs } from './plan.js'
 import { AGIM_HOME } from '../agim-paths.js'
 import type { RouteContext } from '../router.js'
 import type { Logger } from 'pino'
+import { approvalBus } from '../approval-bus.js'
+import {
+  setLivePlanMode,
+  getLivePlanMode,
+  _resetLivePlanModeForTests,
+} from '../plan-mode-state.js'
 
 const PLATFORM = 'plantest'
 const SESSIONS_DIR = join(AGIM_HOME, 'sessions')
@@ -44,6 +50,7 @@ function makeCtx(channelId: string, threadId: string): RouteContext {
 
 afterEach(async () => {
   delete process.env.AGIM_DISABLE_PLAN_MODE
+  _resetLivePlanModeForTests()
   await cleanupTestSessions()
 })
 
@@ -127,5 +134,63 @@ describe('handlePlanCommand', () => {
     // No session should have been created or mutated.
     const session = await sessionManager.getExistingSession(ctx.platform, ctx.channelId, ctx.threadId)
     expect(session?.planMode).toBeUndefined()
+  })
+})
+
+describe('plan slash parsing', () => {
+  it('recognises /plan, aliases, and leading portal markers', () => {
+    expect(isPlanModeSlashCommand('/plan')).toBe(true)
+    expect(isPlanModeSlashCommand('/plan off')).toBe(true)
+    expect(isPlanModeSlashCommand('/plan-off')).toBe(true)
+    expect(isPlanModeSlashCommand('/planoff')).toBe(true)
+    expect(isPlanModeSlashCommand('/plan on')).toBe(true)
+    expect(isPlanModeSlashCommand('[技能：x]\n/plan off')).toBe(true)
+    expect(isPlanModeSlashCommand('/planet')).toBe(false)
+    expect(isPlanModeSlashCommand('please /plan off')).toBe(false)
+    expect(parsePlanSlashArgs('/plan off')).toBe('off')
+    expect(parsePlanSlashArgs('/plan-off')).toBe('off')
+    expect(parsePlanSlashArgs('/planon')).toBe('on')
+    expect(parsePlanSlashArgs('/plan')).toBe('')
+    expect(parsePlanSlashArgs('hello')).toBeNull()
+  })
+})
+
+describe('handlePlanCommand live override + pending plan-exit', () => {
+  it('/plan off knocks down a live in-flight turn even when session.planMode is unset', async () => {
+    const ctx = makeCtx(uid(), uid())
+    await sessionManager.getOrCreateSession(ctx.platform, ctx.channelId, ctx.threadId, 'claude-code')
+    const tkey = `${ctx.platform}:${ctx.channelId}:${ctx.threadId}`
+    setLivePlanMode(tkey, true)
+    const out = await handlePlanCommand('off', ctx)
+    expect(out).toContain('已关闭')
+    expect(getLivePlanMode(tkey)).toBe(false)
+  })
+
+  it('/plan off resolves a pending agim_exit_plan_mode as allow', async () => {
+    const ctx = makeCtx(uid(), uid())
+    await handlePlanCommand('on', ctx)
+    const decisions: Array<{ behavior: string }> = []
+    approvalBus.setNotifier(async () => {})
+    const reqId = `plan-off-${uid()}`
+    await approvalBus.registerSyntheticPending({
+      runId: `run-${uid()}`,
+      reqId,
+      toolName: 'agim_exit_plan_mode',
+      input: { plan: '- write x' },
+      requiresExplicitDecision: true,
+      timeoutMs: 5_000,
+      ctx: {
+        threadId: ctx.threadId,
+        platform: ctx.platform,
+        userId: 'u-plan',
+        channelId: ctx.channelId,
+      },
+      dispatch: (d) => { decisions.push(d) },
+    })
+    expect(approvalBus.listPending().some((p) => p.reqId === reqId)).toBe(true)
+    const out = await handlePlanCommand('off', ctx)
+    expect(out).toContain('已关闭')
+    expect(decisions).toEqual([{ behavior: 'allow' }])
+    expect(approvalBus.listPending().some((p) => p.reqId === reqId)).toBe(false)
   })
 })

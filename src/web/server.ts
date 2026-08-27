@@ -59,6 +59,7 @@ import {
   notifyAccountSessionsChanged,
 } from './ws-chat.js'
 import { webChatActorUserId } from './web-actor.js'
+import { isPlanModeSlashCommand } from '../core/commands/plan.js'
 import { unregisterClientIfCurrent } from './unregister-client.js'
 import { serveStatic, servePageHtml, PUBLIC_DIR } from './static-serve.js'
 
@@ -783,9 +784,12 @@ export async function startWebServer(options: {
     // Fix: parse the frame inline first; if it's an `approval-action` (or a
     // `choice-action` from an ask_user card), dispatch directly to the click
     // handler (no queue). Both are the agent's UNBLOCKING input — they have no
-    // ordering dependency on chat input. All other types (chat, switch-agent,
-    // get-history, …) still go through enqueueInbound to preserve their
-    // per-client FIFO ordering.
+    // ordering dependency on chat input. Mid-turn `/plan on|off` (as `steer`
+    // or as a `message` while a run is in flight) is the same class: the
+    // command must mutate live Plan Mode and resolve a spinning
+    // agim_exit_plan_mode without waiting for the blocked turn to finish.
+    // All other types (chat, switch-agent, get-history, …) still go through
+    // enqueueInbound to preserve their per-client FIFO ordering.
     async function handleButtonAction(msg: { data?: unknown; messageId?: unknown }): Promise<void> {
       const actionData: string = String(msg.data || '')
       const messageId: string = String(msg.messageId || '')
@@ -896,13 +900,30 @@ export async function startWebServer(options: {
         // rolls back the optimistic bubble if this never arrives.
         const inbound = msg as { text?: unknown; clientMsgId?: unknown }
         const clientMsgId = typeof inbound.clientMsgId === 'string' ? inbound.clientMsgId : undefined
-        if (typeof inbound.text === 'string' && inbound.text.trim()) {
+        const inboundText = typeof inbound.text === 'string' ? inbound.text : ''
+        if (inboundText.trim()) {
           sendToClient(ws, {
             type: 'message-accepted',
             ...(clientMsgId ? { clientMsgId } : {}),
             queued: true,
             threadId: client.id,
           })
+        }
+        // Same deadlock class as approval-action: `/plan off` while the
+        // harness is blocked on agim_exit_plan_mode must land immediately,
+        // not behind the still-running chat handler.
+        if (isPlanModeSlashCommand(inboundText) && webRunAborts.has(client.id)) {
+          void handleClientMessage(
+            client,
+            msg as Parameters<typeof handleClientMessage>[1],
+            getDefaultAgent(options.defaultAgent),
+            undefined,
+            tokenId,
+            threadOwners,
+            clients,
+            accountUserId,
+          )
+          return
         }
       }
       enqueueInbound(async () => {

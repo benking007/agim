@@ -4,6 +4,7 @@ import { sessionManager } from '../core/session.js'
 import { startLoop, getActiveLoop } from '../core/loop-run.js'
 import { setFocus } from '../core/focus.js'
 import { _resetTurnSteer, registerLiveSteer } from '../core/turn-steer.js'
+import { handlePlanCommand } from '../core/commands/plan.js'
 import { handleClientMessage, webRunAborts, bindWsClients, notifyAccountSessionsChanged } from './ws-chat.js'
 
 function fakeWs(): { ws: WebSocket; sent: Record<string, unknown>[] } {
@@ -90,6 +91,38 @@ describe('handleClientMessage steer', () => {
     unreg()
     const run = getActiveLoop('web', 'web', threadId)
     expect(run?.userSteers?.some((s) => s.text.includes('nginx'))).toBe(true)
+  })
+
+  it('treats /plan off as a command, not a mid-turn supplement', async () => {
+    const threadId = `web-plan-off-${Date.now()}`
+    await handlePlanCommand('on', {
+      threadId,
+      channelId: 'web',
+      platform: 'web',
+      defaultAgent: 'agim',
+      traceId: 't',
+      logger: { info() {}, warn() {}, error() {}, debug() {}, child() { return this } } as never,
+    })
+    webRunAborts.set(threadId, new AbortController())
+    const seen: string[] = []
+    const unreg = registerLiveSteer(`web:web:${threadId}`, async (text) => {
+      seen.push(text)
+    })
+    const { ws, sent } = fakeWs()
+    await handleClientMessage(
+      { ws, id: threadId, agent: 'agim' },
+      { type: 'steer', text: '/plan off' },
+      'agim',
+    )
+    unreg()
+    expect(seen).toEqual([])
+    expect(sent.some((m) => m.type === 'steer-accepted')).toBe(true)
+    expect(sent.some((m) => m.type === 'plan-mode' && m.enabled === false)).toBe(true)
+    expect(sent.every((m) => !String(m.text ?? '').includes('本轮补充'))).toBe(true)
+    const hist = await sessionManager.getSessionWithHistory('web', 'web', threadId)
+    expect(hist?.messages.some((m) => m.role === 'user' && m.content === '/plan off')).toBe(true)
+    expect(hist?.messages.some((m) => m.role === 'assistant' && String(m.content).includes('已关闭'))).toBe(true)
+    expect(hist?.session.planMode).toBeUndefined()
   })
 })
 

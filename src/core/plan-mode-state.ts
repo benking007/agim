@@ -166,6 +166,8 @@ export function readEnvPlanModeDefault(): boolean {
 export function effectivePlanModeOn(threadKey?: string): boolean {
   if (resolvePlanModeEnvPolicy() === 'disabled') return false
   if (threadKey) {
+    const live = getLivePlanMode(threadKey)
+    if (live !== undefined) return live
     const explicit = getPlanModeForThread(threadKey)
     if (explicit !== null) {
       log.debug({ threadKey, explicit, source: 'per-thread' })
@@ -173,4 +175,36 @@ export function effectivePlanModeOn(threadKey?: string): boolean {
     }
   }
   return readEnvPlanModeDefault()
+}
+
+/**
+ * In-process override for the currently running harness turn.
+ *
+ * `/plan off` (and `/plan on`) must take effect on the live `tool_call`
+ * gate immediately. Persistent session/db flags are only read at turn
+ * start (`opts.planMode`); intent auto-enter never writes them at all.
+ * This map is the bridge for the rest of that turn. The Agim adapter
+ * clears the entry when `sendPrompt` finishes so the next turn falls
+ * back to session + env.
+ */
+const livePlanModeByThread = new Map<string, boolean>()
+
+export function setLivePlanMode(threadKey: string, enabled: boolean): void {
+  if (!threadKey) return
+  livePlanModeByThread.set(threadKey, enabled)
+}
+
+export function getLivePlanMode(threadKey: string): boolean | undefined {
+  if (!threadKey) return undefined
+  return livePlanModeByThread.get(threadKey)
+}
+
+export function clearLivePlanMode(threadKey: string): void {
+  if (!threadKey) return
+  livePlanModeByThread.delete(threadKey)
+}
+
+/** Test-only: drop every in-flight override. */
+export function _resetLivePlanModeForTests(): void {
+  livePlanModeByThread.clear()
 }

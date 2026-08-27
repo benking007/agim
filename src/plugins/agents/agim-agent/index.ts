@@ -77,6 +77,11 @@ import {
 } from '../../../core/loop-run.js'
 import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
 import { threadKey as makeThreadKey } from '../../../core/approval-bus.js'
+import {
+  clearLivePlanMode,
+  getLivePlanMode,
+  setLivePlanMode,
+} from '../../../core/plan-mode-state.js'
 import { getActiveGoalState, getGoalsDatabaseForLedger } from '../../../core/goals.js'
 import { hashWorkspaceScope } from '../../../core/goal-evidence.js'
 import { defaultAgentCwd, resolveAgentCwd } from '../../../core/agent-cwd.js'
@@ -1076,7 +1081,8 @@ export class NativeAgentAdapter implements AgentAdapter {
 
     // Keep the turn-local flag mutable: agim_exit_plan_mode can explicitly
     // clear persistent Plan Mode mid-run, after which this same harness must
-    // be able to execute the user-approved plan.
+    // be able to execute the user-approved plan. `/plan off` during the turn
+    // writes the live map (see plan-mode-state) so the next tool_call sees it.
     let turnPlanMode = opts?.planMode === true
     let turnSignal = opts?.signal
     const planAllowed = expandToolNameList(
@@ -1088,6 +1094,11 @@ export class NativeAgentAdapter implements AgentAdapter {
       opts?.platform && opts?.threadId
         ? makeThreadKey(opts.platform, opts.channelId ?? '', opts.threadId)
         : `agim:${sessionId}`
+    {
+      const live = getLivePlanMode(todoThreadKey)
+      if (live !== undefined) turnPlanMode = live
+      else if (turnPlanMode) setLivePlanMode(todoThreadKey, true)
+    }
 
     // Runaway guards. Declared early so tool_call preflight can share them.
     const maxIter = Math.max(1, Math.min(this.deps.maxIterations ?? DEFAULT_MAX_ITER, 100))
@@ -1371,7 +1382,11 @@ export class NativeAgentAdapter implements AgentAdapter {
           return { block: true, reason: `tool call budget exhausted (${maxToolCalls})` }
         }
         // Plan-mode hard deny (covers A2A-propagated plan-mode even without
-        // an IM thread for the policy gate to read).
+        // an IM thread for the policy gate to read). Re-read the live map so
+        // a mid-turn `/plan off` unlocks writes without waiting for
+        // agim_exit_plan_mode to return.
+        const livePlan = getLivePlanMode(todoThreadKey)
+        if (livePlan !== undefined) turnPlanMode = livePlan
         if (turnPlanMode && !planAllowed.has(ev.toolName)) {
           emitToolActivity({
             id: ev.toolCallId,
@@ -1863,6 +1878,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       if (ev.toolCallId) afterHookToolCallIds.add(ev.toolCallId)
       if (ev.toolName === PLAN_EXIT_TOOL_NAME && ev.isError !== true) {
         turnPlanMode = false
+        setLivePlanMode(todoThreadKey, false)
       }
       if (
         ev.isError !== true
@@ -2156,6 +2172,7 @@ export class NativeAgentAdapter implements AgentAdapter {
       }
     } finally {
       unregisterSteer?.()
+      clearLivePlanMode(todoThreadKey)
       if (timeoutTimer) clearTimeout(timeoutTimer)
       externalSignal?.removeEventListener('abort', forwardExternalAbort)
       runController.signal.removeEventListener('abort', onRunAbort)

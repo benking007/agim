@@ -65,12 +65,11 @@ describe('subagent heuristics (Phase A3)', () => {
     expect(g).toMatch(/zhWriting/)
   })
 
-  it('steers image/OCR onto the DeepSeek vision backend', () => {
-    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/Image\/OCR/)
-    expect(CALL_AGENT_TOOL_DESCRIPTION).toMatch(/deepseek-v4-flash-vision-exp/)
-    expect(CALL_AGENTS_TOOL_DESCRIPTION).toMatch(/deepseek-v4-flash-vision-exp/)
+  it('does not tell the parent to spawn vision — images are auto-routed', () => {
+    expect(CALL_AGENT_TOOL_DESCRIPTION).not.toMatch(/deepseek-v4-flash-vision-exp/)
+    expect(CALL_AGENTS_TOOL_DESCRIPTION).not.toMatch(/deepseek-v4-flash-vision-exp/)
     const g = buildSubagentDelegationGuidance()
-    expect(g).toMatch(/image\/OCR/i)
-    expect(g).toMatch(/deepseek-v4-flash-vision-exp/)
+    expect(g).toMatch(/routed automatically/)
+    expect(g).not.toMatch(/include the \[图片附件\] path in the child brief/)
   })
 })

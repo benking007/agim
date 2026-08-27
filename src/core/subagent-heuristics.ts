@@ -34,7 +34,6 @@ export const CALL_AGENT_TOOL_DESCRIPTION = [
   'if the child also writes a file, it must cite the absolute path;',
   'forbid empty「见上文」/「see above」with no substance.',
   'Scale: single-fact / short edit → do it yourself (do not spawn for trivial one-step work);',
-  'Image/OCR/screenshot/chart → same-family Agim + vision backend (deepseek-v4-flash-vision-exp); put [图片附件] path in the brief — text SKUs 400 on images;',
   '2–3 independent research/verify lanes → call_agents; broad read-only search → fan-out with a cheaper backend when available;',
   'coding that writes the same file → do not parallel-write (serialize or split directories).',
   'After Subagents return: synthesize yourself — never ask the user to merge raw child output.',
@@ -50,7 +49,7 @@ export const CALL_AGENTS_TOOL_DESCRIPTION = [
   'Output format: key findings in each child FINAL message; file writes must cite absolute path; no empty see above / 见上文.',
   'Do not parallel-write the same file — split directories or serialize writers.',
   'Failure mode: allSettled — one child fail/timeout/cancel does not kill siblings; synthesize all results.',
-  'Same-family: prefer backend=; isolate:true reuses default model. Image/OCR → backend=deepseek-v4-flash-vision-exp. Guardrails: depth, ACL, per-turn cap, parallel max.',
+  'Same-family: prefer backend=; isolate:true reuses default model. Guardrails: depth, ACL, per-turn cap, parallel max.',
   'Unknown keys refused. Optional per task: outputFormat, maxDepth, allowedTools (Agim only).',
 ].join(' ')
 
@@ -84,7 +83,7 @@ export function buildSubagentDelegationGuidance(extra?: {
     '  - Cross-adapter: pick agent= using the specialty catalog below (and availability). Prefer fit over habit.',
     '  - Follow the Task → dispatch cheat sheet below when present (operator-configured agent/backend).',
     '  - Capability fit (see catalog caps=): coding → CLI like codex/claude-code; finance / zhWriting → Agim + configured finance backend (or caps-strong backend); reasoning/dataCheck → either when strong;',
-    '    image/OCR/screenshot/chart → Agim + vision backend (deepseek-v4-flash-vision-exp when DeepSeek is configured). Text DeepSeek SKUs 400 on images — include the [图片附件] path in the child brief.',
+    '    Image attachments are routed automatically (vision subagent → parent); do not spawn another vision child for the same files.',
     '  - Scale: 2–3 independent research/verify lanes → call_agents; broad read-only explore → cheaper backend; coding that writes the same file → do not parallel-write (serialize or split dirs).',
     '  - Verification: after a substantive result, a fresh verifier Subagent can be valuable — give an exact claim + how to check it.',
     '  - Synthesize, don\'t delegate understanding: merge child summaries into one Chinese user reply; never dump raw child transcripts.',

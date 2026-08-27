@@ -98,7 +98,6 @@ import {
   shouldHardStopOnOffTrack,
 } from '../../../core/llm/goal-critic.js'
 import {
-  applyDeepSeekVisionModel,
   applyStrictToolsToOpenAiPayload,
   DEEPSEEK_THINKING_LEVEL_MAP,
   hashDeepSeekUserId,
@@ -119,10 +118,14 @@ import {
 } from '../../../core/llm/agent-loop.js'
 import { estimateCostUsd } from '../../../core/llm/model-catalog.js'
 import {
-  agentMessagesHaveImages,
   encodePromptImages,
-  parsePromptMedia,
 } from '../agim-agent-shared/index.js'
+import {
+  isDedicatedVisionModel,
+  runVisionRoute,
+  shouldRouteVision,
+  stripImageContentBlocks,
+} from './vision-route.js'
 import { AGIM_PLAN_MODE_ALLOWED_TOOLS } from '../agim-agent-shared/tool-registry.js'
 import { expandToolNameList } from '../../../core/llm/tool-names.js'
 import { bindNativeSession } from '../../../core/agim-session-bind.js'
@@ -652,10 +655,10 @@ function composeRunTimeoutNotice(timeoutMs: number): string {
 }
 
 function seedUserMessage(text: string) {
-  const images = encodePromptImages(text)
+  // Parent sessions stay text-only. Image bytes go to the vision child.
   return {
     role: 'user' as const,
-    content: [{ type: 'text' as const, text }, ...images],
+    content: [{ type: 'text' as const, text }],
     timestamp: Date.now(),
   }
 }
@@ -926,24 +929,6 @@ export class NativeAgentAdapter implements AgentAdapter {
       return
     }
 
-    // DeepSeek: only the vision SKU accepts images. Route this turn (same
-    // key/host) when the prompt, seeded history, or durable session has any.
-    const promptImages = encodePromptImages(prompt)
-    const historyHasImageMarkers = (history ?? []).some(
-      (m) => m.role === 'user' && parsePromptMedia(m.content).length > 0,
-    )
-    let sessionHasImages = false
-    try {
-      sessionHasImages = agentMessagesHaveImages((await session.buildContext()).messages)
-    } catch { /* empty or unreadable session */ }
-    binding = {
-      ...binding,
-      model: applyDeepSeekVisionModel(
-        binding.model,
-        promptImages.length > 0 || historyHasImageMarkers || sessionHasImages,
-      ),
-    }
-
     const toolSurface = this.deps.resolveTools?.(opts, sessionId) ?? null
     const goalScope = opts?.platform && opts.threadId
       ? { platform: opts.platform, channelId: opts.channelId ?? '', threadId: opts.threadId }
@@ -1052,6 +1037,9 @@ export class NativeAgentAdapter implements AgentAdapter {
     let measuredContextTokens: number | undefined
     harness.on('context', (event) => {
       let messages = event.messages
+      if (!isDedicatedVisionModel(binding.model.id)) {
+        messages = stripImageContentBlocks(messages)
+      }
       const combined = [ephemeralContext, ephemeralSteer].filter((part) => part.trim()).join('\n\n')
       if (combined) messages = injectEphemeralContext(messages, combined)
       if (budget.clearing.enabled) {
@@ -2103,9 +2091,23 @@ export class NativeAgentAdapter implements AgentAdapter {
       markLoopParentTurnActive(loopScope.platform, loopScope.channelId, loopScope.threadId)
     }
     try {
+      let turnPrompt = prompt
+      if (shouldRouteVision(binding.model.id, turnPrompt)) {
+        const routed = await runVisionRoute({
+          prompt: turnPrompt,
+          modelId: binding.model.id,
+          callerAgent: 'agim',
+          opts,
+          signal: runController.signal,
+        })
+        turnPrompt = routed.parentPrompt
+      }
+      const promptImages = isDedicatedVisionModel(binding.model.id)
+        ? encodePromptImages(turnPrompt)
+        : []
       const promptPromise = promptImages.length > 0
-        ? harness.prompt(prompt, { images: promptImages })
-        : harness.prompt(prompt)
+        ? harness.prompt(turnPrompt, { images: promptImages })
+        : harness.prompt(turnPrompt)
       // prompt() flips phase to `turn` synchronously — steer() is legal now.
       const steerKey = opts?.platform && opts?.threadId
         ? threadSteerKey(opts.platform, opts.channelId ?? '', opts.threadId)

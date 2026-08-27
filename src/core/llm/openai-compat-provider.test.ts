@@ -592,7 +592,7 @@ describe('OpenAICompatProvider — tool calls (Stage 2)', () => {
     expect(sentBody.tool_choice).toEqual({ type: 'function', function: { name: 'pick' } })
   })
 
-  it('routes DeepSeek pro + user media onto the vision model with image_url blocks', async () => {
+  it('keeps DeepSeek pro on the text SKU when user media is present', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agim-ds-vision-'))
     const img = join(dir, 'shot.png')
     writeFileSync(img, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
@@ -600,7 +600,7 @@ describe('OpenAICompatProvider — tool calls (Stage 2)', () => {
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       sentBody = JSON.parse(init.body as string) as Record<string, unknown>
       return makeJsonResponse({
-        model: 'deepseek-v4-flash-vision-exp',
+        model: 'deepseek-v4-pro',
         choices: [{ message: { content: 'a cat' }, finish_reason: 'stop' }],
       })
     }) as unknown as typeof fetch
@@ -617,13 +617,10 @@ describe('OpenAICompatProvider — tool calls (Stage 2)', () => {
         media: [{ path: img, mime: 'image/png' }],
       }])
       expect(result.text).toBe('a cat')
-      expect(sentBody.model).toBe('deepseek-v4-flash-vision-exp')
+      expect(sentBody.model).toBe('deepseek-v4-pro')
       const msgs = sentBody.messages as Array<{ role: string; content: unknown }>
       expect(msgs[0]?.role).toBe('user')
-      const blocks = msgs[0]?.content as Array<{ type: string; text?: string; image_url?: { url: string } }>
-      expect(blocks.some((b) => b.type === 'text' && b.text === 'what is in this image?')).toBe(true)
-      const image = blocks.find((b) => b.type === 'image_url')
-      expect(image?.image_url?.url.startsWith('data:image/png;base64,')).toBe(true)
+      expect(msgs[0]?.content).toBe('what is in this image?')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

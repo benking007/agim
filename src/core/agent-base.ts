@@ -14,7 +14,7 @@ import type { AgentAdapter, AgentSendOpts, ChatMessage } from './types.js'
 import { crossSpawn } from '../utils/cross-platform.js'
 import { logger as rootLogger } from './logger.js'
 
-const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000
+export const DEFAULT_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000  // 2 h
 
 /**
  * Idle (no-stdout) timeout for the agent child process.
@@ -232,8 +232,9 @@ export abstract class AgentBase implements AgentAdapter {
 
   /** Idle (no-stdout) timeout for the agent child process in ms. Override per
    *  agent via `${NAME}_IDLE_TIMEOUT_MS`, globally via `AGIM_AGENT_IDLE_TIMEOUT_MS`,
-   *  or set 0 to disable. Default 60 min — long enough to ride out an hour-long
-   *  human-in-the-loop pause, short enough to reap a truly hung child. */
+   *  or set 0 to disable. Default 120 min — long enough to ride out a
+   *  two-hour research/coding child (matches A2A / native-turn wall clock),
+   *  short enough to reap a truly hung child. */
   protected get idleTimeoutMs(): number {
     return resolveIdleTimeout(`${this.name.toUpperCase()}_IDLE_TIMEOUT_MS`)
   }

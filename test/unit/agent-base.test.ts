@@ -8,7 +8,7 @@
 //   - multi-byte UTF-8 boundary is preserved across chunks
 
 import { describe, it, expect } from 'bun:test'
-import { AgentBase } from '../../src/core/agent-base'
+import { AgentBase, DEFAULT_IDLE_TIMEOUT_MS } from '../../src/core/agent-base'
 
 // Fake adapter that runs `node -e <script>` so we control stdout exactly.
 class ScriptAgent extends AgentBase {
@@ -56,6 +56,10 @@ class ScriptAgent extends AgentBase {
   // sendPrompt(); this stays test-only.
   public testSpawnStream(prompt: string, signal?: AbortSignal): AsyncGenerator<string> {
     return this.spawnStream(prompt, signal)
+  }
+
+  public peekIdleTimeoutMs(): number {
+    return this.idleTimeoutMs
   }
 }
 
@@ -184,5 +188,22 @@ describe('AgentBase streaming', () => {
     const agent = new ScriptAgent('script-collect', script)
     const result = await agent.spawnAndCollect('p')
     expect(result).toBe('abc')
+  })
+
+  it('defaults idle (no-stdout) timeout to 120 minutes', () => {
+    const savedAgent = process.env.AGIM_AGENT_IDLE_TIMEOUT_MS
+    const savedNamed = process.env.SCRIPTIDLE_IDLE_TIMEOUT_MS
+    delete process.env.AGIM_AGENT_IDLE_TIMEOUT_MS
+    delete process.env.SCRIPTIDLE_IDLE_TIMEOUT_MS
+    try {
+      const agent = new ScriptAgent('scriptidle', 'process.exit(0)')
+      expect(DEFAULT_IDLE_TIMEOUT_MS).toBe(2 * 60 * 60 * 1000)
+      expect(agent.peekIdleTimeoutMs()).toBe(DEFAULT_IDLE_TIMEOUT_MS)
+    } finally {
+      if (savedAgent === undefined) delete process.env.AGIM_AGENT_IDLE_TIMEOUT_MS
+      else process.env.AGIM_AGENT_IDLE_TIMEOUT_MS = savedAgent
+      if (savedNamed === undefined) delete process.env.SCRIPTIDLE_IDLE_TIMEOUT_MS
+      else process.env.SCRIPTIDLE_IDLE_TIMEOUT_MS = savedNamed
+    }
   })
 })

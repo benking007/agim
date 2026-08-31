@@ -357,7 +357,7 @@
 - A2 UI：消息流卡片 + 半浮层详情（`chat-subagent-card` / `subagent-detail-dialog`），activity 仍带 `jobId`；未另开独立「Subagent 面板」路由树。  
 - A3 不引入独立分解 Agent；启发式仅以 prompt / tool description 形式注入父侧。  
 - 用户 Stop 子代理时返回 **cancelled + ok**（非硬失败），以便父 turn 用阶段性内容继续。  
-- Subagent **墙钟由 A2A**（`AGIM_A2A_TIMEOUT_DEFAULT_MS`，默认 30 min）负责；同族 Agim 子会话仍经 `buildSystemPrompt` 注入 skills 摘要，但**不继承父对话历史**（isolate 设计如此，brief 须自包含）。
+- Subagent **墙钟由 A2A**（`AGIM_A2A_TIMEOUT_DEFAULT_MS`，默认 2 h）负责；同族 Agim 子轮另受 `AGIM_NATIVE_TURN_TIMEOUT_MS`（默认 2 h）约束；同族 Agim 子会话仍经 `buildSystemPrompt` 注入 skills 摘要，但**不继承父对话历史**（isolate 设计如此，brief 须自包含）。
 
 ---
 

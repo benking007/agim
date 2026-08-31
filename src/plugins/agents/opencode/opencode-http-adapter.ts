@@ -28,7 +28,7 @@
 //   5. Exits cleanly on `session.status: idle` for the right session,
 //      surfaces `session.error`, and is bounded by an idle watchdog
 //      (OPENCODE_IDLE_TIMEOUT_MS / AGIM_AGENT_IDLE_TIMEOUT_MS, default
-//      60 min, 0 = disabled) that fires only when the daemon goes
+//      120 min, 0 = disabled) that fires only when the daemon goes
 //      completely silent — slow human approvals don't count.
 //
 // Selection: env AGIM_OPENCODE_DRIVER=http picks this; anything else (incl
@@ -76,7 +76,7 @@ const log = rootLogger.child({ component: 'agent.opencode.http' })
 // watchdog re-arms on every event the daemon emits, so slow human-in-the-loop
 // approvals don't count against the budget; only true silence does. Override
 // via OPENCODE_IDLE_TIMEOUT_MS or AGIM_AGENT_IDLE_TIMEOUT_MS; set 0 to disable.
-const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000
+const DEFAULT_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000  // 2 h
 
 /** Shape of an event arriving on opencode's /event SSE stream. Every field
  *  is optional because we are deliberately conservative — opencode's bus is

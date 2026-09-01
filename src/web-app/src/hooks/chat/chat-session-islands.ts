@@ -51,7 +51,7 @@ export function seedChatIsland(threadId: string, state?: ChatState): ChatIslandB
     state: {
       ...(state ?? initialChatState),
       clientId: id,
-      historyLoading: state ? false : true,
+      historyLoading: !state,
     },
   }
   islands.set(id, bag)

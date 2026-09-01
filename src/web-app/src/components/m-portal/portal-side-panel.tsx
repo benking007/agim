@@ -540,8 +540,8 @@ function SessionRow(props: {
             e.stopPropagation()
             startEdit()
           }}
-          title={title}
-          aria-label={title}
+          title={busy && runningLabel ? `${title} · ${runningLabel}` : title}
+          aria-label={busy && runningLabel ? `${title} · ${runningLabel}` : title}
           aria-current={active ? 'true' : undefined}
           className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg p-1 text-left"
         >
@@ -553,7 +553,6 @@ function SessionRow(props: {
                 <span
                   data-testid="portal-session-running"
                   title={runningLabel}
-                  aria-label={runningLabel}
                   className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-teal-400 shadow-[0_0_0_3px_rgba(45,212,191,0.25)]"
                 />
               ) : null}

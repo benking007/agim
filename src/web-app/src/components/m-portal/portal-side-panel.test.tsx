@@ -90,7 +90,7 @@ describe('PortalSidePanel conversations', () => {
   it('shows a running dot on a busy session row', () => {
     renderPanel({ busyThreadIds: ['web-bbbb2222'] })
     expect(screen.getByTestId('portal-session-running')).toBeInTheDocument()
-    expect(screen.getByLabelText('Running')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Older chat · Running/ })).toBeInTheDocument()
   })
 
   it('keeps New task as a shortcut and hides Explore', async () => {

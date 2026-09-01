@@ -107,7 +107,7 @@ import {
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
 import { parsePortalPane, type PortalPane } from '@/lib/portal-pane'
-import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
+import { PortalSteerQueue } from './portal-steer-queue'
 import { PortalWorkspacePicker } from './portal-workspace-picker'
 import { PortalPet, type PetTaskItem } from './portal-pet'
 import {
@@ -299,7 +299,9 @@ export function AgentPortal(): JSX.Element {
   const slashTriggerStartRef = useRef(0)
   const atTriggerStartRef = useRef(0)
 
+  const composerThreadId = state.clientId
   useEffect(() => {
+    if (!composerThreadId) return
     setPlusMenuOpen(false)
     setSlashOpen(false)
     setAtOpen(false)
@@ -307,7 +309,7 @@ export function AgentPortal(): JSX.Element {
     setAtActive(0)
     slashOpenRef.current = false
     atOpenRef.current = false
-  }, [state.clientId])
+  }, [composerThreadId])
   // Stable callbacks for memo(PortalMessageList / PortalLoopDock) across keystrokes.
   const stopSubagentRef = useRef(stopSubagent)
   stopSubagentRef.current = stopSubagent
@@ -380,7 +382,7 @@ export function AgentPortal(): JSX.Element {
     if (ready.length === 0) return
     setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
     for (const item of ready) send(item.text)
-  }, [canStop, pendingSends, send])
+  }, [canStop, pendingSends, send, setPendingSends])
 
   const portalThreadId = state.clientId
   // Include WS status + activeRunId so reconnect / new run re-polls Loop
@@ -605,7 +607,7 @@ export function AgentPortal(): JSX.Element {
       const end = ta.value.length
       ta.setSelectionRange(end, end)
     })
-  }, [])
+  }, [setInputMessage])
 
   const { voicePhase, voiceLevel, onVoicePointerDown, onVoicePointerMove, onVoicePointerUp } = usePortalVoice({
     canStop,
@@ -805,7 +807,7 @@ export function AgentPortal(): JSX.Element {
       ta.setSelectionRange(pos, pos)
       syncTriggers(pos, plain)
     })
-  }, [syncTriggers])
+  }, [syncTriggers, setInputMessage])
 
   function reeditPending(id: string): void {
     const item = pendingSends.find((row) => row.id === id)

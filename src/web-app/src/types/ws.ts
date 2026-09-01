@@ -199,6 +199,7 @@ export interface ActivityStepEvent {
       status: 'pending' | 'running' | 'success' | 'error' | 'denied'
       at: number
     }
+    heartbeatAt?: number
   }
 }
 

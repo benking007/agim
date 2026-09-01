@@ -23,6 +23,7 @@ export interface ChatActivityStep {
   jobId?: number
   reflects?: ToolActivityStep['reflects']
   lastTool?: ToolActivityStep['lastTool']
+  heartbeatAt?: number
 }
 
 export interface ChatActivity {
@@ -63,6 +64,7 @@ export function mergeActivityStep(
       jobId: step.jobId ?? prev.jobId,
       reflects: mergeStepReflects(prev.reflects, step.reflects) ?? prev.reflects,
       lastTool: step.lastTool ?? prev.lastTool,
+      heartbeatAt: step.heartbeatAt ?? prev.heartbeatAt,
     }
   } else {
     steps.push(step)
@@ -91,6 +93,7 @@ export function mergeToolActivityStep(
     ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
     ...(step.reflects ? { reflects: step.reflects } : {}),
     ...(step.lastTool ? { lastTool: step.lastTool } : {}),
+    ...(typeof step.heartbeatAt === 'number' ? { heartbeatAt: step.heartbeatAt } : {}),
   })
 }
 

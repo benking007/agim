@@ -352,6 +352,7 @@ describe('ChatSubagentCard', () => {
       })}
     />)
     expect(screen.queryByTestId('step-reflect-slot')).toBeNull()
+    expect(screen.getByTestId('subagent-heartbeat').textContent).toMatch(/claude-code/)
   })
 
   it('shows a child tool on the slot instead of Thinking…', () => {

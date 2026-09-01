@@ -96,6 +96,7 @@ export function normalizeActivityStep(st: ActivityStepEvent['step']): ChatActivi
     ...(typeof st.jobId === 'number' ? { jobId: st.jobId } : {}),
     ...(st.reflects?.length ? { reflects: st.reflects } : {}),
     ...(st.lastTool ? { lastTool: st.lastTool } : {}),
+    ...(typeof st.heartbeatAt === 'number' ? { heartbeatAt: st.heartbeatAt } : {}),
   }
 }
 

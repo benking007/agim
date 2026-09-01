@@ -70,5 +70,49 @@ describe('ACTIVITY_STEP Subagent inner state', () => {
     expect(step?.reflects).toEqual([{ stance: 'keep', next: 'Query capital flows', at: 2 }])
     expect(step?.lastTool).toEqual({ label: 'agim_web_search', status: 'running', at: 3 })
   })
+
+  it('merges heartbeatAt without clobbering lastTool', () => {
+    const reply: ChatMessage = {
+      id: 'asst-1',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      activity: {
+        runId: 'run-1',
+        status: 'running',
+        startedAt: 1,
+        steps: [{
+          id: 'lane-0',
+          kind: 'agent',
+          label: 'cursor',
+          status: 'running',
+          startedAt: 1,
+          jobId: 3396,
+          lastTool: { label: 'agim_exec', status: 'running', at: 3 },
+        }],
+      },
+    }
+    const seeded = {
+      ...initialChatState,
+      currentReplyId: 'asst-1',
+      messages: [reply],
+    }
+    const next = chatReducer(seeded, {
+      kind: 'ACTIVITY_STEP',
+      runId: 'run-1',
+      step: {
+        id: 'lane-0',
+        kind: 'agent',
+        label: 'cursor',
+        status: 'running',
+        startedAt: 1,
+        heartbeatAt: 46_000,
+      },
+    })
+    const step = next.messages[0]?.activity?.steps[0]
+    expect(step?.heartbeatAt).toBe(46_000)
+    expect(step?.lastTool).toEqual({ label: 'agim_exec', status: 'running', at: 3 })
+    expect(step?.jobId).toBe(3396)
+  })
 })
 

@@ -67,6 +67,8 @@ export interface PersistedChatActivity {
       status: 'pending' | 'running' | 'success' | 'error' | 'denied'
       at: number
     }
+    /** Last Subagent activity heartbeat (epoch ms). */
+    heartbeatAt?: number
   }>
 }
 
@@ -649,6 +651,8 @@ export interface ToolActivityStep {
     status: 'pending' | 'running' | 'success' | 'error' | 'denied'
     at: number
   }
+  /** Last 30–60s Subagent liveness pulse (epoch ms). */
+  heartbeatAt?: number
 }
 
 /**

@@ -54,6 +54,7 @@ export const ENV_EDITABLE_KEYS = [
   'AGIM_A2A_NOTIFY_MODE',
   'AGIM_A2A_NOTIFY_MAX_DEPTH',
   'AGIM_A2A_HEARTBEAT_MIN',
+  'AGIM_SUBAGENT_ACTIVITY_HEARTBEAT_MS',
   // v1.5 — long-term memory (see src/core/memory.ts + persona.ts).
   'AGIM_MEMORY_ENABLED',
   // P1/P2 — dream distillation (background fact extraction; see

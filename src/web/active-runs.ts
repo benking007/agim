@@ -34,6 +34,7 @@ export interface ActiveRunStep {
     status: ActiveRunStepStatus
     at: number
   }
+  heartbeatAt?: number
 }
 
 export interface ActiveRunSnapshot {
@@ -156,6 +157,7 @@ export function upsertActiveRunStep(threadId: string, step: ActiveRunStep): bool
       jobId: step.jobId ?? prev.jobId,
       reflects: mergeStepReflects(prev.reflects, step.reflects) ?? prev.reflects,
       lastTool: step.lastTool ?? prev.lastTool,
+      heartbeatAt: step.heartbeatAt ?? prev.heartbeatAt,
     }
   } else {
     snap.steps.push(step)

@@ -623,6 +623,7 @@ export async function handleClientMessage(
               ...(typeof step.jobId === 'number' ? { jobId: step.jobId } : {}),
               ...(step.reflects ? { reflects: step.reflects } : {}),
               ...(step.lastTool ? { lastTool: step.lastTool } : {}),
+              ...(typeof step.heartbeatAt === 'number' ? { heartbeatAt: step.heartbeatAt } : {}),
             })
             if (!applied) return
             const snap = getActiveRun(sessionThreadId)

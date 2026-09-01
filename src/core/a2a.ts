@@ -68,6 +68,7 @@ import {
 import { isAgimAgentId } from './naming-migrate.js'
 import { isSameAgent, parseCallAgentTarget, resolveSubtreeMaxDepth } from './subagent.js'
 import { lastToolFromChildStep, reflectsFromChildStep } from './subagent-inner-activity.js'
+import { createSubagentActivityHeartbeat } from './subagent-activity-heartbeat.js'
 import { isStepReflectEnabled } from './llm/step-reflect.js'
 
 const log = rootLogger.child({ component: 'a2a' })
@@ -584,6 +585,14 @@ export async function callAgentByName(
     preview: prompt.slice(0, 120).replace(/\s+/g, ' '),
     jobId,
   })
+  const activityHeartbeat = createSubagentActivityHeartbeat({
+    emit: (step) => emitAgentActivity(opts, ctx, step),
+    stepId: activityStepId,
+    label: activityLabel,
+    startedAt: activityStartedAt,
+    jobId,
+  })
+  if (opts.onToolActivity ?? ctx.onToolActivity) activityHeartbeat.start()
 
   let inheritStepReflect = opts.stepReflect === true
   if (!inheritStepReflect) {
@@ -635,6 +644,7 @@ export async function callAgentByName(
         const reflects = reflectsFromChildStep(step)
         const lastTool = lastToolFromChildStep(step)
         if (!reflects?.length && !lastTool) return
+        if (lastTool) activityHeartbeat.noteProgress({ lastTool })
         emitAgentActivity(opts, ctx, {
           id: activityStepId,
           kind: 'agent',
@@ -696,6 +706,7 @@ export async function callAgentByName(
   }
 
   // Stop heartbeat ASAP so we don't race the terminal notice.
+  activityHeartbeat.stop()
   heartbeat.stop()
 
   const durationMs = Date.now() - started

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Subagent / Agim turn wall clock 60 → 120 minutes**:
+  `AGIM_NATIVE_TURN_TIMEOUT_MS` default is now 2 h, aligned with A2A
+  (`AGIM_A2A_TIMEOUT_DEFAULT_MS`). CLI idle watchdog
+  (`AGIM_AGENT_IDLE_TIMEOUT_MS` / OpenCode) default is also 2 h so a
+  quiet long research child is not reaped while A2A is still waiting.
+
 ### Fixed
 
 - **Portal chat after account switch**: signing out, registering, or

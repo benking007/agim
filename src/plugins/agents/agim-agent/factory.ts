@@ -52,15 +52,19 @@ function envInt(name: string, def: number): number {
   return Number.isFinite(n) && n >= 0 ? n : def
 }
 
+/** Whole-turn wall clock for Agim Agent (parent and same-family Subagent). */
+export const NATIVE_TURN_TIMEOUT_MS_DEFAULT = 2 * 60 * 60 * 1000  // 2 h
+
 /** Whole active AgentHarness-loop watchdog. Compaction runs before this timer
  * because pi 0.79.x does not expose an external compaction signal. */
-function resolveRunTimeoutMs(opts: AgentSendOpts | undefined): number {
+export function resolveRunTimeoutMs(opts: AgentSendOpts | undefined): number {
   // Must be ≥ the longest built-in interactive approval window so a
   // Plan Mode / unconfined-exec confirmation is not killed before the user
   // can answer (approval-bus DEFAULT_APPROVAL_TIMEOUT_MS = 30 min).
-  // Default 60 min: long Loop / multi-Subagent turns were hitting 30 min
-  // and aborting mid-flight.
-  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', 60 * 60 * 1000)
+  // Default 2 h: long Loop / multi-Subagent turns were hitting 60 min
+  // and aborting mid-flight. Aligns with A2A_TIMEOUT_MS_DEFAULT so a
+  // same-family child is not killed while A2A is still waiting.
+  const base = envInt('AGIM_NATIVE_TURN_TIMEOUT_MS', NATIVE_TURN_TIMEOUT_MS_DEFAULT)
   if (base === 0) return 0
   return applyGoalTimeoutBoost(base, {
     platform: opts?.platform,

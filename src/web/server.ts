@@ -53,6 +53,7 @@ import {
   type ClientConnection,
   webRunAborts,
   sendToClient,
+  wsCanDeliver,
   sendSessionHistory,
   handleClientMessage,
   bindWsClients,
@@ -1041,7 +1042,7 @@ export async function startWebServer(options: {
     async sendApprovalCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
-      if (!c || c.ws.readyState !== c.ws.OPEN) {
+      if (!c || !wsCanDeliver(c.ws)) {
         // Match sendChoiceCard: throwing lets the bus deny instead of
         // waiting 10 minutes on a card the browser never received.
         webLog.warn({
@@ -1049,7 +1050,8 @@ export async function startWebServer(options: {
           threadId,
           hasClient: Boolean(c),
           readyState: c?.ws.readyState,
-        }, 'web approval-card undelivered — no OPEN WS client')
+          zombie: c ? (c.ws as WebSocket & { isAlive?: boolean }).isAlive === false : undefined,
+        }, 'web approval-card undelivered — no live WS client')
         throw new Error(`web approval-card undelivered: no OPEN client for thread ${threadId}`)
       }
       sendToClient(c.ws, { type: 'approval-card', messageId, prompt, threadId })
@@ -1063,15 +1065,18 @@ export async function startWebServer(options: {
     async sendChoiceCard(threadId, prompt) {
       const c = clients.get(threadId)
       const messageId = `web-card-${++cardSeq}-${Date.now().toString(36)}`
-      if (!c || c.ws.readyState !== c.ws.OPEN) {
+      if (!c || !wsCanDeliver(c.ws)) {
         // Must throw so ask-user-rpc does NOT mark cardSent=true and skip the
         // text fallback — otherwise the agent waits with no Portal AskDock.
+        // Half-open sockets stay OPEN until the next missed ping; treat
+        // isAlive===false the same as CLOSED.
         webLog.warn({
           event: 'ask.card_undelivered',
           threadId,
           hasClient: Boolean(c),
           readyState: c?.ws.readyState,
-        }, 'web choice-card undelivered — no OPEN WS client')
+          zombie: c ? (c.ws as WebSocket & { isAlive?: boolean }).isAlive === false : undefined,
+        }, 'web choice-card undelivered — no live WS client')
         throw new Error(`web choice-card undelivered: no OPEN client for thread ${threadId}`)
       }
       sendToClient(c.ws, { type: 'choice-card', messageId, prompt, threadId })

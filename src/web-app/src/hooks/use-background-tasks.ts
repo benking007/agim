@@ -76,6 +76,8 @@ export interface PendingAskRow {
 export interface AsksListResponse {
   pending: PendingAskRow[]
   count: number
+  /** Full AskDock payloads (reconnect / half-open WS catch-up). */
+  cards?: import('@/lib/pending-ask-cards').PendingAskCardWire[]
 }
 
 const askKeys = {

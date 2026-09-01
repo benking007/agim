@@ -24,7 +24,10 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
 import { toast } from 'sonner'
+import { client } from '@/lib/api/client'
 import { openChatWs } from '@/lib/api/ws'
+import { askCardsForThread, isAskUserActivityLabel } from '@/lib/pending-ask-cards'
+import type { AsksListResponse } from '@/hooks/use-background-tasks'
 import {
   archiveSession as markSessionArchived,
   archiveSessionsForWorkspace,
@@ -124,6 +127,7 @@ export function useChat(): UseChat {
   // Capturing a const in useEffect([]) used to rekey the *first* session
   // after New conversation / switch.
   const threadIdRef = useRef(loadTabThreadId())
+  const hydrateAsksRef = useRef<() => void>(() => {})
   const messagesRef = useRef(state.messages)
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
   const followIfRemoteSwitchedRef = useRef<() => void>(() => {})
@@ -202,6 +206,29 @@ export function useChat(): UseChat {
       flushChunks,
       { threadIdRef },
     )
+    const askCatchupTimers: number[] = []
+    async function hydrateAsks(): Promise<void> {
+      // HTTP catch-up: half-open WS can "send" choice-card without the
+      // browser ever seeing it, and no reconnect means no get-history replay.
+      try {
+        const data = await client.get<AsksListResponse>('/api/asks/pending')
+        for (const card of askCardsForThread(data.cards, threadIdRef.current)) {
+          dispatch({
+            kind: 'CHOICE_CARD',
+            messageId: card.messageId,
+            prompt: card.prompt,
+          })
+        }
+      } catch { /* best-effort — WS path remains primary */ }
+    }
+    hydrateAsksRef.current = () => { void hydrateAsks() }
+    function scheduleAskCatchUp(): void {
+      for (const t of askCatchupTimers) window.clearTimeout(t)
+      askCatchupTimers.length = 0
+      for (const ms of [400, 1_500, 4_000]) {
+        askCatchupTimers.push(window.setTimeout(() => { void hydrateAsks() }, ms))
+      }
+    }
     const off2 = ws.subscribe({
       type: 'message',
       fn: (msg: ChatIncoming) => {
@@ -210,6 +237,13 @@ export function useChat(): UseChat {
           return
         }
         onIncoming(msg)
+        if (
+          msg.type === 'activity-step'
+          && isAskUserActivityLabel(msg.step?.label)
+          && msg.step?.status === 'running'
+        ) {
+          scheduleAskCatchUp()
+        }
       },
     })
 
@@ -238,6 +272,7 @@ export function useChat(): UseChat {
     function bootstrap(): void {
       ws.send({ type: 'get-history', threadId: threadIdRef.current })
       ws.send({ type: 'get-agents' })
+      void hydrateAsks()
     }
     // subscribe() replays the current status, so an already-open socket
     // still triggers bootstrap on mount. Keep the listener for later
@@ -248,7 +283,15 @@ export function useChat(): UseChat {
         if (s === 'open') bootstrap()
       },
     })
-    return () => { off1(); off2(); off3() }
+    function onVisible(): void {
+      if (document.visibilityState === 'visible') void hydrateAsks()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      off1(); off2(); off3()
+      document.removeEventListener('visibilitychange', onVisible)
+      for (const t of askCatchupTimers) window.clearTimeout(t)
+    }
   }, [])
 
   function publishSessionAfterAck(text: string): void {
@@ -412,6 +455,7 @@ export function useChat(): UseChat {
     const cached = readCachedHistory(threadId)
     if (cached) dispatch(cachedHistoryToAction(cached))
     wsRef.current.send({ type: 'get-history', threadId })
+    hydrateAsksRef.current()
   }
 
   function newConversation(): void {

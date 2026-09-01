@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Ask panel missing while `mcp__agim__ask_user` spins**: a half-open
+  WebSocket can "deliver" `choice-card` without the browser seeing it,
+  so AskDock stays empty while the agent waits. Treat `isAlive===false`
+  as undelivered, replay ask/approval cards before HISTORY, expose full
+  card payloads on `GET /api/asks/pending`, and hydrate AskDock from
+  HTTP when the ask tool starts (plus WS open / tab visible).
+
+
 - **Portal chat after account switch**: signing out, registering, or
   logging into another user now wipes origin-scoped session / history /
   workspace caches and resets the transcript. `get-history` also refuses

@@ -21,6 +21,7 @@ import {
 } from '../core/heartbeat-store.js'
 import {
   listPendingAsks,
+  listPendingAskCards,
   cancelPendingAsk,
 } from '../core/ask-user-rpc.js'
 import { requireWebThreadAccess, emptyMemberScope, resolveMemberScope } from './member-scope.js'
@@ -152,12 +153,15 @@ async function handleHeartbeatInterval(
 async function handleAsksList(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const scope = await resolveMemberScope(req)
   if (emptyMemberScope(scope)) {
-    send(res, 200, { pending: [], count: 0 })
+    send(res, 200, { pending: [], count: 0, cards: [] })
     return
   }
-  const rows = listPendingAsks().filter((r) => scope.kind === 'admin'
-    || (scope.kind === 'user' && r.platform === 'web' && scope.threadIds.includes(r.threadId)))
-  send(res, 200, { pending: rows, count: rows.length })
+  const visible = (threadId: string, platform: string): boolean =>
+    scope.kind === 'admin'
+    || (scope.kind === 'user' && platform === 'web' && scope.threadIds.includes(threadId))
+  const rows = listPendingAsks().filter((r) => visible(r.threadId, r.platform))
+  const cards = listPendingAskCards().filter((c) => visible(c.threadId, c.platform))
+  send(res, 200, { pending: rows, count: rows.length, cards })
 }
 
 async function handleAskCancel(req: IncomingMessage, res: ServerResponse, rawReqId: string): Promise<void> {

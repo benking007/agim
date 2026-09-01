@@ -302,12 +302,24 @@ export function AgentPortal(): JSX.Element {
   const sendRef = useRef(send)
   sendRef.current = send
   const onStopSubagent = useCallback((jobId: number) => stopSubagentRef.current(jobId), [])
-  const onLoopSend = useCallback((text: string) => {
+  const onLoopSend = useCallback((text: string, opts?: { afterIdle?: string }) => {
     if (state.status !== 'open') {
       toast.error('Not connected')
       return
     }
     sendRef.current(text)
+    const follow = (opts?.afterIdle || '').trim()
+    if (!follow) return
+    // Align 「确定并开始」: confirm slash returns quickly; queue the Act Now
+    // nudge so call_agents starts without a second click.
+    setPendingSends((cur) => [
+      ...cur,
+      {
+        id: `loop-start-${Date.now()}-${cur.length}`,
+        text: follow,
+        flushAfter: true,
+      },
+    ])
   }, [state.status])
 
   const agentId = state.agent || state.agents[0] || 'agim'

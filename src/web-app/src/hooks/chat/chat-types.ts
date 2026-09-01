@@ -237,5 +237,7 @@ export interface UseChat {
   sessions: WebSessionEntry[]
   /** Active `web-*` id (same as `state.clientId` once bootstrapped). */
   activeSessionId: string
+  /** Threads with a live run / pending ask in an in-memory island. */
+  busyThreadIds: string[]
   clearError: () => void
 }

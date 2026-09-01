@@ -213,6 +213,7 @@ export function PortalComposerInput({
       ))}
       <textarea
         ref={inputRef as RefObject<HTMLTextAreaElement>}
+        data-testid="portal-composer-input"
         rows={1}
         value={text}
         disabled={disabled}

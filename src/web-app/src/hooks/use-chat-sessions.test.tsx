@@ -51,6 +51,7 @@ vi.mock('@/lib/web-session-sync', () => ({
 }))
 
 import { useChat } from './use-chat'
+import { clearChatIslands } from './chat/chat-session-islands'
 import { THREAD_ID_KEY, SESSIONS_KEY, findSession, listSessions } from '@/lib/web-sessions'
 import { addLocalWorkspace, listWorkspaces } from '@/lib/web-workspaces'
 import { writeCachedHistory } from '@/lib/web-history-cache'
@@ -68,9 +69,11 @@ describe('useChat multi-session', () => {
     mocks.messageListeners.clear()
     mocks.pullAccountSessions.mockClear()
     mocks.pushAccountSession.mockClear()
+    clearChatIslands()
   })
 
   afterEach(() => {
+    clearChatIslands()
     useAuth.setState({
       token: null, user: null, role: null, signedIn: false, ready: false,
     })
@@ -155,10 +158,36 @@ describe('useChat multi-session', () => {
     act(() => { result.current.send('hello from first') })
     act(() => { result.current.newConversation() })
     expect(result.current.state.messages).toEqual([])
+    expect(result.current.state.historyLoading).toBe(false)
 
     act(() => { result.current.switchSession(firstId) })
     expect(result.current.activeSessionId).toBe(firstId)
     expect(result.current.state.messages.some((m) => m.content === 'hello from first')).toBe(true)
+    unmount()
+  })
+
+  it('keeps a background run on the previous island and restores it', () => {
+    const { result, unmount } = renderHook(() => useChat())
+    const firstId = result.current.activeSessionId
+    act(() => { result.current.send('hello from first') })
+    const replyId = result.current.state.currentReplyId
+    expect(replyId).toBeTruthy()
+
+    act(() => { result.current.newConversation() })
+    expect(result.current.activeSessionId).not.toBe(firstId)
+    expect(result.current.busyThreadIds).toContain(firstId)
+    expect(result.current.state.messages).toEqual([])
+
+    act(() => {
+      for (const fn of mocks.messageListeners) {
+        fn({ type: 'chunk', text: '后台流式', threadId: firstId })
+      }
+    })
+    expect(result.current.state.messages).toEqual([])
+
+    act(() => { result.current.switchSession(firstId) })
+    expect(result.current.state.currentReplyId).toBe(replyId)
+    expect(result.current.state.messages.some((m) => m.content.includes('后台流式'))).toBe(true)
     unmount()
   })
 

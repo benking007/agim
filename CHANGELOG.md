@@ -14,6 +14,19 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Portal session islands**: switching conversations no longer resets
+  the shared composer / transcript window. Drafts, attachments, and
+  queued steers are keyed by `web-*` thread; in-memory chat islands
+  restore the previous run (including background chunks, Ask, and
+  approval docks) without a `RESET_CONVERSATION` flash. WS `emit`
+  stamps the run's `threadId` so a later `get-history` rebind cannot
+  paint session A's stream into B.
+- **Ask panel missing while `mcp__agim__ask_user` spins**: a half-open
+  WebSocket can "deliver" `choice-card` without the browser seeing it,
+  so AskDock stays empty while the agent waits. Treat `isAlive===false`
+  as undelivered, replay ask/approval cards before HISTORY, expose full
+  card payloads on `GET /api/asks/pending`, and hydrate AskDock from
+  HTTP when the ask tool starts (plus WS open / tab visible).
 - **Portal chat after account switch**: signing out, registering, or
   logging into another user now wipes origin-scoped session / history /
   workspace caches and resets the transcript. `get-history` also refuses

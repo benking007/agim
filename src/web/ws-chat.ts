@@ -159,6 +159,12 @@ export function sendToClient(ws: WebSocket, data: Record<string, unknown>): void
   }
 }
 
+/** OPEN is not enough: half-open peers stay OPEN until the next missed ping. */
+export function wsCanDeliver(ws: WebSocket): boolean {
+  if (ws.readyState !== ws.OPEN) return false
+  return (ws as WebSocket & { isAlive?: boolean }).isAlive !== false
+}
+
 /** L1: backpressure threshold for the WS send path. When `ws.bufferedAmount`
  *  exceeds this, the streaming chunk loop awaits a tick instead of piling up
  *  more frames. 4 MiB tolerates a few seconds of slow client without
@@ -287,8 +293,10 @@ export async function sendSessionHistory(
   }
   const active = getActiveRun(threadId)
   // Small catch-up first: half-open reconnects die while a ~800KB HISTORY
-  // is still in the kernel. done / run-finish / active-run must go first.
+  // is still in the kernel. done / run-finish / active-run / ask cards
+  // must go first — choice-card is not in the transcript.
   flushPendingTerminal(threadId, (data) => sendToClient(ws, data))
+  await replayEphemeralCards(ws, threadId)
   if (active) {
     // Always replay — including finished runs. Sleep/wake often misses
     // `done` while the SPA mid-flight guard also refuses HISTORY; skipping
@@ -319,13 +327,13 @@ export async function sendSessionHistory(
   // Nudge Portal Loop docks to re-fetch GET /api/loop after reconnect /
   // get-history (chat bootstrap does not carry the Loop DTO).
   sendToClient(ws, { type: 'loop-changed', threadId })
-  // Re-emit unresolved ask_user cards. choice-card is ephemeral (not in
-  // history); without replay, refresh / sleep-wake leaves the agent blocked
-  // on PENDING while AskDock stays empty.
+}
+
+async function replayEphemeralCards(ws: WebSocket, threadId: string): Promise<void> {
   try {
     const { listPendingAskCards } = await import('../core/ask-user-rpc.js')
     for (const card of listPendingAskCards({ platform: 'web', threadId })) {
-      if (ws.readyState !== ws.OPEN) break
+      if (!wsCanDeliver(ws)) return
       sendToClient(ws, {
         type: 'choice-card',
         messageId: card.messageId,
@@ -334,12 +342,10 @@ export async function sendSessionHistory(
       })
     }
   } catch { /* ask bus optional during early boot */ }
-  // Same class of bug as ask_user: approval-card is ephemeral. Refresh /
-  // sleep-wake would leave agim_exit_plan_mode spinning with an empty dock.
   try {
     const { listPendingApprovalCards } = await import('../core/approval-router.js')
     for (const card of listPendingApprovalCards({ platform: 'web', threadId })) {
-      if (ws.readyState !== ws.OPEN) break
+      if (!wsCanDeliver(ws)) return
       sendToClient(ws, {
         type: 'approval-card',
         messageId: card.messageId,
@@ -385,22 +391,23 @@ export async function handleClientMessage(
   // Read client.id fresh — `get-history` may rekey it mid-handler so the
   // session lookup matches the client's persisted threadId.
   let clientId = client.id
+  let stampThreadId = clientId
 
   /** Prefer the currently-connected socket for this thread (post-rekey /
    *  reconnect), falling back to the handler's original `ws`.
-   *  Always stamp `threadId` from this handler's captured id so a later
-   *  get-history rekey cannot paint this run onto another session. */
+   *  Stamp `threadId` from the run's session, not a later get-history rekey. */
   const emit = (data: Record<string, unknown>): void => {
-    const live = clients?.get(clientId)
+    const tid = typeof data.threadId === 'string' && data.threadId
+      ? data.threadId
+      : stampThreadId
+    const live = clients?.get(tid) ?? clients?.get(clientId)
     const target = live?.ws ?? ws
-    const frame = typeof data.threadId === 'string' && data.threadId
-      ? data
-      : { ...data, threadId: clientId }
+    const frame = { ...data, threadId: tid }
     const t = String(data.type ?? '')
     const terminal = t === 'done' || t === 'run-finish' || t === 'error'
     // Always stash terminal frames. Half-open peers still look OPEN (no
     // emit_dropped) — browser already left; next get-history flushes these.
-    if (terminal) stashTerminalFrame(clientId, frame)
+    if (terminal) stashTerminalFrame(tid, frame)
     const sock = target as WebSocket & { isAlive?: boolean }
     const zombie = sock.isAlive === false
     if (target.readyState !== target.OPEN || zombie) {
@@ -408,7 +415,7 @@ export async function handleClientMessage(
         webLog.warn({
           event: 'web.ws.emit_dropped',
           type: t,
-          threadId: clientId,
+          threadId: tid,
           runId: typeof data.runId === 'string' ? data.runId : undefined,
           hasPeer: Boolean(live),
           readyState: target.readyState,
@@ -431,6 +438,7 @@ export async function handleClientMessage(
       const logger = createLogger({ traceId, platform: 'web', component: 'web' })
       // Stable session key for ActiveRun + live emit (survives WS replace).
       const sessionThreadId = clientId
+      stampThreadId = sessionThreadId
 
       if (msg.agent && msg.agent !== client.agent) {
         client.agent = msg.agent

@@ -74,7 +74,8 @@ const PortalAutomationPane = lazy(async () => {
 import { usePrefs, type Lang } from '@/stores/prefs'
 import { cn } from '@/lib/utils'
 import { agentVisual, displayAgentName } from './agent-visuals'
-import { consumeClipboardImages, type PendingAttachment } from './portal-composer-attachments'
+import { consumeClipboardImages } from './portal-composer-attachments'
+import { useComposerIsland } from '@/lib/portal-composer-islands'
 import {
   AttachmentStrip,
   PortalComposerPlus,
@@ -106,7 +107,7 @@ import {
 } from './portal-demo-fixtures'
 import { PortalSidePanel } from './portal-side-panel'
 import { parsePortalPane, type PortalPane } from '@/lib/portal-pane'
-import { PortalSteerQueue, type PendingSendItem } from './portal-steer-queue'
+import { PortalSteerQueue } from './portal-steer-queue'
 import { PortalWorkspacePicker } from './portal-workspace-picker'
 import { PortalPet, type PetTaskItem } from './portal-pet'
 import {
@@ -164,7 +165,7 @@ export function AgentPortal(): JSX.Element {
   const {
     state, send, steer, stop, stopSubagent, refreshHistory, switchAgent, approvalClick, choiceSubmit,
     newConversation, switchSession, archiveSession, renameSession, archiveWorkspace, syncWorkspace, createWorkspace,
-    sessions, activeSessionId, clearError,
+    sessions, activeSessionId, busyThreadIds, clearError,
   } = useChat()
   const {
     workspaces,
@@ -270,10 +271,11 @@ export function AgentPortal(): JSX.Element {
   }, [state.error, clearError])
 
   const [showModelDropdown, setShowModelDropdown] = useState(false)
-  const [inputMessage, setInputMessage] = useState('')
-  const [pendingSends, setPendingSends] = useState<PendingSendItem[]>([])
-  const [queueThreadId, setQueueThreadId] = useState(state.clientId)
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const {
+    inputMessage, setInputMessage,
+    attachments, setAttachments,
+    pendingSends, setPendingSends,
+  } = useComposerIsland(state.clientId)
   const [uploading, setUploading] = useState(false)
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const enterNewline = useComposerEnterNewline()
@@ -296,6 +298,18 @@ export function AgentPortal(): JSX.Element {
   const atOpenRef = useRef(false)
   const slashTriggerStartRef = useRef(0)
   const atTriggerStartRef = useRef(0)
+
+  const composerThreadId = state.clientId
+  useEffect(() => {
+    if (!composerThreadId) return
+    setPlusMenuOpen(false)
+    setSlashOpen(false)
+    setAtOpen(false)
+    setSlashActive(0)
+    setAtActive(0)
+    slashOpenRef.current = false
+    atOpenRef.current = false
+  }, [composerThreadId])
   // Stable callbacks for memo(PortalMessageList / PortalLoopDock) across keystrokes.
   const stopSubagentRef = useRef(stopSubagent)
   stopSubagentRef.current = stopSubagent
@@ -361,10 +375,6 @@ export function AgentPortal(): JSX.Element {
   const liveBusy = isTyping || state.activeRunId != null
   const canStop = liveBusy || demoSteer
   const canSteerLive = liveBusy && (agentId === 'agim' || agentId === 'native')
-  if (state.clientId !== queueThreadId) {
-    setQueueThreadId(state.clientId)
-    setPendingSends([])
-  }
 
   useEffect(() => {
     if (canStop) return
@@ -372,7 +382,7 @@ export function AgentPortal(): JSX.Element {
     if (ready.length === 0) return
     setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
     for (const item of ready) send(item.text)
-  }, [canStop, pendingSends, send])
+  }, [canStop, pendingSends, send, setPendingSends])
 
   const portalThreadId = state.clientId
   // Include WS status + activeRunId so reconnect / new run re-polls Loop
@@ -597,7 +607,7 @@ export function AgentPortal(): JSX.Element {
       const end = ta.value.length
       ta.setSelectionRange(end, end)
     })
-  }, [])
+  }, [setInputMessage])
 
   const { voicePhase, voiceLevel, onVoicePointerDown, onVoicePointerMove, onVoicePointerUp } = usePortalVoice({
     canStop,
@@ -797,7 +807,7 @@ export function AgentPortal(): JSX.Element {
       ta.setSelectionRange(pos, pos)
       syncTriggers(pos, plain)
     })
-  }, [syncTriggers])
+  }, [syncTriggers, setInputMessage])
 
   function reeditPending(id: string): void {
     const item = pendingSends.find((row) => row.id === id)
@@ -846,6 +856,7 @@ export function AgentPortal(): JSX.Element {
     onToggleLang: toggleLang,
     sessions,
     activeSessionId,
+    busyThreadIds,
     onSwitchSession: (threadId: string) => {
       setPortalPane('chat')
       switchSession(threadId)
@@ -994,6 +1005,7 @@ export function AgentPortal(): JSX.Element {
         ) : (
           <>
         <PortalMessageList
+          key={state.clientId}
           dark={dark}
           active
           chatTurns={chatTurns}
@@ -1089,6 +1101,7 @@ export function AgentPortal(): JSX.Element {
                   />
                 </div>
                 <form
+                  key={state.clientId}
                   ref={composerFormRef}
                   onSubmit={(e) => { void onSend(e) }}
                   onPaste={onComposerPaste}

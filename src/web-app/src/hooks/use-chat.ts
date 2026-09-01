@@ -24,7 +24,10 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
 import i18n from '@/i18n'
 import { toast } from 'sonner'
+import { client } from '@/lib/api/client'
 import { openChatWs } from '@/lib/api/ws'
+import { askCardsForThread, isAskUserActivityLabel } from '@/lib/pending-ask-cards'
+import type { AsksListResponse } from '@/hooks/use-background-tasks'
 import {
   archiveSession as markSessionArchived,
   archiveSessionsForWorkspace,
@@ -56,11 +59,19 @@ import {
   writeCachedHistory,
 } from '@/lib/web-history-cache'
 import { chatReducer, initialChatState } from './chat/chat-reducer'
-import { makeOnIncoming } from './chat/chat-ws-handlers'
+import { incomingThreadId, makeOnIncoming } from './chat/chat-ws-handlers'
+import {
+  applyChatActionToIsland,
+  busyChatThreadIds,
+  chatIslandBusy,
+  getChatIsland,
+  putChatIsland,
+} from './chat/chat-session-islands'
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { useAccountScopedChat } from './use-account-scoped-chat'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
-import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
+import type { ApprovalChoice, ChatMessage, ChatState, UseChat } from './chat/chat-types'
+import type { ChatAction } from './chat/chat-reducer'
 import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
 import type { ChatIncoming } from '@/types/ws'
 
@@ -124,8 +135,12 @@ export function useChat(): UseChat {
   // Capturing a const in useEffect([]) used to rekey the *first* session
   // after New conversation / switch.
   const threadIdRef = useRef(loadTabThreadId())
+  const hydrateAsksRef = useRef<() => void>(() => {})
   const messagesRef = useRef(state.messages)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
+  const [islandGen, setIslandGen] = useState(0)
   const followIfRemoteSwitchedRef = useRef<() => void>(() => {})
   const pullRemoteRef = useRef<() => Promise<void>>(async () => {})
 
@@ -136,6 +151,11 @@ export function useChat(): UseChat {
   useEffect(() => {
     messagesRef.current = state.messages
   }, [state.messages])
+
+  useEffect(() => {
+    const id = threadIdRef.current
+    if (isWebThreadId(id)) putChatIsland(id, state)
+  }, [state])
 
   usePersistChatHistory(threadIdRef, state, messagesRef)
   useAccountScopedChat(threadIdRef, currentReplyIdRef, dispatch, wsRef, pullRemoteRef)
@@ -195,13 +215,61 @@ export function useChat(): UseChat {
       chunkBuf.current.clear()
     }
 
+    function applyForeignFrame(msg: ChatIncoming): void {
+      const tid = incomingThreadId(msg)
+      if (!tid || !isWebThreadId(tid)) return
+      const wasBusy = chatIslandBusy(getChatIsland(tid)?.state ?? { ...initialChatState, clientId: tid })
+      const bagReply = { current: getChatIsland(tid)?.state.currentReplyId ?? null }
+      const foreignDispatch = (action: ChatAction) => {
+        const next = applyChatActionToIsland(tid, action)
+        bagReply.current = next.currentReplyId
+      }
+      const foreignBuffer = (text: string) => {
+        const replyId = bagReply.current
+        if (!replyId) return
+        applyChatActionToIsland(tid, { kind: 'CHUNK', replyId, text })
+      }
+      makeOnIncoming(
+        foreignDispatch,
+        bagReply,
+        foreignBuffer,
+        () => {},
+        { threadIdRef: { current: tid } },
+      )(msg)
+      const nowBusy = chatIslandBusy(getChatIsland(tid)?.state ?? initialChatState)
+      if (nowBusy !== wasBusy) setIslandGen((n) => n + 1)
+    }
+
     const onIncoming = makeOnIncoming(
       dispatch,
       currentReplyIdRef,
       bufferChunk,
       flushChunks,
-      { threadIdRef },
+      { threadIdRef, onForeignThread: applyForeignFrame },
     )
+    const askCatchupTimers: number[] = []
+    async function hydrateAsks(): Promise<void> {
+      // HTTP catch-up: half-open WS can "send" choice-card without the
+      // browser ever seeing it, and no reconnect means no get-history replay.
+      try {
+        const data = await client.get<AsksListResponse>('/api/asks/pending')
+        for (const card of askCardsForThread(data.cards, threadIdRef.current)) {
+          dispatch({
+            kind: 'CHOICE_CARD',
+            messageId: card.messageId,
+            prompt: card.prompt,
+          })
+        }
+      } catch { /* best-effort — WS path remains primary */ }
+    }
+    hydrateAsksRef.current = () => { void hydrateAsks() }
+    function scheduleAskCatchUp(): void {
+      for (const t of askCatchupTimers) window.clearTimeout(t)
+      askCatchupTimers.length = 0
+      for (const ms of [400, 1_500, 4_000]) {
+        askCatchupTimers.push(window.setTimeout(() => { void hydrateAsks() }, ms))
+      }
+    }
     const off2 = ws.subscribe({
       type: 'message',
       fn: (msg: ChatIncoming) => {
@@ -210,6 +278,13 @@ export function useChat(): UseChat {
           return
         }
         onIncoming(msg)
+        if (
+          msg.type === 'activity-step'
+          && isAskUserActivityLabel(msg.step?.label)
+          && msg.step?.status === 'running'
+        ) {
+          scheduleAskCatchUp()
+        }
       },
     })
 
@@ -238,6 +313,7 @@ export function useChat(): UseChat {
     function bootstrap(): void {
       ws.send({ type: 'get-history', threadId: threadIdRef.current })
       ws.send({ type: 'get-agents' })
+      void hydrateAsks()
     }
     // subscribe() replays the current status, so an already-open socket
     // still triggers bootstrap on mount. Keep the listener for later
@@ -248,7 +324,15 @@ export function useChat(): UseChat {
         if (s === 'open') bootstrap()
       },
     })
-    return () => { off1(); off2(); off3() }
+    function onVisible(): void {
+      if (document.visibilityState === 'visible') void hydrateAsks()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      off1(); off2(); off3()
+      document.removeEventListener('visibilitychange', onVisible)
+      for (const t of askCatchupTimers) window.clearTimeout(t)
+    }
   }, [])
 
   function publishSessionAfterAck(text: string): void {
@@ -400,18 +484,46 @@ export function useChat(): UseChat {
   }
 
   function activateThread(threadId: string): void {
-    writeCachedHistory(
-      threadIdRef.current,
-      historyPersistSnap(state, messagesRef.current),
-    )
+    const from = threadIdRef.current
+    if (from && isWebThreadId(from) && from !== threadId) {
+      writeCachedHistory(from, historyPersistSnap(stateRef.current, messagesRef.current))
+      putChatIsland(from, stateRef.current)
+    }
     setActiveId(threadId)
     threadIdRef.current = threadId
+    chunkBuf.current.clear()
+    flushScheduled.current = false
+
+    const island = getChatIsland(threadId)
+    if (island) {
+      currentReplyIdRef.current = island.state.currentReplyId
+      dispatch({ kind: 'RESTORE_ISLAND', state: island.state })
+      wsRef.current.send({ type: 'get-history', threadId })
+      hydrateAsksRef.current()
+      return
+    }
+
     currentReplyIdRef.current = null
-    dispatch({ kind: 'RESET_CONVERSATION' })
-    dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
     const cached = readCachedHistory(threadId)
-    if (cached) dispatch(cachedHistoryToAction(cached))
+    if (cached) {
+      dispatch({ kind: 'RESET_CONVERSATION' })
+      dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
+      dispatch(cachedHistoryToAction(cached))
+    } else {
+      const empty: ChatState = {
+        ...initialChatState,
+        clientId: threadId,
+        status: stateRef.current.status,
+        agents: stateRef.current.agents,
+        agent: stateRef.current.agent,
+        preferredWorkerAgent: stateRef.current.preferredWorkerAgent,
+        historyLoading: false,
+      }
+      putChatIsland(threadId, empty)
+      dispatch({ kind: 'RESTORE_ISLAND', state: empty })
+    }
     wsRef.current.send({ type: 'get-history', threadId })
+    hydrateAsksRef.current()
   }
 
   function newConversation(): void {
@@ -603,6 +715,14 @@ export function useChat(): UseChat {
     createWorkspace,
     sessions: sessionSnap.sessions,
     activeSessionId: sessionSnap.activeId,
+    busyThreadIds: (() => {
+      void islandGen
+      const ids = new Set(busyChatThreadIds())
+      if (chatIslandBusy(state) && isWebThreadId(threadIdRef.current)) {
+        ids.add(threadIdRef.current)
+      }
+      return [...ids]
+    })(),
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),
   }
 }

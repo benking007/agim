@@ -67,7 +67,7 @@ import {
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { useAccountScopedChat } from './use-account-scoped-chat'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
-import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
+import type { ApprovalChoice, ChatMessage, ChatState, UseChat } from './chat/chat-types'
 import type { ChatAction } from './chat/chat-reducer'
 import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
 import type { ChatIncoming } from '@/types/ws'
@@ -460,10 +460,24 @@ export function useChat(): UseChat {
     }
 
     currentReplyIdRef.current = null
-    dispatch({ kind: 'RESET_CONVERSATION' })
-    dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
     const cached = readCachedHistory(threadId)
-    if (cached) dispatch(cachedHistoryToAction(cached))
+    if (cached) {
+      dispatch({ kind: 'RESET_CONVERSATION' })
+      dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
+      dispatch(cachedHistoryToAction(cached))
+    } else {
+      const empty: ChatState = {
+        ...initialChatState,
+        clientId: threadId,
+        status: stateRef.current.status,
+        agents: stateRef.current.agents,
+        agent: stateRef.current.agent,
+        preferredWorkerAgent: stateRef.current.preferredWorkerAgent,
+        historyLoading: false,
+      }
+      putChatIsland(threadId, empty)
+      dispatch({ kind: 'RESTORE_ISLAND', state: empty })
+    }
     wsRef.current.send({ type: 'get-history', threadId })
   }
 

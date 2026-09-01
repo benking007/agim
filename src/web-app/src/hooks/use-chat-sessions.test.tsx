@@ -158,6 +158,7 @@ describe('useChat multi-session', () => {
     act(() => { result.current.send('hello from first') })
     act(() => { result.current.newConversation() })
     expect(result.current.state.messages).toEqual([])
+    expect(result.current.state.historyLoading).toBe(false)
 
     act(() => { result.current.switchSession(firstId) })
     expect(result.current.activeSessionId).toBe(firstId)

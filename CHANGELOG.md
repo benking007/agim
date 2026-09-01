@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Portal session islands**: switching conversations no longer resets
+  the shared composer / transcript window. Drafts, attachments, and
+  queued steers are keyed by `web-*` thread; in-memory chat islands
+  restore the previous run (including background chunks, Ask, and
+  approval docks) without a `RESET_CONVERSATION` flash. WS `emit`
+  stamps the run's `threadId` so a later `get-history` rebind cannot
+  paint session A's stream into B.
 - **Portal chat after account switch**: signing out, registering, or
   logging into another user now wipes origin-scoped session / history /
   workspace caches and resets the transcript. `get-history` also refuses

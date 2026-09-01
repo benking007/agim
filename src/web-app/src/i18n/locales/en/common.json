@@ -531,6 +531,7 @@
       "workspaceEmpty": "No sessions yet",
       "archive": "Archive",
       "archiveSession": "Archive conversation",
+      "sessionRunning": "Running",
       "renameSession": "Rename conversation",
       "archiveWorkspace": "Archive workspace",
       "workspaceUnresolved": "That path is not a subdirectory of this agent's workspace (.agim-workspaces/{{agent}}/).",

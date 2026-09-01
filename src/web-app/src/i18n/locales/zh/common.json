@@ -531,6 +531,7 @@
       "workspaceEmpty": "暂无会话",
       "archive": "归档",
       "archiveSession": "归档会话",
+      "sessionRunning": "运行中",
       "renameSession": "重命名会话",
       "archiveWorkspace": "归档工作目录",
       "workspaceUnresolved": "只能选择该 Agent 工作区（.agim-workspaces/{{agent}}/）下的子目录。",

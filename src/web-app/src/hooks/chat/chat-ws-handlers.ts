@@ -24,6 +24,12 @@ import type { ChatActivityStep, ChatMessage } from './chat-types'
 export interface OnIncomingOptions {
   /** Live thread id — updated on switch / new / thread-reassigned. */
   threadIdRef?: { current: string }
+  /** Foreign session-scoped frames (other web-* threads still running). */
+  onForeignThread?: (msg: ChatIncoming) => void
+}
+
+export function incomingThreadId(msg: ChatIncoming): string | undefined {
+  return 'threadId' in msg && typeof msg.threadId === 'string' ? msg.threadId : undefined
 }
 
 /** Frames that belong to one `web-*` session. Foreign threadId is dropped
@@ -57,10 +63,6 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'loop-schedule-changed',
   'steer-accepted',
 ])
-
-function incomingThreadId(msg: ChatIncoming): string | undefined {
-  return 'threadId' in msg && typeof msg.threadId === 'string' ? msg.threadId : undefined
-}
 
 // ---------------------------------------------------------------------------
 // Pure normalizers
@@ -173,7 +175,10 @@ export function makeOnIncoming(
     if (
       SESSION_SCOPED_FRAMES.has(msg.type)
       && !historyBelongsToClient(incomingThreadId(msg), opts?.threadIdRef?.current)
-    ) return
+    ) {
+      opts?.onForeignThread?.(msg)
+      return
+    }
     switch (msg.type) {
       case 'init':
         dispatch({

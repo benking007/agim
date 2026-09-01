@@ -56,11 +56,19 @@ import {
   writeCachedHistory,
 } from '@/lib/web-history-cache'
 import { chatReducer, initialChatState } from './chat/chat-reducer'
-import { makeOnIncoming } from './chat/chat-ws-handlers'
+import { incomingThreadId, makeOnIncoming } from './chat/chat-ws-handlers'
+import {
+  applyChatActionToIsland,
+  busyChatThreadIds,
+  chatIslandBusy,
+  getChatIsland,
+  putChatIsland,
+} from './chat/chat-session-islands'
 import { historyPersistSnap, usePersistChatHistory } from './chat/use-persist-chat-history'
 import { useAccountScopedChat } from './use-account-scoped-chat'
 import { APPROVAL_DISMISS_AFTER_MS } from './chat/chat-types'
 import type { ApprovalChoice, ChatMessage, UseChat } from './chat/chat-types'
+import type { ChatAction } from './chat/chat-reducer'
 import { pullAccountSessions, pushAccountSession } from '@/lib/web-session-sync'
 import type { ChatIncoming } from '@/types/ws'
 
@@ -125,7 +133,10 @@ export function useChat(): UseChat {
   // after New conversation / switch.
   const threadIdRef = useRef(loadTabThreadId())
   const messagesRef = useRef(state.messages)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const [sessionSnap, setSessionSnap] = useState(snapshotSessions)
+  const [islandGen, setIslandGen] = useState(0)
   const followIfRemoteSwitchedRef = useRef<() => void>(() => {})
   const pullRemoteRef = useRef<() => Promise<void>>(async () => {})
 
@@ -136,6 +147,11 @@ export function useChat(): UseChat {
   useEffect(() => {
     messagesRef.current = state.messages
   }, [state.messages])
+
+  useEffect(() => {
+    const id = threadIdRef.current
+    if (isWebThreadId(id)) putChatIsland(id, state)
+  }, [state])
 
   usePersistChatHistory(threadIdRef, state, messagesRef)
   useAccountScopedChat(threadIdRef, currentReplyIdRef, dispatch, wsRef, pullRemoteRef)
@@ -195,12 +211,37 @@ export function useChat(): UseChat {
       chunkBuf.current.clear()
     }
 
+    function applyForeignFrame(msg: ChatIncoming): void {
+      const tid = incomingThreadId(msg)
+      if (!tid || !isWebThreadId(tid)) return
+      const wasBusy = chatIslandBusy(getChatIsland(tid)?.state ?? { ...initialChatState, clientId: tid })
+      const bagReply = { current: getChatIsland(tid)?.state.currentReplyId ?? null }
+      const foreignDispatch = (action: ChatAction) => {
+        const next = applyChatActionToIsland(tid, action)
+        bagReply.current = next.currentReplyId
+      }
+      const foreignBuffer = (text: string) => {
+        const replyId = bagReply.current
+        if (!replyId) return
+        applyChatActionToIsland(tid, { kind: 'CHUNK', replyId, text })
+      }
+      makeOnIncoming(
+        foreignDispatch,
+        bagReply,
+        foreignBuffer,
+        () => {},
+        { threadIdRef: { current: tid } },
+      )(msg)
+      const nowBusy = chatIslandBusy(getChatIsland(tid)?.state ?? initialChatState)
+      if (nowBusy !== wasBusy) setIslandGen((n) => n + 1)
+    }
+
     const onIncoming = makeOnIncoming(
       dispatch,
       currentReplyIdRef,
       bufferChunk,
       flushChunks,
-      { threadIdRef },
+      { threadIdRef, onForeignThread: applyForeignFrame },
     )
     const off2 = ws.subscribe({
       type: 'message',
@@ -400,12 +441,24 @@ export function useChat(): UseChat {
   }
 
   function activateThread(threadId: string): void {
-    writeCachedHistory(
-      threadIdRef.current,
-      historyPersistSnap(state, messagesRef.current),
-    )
+    const from = threadIdRef.current
+    if (from && isWebThreadId(from) && from !== threadId) {
+      writeCachedHistory(from, historyPersistSnap(stateRef.current, messagesRef.current))
+      putChatIsland(from, stateRef.current)
+    }
     setActiveId(threadId)
     threadIdRef.current = threadId
+    chunkBuf.current.clear()
+    flushScheduled.current = false
+
+    const island = getChatIsland(threadId)
+    if (island) {
+      currentReplyIdRef.current = island.state.currentReplyId
+      dispatch({ kind: 'RESTORE_ISLAND', state: island.state })
+      wsRef.current.send({ type: 'get-history', threadId })
+      return
+    }
+
     currentReplyIdRef.current = null
     dispatch({ kind: 'RESET_CONVERSATION' })
     dispatch({ kind: 'SET_CLIENT_ID', clientId: threadId })
@@ -603,6 +656,14 @@ export function useChat(): UseChat {
     createWorkspace,
     sessions: sessionSnap.sessions,
     activeSessionId: sessionSnap.activeId,
+    busyThreadIds: (() => {
+      void islandGen
+      const ids = new Set(busyChatThreadIds())
+      if (chatIslandBusy(state) && isWebThreadId(threadIdRef.current)) {
+        ids.add(threadIdRef.current)
+      }
+      return [...ids]
+    })(),
     clearError: () => dispatch({ kind: 'CLEAR_ERROR' }),
   }
 }

@@ -26,7 +26,7 @@ import { initialChatState } from '@/hooks/chat/chat-reducer'
 export const HIST_INDEX_KEY = 'agim-web-hist-index'
 export const HIST_KEY_PREFIX = 'agim-web-hist:'
 
-export const MAX_CACHED_THREADS = 8
+export const MAX_CACHED_THREADS = 16
 export const MAX_CACHED_MESSAGES = 60
 export const MAX_CACHE_JSON_CHARS = 1_200_000
 export const CACHE_PREVIEW_MAX_CHARS = 280

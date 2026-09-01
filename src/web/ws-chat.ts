@@ -385,22 +385,23 @@ export async function handleClientMessage(
   // Read client.id fresh — `get-history` may rekey it mid-handler so the
   // session lookup matches the client's persisted threadId.
   let clientId = client.id
+  let stampThreadId = clientId
 
   /** Prefer the currently-connected socket for this thread (post-rekey /
    *  reconnect), falling back to the handler's original `ws`.
-   *  Always stamp `threadId` from this handler's captured id so a later
-   *  get-history rekey cannot paint this run onto another session. */
+   *  Stamp `threadId` from the run's session, not a later get-history rekey. */
   const emit = (data: Record<string, unknown>): void => {
-    const live = clients?.get(clientId)
+    const tid = typeof data.threadId === 'string' && data.threadId
+      ? data.threadId
+      : stampThreadId
+    const live = clients?.get(tid) ?? clients?.get(clientId)
     const target = live?.ws ?? ws
-    const frame = typeof data.threadId === 'string' && data.threadId
-      ? data
-      : { ...data, threadId: clientId }
+    const frame = { ...data, threadId: tid }
     const t = String(data.type ?? '')
     const terminal = t === 'done' || t === 'run-finish' || t === 'error'
     // Always stash terminal frames. Half-open peers still look OPEN (no
     // emit_dropped) — browser already left; next get-history flushes these.
-    if (terminal) stashTerminalFrame(clientId, frame)
+    if (terminal) stashTerminalFrame(tid, frame)
     const sock = target as WebSocket & { isAlive?: boolean }
     const zombie = sock.isAlive === false
     if (target.readyState !== target.OPEN || zombie) {
@@ -408,7 +409,7 @@ export async function handleClientMessage(
         webLog.warn({
           event: 'web.ws.emit_dropped',
           type: t,
-          threadId: clientId,
+          threadId: tid,
           runId: typeof data.runId === 'string' ? data.runId : undefined,
           hasPeer: Boolean(live),
           readyState: target.readyState,
@@ -431,6 +432,7 @@ export async function handleClientMessage(
       const logger = createLogger({ traceId, platform: 'web', component: 'web' })
       // Stable session key for ActiveRun + live emit (survives WS replace).
       const sessionThreadId = clientId
+      stampThreadId = sessionThreadId
 
       if (msg.agent && msg.agent !== client.agent) {
         client.agent = msg.agent

@@ -7,6 +7,8 @@ import { useLayoutEffect, useRef, type Dispatch, type MutableRefObject } from 'r
 import { useAuth } from '@/stores/auth'
 import { syncWebAccountScope } from '@/lib/web-account-scope'
 import { loadTabThreadId } from '@/lib/web-sessions'
+import { clearComposerIslands } from '@/lib/portal-composer-islands'
+import { clearChatIslands } from './chat/chat-session-islands'
 import type { ChatOutgoing } from '@/types/ws'
 import type { ChatAction } from './chat/chat-reducer'
 
@@ -36,6 +38,8 @@ export function useAccountScopedChat(
       && scopedAccountRef.current !== accountUserId
     scopedAccountRef.current = accountUserId
     if (!switched && !accountChanged) return
+    clearChatIslands()
+    clearComposerIslands()
     const next = loadTabThreadId()
     threadIdRef.current = next
     currentReplyIdRef.current = null

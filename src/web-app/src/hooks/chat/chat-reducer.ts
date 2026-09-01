@@ -142,6 +142,7 @@ export type ChatAction =
   | { kind: 'ACTIVITY_STEP'; runId: string; step: ChatActivityStep }
   | { kind: 'INJECTED_CONTEXT'; runId: string; text: string }
   | { kind: 'RESET_CONVERSATION' }
+  | { kind: 'RESTORE_ISLAND'; state: ChatState }
   | { kind: 'CLEAR_ERROR' }
   /** Server has no ActiveRun for this thread — drop ghost Running UI. */
   | { kind: 'ACTIVE_RUN_GONE'; threadId?: string }
@@ -1230,6 +1231,13 @@ export function chatReducer(s: ChatState, a: ChatAction): ChatState {
       })
       return { ...s, messages }
     }
+    case 'RESTORE_ISLAND':
+      return {
+        ...a.state,
+        status: s.status,
+        agents: s.agents.length > 0 ? s.agents : a.state.agents,
+        historyLoading: false,
+      }
     case 'RESET_CONVERSATION':
       // Clear all chat state but keep WS status + agent list + current
       // agent. Pending dock entries also clear — server's empty

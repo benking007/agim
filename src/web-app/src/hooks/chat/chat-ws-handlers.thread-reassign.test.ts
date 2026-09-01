@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeOnIncoming } from './chat-ws-handlers'
 import type { ChatAction } from './chat-reducer'
+import type { ChatIncoming } from '@/types/ws'
 import { upsertSession } from '@/lib/web-sessions'
 
 vi.mock('sonner', () => ({
@@ -308,5 +309,30 @@ describe('thread-reassigned', () => {
     )
     onIncoming({ type: 'loop-changed', threadId: 'web-stalehistxxx' })
     expect(actions).toEqual([])
+  })
+
+  it('routes a foreign frame to onForeignThread without dispatching', () => {
+    const threadIdRef = { current: 'web-currentthrd' }
+    const actions: ChatAction[] = []
+    const foreign: ChatIncoming[] = []
+    const onIncoming = makeOnIncoming(
+      (a) => { actions.push(a) },
+      { current: 'reply-b' },
+      () => {},
+      () => {},
+      {
+        threadIdRef,
+        onForeignThread: (msg) => { foreign.push(msg) },
+      },
+    )
+    onIncoming({ type: 'chunk', text: 'from A', runId: 'run-a', threadId: 'web-stalehistxxx' })
+    onIncoming({
+      type: 'choice-card',
+      messageId: 'ask-1',
+      threadId: 'web-stalehistxxx',
+      prompt: { body: 'Pick', choices: [{ label: '1. yes', data: 'ask:1:1' }] },
+    })
+    expect(actions).toEqual([])
+    expect(foreign.map((m) => m.type)).toEqual(['chunk', 'choice-card'])
   })
 })

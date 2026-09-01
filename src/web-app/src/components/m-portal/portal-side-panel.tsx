@@ -39,6 +39,8 @@ export function PortalSidePanel(props: {
   onToggleLang: () => void
   sessions: WebSessionEntry[]
   activeSessionId: string
+  /** Threads with a live run / pending ask (in-memory island). */
+  busyThreadIds?: string[]
   onSwitchSession: (threadId: string) => void
   workspaces: WebWorkspace[]
   activeWorkspaceId: string
@@ -57,7 +59,7 @@ export function PortalSidePanel(props: {
     railCollapsed = false, onToggleRailCollapsed,
     onClose, onNew, onToggleLang,
     pane = 'chat', onPaneChange,
-    sessions, activeSessionId, onSwitchSession,
+    sessions, activeSessionId, busyThreadIds = [], onSwitchSession,
     workspaces, activeWorkspaceId, collapsedWorkspaces,
     onToggleWorkspace, onSelectWorkspace, onNewWorkspace,
     onArchiveSession, onRenameSession, onArchiveWorkspace,
@@ -132,11 +134,14 @@ export function PortalSidePanel(props: {
           {sessions.slice(0, 8).map((session) => {
             const active = session.id === activeSessionId
             const title = session.title?.trim() || t('chat.portal.untitledConversation')
+            const busy = busyThreadIds.includes(session.id)
             return (
               <IconRailButton
                 key={session.id}
                 dark={dark}
                 active={active}
+                busy={busy}
+                busyLabel={t('chat.portal.sessionRunning')}
                 label={title}
                 onClick={() => onSwitchSession(session.id)}
                 icon={<MessageSquare className="h-4 w-4" />}
@@ -351,6 +356,8 @@ export function PortalSidePanel(props: {
                         lang={lang}
                         session={session}
                         active={session.id === activeSessionId}
+                        busy={busyThreadIds.includes(session.id)}
+                        runningLabel={t('chat.portal.sessionRunning')}
                         untitled={t('chat.portal.untitledConversation')}
                         justNow={t('chat.portal.justNow')}
                         renameLabel={t('chat.portal.renameSession')}
@@ -445,6 +452,8 @@ function SessionRow(props: {
   lang: Lang
   session: WebSessionEntry
   active: boolean
+  busy?: boolean
+  runningLabel?: string
   untitled: string
   justNow: string
   renameLabel: string
@@ -454,7 +463,8 @@ function SessionRow(props: {
   onArchiveSession: (threadId: string) => void
 }): JSX.Element {
   const {
-    dark, lang, session, active, untitled, justNow,
+    dark, lang, session, active, busy = false, runningLabel,
+    untitled, justNow,
     renameLabel, archiveLabel, onSwitchSession, onRenameSession, onArchiveSession,
   } = props
   const title = session.title?.trim() || untitled
@@ -523,6 +533,7 @@ function SessionRow(props: {
       ) : (
         <button
           type="button"
+          data-testid={`portal-session-${session.id}`}
           onClick={() => onSwitchSession(session.id)}
           onDoubleClick={(e) => {
             e.preventDefault()
@@ -536,7 +547,17 @@ function SessionRow(props: {
         >
           <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-semibold">{title}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="block min-w-0 truncate text-xs font-semibold">{title}</span>
+              {busy ? (
+                <span
+                  data-testid="portal-session-running"
+                  title={runningLabel}
+                  aria-label={runningLabel}
+                  className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-teal-400 shadow-[0_0_0_3px_rgba(45,212,191,0.25)]"
+                />
+              ) : null}
+            </span>
             <span className={cn(
               'mt-0.5 block truncate text-[10px] font-medium',
               active ? 'text-teal-500/80' : 'text-zinc-400',
@@ -626,23 +647,31 @@ function IconRailButton(props: {
   icon: ReactNode
   onClick: () => void
   active?: boolean
+  busy?: boolean
+  busyLabel?: string
 }): JSX.Element {
-  const { dark, label, icon, onClick, active } = props
+  const { dark, label, icon, onClick, active, busy = false, busyLabel } = props
   return (
     <button
       type="button"
       onClick={onClick}
-      title={label}
-      aria-label={label}
+      title={busy && busyLabel ? `${label} · ${busyLabel}` : label}
+      aria-label={busy && busyLabel ? `${label} · ${busyLabel}` : label}
       aria-current={active ? 'true' : undefined}
       className={cn(
-        'flex h-9 w-9 items-center justify-center rounded-xl transition',
+        'relative flex h-9 w-9 items-center justify-center rounded-xl transition',
         active
           ? (dark ? 'bg-zinc-800 text-teal-400' : 'bg-zinc-100 text-teal-600')
           : (dark ? 'text-zinc-400 hover:bg-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'),
       )}
     >
       {icon}
+      {busy ? (
+        <span
+          data-testid="portal-session-running"
+          className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-teal-400"
+        />
+      ) : null}
     </button>
   )
 }

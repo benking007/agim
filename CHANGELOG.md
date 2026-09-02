@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Busy web turn replaced by a second `message`**: a reconnect /
+  hydration / duplicate send on the same `web-*` thread used to
+  `abort()` the live AbortController (chat: 「用户打断了执行」) and
+  `createInlineJob` a new parent while the previous job was still
+  tracked. Follow-ups are now held until Stop or the current turn
+  ends; exact-duplicate prompts are ignored. `AbortError` text no
+  longer counts as a user Stop. `get-history` rekey moves
+  `webRunAborts` + ActiveRun with the persisted thread id.
 - **Portal session islands**: switching conversations no longer resets
   the shared composer / transcript window. Drafts, attachments, and
   queued steers are keyed by `web-*` thread; in-memory chat islands

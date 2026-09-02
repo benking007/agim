@@ -561,6 +561,7 @@
       "steerQueueEdit": "Re-edit",
       "steerQueueHint": "Agent is working — extras wait in this queue",
       "steerQueueAfterTurn": "Will send after this turn",
+      "heldWhileBusy": "Current turn is still running — will send after it finishes",
       "voice": "Voice input",
       "voiceHold": "Hold to talk",
       "voiceListening": "Listening…",

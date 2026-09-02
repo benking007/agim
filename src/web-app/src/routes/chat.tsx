@@ -43,6 +43,7 @@ import { LlmSettingsDialog } from '@/components/chat/llm-settings-dialog'
 import { ChatActivityBlock } from '@/components/chat/chat-activity-block'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { activityFollowSignal } from '@/lib/activity-follow-signal'
+import { shouldFlushHeldSends } from '@/lib/flush-held-sends'
 
 /** Keep the Todo card out of the SPA entry budget (same pattern as MessageActions). */
 const ChatTodoList = lazy(async () => {
@@ -181,13 +182,20 @@ export default function ChatRoute(): JSX.Element {
     setPendingSends([])
   }
 
+  const wasBusyRef = useRef(false)
   useEffect(() => {
-    if (busy) return
+    const wasBusy = wasBusyRef.current
+    wasBusyRef.current = busy
+    if (!shouldFlushHeldSends({
+      wasBusy,
+      isBusy: busy,
+      historyLoading: state.historyLoading,
+    })) return
     const ready = pendingSends.filter((item) => item.flushAfter)
     if (ready.length === 0) return
     setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
     for (const item of ready) send(item.text)
-  }, [busy, pendingSends, send])
+  }, [busy, pendingSends, send, state.historyLoading])
 
   function onSubmit(): void {
     const v = input.trim()

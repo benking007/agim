@@ -54,6 +54,66 @@ export const webRunAborts = new Map<string, AbortController>()
 export const USER_INTERRUPTED_TEXT = '用户打断了执行'
 
 /**
+ * Follow-ups that arrived while a turn is still running. A second WS
+ * `message` used to abort the live AbortController (chat: 用户打断了执行)
+ * and start a new parent job. Hold them until Stop or the current turn
+ * ends — reconnect / hydration must not replace a live job.
+ */
+const heldMessagesByThread = new Map<string, string[]>()
+
+export function rekeyWebRunState(oldId: string, newId: string): void {
+  if (!oldId || !newId || oldId === newId) return
+  const ac = webRunAborts.get(oldId)
+  if (ac) {
+    webRunAborts.delete(oldId)
+    if (!webRunAborts.has(newId)) webRunAborts.set(newId, ac)
+  }
+  const held = heldMessagesByThread.get(oldId)
+  if (held?.length) {
+    heldMessagesByThread.delete(oldId)
+    const dest = heldMessagesByThread.get(newId) ?? []
+    dest.push(...held)
+    heldMessagesByThread.set(newId, dest)
+  }
+}
+
+export function _resetHeldWebMessagesForTests(): void {
+  heldMessagesByThread.clear()
+}
+
+export function _peekHeldWebMessagesForTests(threadId: string): string[] {
+  return [...(heldMessagesByThread.get(threadId) ?? [])]
+}
+
+function holdWebMessage(threadId: string, text: string): number {
+  const q = heldMessagesByThread.get(threadId) ?? []
+  q.push(text)
+  heldMessagesByThread.set(threadId, q)
+  return q.length
+}
+
+function takeNextHeldWebMessage(threadId: string): string | undefined {
+  const q = heldMessagesByThread.get(threadId)
+  if (!q?.length) return undefined
+  const next = q.shift()
+  if (q.length === 0) heldMessagesByThread.delete(threadId)
+  else heldMessagesByThread.set(threadId, q)
+  return next
+}
+
+async function lastWebUserText(threadId: string): Promise<string> {
+  try {
+    const hist = await sessionManager.getSessionWithHistory('web', 'web', threadId)
+    if (!hist) return ''
+    for (let i = hist.messages.length - 1; i >= 0; i--) {
+      const m = hist.messages[i]
+      if (m?.role === 'user' && typeof m.content === 'string') return m.content.trim()
+    }
+  } catch { /* optional */ }
+  return ''
+}
+
+/**
  * Terminal WS frames (`done` / `run-finish` / `error`).
  * Always stash a copy — half-open sockets can still report readyState=OPEN
  * (no emit_dropped) while the browser is already gone. Flush on the next
@@ -450,6 +510,26 @@ export async function handleClientMessage(
       // default message path aborts + starts a new run). Portal busy
       // composer uses steer; this is the fallback when `send('/plan off')`
       // arrives while a turn is blocked on agim_exit_plan_mode.
+      if (webRunAborts.has(sessionThreadId) && parsed.type !== 'plan') {
+        const lastUser = await lastWebUserText(sessionThreadId)
+        if (lastUser && lastUser === text) {
+          logger.info({
+            event: 'web.message.duplicate_ignored',
+            threadId: sessionThreadId,
+          }, 'ignored duplicate send while a turn is in flight')
+          emit({ type: 'message-accepted', queued: false, threadId: sessionThreadId })
+          return
+        }
+        const queued = holdWebMessage(sessionThreadId, text)
+        logger.info({
+          event: 'web.message.held_while_busy',
+          threadId: sessionThreadId,
+          queued,
+        }, 'held follow-up until the in-flight turn ends (did not abort)')
+        emit({ type: 'message-held', text, threadId: sessionThreadId })
+        return
+      }
+
       if (parsed.type === 'plan' && webRunAborts.has(sessionThreadId)) {
         try {
           await applyWebPlanSlash({
@@ -584,9 +664,8 @@ export async function handleClientMessage(
         startedAt: new Date(runStartedAt).toISOString(),
       })
 
-      // Abort any previous in-flight run on this thread, then bind a fresh
-      // controller so the Stop button (WS `stop`) can interrupt the CLI.
-      webRunAborts.get(sessionThreadId)?.abort()
+      // Stop is the only path that aborts a live turn. A second `message`
+      // is held above so reconnect / hydration cannot replace the job.
       const runAbort = new AbortController()
       webRunAborts.set(sessionThreadId, runAbort)
       const onParentAbort = (): void => {
@@ -857,7 +936,6 @@ export async function handleClientMessage(
         })
       } catch (err) {
         const aborted = runAbort.signal.aborted
-          || (err instanceof Error && (err.name === 'AbortError' || /abort/i.test(err.message)))
         const errorMsg = aborted
           ? USER_INTERRUPTED_TEXT
           : (err instanceof Error ? err.message : String(err))
@@ -904,6 +982,19 @@ export async function handleClientMessage(
       } finally {
         if (webRunAborts.get(sessionThreadId) === runAbort) {
           webRunAborts.delete(sessionThreadId)
+        }
+        const nextHeld = takeNextHeldWebMessage(sessionThreadId)
+        if (nextHeld) {
+          void handleClientMessage(
+            client,
+            { type: 'message', text: nextHeld, agent: client.agent },
+            defaultAgent,
+            onRekey,
+            tokenId,
+            threadOwners,
+            clients,
+            accountUserId,
+          )
         }
       }
       break
@@ -1043,6 +1134,7 @@ export async function handleClientMessage(
       // treat it as the authoritative session key going forward — but
       // only after ownership checks (token map + disk ownerUserId).
       const wantedThreadId = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
+      const { rekeyActiveRun } = await import('./active-runs.js')
       const rekey = await applyWebHistoryRekey({
         wantedThreadId,
         clientId,
@@ -1053,6 +1145,8 @@ export async function handleClientMessage(
           const oldId = clientId
           client.id = nextThreadId
           clientId = nextThreadId
+          rekeyWebRunState(oldId, nextThreadId)
+          rekeyActiveRun(oldId, nextThreadId)
           onRekey?.(oldId, nextThreadId)
         },
         onRefuse: async () => {

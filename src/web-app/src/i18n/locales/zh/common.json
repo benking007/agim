@@ -561,6 +561,7 @@
       "steerQueueEdit": "重新编辑",
       "steerQueueHint": "Agent 工作中，补充会先排队",
       "steerQueueAfterTurn": "将在本轮结束后发送",
+      "heldWhileBusy": "当前任务仍在执行，已排队到本轮结束后发送",
       "voice": "语音输入",
       "voiceHold": "按住说话",
       "voiceListening": "我在听",

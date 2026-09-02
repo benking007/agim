@@ -191,6 +191,50 @@ async function applyWebPlanSlash(opts: {
   return reply
 }
 
+/** Mid-turn supplement: inject into the live Agim run. Does not abort. */
+async function applyWebSteer(opts: {
+  client: ClientConnection
+  text: string
+  accountUserId?: string
+  emit: (data: Record<string, unknown>) => void
+}): Promise<boolean> {
+  const threadId = opts.client.id
+  const text = opts.text.trim()
+  if (!text) return false
+  if (!webRunAborts.get(threadId)) {
+    opts.emit({ type: 'error', message: '当前没有正在执行的任务' })
+    return false
+  }
+  const planArgs = parsePlanSlashArgs(text)
+  if (planArgs !== null) {
+    await applyWebPlanSlash({
+      client: opts.client,
+      text,
+      args: planArgs,
+      accountUserId: opts.accountUserId,
+      emit: opts.emit,
+    })
+    opts.emit({ type: 'steer-accepted', text, mode: 'live' })
+    return true
+  }
+  if (!isAgimAgentId(opts.client.agent)) {
+    opts.emit({
+      type: 'error',
+      message: '当前 Agent 不支持本轮补充，请等本轮结束后再发，或点终止。',
+    })
+    return false
+  }
+  await sessionManager.addMessage('web', 'web', threadId, {
+    role: 'user',
+    content: text,
+    timestamp: new Date(),
+  })
+  interruptLoopSend('web', 'web', threadId, text)
+  const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', threadId), text)
+  opts.emit({ type: 'steer-accepted', text, mode, threadId })
+  return true
+}
+
 // ─── Send helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -520,12 +564,27 @@ export async function handleClientMessage(
           emit({ type: 'message-accepted', queued: false, threadId: sessionThreadId })
           return
         }
+        if (isAgimAgentId(client.agent)) {
+          logger.info({
+            event: 'web.message.absorbed_as_steer',
+            threadId: sessionThreadId,
+          }, 'absorbed mid-turn follow-up as steer (did not abort / new job)')
+          try {
+            await applyWebSteer({ client, text, accountUserId, emit })
+          } catch (err) {
+            emit({
+              type: 'error',
+              message: err instanceof Error ? err.message : String(err),
+            })
+          }
+          return
+        }
         const queued = holdWebMessage(sessionThreadId, text)
         logger.info({
           event: 'web.message.held_while_busy',
           threadId: sessionThreadId,
           queued,
-        }, 'held follow-up until the in-flight turn ends (did not abort)')
+        }, 'held CLI follow-up until the in-flight turn ends (did not abort)')
         emit({ type: 'message-held', text, threadId: sessionThreadId })
         return
       }
@@ -1015,46 +1074,8 @@ export async function handleClientMessage(
       // live Agim harness. Must not start a new turn / placeholder.
       const text = msg.text?.trim() ?? ''
       if (!text) break
-      if (!webRunAborts.get(clientId)) {
-        emit({ type: 'error', message: '当前没有正在执行的任务' })
-        break
-      }
-      const planArgs = parsePlanSlashArgs(text)
-      if (planArgs !== null) {
-        // `/plan off` typed while busy used to land as 【本轮补充】, so the
-        // harness stay ON and agim_write_file kept hard-denying.
-        try {
-          await applyWebPlanSlash({
-            client,
-            text,
-            args: planArgs,
-            accountUserId,
-            emit,
-          })
-          emit({ type: 'steer-accepted', text, mode: 'live' })
-        } catch (err) {
-          emit({
-            type: 'error',
-            message: err instanceof Error ? err.message : String(err),
-          })
-        }
-        break
-      }
-      if (!isAgimAgentId(client.agent)) {
-        emit({ type: 'error', message: '当前 Agent 不支持本轮补充，请等本轮结束后再发，或点终止。' })
-        break
-      }
       try {
-        await sessionManager.addMessage('web', 'web', clientId, {
-          role: 'user',
-          content: text,
-          timestamp: new Date(),
-        })
-        // Loop L3 must see 打断发送 even if the harness only absorbs after
-        // the current stream/tool batch (or the parent turn is aborted).
-        interruptLoopSend('web', 'web', clientId, text)
-        const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', clientId), text)
-        emit({ type: 'steer-accepted', text, mode })
+        await applyWebSteer({ client, text, accountUserId, emit })
       } catch (err) {
         emit({
           type: 'error',

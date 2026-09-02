@@ -543,6 +543,13 @@ export function AgentPortal(): JSX.Element {
         else send(body)
         return
       }
+      // Agim live turn: inject immediately so the harness stops and
+      // reads the supplement. Do not queue (that waited until idle)
+      // and do not send() (that used to abort + open a new parent job).
+      if (canSteerLive) {
+        steer(body)
+        return
+      }
       if (canStop) {
         setPendingSends((cur) => [
           ...cur,

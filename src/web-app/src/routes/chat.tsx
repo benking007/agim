@@ -206,6 +206,10 @@ export default function ChatRoute(): JSX.Element {
     }
     stickToBottom()
     setInput('')
+    if (canSteerLive) {
+      steer(v)
+      return
+    }
     if (busy) {
       setPendingSends((cur) => [
         ...cur,

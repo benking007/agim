@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Per-turn Subagent dispatch cap 6 → 12**:
+  `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` default is now 12 (`call_agent`
+  plus each `call_agents` task). The `call_agents` `tasks[]` hard ceiling
+  is also 12 so one batch can fill the new turn budget. In-batch
+  concurrency (`AGIM_SUBAGENT_PARALLEL_MAX`, default 3) is unchanged.
 - **Subagent / Agim turn wall clock 60 → 120 minutes**:
   `AGIM_NATIVE_TURN_TIMEOUT_MS` default is now 2 h, aligned with A2A
   (`AGIM_A2A_TIMEOUT_DEFAULT_MS`). CLI idle watchdog

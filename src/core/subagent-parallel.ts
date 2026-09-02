@@ -4,16 +4,16 @@
  * Concept: docs/architecture/orchestration-roadmap.md §Phase B
  * Naming: docs/naming.md (AGIM_SUBAGENT_PARALLEL*)
  *
- * Defaults (product choice 2026-07-29):
+ * Defaults (product choice 2026-09-02):
  *   AGIM_SUBAGENT_PARALLEL        ON when unset
  *   AGIM_SUBAGENT_PARALLEL_MAX    3  (in-batch concurrency)
- *   AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN  6  (raised from 3)
+ *   AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN  12  (raised from 6)
  */
 
 export const SUBAGENT_PARALLEL_MAX_DEFAULT = 3
-export const CALL_AGENT_MAX_PER_TURN_DEFAULT = 6
+export const CALL_AGENT_MAX_PER_TURN_DEFAULT = 12
 /** Hard ceiling on tasks[] length regardless of env (abuse guard). */
-export const CALL_AGENTS_TASKS_HARD_MAX = 8
+export const CALL_AGENTS_TASKS_HARD_MAX = 12
 
 /** Parallel fan-out for mcp__agim__call_agents. Default ON; set 0|off|false|no to serialize. */
 export function isSubagentParallelEnabled(): boolean {
@@ -31,7 +31,7 @@ export function getSubagentParallelMax(): number {
   return Math.min(n, CALL_AGENTS_TASKS_HARD_MAX)
 }
 
-/** Per-turn call_agent + call_agents task budget. Default 3; 0 disables. */
+/** Per-turn call_agent + call_agents task budget. Default 12; 0 disables. */
 export function getCallAgentMaxPerTurn(): number {
   const raw = process.env.AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN
   if (raw === undefined || raw.trim() === '') return CALL_AGENT_MAX_PER_TURN_DEFAULT

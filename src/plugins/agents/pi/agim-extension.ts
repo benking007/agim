@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { createConnection, type Socket } from 'node:net'
 import {
+  CALL_AGENT_MAX_PER_TURN_DEFAULT,
   CALL_AGENTS_TASKS_HARD_MAX,
   getSubagentParallelMax,
   isSubagentParallelEnabled,
@@ -424,7 +425,7 @@ export default function agimPiExtension(pi: PiExtensionApi): void {
     name: 'mcp__agim__call_agents',
     label: 'Agim call agents',
     description:
-      'Spawn MULTIPLE Subagents in one call (fan-out / join). Prefer ≤6 independent lanes. '
+      `Spawn MULTIPLE Subagents in one call (fan-out / join). Prefer ≤${CALL_AGENT_MAX_PER_TURN_DEFAULT} independent lanes. `
       + `Hard max ${CALL_AGENTS_TASKS_HARD_MAX} tasks. Loop Engineering stays Agim-only.`,
     promptSnippet: 'Fan-out Subagent dispatch (call_agents).',
     parameters: {

@@ -35,6 +35,7 @@ import {
   getFocusOn,
   setFocus,
 } from './focus.js'
+import { CALL_AGENTS_TASKS_HARD_MAX } from './subagent-parallel.js'
 
 const log = rootLogger.child({ component: 'loop-run' })
 
@@ -1909,7 +1910,7 @@ export function noteLoopDispatch(
   if (input.tasks && input.tasks.length > 0) {
     run.lastPlan = {
       at: Date.now(),
-      tasks: input.tasks.slice(0, 8).map((t, i) => ({
+      tasks: input.tasks.slice(0, CALL_AGENTS_TASKS_HARD_MAX).map((t, i) => ({
         id: (t.id || `t${i + 1}`).slice(0, 40),
         brief: (t.brief || '').slice(0, 200),
         ...(t.agentHint ? { agentHint: t.agentHint.slice(0, 80) } : {}),

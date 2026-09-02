@@ -69,7 +69,7 @@ callAgentByName → Subagent job + activity + Portal 卡片
 |-------|------|------|
 | `AGIM_SUBAGENT_PARALLEL` | on | batch 是否并行 |
 | `AGIM_SUBAGENT_PARALLEL_MAX` | 3 | 单次 batch 并发上限 |
-| `CALL_AGENTS_TASKS_HARD_MAX` | 8 | `tasks[]` 硬顶 |
+| `CALL_AGENTS_TASKS_HARD_MAX` | 12 | `tasks[]` 硬顶 |
 
 Join：**allSettled**（工具层 ok；按 lane 报 ok/error）。  
 深度 / 自调用 / ACL：既有 A2A（`AGIM_A2A_*`）。
@@ -163,7 +163,7 @@ callee **看不到**父会话 history。brief 至少含：目标 / 输出格式 
 | 现象 | 常见原因 | 处理 |
 |------|----------|------|
 | CLI 说「我不会 call_agent」 | MCP/extension 未挂上，或模型拒用工具 | `agim doctor`；看该 adapter 的 MCP 注入；明确要求「用 mcp__agim__call_agent」 |
-| `tasks.length exceeds hard max` | 超过 `CALL_AGENTS_TASKS_HARD_MAX`（8） | 拆批或减 lane |
+| `tasks.length exceeds hard max` | 超过 `CALL_AGENTS_TASKS_HARD_MAX`（12） | 拆批或减 lane |
 | lane `ok:false` + depth/self-call | A2A 深度或自调用禁令 | 换目标 agent / 降嵌套 |
 | Portal 无 Subagent 卡片 | 未走 bus / runId 丢失 | 确认会话在 Agim 托管的 sticky 轮次内（非裸终端 CLI） |
 | 想用 `/loop` 但无 `loop_verdict` | 当前 sticky 是 CLI | `/agim` 后再 `/loop` |

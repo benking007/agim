@@ -9,6 +9,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ApprovalBus, threadKey, type RunContext } from '../../../core/approval-bus.js'
+import { CALL_AGENTS_TASKS_HARD_MAX } from '../../../core/subagent-parallel.js'
 import { ApprovalClient, buildServer } from './mcp-approval-server.js'
 
 const RUN_ID = 'run-test-1'
@@ -236,7 +237,7 @@ describe('mcp-approval-server', () => {
   })
 
   it('call_agents rejects oversized tasks[] via ApprovalClient', async () => {
-    const tooMany = Array.from({ length: 9 }, (_, i) => ({
+    const tooMany = Array.from({ length: CALL_AGENTS_TASKS_HARD_MAX + 1 }, (_, i) => ({
       agent: `x-${i}`,
       prompt: `lane ${i}`,
     }))

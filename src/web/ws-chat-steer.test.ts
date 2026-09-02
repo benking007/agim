@@ -5,6 +5,7 @@ import { startLoop, getActiveLoop } from '../core/loop-run.js'
 import { setFocus } from '../core/focus.js'
 import { _resetTurnSteer, registerLiveSteer } from '../core/turn-steer.js'
 import { handlePlanCommand } from '../core/commands/plan.js'
+import { createInlineJob, getJob, jobThreadKey, markJobRunning } from '../core/job-board.js'
 import { handleClientMessage, webRunAborts, bindWsClients, notifyAccountSessionsChanged } from './ws-chat.js'
 
 function fakeWs(): { ws: WebSocket; sent: Record<string, unknown>[] } {
@@ -68,7 +69,7 @@ describe('handleClientMessage steer', () => {
     ))).toBe(true)
   })
 
-  it('records 打断发送 on an active Loop so the snippet sees it', async () => {
+  it('records 吸入本轮 on an active Loop so the snippet sees it', async () => {
     const threadId = `web-loop-steer-${Date.now()}`
     setFocus({ platform: 'web', channelId: 'web', threadId, userId: 'u1', title: 'loop' })
     const started = startLoop({
@@ -91,6 +92,40 @@ describe('handleClientMessage steer', () => {
     unreg()
     const run = getActiveLoop('web', 'web', threadId)
     expect(run?.userSteers?.some((s) => s.text.includes('nginx'))).toBe(true)
+  })
+
+  it('does not cancel in-flight Subagents when absorbing a mid-turn steer', async () => {
+    const threadId = `web-loop-steer-keep-${Date.now()}`
+    setFocus({ platform: 'web', channelId: 'web', threadId, userId: 'u1', title: 'loop' })
+    const started = startLoop({
+      platform: 'web',
+      channelId: 'web',
+      threadId,
+      userId: 'u1',
+      text: '修好超时；退出条件为最多3轮',
+    })
+    if (!started.ok) return
+    await sessionManager.getOrCreateSession('web', 'web', threadId, 'agim')
+    webRunAborts.set(threadId, new AbortController())
+    const jobId = createInlineJob({
+      agent: 'agim',
+      prompt: 'worker',
+      threadKey: jobThreadKey('web', 'web', threadId),
+      callDepth: 1,
+    })
+    if (jobId <= 0) return
+    expect(markJobRunning(jobId)).toBe(true)
+    const unreg = registerLiveSteer(`web:web:${threadId}`, async () => {})
+    const { ws } = fakeWs()
+    await handleClientMessage(
+      { ws, id: threadId, agent: 'agim' },
+      { type: 'steer', text: '补充：继续查 nginx，不要停子代理' },
+      'agim',
+    )
+    unreg()
+    expect(getJob(jobId)?.status).toBe('running')
+    const run = getActiveLoop('web', 'web', threadId)
+    expect(run?.userSteers?.some((s) => s.text.includes('不要停子代理'))).toBe(true)
   })
 
   it('treats /plan off as a command, not a mid-turn supplement', async () => {

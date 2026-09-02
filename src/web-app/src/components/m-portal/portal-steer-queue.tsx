@@ -76,8 +76,8 @@ export function PortalSteerQueue({
                     : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800',
                 )}
                 data-testid="steer-queue-send"
-                title={t('chat.portal.steerQueueSendHint', { defaultValue: 'Interrupt this turn and send' })}
-                aria-label={t('chat.portal.steerQueueSendHint', { defaultValue: 'Interrupt this turn and send' })}
+                title={t('chat.portal.steerQueueSendHint', { defaultValue: 'Add to this turn; in-flight Subagents keep running' })}
+                aria-label={t('chat.portal.steerQueueSendHint', { defaultValue: 'Add to this turn; in-flight Subagents keep running' })}
               >
                 <span>{t('chat.portal.steerQueueSend', { defaultValue: 'Steer' })}</span>
                 <CornerDownLeft className="h-3 w-3" />

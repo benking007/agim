@@ -18,11 +18,12 @@ All notable changes to this project will be documented in this file.
   hydration / duplicate send on the same `web-*` thread used to
   `abort()` the live AbortController (chat: 「用户打断了执行」) and
   `createInlineJob` a new parent. Agim follow-ups are now absorbed
-  as mid-turn **steer** (harness stops the current send and reads
-  the supplement; parent job stays). Exact-duplicate prompts are
-  ignored. CLI follow-ups are held until the turn ends. Only
-  explicit Stop paints 「用户打断了执行」. `get-history` rekey moves
-  `webRunAborts` + ActiveRun with the persisted thread id.
+  as mid-turn **steer** (parent job stays; in-flight Subagents keep
+  running; the next Loop hop reads the supplement). Exact-duplicate
+  prompts are ignored. CLI follow-ups are held until the turn ends.
+  Only explicit Stop paints 「用户打断了执行」 and cancels children.
+  `get-history` rekey moves `webRunAborts` + ActiveRun with the
+  persisted thread id.
 - **Portal session islands**: switching conversations no longer resets
   the shared composer / transcript window. Drafts, attachments, and
   queued steers are keyed by `web-*` thread; in-memory chat islands

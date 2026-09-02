@@ -554,7 +554,7 @@
       "enqueue": "Queue",
       "steerQueue": "Pending messages",
       "steerQueueSend": "Steer",
-      "steerQueueSendHint": "Interrupt this turn and send",
+      "steerQueueSendHint": "Add to this turn; in-flight Subagents keep running",
       "jumpToLatest": "Scroll to latest",
       "steerQueueDismiss": "Delete",
       "steerQueueMore": "More",

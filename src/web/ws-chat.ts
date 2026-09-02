@@ -22,7 +22,7 @@ import {
   sanitizeUserText,
 } from '../core/logger.js'
 import { dispatchTurnSteer, threadSteerKey } from '../core/turn-steer.js'
-import { interruptLoopSend, noteLoopUserSteer } from '../core/loop-run.js'
+import { noteLoopUserSteer } from '../core/loop-run.js'
 import { isAgimAgentId } from '../core/naming-migrate.js'
 import type { ChatMessage } from '../core/types.js'
 import { isStepReflectDisabled, isStepReflectEnabled } from '../core/llm/step-reflect.js'
@@ -229,7 +229,9 @@ async function applyWebSteer(opts: {
     content: text,
     timestamp: new Date(),
   })
-  interruptLoopSend('web', 'web', threadId, text)
+  // Mid-turn supplement: inject into this turn. Do not cancel in-flight
+  // Subagents — those keep running; the next Loop step sees the note.
+  noteLoopUserSteer('web', 'web', threadId, { text, kind: 'steer' })
   const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', threadId), text)
   opts.emit({ type: 'steer-accepted', text, mode, threadId })
   return true

@@ -54,10 +54,10 @@ export const webRunAborts = new Map<string, AbortController>()
 export const USER_INTERRUPTED_TEXT = '用户打断了执行'
 
 /**
- * Follow-ups that arrived while a turn is still running. A second WS
- * `message` used to abort the live AbortController (chat: 用户打断了执行)
- * and start a new parent job. Hold them until Stop or the current turn
- * ends — reconnect / hydration must not replace a live job.
+ * CLI follow-ups that arrived while a turn is still running. Agim
+ * mid-turn `message` is absorbed as steer (does not abort). A second
+ * `message` used to abort the live controller (chat: 用户打断了执行)
+ * and start a new parent job.
  */
 const heldMessagesByThread = new Map<string, string[]>()
 

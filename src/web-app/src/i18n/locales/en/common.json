@@ -559,7 +559,7 @@
       "steerQueueDismiss": "Delete",
       "steerQueueMore": "More",
       "steerQueueEdit": "Re-edit",
-      "steerQueueHint": "Agent is working — extras wait in this queue",
+      "steerQueueHint": "While Agim is working, Enter injects into this turn; other agents queue",
       "steerQueueAfterTurn": "Will send after this turn",
       "heldWhileBusy": "Current turn is still running — will send after it finishes",
       "voice": "Voice input",

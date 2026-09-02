@@ -69,7 +69,7 @@ callAgentByName → Subagent job + activity + Portal 卡片
 |-------|------|------|
 | `AGIM_SUBAGENT_PARALLEL` | on | batch 是否并行 |
 | `AGIM_SUBAGENT_PARALLEL_MAX` | 3 | 单次 batch 并发上限 |
-| `CALL_AGENTS_TASKS_HARD_MAX` | 8 | `tasks[]` 硬顶 |
+| `CALL_AGENTS_TASKS_HARD_MAX` | 12 | `tasks[]` 硬顶 |
 
 Join：**allSettled**（工具层 ok；按 lane 报 ok/error）。  
 深度 / 自调用 / ACL：既有 A2A（`AGIM_A2A_*`）。

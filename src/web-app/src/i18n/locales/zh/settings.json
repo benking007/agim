@@ -739,7 +739,7 @@
       "title": "Native call_agent 上限",
       "description": "一次对话内 mcp__agim__call_agent 允许的最多次数。防止 native 死循环委托给 CLI agent。0 = 无限。",
       "envKey": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN",
-      "valueLabel": "默认 6"
+      "valueLabel": "默认 12"
     },
     "platformBlacklist": {
       "title": "IM 平台黑名单",
@@ -1060,7 +1060,7 @@
     "callAgentInProcess": "agim→agim 内置快速路径",
     "callAgentInProcessHint": "AGIM_NATIVE_CALL_AGENT_IN_PROCESS。开启后走进程内快路径；默认关，走完整 A2A（任务/审计对等）。",
     "callAgentMaxPerTurn": "单轮调用上限",
-    "callAgentMaxPerTurnHint": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN。0 = 不限。默认 6（call_agent + call_agents 任务均计入）。",
+    "callAgentMaxPerTurnHint": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN。0 = 不限。默认 12（call_agent + call_agents 任务均计入）。",
     "planModeCard": "Plan 模式",
     "planModeDesc": "Plan 模式让 Agent 先思考、规划再动手。可设置默认状态，以及按关键词自动进入。",
     "planModeDefault": "PlanMode 默认状态",

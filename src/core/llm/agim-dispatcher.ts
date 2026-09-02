@@ -62,6 +62,7 @@ import {
 } from '../subagent-heuristics.js'
 import { getAgentProfilesCatalogForPrompt } from '../agent-profiles.js'
 import {
+  CALL_AGENT_MAX_PER_TURN_DEFAULT,
   CALL_AGENTS_TASKS_HARD_MAX,
   getCallAgentMaxPerTurn,
   getSubagentParallelMax,
@@ -471,7 +472,7 @@ export function getAgimTools(): ToolDef[] {
             maxItems: CALL_AGENTS_TASKS_HARD_MAX,
             description:
               `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). `
-              + 'Prefer ≤6 lanes (per-turn cap). Each prompt must be self-contained. '
+              + `Prefer ≤${CALL_AGENT_MAX_PER_TURN_DEFAULT} lanes (per-turn cap). Each prompt must be self-contained. `
               + 'Do not assign two writers to the same file.',
             items: {
               type: 'object',
@@ -680,7 +681,7 @@ export function buildAgimDispatcher(ctx: AgimDispatcherCtx): ToolDispatcher {
   }
 
   // Per-turn call_agent + call_agents task budget. Closure is per dispatcher
-  // instance (native rebuilds each turn). Default 6; AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN=0 disables.
+  // instance (native rebuilds each turn). Default 12; AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN=0 disables.
   const callAgentMaxPerTurn = getCallAgentMaxPerTurn()
   // v1.2.139 — track call history (not just count) so the cap_exceeded
   // refusal can name which agents the model already invoked and whether

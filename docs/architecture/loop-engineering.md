@@ -472,7 +472,7 @@ API：`GET /api/loop?threadId=&lang=zh|en` → `LoopStatusDto`（`bucket` / `buc
 | `AGIM_LOOP_AUTO_VERIFY` | off | 父回合死后 cheap 补 `loop_verdict`（读本轮 job 结果）；失败回落 `verify_skipped` |
 | `AGIM_LOOP_WAKE_TIMEOUT_MS` | `600000` | 一次 cron 唤醒父回合上限 |
 | `AGIM_LOOPS_DIR` | `~/.agim/loops` | Loop JSON 目录（测试可覆盖） |
-| `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | `6` | 每 **user turn** 的 `call_agent` + `call_agents` 任务预算（Loop 多轮共用同一 turn 时见 §6.6） |
+| `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` | `12` | 每 **user turn** 的 `call_agent` + `call_agents` 任务预算（Loop 多轮共用同一 turn 时见 §6.6） |
 
 ### 6.6 Turn 委托上限 × 派工门（防 R2 死锁）
 

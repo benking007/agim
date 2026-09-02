@@ -739,7 +739,7 @@
       "title": "Native call_agent cap",
       "description": "Max mcp__agim__call_agent invocations per turn. Prevents native from spinning on infinite delegations. 0 = unlimited.",
       "envKey": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN",
-      "valueLabel": "default 6"
+      "valueLabel": "default 12"
     },
     "platformBlacklist": {
       "title": "IM platform blacklist",
@@ -1060,7 +1060,7 @@
     "callAgentInProcess": "Agim→Agim built-in path",
     "callAgentInProcessHint": "AGIM_NATIVE_CALL_AGENT_IN_PROCESS. On enables the in-process fast path; default off uses full A2A (job/audit parity).",
     "callAgentMaxPerTurn": "Calls per turn cap",
-    "callAgentMaxPerTurnHint": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN. 0 = unlimited. Default 6 (counts call_agent + each call_agents task).",
+    "callAgentMaxPerTurnHint": "AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN. 0 = unlimited. Default 12 (counts call_agent + each call_agents task).",
     "planModeCard": "Plan mode",
     "planModeDesc": "Plan mode makes the agent think and plan before acting. Set the default state and optional auto-enter on plan-intent keywords.",
     "planModeDefault": "PlanMode default state",

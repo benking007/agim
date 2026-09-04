@@ -5,7 +5,12 @@
  * observed to keep Chinese as .notdef tofu when the face never settles
  * (e.g. prior /fonts/ 302→login). Calling FontFace.load() forces a real
  * network fetch + registration even if CSS discovery is flaky.
+ *
+ * unicodeRange is required: without it FontFace claims every code point,
+ * including emoji, and WKWebView paints [?]/Agim CJK has no emoji glyphs).
  */
+import { AGIM_CJK_UNICODE_RANGE } from './cjk-unicode-range'
+
 export function ensureCjkFonts(): void {
   if (typeof document === 'undefined' || !('fonts' in document)) return
   const faces: Array<{ weight: string; url: string }> = [
@@ -23,7 +28,12 @@ export function ensureCjkFonts(): void {
       const ff = new FontFace(
         'Agim CJK',
         `url(${face.url}) format('woff2')`,
-        { weight: face.weight, style: 'normal', display: 'swap' },
+        {
+          weight: face.weight,
+          style: 'normal',
+          display: 'swap',
+          unicodeRange: AGIM_CJK_UNICODE_RANGE,
+        },
       )
       void ff.load().then((loaded) => {
         document.fonts.add(loaded)

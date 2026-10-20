@@ -147,7 +147,9 @@ describe('bridge connection settings', () => {
     expect(body.guideUrl).toBe('https://calls.example/api/bridge/caller-access')
     expect(body.callerPrompt.includes(body.raw)).toBe(true)
     expect(body.callerPrompt.includes('https://calls.example')).toBe(true)
-    expect(body.callerPrompt.includes('按对接页实现，不要等更多说明')).toBe(true)
+    expect(body.callerPrompt.includes('这是来自云端的Agent，可以通过以下方式连接这个Agent，连接完成后，可以向他发送任务安排，并在完成任务后，把任务执行情况返回给你')).toBe(true)
+    expect(body.callerPrompt.includes('按对接页实现，不要等更多说明')).toBe(false)
+    expect(body.callerPrompt.includes('【含密钥，只此一次】')).toBe(false)
     expect(contract.includes(body.raw)).toBe(false)
     expect(body.callerPrompt.includes('timeoutMs')).toBe(false)
 

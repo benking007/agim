@@ -64,4 +64,24 @@ describe('access-token last_used_at throttle (F5)', () => {
     createToken('t')
     expect(verifyToken('agim_deadbeef')).toBeNull()
   })
+
+  it('keeps a missing role as admin and does not treat bridge as admin', async () => {
+    const { createToken, getTokenRole, isAdminTokenId, getTokensFilePath } = await import('./access-token.js')
+    const admin = createToken('admin-default')
+    const user = createToken('member', { role: 'user' })
+    const bridge = createToken('bridge', { role: 'bridge' })
+    expect(getTokenRole(admin.id)).toBe('admin')
+    expect(isAdminTokenId(admin.id)).toBe(true)
+    expect(getTokenRole(user.id)).toBe('user')
+    expect(isAdminTokenId(user.id)).toBe(false)
+    expect(getTokenRole(bridge.id)).toBe('bridge')
+    expect(isAdminTokenId(bridge.id)).toBe(false)
+    const file = JSON.parse(readFileSync(getTokensFilePath(), 'utf-8')) as {
+      tokens: Array<{ id: string; role?: string }>
+    }
+    const legacy = file.tokens[0]
+    delete legacy.role
+    writeFileSync(getTokensFilePath(), JSON.stringify({ tokens: file.tokens }, null, 2))
+    expect(getTokenRole(legacy.id)).toBe('admin')
+  })
 })

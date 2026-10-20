@@ -46,7 +46,7 @@
     "src/web/ws-chat.ts",
     "src/web/ws-history-rekey.ts"
   ],
-  "count": 172,
+  "count": 174,
   "endpoints": [
     {
       "method": "DELETE",
@@ -159,6 +159,12 @@
     {
       "method": "GET",
       "path": "/api/admin-allowlist",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/bridge/enabled",
       "source": "exact",
       "authRequired": true
     },
@@ -1023,6 +1029,12 @@
     {
       "method": "POST",
       "path": "/api/workspaces",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/bridge/enabled",
       "source": "exact",
       "authRequired": true
     },

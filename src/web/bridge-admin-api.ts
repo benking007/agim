@@ -16,6 +16,7 @@ import {
   saveBridgePeers,
   type BridgePeer,
 } from '../core/bridge-peers.js'
+import { isBridgeEnabled, setBridgeEnabled } from '../core/bridge-switch.js'
 import { getRequestUserId, requireAdmin } from './auth.js'
 import {
   buildBridgeCallerPrompt,
@@ -251,6 +252,21 @@ export async function handleBridgeAdminApi(
   if (!requireAdmin(req, res)) return true
   const m = (req.method || 'GET').toUpperCase()
 
+  if (p === '/api/admin/bridge/enabled' && m === 'GET') {
+    sendJson(res, 200, { enabled: isBridgeEnabled() })
+    return true
+  }
+  if (p === '/api/admin/bridge/enabled' && m === 'PUT') {
+    const body = await readJson(req, res)
+    if (!body) return true
+    if (typeof body.enabled !== 'boolean') {
+      sendError(res, 400, 'VALIDATION', { message: 'enabled must be a boolean' })
+      return true
+    }
+    const enabled = await setBridgeEnabled(body.enabled)
+    sendJson(res, 200, { enabled })
+    return true
+  }
   if (p === '/api/admin/bridge/tokens' && m === 'GET') {
     await handleListTokens(req, res)
     return true

@@ -99,6 +99,7 @@
   "bridge": {
     "title": "连接设置",
     "subtitle": "生成 bridge 范围令牌，并管理已经连接的调用方。原文和含令牌的提示只在创建成功时出现一次。",
+    "turnOn": "打开桥接",
     "tokensTitle": "桥接令牌",
     "tokenLabel": "名称",
     "tokenCreate": "生成",

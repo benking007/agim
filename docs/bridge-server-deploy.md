@@ -34,20 +34,21 @@
 
 在服务器上执行 `agim --version`，确认不少于这次合并带上的版本（合并前已发布的是 v1.6.41），再做后面的步骤。
 
-## 2. 环境变量，然后重启
+## 2. 打开桥接
 
-写到运行该进程的用户的 `~/.agim/env`（设置了 `AGIM_HOME` 就写到那个目录的 `env`）。若 systemd 单元用 `Environment=` 写了同名变量，单元优先，文件补不进去，两处都要改成下面的值。改完执行 `agim restart`。
+管理员打开 `https://dev.myfund.work/settings/advanced/bridge`（设置 → 高级 → 连接设置），打开「打开桥接」。开关写在 `~/.agim/config.json` 的 `bridgeEnabled`。当前进程立刻生效，不必为了这个开关改环境变量或重启。关掉之后 `POST /api/bridge/runs` 仍是 404，`code` 为 `NOT_FOUND`，不创建作业。
+
+回环策略仍写到运行该进程的用户的 `~/.agim/env`（设置了 `AGIM_HOME` 就写到那个目录的 `env`）。若 systemd 单元用 `Environment=` 写了同名变量，单元优先。改完执行 `agim restart`。
 
 ```
-AGIM_BRIDGE_ENABLED=1
 AGIM_TRUST_LOOPBACK=off
 ```
-
-`AGIM_BRIDGE_ENABLED` 只有 `1`、`true`、`on`、`yes`（忽略大小写）才算开。未设置时 `/api/bridge/*` 由桥接模块返回 404，`code` 为 `NOT_FOUND`，不创建作业。
 
 不要设置 `AGIM_WEB_AUTH=off`。未设置就是鉴权开着；只有值 `off` 会关掉整站鉴权。桥接令牌即使在鉴权关掉时也仍然必填，但这次保持整站鉴权开启。
 
 前面是 Caddy。反代把外部请求变成回环，必须显式 `AGIM_TRUST_LOOPBACK=off`（`0`、`false`、`no` 也同样是关）。
+
+已经把 `AGIM_BRIDGE_ENABLED` 写成 `0`、`off`、`false` 或 `no` 的机器仍是强制关闭。未设置时以连接设置为准。旧机器也可以只用 `AGIM_BRIDGE_ENABLED=1` 打开，不必先改这台机器的环境变量。
 
 重启后用**管理员**会话区分桥接开关（不带令牌的 401 带 `loginUrl`，那是整站门，进不了桥接模块）：
 

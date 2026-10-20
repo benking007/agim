@@ -25,16 +25,13 @@ import {
 } from './job-board.js'
 import { routeMessage, type RouteContext } from './router.js'
 import type { ParsedMessage } from './types.js'
+import { isBridgeEnabled } from './bridge-switch.js'
 import { workspaceRegistry } from './workspace.js'
 
 export const BRIDGE_PROMPT_MAX_CODE_POINTS = 32_000
 export const BRIDGE_TIMEOUT_ERROR = 'bridge_timeout'
 
-const ENABLED = new Set(['1', 'true', 'on', 'yes'])
-
-export function isBridgeEnabled(): boolean {
-  return ENABLED.has((process.env.AGIM_BRIDGE_ENABLED || '').trim().toLowerCase())
-}
+export { isBridgeEnabled }
 
 export type BridgeCallbackStatus = 'none' | 'pending' | 'sending' | 'delivered' | 'giving_up'
 

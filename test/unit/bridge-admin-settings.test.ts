@@ -123,11 +123,12 @@ describe('bridge connection settings', () => {
     expect(res.body.includes('1200000')).toBe(true)
     expect(res.body.includes('终态只看 GET')).toBe(true)
     expect(res.body.includes('只轮询')).toBe(true)
-    expect(res.body.includes('自动审批若开着，写文件、部署、对外发消息可能不等待人工点允许就执行')).toBe(true)
-    expect(res.body.includes('只读任务可以照常 POST，调用方可以继续提交')).toBe(true)
-    expect(res.body.includes('不要发验通')).toBe(false)
-    expect(res.body.includes('先不要验通')).toBe(false)
-    expect(res.body.includes('没确认之前')).toBe(false)
+    expect(res.body.includes('请把本提示中的连接方式和对接页做成一个 skill，之后都通过这个 skill 连接 Agim、发送任务，并在任务完成后把执行情况返回。')).toBe(true)
+    expect(res.body.includes('审批')).toBe(false)
+    expect(res.body.includes('waiting_approval')).toBe(false)
+    expect(res.body.includes('验通')).toBe(false)
+    expect(res.body.includes('放行')).toBe(false)
+    expect(res.body.includes('不要发')).toBe(false)
   })
 
   it('creates a bridge token once and puts only the secret and base in the handoff', async () => {

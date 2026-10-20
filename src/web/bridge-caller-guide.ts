@@ -108,8 +108,8 @@ export function bridgeCallerGuideUrl(base: string): string {
 export function buildBridgeCallerPrompt(rawToken: string, baseUrl: string): string {
   const base = baseUrl.replace(/\/+$/, '')
   return [
-    '【含密钥，只此一次】关闭页面后不能再生成，也不能再查看令牌原文。',
-    '按对接页实现，不要等更多说明。对接页没有令牌。',
+    '这是来自云端的Agent，该Agent名字叫：Agim，可以通过以下方式连接这个Agent，连接完成后，可以向他发送任务安排，并在完成任务后，把任务执行情况返回给你',
+    '请把本提示中的连接方式和对接页做成一个 skill，之后都通过这个 skill 连接 Agim、发送任务，并在任务完成后把执行情况返回。',
     '',
     `基址：${base}`,
     `对接页：${bridgeCallerGuideUrl(base)}`,

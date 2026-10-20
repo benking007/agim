@@ -35,6 +35,8 @@ const publicRoutes = new Set([
 // expressions. Keeping this map explicit makes additions reviewable.
 const dynamicRoutes = {
   jobIdMatch: [['GET', '/api/jobs/:id']],
+  bridgeRunMatch: [['GET', '/api/bridge/runs/:runId']],
+  bridgeCancelMatch: [['POST', '/api/bridge/runs/:runId/cancel']],
   jobCancelMatch: [['POST', '/api/jobs/:id/cancel']],
   jobRunMatch: [['POST', '/api/jobs/:id/run']],
   bgjobIdMatch: [['GET', '/api/bgjobs/:id']],

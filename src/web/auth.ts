@@ -114,10 +114,14 @@ export function extractToken(req: IncomingMessage, url: URL): string | null {
     const v = auth.slice(7).trim()
     if (v) return v
   }
-  // 2. Cookie agim_token=<token>
+  // 2. X-Agim-Token: <token>  (scripts and the bridge caller)
+  const headerToken = req.headers?.['x-agim-token']
+  const fromHeader = Array.isArray(headerToken) ? headerToken[0] : headerToken
+  if (typeof fromHeader === 'string' && fromHeader.trim()) return fromHeader.trim()
+  // 3. Cookie agim_token=<token>
   const fromCookie = readCookie(req, 'agim_token')
   if (fromCookie) return fromCookie
-  // 3. ?token=...  (deprecated — kept for WS upgrade / iframe compat)
+  // 4. ?token=...  (deprecated — kept for WS upgrade / iframe compat)
   //
   // R13 A5 — query-string tokens leak to:
   //   * browser history / bookmarks
@@ -181,7 +185,7 @@ export function verifyTokenSync(raw: string): string | null {
 
 export interface WebIdentity {
   kind: 'auth-off' | 'loopback' | 'session' | 'token'
-  role: 'admin' | 'user'
+  role: 'admin' | 'user' | 'bridge'
   userId?: string
   tokenId?: string
   username?: string
@@ -232,6 +236,17 @@ export function resolveWebIdentity(req: IncomingMessage, url?: URL): WebIdentity
       const id = verifyTokenSync(tok)
       if (id && _tokenModule) {
         const tokenUserId = _tokenModule.getTokenUserId?.(id)
+        const tokenRole = _tokenModule.getTokenRole(id)
+        // Bridge scope is a property of the token. An attached account
+        // must not promote it to that account's admin/user role.
+        if (tokenRole === 'bridge') {
+          return {
+            kind: 'token',
+            role: 'bridge',
+            userId: tokenUserId,
+            tokenId: id,
+          }
+        }
         if (tokenUserId && acc) {
           const user = acc.getUserById(tokenUserId)
           if (user && !user.disabled) {
@@ -246,7 +261,7 @@ export function resolveWebIdentity(req: IncomingMessage, url?: URL): WebIdentity
         }
         return {
           kind: 'token',
-          role: _tokenModule.getTokenRole(id),
+          role: tokenRole,
           userId: tokenUserId,
           tokenId: id,
         }
@@ -274,7 +289,15 @@ export function resolveWebIdentity(req: IncomingMessage, url?: URL): WebIdentity
 export function checkAuth(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   if ((process.env.AGIM_WEB_AUTH || '').toLowerCase() === 'off') return true
   if (isPublicPath(url.pathname, req.method || 'GET')) return true
-  if (resolveWebIdentity(req, url)) return true
+  const ident = resolveWebIdentity(req, url)
+  if (ident?.role === 'bridge') {
+    const path = url.pathname
+    if (path !== '/api/bridge' && !path.startsWith('/api/bridge/')) {
+      sendError(res, 403, 'FORBIDDEN', { message: 'bridge token cannot access this path' })
+      return false
+    }
+  }
+  if (ident) return true
 
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' })

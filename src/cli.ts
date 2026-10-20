@@ -313,20 +313,34 @@ const tokenCmd = program.command('token').description('Manage web console access
 tokenCmd
   .command('create [label]')
   .description('Create a new web access token (raw value printed once)')
-  .action(async (label?: string) => {
+  .option('--role <role>', 'admin (default), user, or bridge')
+  .action(async (label?: string, opts?: { role?: string }) => {
     const { createToken } = await import('./core/access-token.js')
+    const roleRaw = (opts?.role || '').trim().toLowerCase()
+    const role = roleRaw === 'admin' || roleRaw === 'user' || roleRaw === 'bridge' ? roleRaw : undefined
+    if (roleRaw && !role) {
+      console.error('role must be admin, user, or bridge')
+      process.exitCode = 1
+      return
+    }
     let userId: string | undefined
-    try {
-      const { listUsers } = await import('./core/accounts.js')
-      userId = listUsers().find((u) => u.role === 'admin' && !u.disabled)?.id
-    } catch { /* no accounts yet */ }
-    const row = createToken(label || '', userId ? { userId } : undefined)
+    if (role !== 'bridge') {
+      try {
+        const { listUsers } = await import('./core/accounts.js')
+        userId = listUsers().find((u) => u.role === 'admin' && !u.disabled)?.id
+      } catch { /* no accounts yet */ }
+    }
+    const row = createToken(label || '', {
+      ...(role ? { role } : {}),
+      ...(userId ? { userId } : {}),
+    })
     const { resolveCliLang, t: cliT } = await import('./cli-ui/i18n.js')
     const lang = resolveCliLang()
     console.log('')
     console.log(`✓ ${cliT(lang, 'token.cli.create_ok')}`)
     console.log(`   id    : ${row.id}`)
     console.log(`   label : ${label || cliT(lang, 'token.cli.unlabeled')}`)
+    console.log(`   role  : ${row.role}`)
     console.log(`   token : ${row.raw}`)
     console.log('')
     console.log(`⚠️ ${cliT(lang, 'token.cli.create_warn')}`)
@@ -351,7 +365,7 @@ tokenCmd
       const lastUsed = r.last_used_at
         ? new Date(r.last_used_at * 1000).toISOString().replace('T', ' ').slice(0, 19)
         : cliT(lang, 'token.cli.never')
-      console.log(`  ${r.id}  label=${r.label}  created=${created}  last_used=${lastUsed}`)
+      console.log(`  ${r.id}  label=${r.label}  role=${r.role ?? 'admin'}  created=${created}  last_used=${lastUsed}`)
     }
   })
 

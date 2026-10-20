@@ -19,6 +19,7 @@ import { handleMemoryApi } from './memory-api.js'
 import { handleChatMediaApi } from './chat-media-api.js'
 import { handleServiceApi } from './service-api.js'
 import { handleJobsApi } from './jobs-api.js'
+import { handleBridgeApi } from './bridge-api.js'
 import { handleScheduleApi } from './schedule-api.js'
 import { handleEnvApi } from './env-api.js'
 import { createSerialQueue } from './serial-queue.js'
@@ -393,6 +394,11 @@ export async function startWebServer(options: {
     if (url.pathname.startsWith('/api/onboarding/')) {
       const handled = await handleOnboardingApi(req, res, url)
       if (handled) return
+    }
+
+    // Production bridge. The handler returns 404 while the feature is off.
+    if (url.pathname === '/api/bridge' || url.pathname.startsWith('/api/bridge/')) {
+      if (await handleBridgeApi(req, res, url)) return
     }
 
     // Jobs, bgjobs, subtasks, schedules, reminders, plans

@@ -54,7 +54,7 @@ function tokensFile(): string { return join(currentAgimHome(), 'tokens.json') }
 function webBootstrapTokenFile(): string { return join(currentAgimHome(), 'web-bootstrap-token') }
 const log = rootLogger.child({ component: 'access-token' })
 
-export type TokenRole = 'admin' | 'user'
+export type TokenRole = 'admin' | 'user' | 'bridge'
 
 export interface TokenRow {
   id: string
@@ -64,11 +64,11 @@ export interface TokenRow {
   created_at: number
   last_used_at: number | null
   /** Granted role. Optional on disk for back-compat with pre-R12 token
-   *  files — readers MUST treat missing field as 'admin' since that was
+   *  files — readers MUST treat a missing field as 'admin' since that was
    *  the implicit behaviour before role gating landed. New tokens
-   *  default to 'admin' too (operator-friendly); the operator can
-   *  explicitly demote by passing `role: 'user'` to createToken or via
-   *  the PATCH /api/tokens/:id endpoint. */
+   *  default to 'admin' too (operator-friendly). `user` is the member
+   *  role. `bridge` can call only `/api/bridge/*` and is never admin,
+   *  even when the field is the only thing that distinguishes it. */
   role?: TokenRole
   /** Owning local account. Missing on pre-account tokens; the first
    *  admin inherit/skip step revokes those leftovers. */
@@ -137,7 +137,7 @@ export function createToken(label: string, opts?: {
   const data = readFile()
   const raw = generateRawToken()
   const id = newId()
-  const role: TokenRole = opts?.role === 'user' ? 'user' : 'admin'
+  const role: TokenRole = opts?.role === 'user' || opts?.role === 'bridge' ? opts.role : 'admin'
   const row: TokenRow = {
     id,
     label: label || `token-${data.tokens.length + 1}`,
@@ -228,7 +228,8 @@ export function listTokens(): Array<Omit<TokenRow, 'hash'>> {
 export function getTokenRole(id: string): TokenRole {
   if (!id) return 'admin'  // empty id never returned by verifyToken; defensive default
   const row = readFile().tokens.find((t) => t.id === id)
-  return row?.role ?? 'admin'
+  if (row?.role === 'user' || row?.role === 'bridge') return row.role
+  return 'admin'
 }
 
 /** Convenience: true iff the token's role is 'admin'. */

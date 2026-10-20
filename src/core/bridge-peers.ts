@@ -35,7 +35,7 @@ export interface BridgePeer {
   /** Empty means deny every agent. */
   agents: string[]
   workspaceId: string
-  /** Null means poll only — phase 1 never POSTs a callback. */
+  /** Null means poll only. No callback is queued or sent. */
   callbackUrl: string | null
   /** Raw HMAC secret. Null when the peer does not use callbacks. */
   signingSecret: string | null

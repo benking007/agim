@@ -1251,7 +1251,8 @@ export function pruneOldJobs(d: Database.Database | null = getDb(), daysRetentio
     // by the bridge module, so a fresh install has nothing to delete.
     try {
       d.prepare(`DELETE FROM bridge_runs WHERE job_id NOT IN (SELECT id FROM jobs)`).run()
-    } catch { /* bridge_runs not created yet */ }
+      d.prepare(`DELETE FROM bridge_callbacks WHERE job_id NOT IN (SELECT id FROM jobs)`).run()
+    } catch { /* bridge tables are created on first use */ }
 
     if (total > 0) {
       rootLogger.info({

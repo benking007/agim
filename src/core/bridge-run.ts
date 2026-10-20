@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto'
 import type { Logger } from 'pino'
 import { A2A_TIMEOUT_MS_DEFAULT, A2A_TIMEOUT_MS_MAX } from './a2a.js'
 import { logInvocation } from './audit-log.js'
+import { enqueueBridgeStarted, enqueueBridgeTerminal } from './bridge-callback.js'
 import { findPeerById, type BridgePeer } from './bridge-peers.js'
 import { createLogger, generateTraceId } from './logger.js'
 import {
@@ -261,6 +262,7 @@ export function startBridgeRun(jobId: number): void {
     (current, runLogger, signal) => executeBridgeJob(current, row, runLogger, signal),
     logger,
   ).finally(() => {
+    try { enqueueBridgeTerminal(jobId) } catch { /* callback failure does not change the job */ }
     set.delete(jobId)
     if (set.size === 0) inflightByPeer.delete(peer.peerId)
     pumpPeer(peer.peerId)
@@ -341,6 +343,7 @@ async function* executeBridgeJob(
     signal: routeAbort.signal,
   }
   const parsed: ParsedMessage = { type: 'agent', agent: job.agent, prompt: job.prompt }
+  try { enqueueBridgeStarted(job.id) } catch { /* callback failure does not change the job */ }
 
   try {
     if (timedOut && !signal.aborted) {

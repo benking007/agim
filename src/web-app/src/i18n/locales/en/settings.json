@@ -99,6 +99,7 @@
   "bridge": {
     "title": "Connections",
     "subtitle": "Create bridge-scoped tokens and manage connected callers. The raw token and the handoff appear only once, when creation succeeds.",
+    "turnOn": "Turn on bridge",
     "tokensTitle": "Bridge tokens",
     "tokenLabel": "Name",
     "tokenCreate": "Create",

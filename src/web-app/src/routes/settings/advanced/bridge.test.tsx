@@ -25,6 +25,9 @@ describe('/settings/advanced/bridge', () => {
     await i18n.changeLanguage('zh')
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
+      if (url.startsWith('/api/admin/bridge/enabled')) {
+        return jsonResponse({ enabled: false })
+      }
       if (url.startsWith('/api/admin/bridge/tokens')) {
         return jsonResponse({ tokens: [], publicBaseUrl: null })
       }
@@ -44,6 +47,7 @@ describe('/settings/advanced/bridge', () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByRole('heading', { name: '连接设置' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '打开桥接' })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('heading', { name: '桥接令牌' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '已连接的调用方' })).toBeInTheDocument()
     expect(screen.getByLabelText('访问基址')).toBeInTheDocument()

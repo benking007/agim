@@ -491,6 +491,14 @@ export const api = {
   resolveWorkspacePath: (body: { path: string; agent: string }) =>
     client.post<{ ok: boolean; path: string | null; name?: string }>('/api/workspace-resolve', { body }),
 
+  /** GET /api/admin/bridge/enabled */
+  getBridgeEnabled: () =>
+    client.get<{ enabled: boolean }>('/api/admin/bridge/enabled'),
+
+  /** PUT /api/admin/bridge/enabled */
+  setBridgeEnabled: (body: { enabled: boolean }) =>
+    client.put<{ enabled: boolean }>('/api/admin/bridge/enabled', { body }),
+
   /** GET /api/admin/bridge/tokens */
   listBridgeTokens: () =>
     client.get<{

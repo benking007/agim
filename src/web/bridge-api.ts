@@ -4,7 +4,7 @@
 //   GET  /api/bridge/runs/:runId
 //   POST /api/bridge/runs/:runId/cancel
 //
-// Disabled unless AGIM_BRIDGE_ENABLED is on. A bridge-scoped token is
+// Disabled unless the admin switch (or AGIM_BRIDGE_ENABLED) is on. A bridge-scoped token is
 // required even on loopback and even when AGIM_WEB_AUTH=off. Admin tokens
 // are rejected. The caller's poll interval is not configured here.
 //

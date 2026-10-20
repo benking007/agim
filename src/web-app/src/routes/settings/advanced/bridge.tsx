@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api/endpoints'
 import { describeError } from '@/lib/api/errors'
+import { cn } from '@/lib/utils'
 
 type Issued = { raw: string; callerPrompt: string }
 type Peer = {
@@ -46,6 +47,10 @@ async function copyText(value: string): Promise<void> {
 export default function SettingsBridgeRoute(): JSX.Element {
   const { t } = useTranslation(['settings', 'common'])
   const qc = useQueryClient()
+  const enabledQuery = useQuery({
+    queryKey: ['bridge-admin', 'enabled'],
+    queryFn: () => api.getBridgeEnabled(),
+  })
   const tokensQuery = useQuery({
     queryKey: ['bridge-admin', 'tokens'],
     queryFn: () => api.listBridgeTokens(),
@@ -71,6 +76,15 @@ export default function SettingsBridgeRoute(): JSX.Element {
   const tokens = tokensQuery.data?.tokens ?? []
   const peers = peersQuery.data?.peers ?? []
   const activeTokens = tokens.filter((row) => !row.revoked)
+
+  const setEnabled = useMutation({
+    mutationFn: (enabled: boolean) => api.setBridgeEnabled({ enabled }),
+    onSuccess: async () => {
+      toast.success(t('states.saved', { ns: 'common' }))
+      await qc.invalidateQueries({ queryKey: ['bridge-admin', 'enabled'] })
+    },
+    onError: (err) => toast.error(describeError(err, t).message),
+  })
 
   const createToken = useMutation({
     mutationFn: () => api.createBridgeToken({
@@ -146,6 +160,31 @@ export default function SettingsBridgeRoute(): JSX.Element {
         <h1 className="text-xl font-semibold">{t('bridge.title')}</h1>
         <p className="text-sm text-text-dim">{t('bridge.subtitle')}</p>
       </header>
+
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4">
+        <span id="bridge-enabled-label" className="text-sm font-medium">{t('bridge.turnOn')}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-labelledby="bridge-enabled-label"
+          aria-checked={enabledQuery.data?.enabled === true}
+          disabled={enabledQuery.isLoading || setEnabled.isPending}
+          onClick={() => setEnabled.mutate(enabledQuery.data?.enabled !== true)}
+          className={cn(
+            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            enabledQuery.data?.enabled ? 'bg-accent' : 'border border-border bg-surface-2',
+          )}
+        >
+          <span
+            className={cn(
+              'inline-block h-5 w-5 rounded-full bg-white shadow transition-transform',
+              enabledQuery.data?.enabled ? 'translate-x-5' : 'translate-x-0.5',
+            )}
+          />
+        </button>
+      </section>
 
       <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
         <div className="flex items-center gap-2">

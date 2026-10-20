@@ -278,4 +278,41 @@ describe('bridge connection settings', () => {
     expect(rejected.statusCode).toBe(400)
     expect(peers.loadBridgePeers().some((row) => row.peerId === 'next')).toBe(false)
   })
+
+  it('stays closed until an admin opens the bridge in this process', async () => {
+    delete process.env.AGIM_BRIDGE_ENABLED
+    async function postRun() {
+      const res = mockRes()
+      await bridgeApi.handleBridgeApi(
+        mockReq({ method: 'POST', path: '/api/bridge/runs', body: '{}' }),
+        res,
+        new URL('/api/bridge/runs', 'http://localhost'),
+      )
+      return res
+    }
+    const closed = await postRun()
+    expect(closed.statusCode).toBe(404)
+    expect(JSON.parse(closed.body).code).toBe('NOT_FOUND')
+
+    const denied = await callAdmin({
+      method: 'PUT',
+      path: '/api/admin/bridge/enabled',
+      token: userRaw,
+      body: JSON.stringify({ enabled: true }),
+    })
+    expect(denied.statusCode).toBe(403)
+    expect((await postRun()).statusCode).toBe(404)
+
+    const opened = await callAdmin({
+      method: 'PUT',
+      path: '/api/admin/bridge/enabled',
+      token: adminRaw,
+      body: JSON.stringify({ enabled: true }),
+    })
+    expect(opened.statusCode).toBe(200)
+    expect(JSON.parse(opened.body).enabled).toBe(true)
+    const saved = JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')) as { bridgeEnabled?: boolean }
+    expect(saved.bridgeEnabled).toBe(true)
+    expect((await postRun()).statusCode).not.toBe(404)
+  })
 })

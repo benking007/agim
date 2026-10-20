@@ -116,6 +116,8 @@ export type ChatIncoming =
   | { type: 'steer-accepted'; text: string; mode: 'live' | 'queued'; threadId?: string }
   /** Server received the chat frame (before the serial handler / job start). */
   | { type: 'message-accepted'; clientMsgId?: string; queued?: boolean; threadId?: string }
+  /** Follow-up arrived while a turn is live — queued until that turn ends. */
+  | { type: 'message-held'; text: string; threadId?: string }
   /**
    * Server refused rekey to a foreign threadId (owned by another token).
    * SPA must persist `threadId` and continue — history for the new

@@ -62,6 +62,7 @@ const SESSION_SCOPED_FRAMES = new Set<ChatIncoming['type']>([
   'loop-changed',
   'loop-schedule-changed',
   'steer-accepted',
+  'message-held',
 ])
 
 // ---------------------------------------------------------------------------
@@ -459,6 +460,12 @@ export function makeOnIncoming(
         return
       case 'steer-accepted':
         // Optimistic APPEND_USER already painted the bubble.
+        return
+      case 'message-held':
+        toast.message(i18n.t('chat.portal.heldWhileBusy', {
+          ns: 'common',
+          defaultValue: 'Current turn is still running — will send after it finishes',
+        }))
         return
       case 'message-accepted':
         if (msg.clientMsgId) {

@@ -72,7 +72,7 @@ import {
   buildLoopSnippet,
   forceLoopExitSkippedVerify,
   formatLoopEndedSummary,
-  interruptLoopSend,
+  noteLoopUserSteer,
   maybeEnforceLoopExit,
 } from '../../../core/loop-run.js'
 import { formatSubagentLabel, parseCallAgentTarget } from '../../../core/subagent.js'
@@ -2114,7 +2114,10 @@ export class NativeAgentAdapter implements AgentAdapter {
         : `agim:${sessionId}`
       unregisterSteer = registerLiveSteer(steerKey, async (text) => {
         if (loopScope) {
-          interruptLoopSend(loopScope.platform, loopScope.channelId, loopScope.threadId, text)
+          noteLoopUserSteer(loopScope.platform, loopScope.channelId, loopScope.threadId, {
+            text,
+            kind: 'steer',
+          })
           const nextSnippet = buildLoopSnippet(
             loopScope.platform,
             loopScope.channelId,
@@ -2122,7 +2125,7 @@ export class NativeAgentAdapter implements AgentAdapter {
           )
           ephemeralSteer = [
             ephemeralSteer,
-            '【用户打断了本轮发送】先停下来读用户补充。这优先于本轮 HARD WAIT / 在途派工。不要把已取消的发送当成仍有效。',
+            '【用户本轮补充】先停下来读用户补充，再决定是否调整方案，然后继续本轮。在途子代理继续跑，不要取消它们，也不要把它们当成已失效。',
             nextSnippet,
           ].filter(Boolean).join('\n\n')
         } else {

@@ -56,7 +56,7 @@ describe('PortalSteerQueue', () => {
         onReedit={() => {}}
       />,
     )
-    expect(screen.getByTestId('steer-queue-send')).toHaveTextContent('打断发送')
+    expect(screen.getByTestId('steer-queue-send')).toHaveTextContent('吸入本轮')
     syncI18nLanguage('en')
   })
 })

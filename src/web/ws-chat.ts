@@ -22,7 +22,7 @@ import {
   sanitizeUserText,
 } from '../core/logger.js'
 import { dispatchTurnSteer, threadSteerKey } from '../core/turn-steer.js'
-import { interruptLoopSend, noteLoopUserSteer } from '../core/loop-run.js'
+import { noteLoopUserSteer } from '../core/loop-run.js'
 import { isAgimAgentId } from '../core/naming-migrate.js'
 import type { ChatMessage } from '../core/types.js'
 import { isStepReflectDisabled, isStepReflectEnabled } from '../core/llm/step-reflect.js'
@@ -52,6 +52,66 @@ export interface ClientConnection {
 export const webRunAborts = new Map<string, AbortController>()
 
 export const USER_INTERRUPTED_TEXT = '用户打断了执行'
+
+/**
+ * CLI follow-ups that arrived while a turn is still running. Agim
+ * mid-turn `message` is absorbed as steer (does not abort). A second
+ * `message` used to abort the live controller (chat: 用户打断了执行)
+ * and start a new parent job.
+ */
+const heldMessagesByThread = new Map<string, string[]>()
+
+export function rekeyWebRunState(oldId: string, newId: string): void {
+  if (!oldId || !newId || oldId === newId) return
+  const ac = webRunAborts.get(oldId)
+  if (ac) {
+    webRunAborts.delete(oldId)
+    if (!webRunAborts.has(newId)) webRunAborts.set(newId, ac)
+  }
+  const held = heldMessagesByThread.get(oldId)
+  if (held?.length) {
+    heldMessagesByThread.delete(oldId)
+    const dest = heldMessagesByThread.get(newId) ?? []
+    dest.push(...held)
+    heldMessagesByThread.set(newId, dest)
+  }
+}
+
+export function _resetHeldWebMessagesForTests(): void {
+  heldMessagesByThread.clear()
+}
+
+export function _peekHeldWebMessagesForTests(threadId: string): string[] {
+  return [...(heldMessagesByThread.get(threadId) ?? [])]
+}
+
+function holdWebMessage(threadId: string, text: string): number {
+  const q = heldMessagesByThread.get(threadId) ?? []
+  q.push(text)
+  heldMessagesByThread.set(threadId, q)
+  return q.length
+}
+
+function takeNextHeldWebMessage(threadId: string): string | undefined {
+  const q = heldMessagesByThread.get(threadId)
+  if (!q?.length) return undefined
+  const next = q.shift()
+  if (q.length === 0) heldMessagesByThread.delete(threadId)
+  else heldMessagesByThread.set(threadId, q)
+  return next
+}
+
+async function lastWebUserText(threadId: string): Promise<string> {
+  try {
+    const hist = await sessionManager.getSessionWithHistory('web', 'web', threadId)
+    if (!hist) return ''
+    for (let i = hist.messages.length - 1; i >= 0; i--) {
+      const m = hist.messages[i]
+      if (m?.role === 'user' && typeof m.content === 'string') return m.content.trim()
+    }
+  } catch { /* optional */ }
+  return ''
+}
 
 /**
  * Terminal WS frames (`done` / `run-finish` / `error`).
@@ -129,6 +189,52 @@ async function applyWebPlanSlash(opts: {
   const sess = await sessionManager.getExistingSession('web', 'web', threadId)
   opts.emit({ type: 'plan-mode', enabled: !!sess?.planMode })
   return reply
+}
+
+/** Mid-turn supplement: inject into the live Agim run. Does not abort. */
+async function applyWebSteer(opts: {
+  client: ClientConnection
+  text: string
+  accountUserId?: string
+  emit: (data: Record<string, unknown>) => void
+}): Promise<boolean> {
+  const threadId = opts.client.id
+  const text = opts.text.trim()
+  if (!text) return false
+  if (!webRunAborts.get(threadId)) {
+    opts.emit({ type: 'error', message: '当前没有正在执行的任务' })
+    return false
+  }
+  const planArgs = parsePlanSlashArgs(text)
+  if (planArgs !== null) {
+    await applyWebPlanSlash({
+      client: opts.client,
+      text,
+      args: planArgs,
+      accountUserId: opts.accountUserId,
+      emit: opts.emit,
+    })
+    opts.emit({ type: 'steer-accepted', text, mode: 'live' })
+    return true
+  }
+  if (!isAgimAgentId(opts.client.agent)) {
+    opts.emit({
+      type: 'error',
+      message: '当前 Agent 不支持本轮补充，请等本轮结束后再发，或点终止。',
+    })
+    return false
+  }
+  await sessionManager.addMessage('web', 'web', threadId, {
+    role: 'user',
+    content: text,
+    timestamp: new Date(),
+  })
+  // Mid-turn supplement: inject into this turn. Do not cancel in-flight
+  // Subagents — those keep running; the next Loop step sees the note.
+  noteLoopUserSteer('web', 'web', threadId, { text, kind: 'steer' })
+  const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', threadId), text)
+  opts.emit({ type: 'steer-accepted', text, mode, threadId })
+  return true
 }
 
 // ─── Send helpers ─────────────────────────────────────────────────────────────
@@ -450,6 +556,41 @@ export async function handleClientMessage(
       // default message path aborts + starts a new run). Portal busy
       // composer uses steer; this is the fallback when `send('/plan off')`
       // arrives while a turn is blocked on agim_exit_plan_mode.
+      if (webRunAborts.has(sessionThreadId) && parsed.type !== 'plan') {
+        const lastUser = await lastWebUserText(sessionThreadId)
+        if (lastUser && lastUser === text) {
+          logger.info({
+            event: 'web.message.duplicate_ignored',
+            threadId: sessionThreadId,
+          }, 'ignored duplicate send while a turn is in flight')
+          emit({ type: 'message-accepted', queued: false, threadId: sessionThreadId })
+          return
+        }
+        if (isAgimAgentId(client.agent)) {
+          logger.info({
+            event: 'web.message.absorbed_as_steer',
+            threadId: sessionThreadId,
+          }, 'absorbed mid-turn follow-up as steer (did not abort / new job)')
+          try {
+            await applyWebSteer({ client, text, accountUserId, emit })
+          } catch (err) {
+            emit({
+              type: 'error',
+              message: err instanceof Error ? err.message : String(err),
+            })
+          }
+          return
+        }
+        const queued = holdWebMessage(sessionThreadId, text)
+        logger.info({
+          event: 'web.message.held_while_busy',
+          threadId: sessionThreadId,
+          queued,
+        }, 'held CLI follow-up until the in-flight turn ends (did not abort)')
+        emit({ type: 'message-held', text, threadId: sessionThreadId })
+        return
+      }
+
       if (parsed.type === 'plan' && webRunAborts.has(sessionThreadId)) {
         try {
           await applyWebPlanSlash({
@@ -584,9 +725,8 @@ export async function handleClientMessage(
         startedAt: new Date(runStartedAt).toISOString(),
       })
 
-      // Abort any previous in-flight run on this thread, then bind a fresh
-      // controller so the Stop button (WS `stop`) can interrupt the CLI.
-      webRunAborts.get(sessionThreadId)?.abort()
+      // Stop is the only path that aborts a live turn. A second `message`
+      // is held above so reconnect / hydration cannot replace the job.
       const runAbort = new AbortController()
       webRunAborts.set(sessionThreadId, runAbort)
       const onParentAbort = (): void => {
@@ -857,7 +997,6 @@ export async function handleClientMessage(
         })
       } catch (err) {
         const aborted = runAbort.signal.aborted
-          || (err instanceof Error && (err.name === 'AbortError' || /abort/i.test(err.message)))
         const errorMsg = aborted
           ? USER_INTERRUPTED_TEXT
           : (err instanceof Error ? err.message : String(err))
@@ -905,6 +1044,19 @@ export async function handleClientMessage(
         if (webRunAborts.get(sessionThreadId) === runAbort) {
           webRunAborts.delete(sessionThreadId)
         }
+        const nextHeld = takeNextHeldWebMessage(sessionThreadId)
+        if (nextHeld) {
+          void handleClientMessage(
+            client,
+            { type: 'message', text: nextHeld, agent: client.agent },
+            defaultAgent,
+            onRekey,
+            tokenId,
+            threadOwners,
+            clients,
+            accountUserId,
+          )
+        }
       }
       break
     }
@@ -924,46 +1076,8 @@ export async function handleClientMessage(
       // live Agim harness. Must not start a new turn / placeholder.
       const text = msg.text?.trim() ?? ''
       if (!text) break
-      if (!webRunAborts.get(clientId)) {
-        emit({ type: 'error', message: '当前没有正在执行的任务' })
-        break
-      }
-      const planArgs = parsePlanSlashArgs(text)
-      if (planArgs !== null) {
-        // `/plan off` typed while busy used to land as 【本轮补充】, so the
-        // harness stay ON and agim_write_file kept hard-denying.
-        try {
-          await applyWebPlanSlash({
-            client,
-            text,
-            args: planArgs,
-            accountUserId,
-            emit,
-          })
-          emit({ type: 'steer-accepted', text, mode: 'live' })
-        } catch (err) {
-          emit({
-            type: 'error',
-            message: err instanceof Error ? err.message : String(err),
-          })
-        }
-        break
-      }
-      if (!isAgimAgentId(client.agent)) {
-        emit({ type: 'error', message: '当前 Agent 不支持本轮补充，请等本轮结束后再发，或点终止。' })
-        break
-      }
       try {
-        await sessionManager.addMessage('web', 'web', clientId, {
-          role: 'user',
-          content: text,
-          timestamp: new Date(),
-        })
-        // Loop L3 must see 打断发送 even if the harness only absorbs after
-        // the current stream/tool batch (or the parent turn is aborted).
-        interruptLoopSend('web', 'web', clientId, text)
-        const mode = await dispatchTurnSteer(threadSteerKey('web', 'web', clientId), text)
-        emit({ type: 'steer-accepted', text, mode })
+        await applyWebSteer({ client, text, accountUserId, emit })
       } catch (err) {
         emit({
           type: 'error',
@@ -1043,6 +1157,7 @@ export async function handleClientMessage(
       // treat it as the authoritative session key going forward — but
       // only after ownership checks (token map + disk ownerUserId).
       const wantedThreadId = typeof msg.threadId === 'string' ? msg.threadId.trim() : ''
+      const { rekeyActiveRun } = await import('./active-runs.js')
       const rekey = await applyWebHistoryRekey({
         wantedThreadId,
         clientId,
@@ -1053,6 +1168,8 @@ export async function handleClientMessage(
           const oldId = clientId
           client.id = nextThreadId
           clientId = nextThreadId
+          rekeyWebRunState(oldId, nextThreadId)
+          rekeyActiveRun(oldId, nextThreadId)
           onRekey?.(oldId, nextThreadId)
         },
         onRefuse: async () => {

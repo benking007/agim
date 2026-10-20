@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Per-turn Subagent dispatch cap 6 → 12**:
+  `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` default is now 12 (`call_agent`
+  plus each `call_agents` task). The `call_agents` `tasks[]` hard ceiling
+  is also 12 so one batch can fill the new turn budget. In-batch
+  concurrency (`AGIM_SUBAGENT_PARALLEL_MAX`, default 3) is unchanged.
 - **Subagent / Agim turn wall clock 60 → 120 minutes**:
   `AGIM_NATIVE_TURN_TIMEOUT_MS` default is now 2 h, aligned with A2A
   (`AGIM_A2A_TIMEOUT_DEFAULT_MS`). CLI idle watchdog
@@ -14,6 +19,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Busy web turn replaced by a second `message`**: a reconnect /
+  hydration / duplicate send on the same `web-*` thread used to
+  `abort()` the live AbortController (chat: 「用户打断了执行」) and
+  `createInlineJob` a new parent. Agim follow-ups are now absorbed
+  as mid-turn **steer** (parent job stays; in-flight Subagents keep
+  running; the next Loop hop reads the supplement). Exact-duplicate
+  prompts are ignored. CLI follow-ups are held until the turn ends.
+  Only explicit Stop paints 「用户打断了执行」 and cancels children.
+  `get-history` rekey moves `webRunAborts` + ActiveRun with the
+  persisted thread id.
 - **Portal session islands**: switching conversations no longer resets
   the shared composer / transcript window. Drafts, attachments, and
   queued steers are keyed by `web-*` thread; in-memory chat islands

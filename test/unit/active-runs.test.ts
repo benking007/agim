@@ -7,6 +7,7 @@ import {
   appendActiveRunChunk,
   finishActiveRun,
   getActiveRun,
+  rekeyActiveRun,
   clearActiveRun,
   setActiveRunInjectedContext,
   injectedContextForWire,
@@ -139,5 +140,17 @@ describe('active-runs', () => {
     const text = getActiveRun('web-t1')?.injectedContext ?? ''
     expect(text.length).toBeLessThan(huge.length)
     expect(text).toContain('[truncated')
+  })
+
+  it('rekeyActiveRun moves a live snapshot to the persisted thread id', () => {
+    startActiveRun({
+      threadId: 'web-ephemeral', runId: 'run-1', agent: 'agim', startedAt: 1000,
+    })
+    appendActiveRunChunk('web-ephemeral', 'partial')
+    rekeyActiveRun('web-ephemeral', 'web-persisted')
+    expect(getActiveRun('web-ephemeral')).toBeUndefined()
+    expect(getActiveRun('web-persisted')?.runId).toBe('run-1')
+    expect(getActiveRun('web-persisted')?.partialText).toBe('partial')
+    expect(getActiveRun('web-persisted')?.threadId).toBe('web-persisted')
   })
 })

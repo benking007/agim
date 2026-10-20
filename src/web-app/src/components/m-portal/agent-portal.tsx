@@ -50,6 +50,7 @@ import { usePortalViewportFrame } from '@/hooks/use-portal-viewport-frame'
 import { ApprovalDock } from '@/components/chat/approval-dock'
 import { AskDock } from '@/components/chat/ask-dock'
 import { activityFollowSignal } from '@/lib/activity-follow-signal'
+import { shouldFlushHeldSends } from '@/lib/flush-held-sends'
 
 const PortalLoopDock = lazy(async () => {
   const module = await import('./portal-loop-dock')
@@ -376,13 +377,20 @@ export function AgentPortal(): JSX.Element {
   const canStop = liveBusy || demoSteer
   const canSteerLive = liveBusy && (agentId === 'agim' || agentId === 'native')
 
+  const wasBusyRef = useRef(false)
   useEffect(() => {
-    if (canStop) return
+    const wasBusy = wasBusyRef.current
+    wasBusyRef.current = canStop
+    if (!shouldFlushHeldSends({
+      wasBusy,
+      isBusy: canStop,
+      historyLoading: state.historyLoading,
+    })) return
     const ready = pendingSends.filter((item) => item.flushAfter)
     if (ready.length === 0) return
     setPendingSends((cur) => cur.filter((item) => !item.flushAfter))
     for (const item of ready) send(item.text)
-  }, [canStop, pendingSends, send, setPendingSends])
+  }, [canStop, pendingSends, send, setPendingSends, state.historyLoading])
 
   const portalThreadId = state.clientId
   // Include WS status + activeRunId so reconnect / new run re-polls Loop
@@ -533,6 +541,13 @@ export function AgentPortal(): JSX.Element {
         // 【本轮补充】. Steer keeps currentReplyId on the live turn.
         if (canSteerLive) steer(body)
         else send(body)
+        return
+      }
+      // Agim live turn: inject immediately so the harness stops and
+      // reads the supplement. Do not queue (that waited until idle)
+      // and do not send() (that used to abort + open a new parent job).
+      if (canSteerLive) {
+        steer(body)
         return
       }
       if (canStop) {

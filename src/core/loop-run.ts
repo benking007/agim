@@ -35,6 +35,7 @@ import {
   getFocusOn,
   setFocus,
 } from './focus.js'
+import { CALL_AGENTS_TASKS_HARD_MAX } from './subagent-parallel.js'
 
 const log = rootLogger.child({ component: 'loop-run' })
 
@@ -214,7 +215,7 @@ export interface LoopTimelineEntry {
   summary: string
 }
 
-/** Portal "打断发送" / Stop while a Loop parent turn is live. */
+/** Portal mid-turn supplement / Stop while a Loop parent turn is live. */
 export interface LoopUserSteer {
   at: number
   round: number
@@ -298,9 +299,10 @@ export interface LoopRun {
   lastVerdict?: LoopVerdict
   timeline: LoopTimelineEntry[]
   /**
-   * Mid-turn user interrupts (Portal 打断发送 / Stop). Persisted so the
-   * next hop and later rounds' snippets still see the interrupt — L2
-   * harness.steer alone is not visible to Loop L3.
+   * Mid-turn user supplements (Portal 吸入本轮) and Stop. Persisted so
+   * the next hop and later rounds' snippets still see them — L2
+   * harness.steer alone is not visible to Loop L3. `steer` does not
+   * cancel in-flight Subagents; `abort` is the hard Stop path.
    */
   userSteers?: LoopUserSteer[]
   /**
@@ -1754,22 +1756,39 @@ export function setLoopBody(
 function formatUserSteersForSnippet(run: LoopRun): string[] {
   const items = Array.isArray(run.userSteers) ? run.userSteers : []
   if (items.length === 0) return []
-  const lines = [
-    'USER INTERRUPT (hard — supersedes HARD WAIT / in-flight send):',
-    'The user interrupted the current send. Do NOT continue cancelled output as if nothing happened.',
-    'Honor the latest interrupt before dispatch, sleep/wait, or loop_verdict.',
-  ]
-  for (const item of items.slice(-4)) {
-    const tag = item.kind === 'abort' ? 'stop' : 'steer'
-    lines.push(`  - [${tag} round ${item.round}] ${item.text}`)
+  const recent = items.slice(-4)
+  const aborts = recent.filter((item) => item.kind === 'abort')
+  const steers = recent.filter((item) => item.kind !== 'abort')
+  const lines: string[] = []
+  if (aborts.length > 0) {
+    lines.push(
+      'USER INTERRUPT (hard — supersedes HARD WAIT / in-flight send):',
+      'The user interrupted the current send. Do NOT continue cancelled output as if nothing happened.',
+      'Honor the latest interrupt before dispatch, sleep/wait, or loop_verdict.',
+    )
+    for (const item of aborts) {
+      lines.push(`  - [stop round ${item.round}] ${item.text}`)
+    }
+  }
+  if (steers.length > 0) {
+    lines.push(
+      'USER SUPPLEMENT (mid-turn — do NOT cancel in-flight Subagents):',
+      'The user added constraints for this turn. Incorporate them immediately.',
+      'In-flight Subagents keep running. Do not treat their work as cancelled.',
+      'Honor the latest supplement before dispatch, sleep/wait, or loop_verdict.',
+    )
+    for (const item of steers) {
+      lines.push(`  - [steer round ${item.round}] ${item.text}`)
+    }
   }
   return lines
 }
 
 /**
- * Record a Portal mid-turn interrupt so Loop L3 (snippet / next round)
- * sees it. No-op when no Loop is active. Dedupes identical text within 2s
- * so WS + live-harness callbacks can both call this.
+ * Record a Portal mid-turn supplement or Stop so Loop L3 (snippet /
+ * next round) sees it. No-op when no Loop is active. Dedupes identical
+ * text within 2s so WS + live-harness callbacks can both call this.
+ * Does not cancel in-flight Subagents — use `interruptLoopSend` for that.
  */
 export function noteLoopUserSteer(
   platform: string,
@@ -1804,8 +1823,10 @@ export function noteLoopUserSteer(
 }
 
 /**
- * 打断发送 while Loop is live: persist the user text, then cancel in-flight
- * Subagents so the parent is not stuck in HARD WAIT on cancelled work.
+ * Hard interrupt while Loop is live: persist the user text, then cancel
+ * in-flight Subagents so the parent is not stuck in HARD WAIT on work
+ * the user just voided. Portal mid-turn supplement uses
+ * `noteLoopUserSteer` instead and leaves children running.
  */
 export function interruptLoopSend(
   platform: string,
@@ -1889,7 +1910,7 @@ export function noteLoopDispatch(
   if (input.tasks && input.tasks.length > 0) {
     run.lastPlan = {
       at: Date.now(),
-      tasks: input.tasks.slice(0, 8).map((t, i) => ({
+      tasks: input.tasks.slice(0, CALL_AGENTS_TASKS_HARD_MAX).map((t, i) => ({
         id: (t.id || `t${i + 1}`).slice(0, 40),
         brief: (t.brief || '').slice(0, 200),
         ...(t.agentHint ? { agentHint: t.agentHint.slice(0, 80) } : {}),

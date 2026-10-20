@@ -249,6 +249,28 @@ export function getActiveRun(threadId: string): ActiveRunSnapshot | undefined {
   return runs.get(threadId)
 }
 
+/** Move a live/finished snapshot when WS get-history adopts a persisted id. */
+export function rekeyActiveRun(oldId: string, newId: string): void {
+  if (!oldId || !newId || oldId === newId) return
+  const snap = runs.get(oldId)
+  if (!snap) return
+  const existing = runs.get(newId)
+  if (existing && existing !== snap && existing.status === 'running') return
+  runs.delete(oldId)
+  snap.threadId = newId
+  runs.set(newId, snap)
+  const timer = finishTimers.get(oldId)
+  if (timer) {
+    finishTimers.delete(oldId)
+    finishTimers.set(newId, timer)
+  }
+  const injected = lastFullInjectedByThread.get(oldId)
+  if (injected) {
+    lastFullInjectedByThread.delete(oldId)
+    lastFullInjectedByThread.set(newId, injected)
+  }
+}
+
 export function clearActiveRun(threadId: string): void {
   clearFinishTimer(threadId)
   runs.delete(threadId)

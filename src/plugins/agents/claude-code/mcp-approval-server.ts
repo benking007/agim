@@ -17,6 +17,7 @@ import { z } from 'zod'
 import { createConnection, type Socket } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import {
+  CALL_AGENT_MAX_PER_TURN_DEFAULT,
   CALL_AGENTS_TASKS_HARD_MAX,
   getSubagentParallelMax,
   isSubagentParallelEnabled,
@@ -1586,7 +1587,7 @@ export function buildServer(client: ApprovalClient): McpServer {
             ...a2aInputFields,
           }),
         ).min(1).max(CALL_AGENTS_TASKS_HARD_MAX).describe(
-          `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). Prefer ≤6 lanes.`,
+          `Independent Subagent tasks (1–${CALL_AGENTS_TASKS_HARD_MAX}). Prefer ≤${CALL_AGENT_MAX_PER_TURN_DEFAULT} lanes.`,
         ),
       },
     },

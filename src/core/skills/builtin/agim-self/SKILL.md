@@ -61,12 +61,12 @@ sidecar wired:
   sub-task fits another agent.
 
 - **call_agents** — spawn **multiple** Subagents in one call
-  (`tasks[]`, prefer ≤6 independent lanes). Join is allSettled:
+  (`tasks[]`, prefer ≤12 independent lanes). Join is allSettled:
   one lane failing does not kill siblings — synthesize all results.
-  Hard max 8 tasks; concurrency via `AGIM_SUBAGENT_PARALLEL*`.
+  Hard max 12 tasks; concurrency via `AGIM_SUBAGENT_PARALLEL*`.
 
   **Agim parent only:** per-turn cap
-  `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default **6**; counts each
+  `AGIM_NATIVE_CALL_AGENT_MAX_PER_TURN` (default **12**; counts each
   `call_agent` plus each `call_agents` task; `0` = unlimited).
   CLI sticky parents use the same tools via MCP/extension but do
   **not** mirror this native turn-cap.

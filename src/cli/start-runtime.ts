@@ -693,6 +693,15 @@ export async function runStartForeground(): Promise<void> {
     console.warn('bridge resume failed:', err instanceof Error ? err.message : String(err))
   }
 
+  // Dev-side caller: advance local outbound jobs from GET. No-op when
+  // this home has no outbound targets.
+  try {
+    const { startOutboundPoller } = await import('../core/bridge-outbound.js')
+    startOutboundPoller()
+  } catch (err) {
+    console.warn('bridge outbound poller failed:', err instanceof Error ? err.message : String(err))
+  }
+
   // Reminder confirm notifier — used by reminder-rpc.ts when an agent
   // creates a high-frequency + LLM-polish reminder (those go through a
   // y/n card before landing in the DB). Plain message via the same

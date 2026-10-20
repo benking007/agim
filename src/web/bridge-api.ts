@@ -110,6 +110,10 @@ export async function handleBridgeApi(
     await handleCreateRun(req, res, url)
     return true
   }
+  if (p === '/api/bridge/callbacks' && m === 'POST') {
+    await handleOutboundCallback(req, res)
+    return true
+  }
   const bridgeCancelMatch = p.match(/^\/api\/bridge\/runs\/([^/]+)\/cancel$/)
   if (bridgeCancelMatch && m === 'POST') {
     await handleCancelRun(req, res, url, decodeURIComponent(bridgeCancelMatch[1]))
@@ -122,6 +126,24 @@ export async function handleBridgeApi(
   }
   notFound(res)
   return true
+}
+
+async function handleOutboundCallback(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const raw = await readBody(req, res)
+    const { applyOutboundCallback } = await import('../core/bridge-outbound.js')
+    const status = await applyOutboundCallback(raw, req.headers || {})
+    if (status === 401) unauthorized(res)
+    else if (status === 500) sendError(res, 500, 'INTERNAL', { message: 'callback not applied' })
+    else {
+      res.writeHead(204)
+      res.end()
+    }
+  } catch (err) {
+    const handled = (err as { handled?: boolean }).handled
+    if (handled || res.headersSent) return
+    sendError(res, 500, 'INTERNAL', { message: 'callback not applied' })
+  }
 }
 
 async function handleCreateRun(

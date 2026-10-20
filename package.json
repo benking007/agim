@@ -1,6 +1,6 @@
 {
   "name": "agim-cli",
-  "version": "1.6.37",
+  "version": "1.6.38",
   "description": "Agim (阿吉姆) — universal messenger-to-agent bridge. Run `agim` after install to open the first-run setup wizard, then chat in the Web console.",
   "type": "module",
   "bin": {

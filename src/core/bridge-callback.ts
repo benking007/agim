@@ -11,6 +11,7 @@
 import { createHmac, randomUUID } from 'node:crypto'
 import http from 'node:http'
 import https from 'node:https'
+import { eventBus } from './event-bus.js'
 import { findPeerById, validateBridgeCallbackUrl } from './bridge-peers.js'
 import { getJob, withJobsDatabase, type Job } from './job-board.js'
 import { logger as rootLogger } from './logger.js'
@@ -40,12 +41,27 @@ const SCHEMA = `
     attempts        INTEGER NOT NULL DEFAULT 0,
     next_attempt_at TEXT,
     last_error      TEXT,
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (run_id, event_type)
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 `
 
-export type BridgeCallbackType = 'run.started' | 'run.completed' | 'run.failed' | 'run.cancelled'
+export type BridgeCallbackType =
+  | 'run.started'
+  | 'run.completed'
+  | 'run.failed'
+  | 'run.cancelled'
+  | 'run.waiting_approval'
+  | 'run.progress'
+
+const PROGRESS_MIN_INTERVAL_MS = 10_000
+const lastProgressAt = new Map<string, number>()
+let bridgeNow = (): number => Date.now()
+
+/** Test hook. Production uses the wall clock and a 10 second gap. */
+export function __setBridgeClockForTests(fn: (() => number) | null): void {
+  bridgeNow = fn ?? (() => Date.now())
+  if (!fn) lastProgressAt.clear()
+}
 
 interface CallbackRow {
   id: number
@@ -123,6 +139,9 @@ function buildBody(run: RunRef, job: Job, eventType: BridgeCallbackType, eventId
     status: job.status,
   }
   if (run.correlation_id) payload.correlationId = run.correlation_id
+  if (eventType === 'run.waiting_approval' || eventType === 'run.progress') {
+    payload.status = 'running'
+  }
   if (eventType === 'run.completed') {
     const raw = job.result || ''
     const sliced = sliceCodePoints(raw, RESULT_MAX_CODE_POINTS)
@@ -170,10 +189,13 @@ function insertEvent(
 ): void {
   const peer = findPeerById(run.peer_id)
   if (!peer?.enabled || !peer.callbackUrl || !peer.signingSecret) return
-  const existing = db.prepare(
-    'SELECT id FROM bridge_callbacks WHERE run_id = ? AND event_type = ?',
-  ).get(run.run_id, eventType)
-  if (existing) return
+  const once = eventType !== 'run.progress' && eventType !== 'run.waiting_approval'
+  if (once) {
+    const existing = db.prepare(
+      'SELECT id FROM bridge_callbacks WHERE run_id = ? AND event_type = ?',
+    ).get(run.run_id, eventType)
+    if (existing) return
+  }
   const seq = Number(run.last_event_seq) + 1
   const eventId = randomUUID()
   const body = buildBody(run, job, eventType, eventId, seq)
@@ -189,9 +211,48 @@ function insertEvent(
   refreshStatus(db, run.run_id)
 }
 
+function relaxSingletonUnique(db: import('better-sqlite3').Database): void {
+  const indexes = db.prepare('PRAGMA index_list(bridge_callbacks)').all() as Array<{ name: string; unique: number }>
+  const hasPair = indexes.some((index) => {
+    if (!index.unique) return false
+    const safe = index.name.replace(/'/g, "''")
+    const cols = db.prepare(`PRAGMA index_info('${safe}')`).all() as Array<{ name: string }>
+    const names = cols.map((col) => col.name)
+    return names.includes('run_id') && names.includes('event_type')
+  })
+  if (!hasPair) return
+  db.exec(`
+    CREATE TABLE bridge_callbacks_v2 (
+      id              INTEGER PRIMARY KEY,
+      event_id        TEXT    NOT NULL UNIQUE,
+      run_id          TEXT    NOT NULL,
+      job_id          INTEGER NOT NULL,
+      peer_id         TEXT    NOT NULL,
+      event_type      TEXT    NOT NULL,
+      seq             INTEGER NOT NULL,
+      body            TEXT    NOT NULL,
+      status          TEXT    NOT NULL DEFAULT 'pending',
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      last_error      TEXT,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO bridge_callbacks_v2 (
+      id, event_id, run_id, job_id, peer_id, event_type, seq, body, status,
+      attempts, next_attempt_at, last_error, created_at
+    )
+    SELECT id, event_id, run_id, job_id, peer_id, event_type, seq, body, status,
+           attempts, next_attempt_at, last_error, created_at
+      FROM bridge_callbacks;
+    DROP TABLE bridge_callbacks;
+    ALTER TABLE bridge_callbacks_v2 RENAME TO bridge_callbacks;
+  `)
+}
+
 function withCallbackDb<T>(fn: (db: import('better-sqlite3').Database) => T): T | null {
   return withJobsDatabase((db) => {
     db.exec(SCHEMA)
+    relaxSingletonUnique(db)
     return fn(db)
   })
 }
@@ -453,10 +514,71 @@ export async function deliverDueCallbacks(opts: DeliverOptions = {}): Promise<nu
   return picked.length
 }
 
+function enqueueObservable(jobId: number, eventType: 'run.waiting_approval' | 'run.progress'): void {
+  withCallbackDb((db) => {
+    const run = loadRun(db, jobId)
+    const job = getJob(jobId)
+    if (!run || !job || job.status !== 'running') return
+    insertEvent(db, run, job, eventType)
+  })
+}
+
+/**
+ * Visible assistant text arrived. Empty text is ignored by the caller.
+ * The text is not an argument: the contract has no summary field, so the
+ * body stays on the common fields and cannot carry tool parameters.
+ * The first note for a job always emits; later notes wait 10 seconds.
+ */
+export function noteBridgeProgress(jobId: number): void {
+  try {
+    const now = bridgeNow()
+    const previous = lastProgressAt.get(String(jobId))
+    if (previous != null && now - previous < PROGRESS_MIN_INTERVAL_MS) return
+    lastProgressAt.set(String(jobId), now)
+    enqueueObservable(jobId, 'run.progress')
+  } catch (err) {
+    log.warn({ event: 'bridge-callback.progress_failed', jobId, err: String(err) },
+      'failed to enqueue run.progress')
+  }
+}
+
+export function enqueueBridgeWaitingApproval(runId: string): void {
+  if (!runId) return
+  try {
+    const jobId = withCallbackDb((db) => {
+      const row = db.prepare(
+        `SELECT job_id FROM bridge_runs WHERE run_id = ? AND direction = 'inbound'`,
+      ).get(runId) as { job_id: number } | undefined
+      return row?.job_id ?? 0
+    }) ?? 0
+    if (!jobId) return
+    enqueueObservable(jobId, 'run.waiting_approval')
+  } catch (err) {
+    log.warn({ event: 'bridge-callback.waiting_approval_failed', err: String(err) },
+      'failed to enqueue run.waiting_approval')
+  }
+}
+
+let approvalListening = false
+
+/** Top-level bridge approvals only. Tool name and input stay off the callback. */
+export function ensureBridgeApprovalListener(): void {
+  if (approvalListening) return
+  approvalListening = true
+  eventBus.on('event', (event: { type?: string; phase?: string; platform?: string; threadId?: string }) => {
+    if (event.type !== 'approval' || event.phase !== 'requested') return
+    if (event.platform !== 'bridge') return
+    const threadId = event.threadId || ''
+    if (!threadId.startsWith('bridge-')) return
+    enqueueBridgeWaitingApproval(threadId.slice('bridge-'.length))
+  })
+}
+
 let workerTimer: ReturnType<typeof setInterval> | null = null
 
 export function startBridgeCallbackWorker(): void {
   if (workerTimer) return
+  ensureBridgeApprovalListener()
   requeueStuckBridgeCallbacks()
   enqueueRestartedBridgeFailures()
   void deliverDueCallbacks().catch((err) => {

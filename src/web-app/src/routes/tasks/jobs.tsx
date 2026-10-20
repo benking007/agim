@@ -87,14 +87,16 @@ function JobsPanel(): JSX.Element {
   const page     = Math.max(1, Number(params.get('page'))     || 1)
   const perPage  = Number(params.get('per_page')) || DEFAULT_PER_PAGE
   const status   = (params.get('status') as JobStatus | null) ?? null
+  const source   = params.get('source') === 'bridge' ? 'bridge' : null
 
   const query: ListJobsQuery = useMemo(
     () => ({
       limit:  perPage,
       offset: (page - 1) * perPage,
       ...(status ? { status } : {}),
+      ...(source ? { source } : {}),
     }),
-    [page, perPage, status],
+    [page, perPage, status, source],
   )
 
   const { data, isLoading, isFetching, refetch } = useJobs(query)
@@ -275,6 +277,23 @@ function JobsPanel(): JSX.Element {
                   {t(`jobs.status.${s}`, { defaultValue: s })}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-text-dim" htmlFor="source-filter">
+            {t('jobs.filter.source')}
+          </label>
+          <Select
+            value={source ?? '__any__'}
+            onValueChange={(v) => patchParams({ source: v === 'bridge' ? 'bridge' : null })}
+          >
+            <SelectTrigger id="source-filter" className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__any__">{t('jobs.filter.sourceAny')}</SelectItem>
+              <SelectItem value="bridge">{t('jobs.filter.sourceBridge')}</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -106,7 +106,10 @@
       "agent": "Agent",
       "agentAny": "Any agent",
       "kind": "Kind",
-      "kindAny": "Any kind"
+      "kindAny": "Any kind",
+      "source": "Source",
+      "sourceAny": "All sources",
+      "sourceBridge": "Bridge"
     },
     "col": {
       "id": "ID",

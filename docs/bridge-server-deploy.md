@@ -1,0 +1,142 @@
+# 在 dev.myfund.work 上打开桥接
+
+操作员按顺序做。桥接挂在已经在跑的这台 Agim 上，对外基址是 `https://dev.myfund.work`（路径前不要再加斜杠）。调用方不是另一套 Agim，只轮询，回调 URL 留空。
+
+## 现在还不能验通
+
+下面三项本文故意空着，也不要补进仓库、工单或提示词：
+
+| 项 | 状态 |
+|---|---|
+| 桥接令牌 | 创建时只显示一次。经安全渠道交给调用方。本文不写。 |
+| 签名密钥 | 这个调用方不需要。对等方记录里保持空。 |
+| `peerId` | 登记对等方时由服务器生成/填写，发给调用方。现在没有真实值，本文不编。 |
+
+自动审批也还没有在**这台正在跑的进程**上确认。产品在 `AGIM_AUTO_APPROVE` 未设置时按关闭处理，但这不能代替在该进程上再看一次。写本文时：
+
+- `GET https://dev.myfund.work/api/health` 返回正常，Agent `agim` 可用，`uptimeSec` 为 761134。
+- 不带令牌访问 `/api/policy/auto-approve` 和 `/api/bridge/runs`，都是 401，正文是 `{"error":"unauthorized","loginUrl":"/login"}`。
+- 写作这台机器上没有 Agim 进程，读不到该进程里的 `AGIM_AUTO_APPROVE`。
+
+所以本文只写打开步骤。确认自动审批关闭、登记好对等方、并把令牌经安全渠道交出去之前，不要让调用方发验通请求。
+
+## 1. 先部署哪一层
+
+`main` 在这次合并之后含阶段 1–4（#388 轮询、#389 回调、#390 开发侧 Agim 出站、#391 审批等待与进度）。合并前已发布的 `main` 版本是 v1.6.41。阶段 4 随 [#391](https://github.com/benking007/agim/pull/391) 进入 `main`。
+
+这台进程写文档时已经连续跑了约 761134 秒，不能假定它已经加载了桥接代码。先把**含 #388 #389 #390 #391 的构建**部署到这台机器并重启。只轮询用得到的是：
+
+- `POST /api/bridge/runs`
+- `GET /api/bridge/runs/:runId`
+- `POST /api/bridge/runs/:runId/cancel`
+
+阶段 4 的「来源」筛选，以及 `run.waiting_approval`、`run.progress`，要等含 #391 的构建部署到这台机器并再次重启之后才有。打开轮询不必等这次重启。这个调用方回调 URL 为空，即使阶段 4 上了也不会收到这两则推送。
+
+在服务器上执行 `agim --version`，确认不少于这次合并带上的版本（合并前已发布的是 v1.6.41），再做后面的步骤。
+
+## 2. 环境变量，然后重启
+
+写到运行该进程的用户的 `~/.agim/env`（设置了 `AGIM_HOME` 就写到那个目录的 `env`）。若 systemd 单元用 `Environment=` 写了同名变量，单元优先，文件补不进去，两处都要改成下面的值。改完执行 `agim restart`。
+
+```
+AGIM_BRIDGE_ENABLED=1
+AGIM_TRUST_LOOPBACK=off
+```
+
+`AGIM_BRIDGE_ENABLED` 只有 `1`、`true`、`on`、`yes`（忽略大小写）才算开。未设置时 `/api/bridge/*` 由桥接模块返回 404，`code` 为 `NOT_FOUND`，不创建作业。
+
+不要设置 `AGIM_WEB_AUTH=off`。未设置就是鉴权开着；只有值 `off` 会关掉整站鉴权。桥接令牌即使在鉴权关掉时也仍然必填，但这次保持整站鉴权开启。
+
+前面是 Caddy。反代把外部请求变成回环，必须显式 `AGIM_TRUST_LOOPBACK=off`（`0`、`false`、`no` 也同样是关）。
+
+重启后用**管理员**会话区分桥接开关（不带令牌的 401 带 `loginUrl`，那是整站门，进不了桥接模块）：
+
+| 管理员访问 `POST /api/bridge/runs` | 含义 |
+|---|---|
+| 404，`code` 为 `NOT_FOUND` | 桥接仍关，或进程还是旧构建 |
+| 403，`code` 为 `FORBIDDEN` | 桥接已开。管理员令牌不能创建运行 |
+
+## 3. 在这台进程上确认自动审批是关的
+
+发出基址和 `peerId` 给调用方之前做这一步。只看 `~/.agim/env` 或进程启动时的环境不够：设置页保存会直接改当前进程。
+
+1. 管理员打开 `https://dev.myfund.work`。
+2. 聊天输入栏应显示「请求审批」。若显示「替我审批」或「替我审批·未生效」，先关掉。
+3. 用管理员会话 `GET https://dev.myfund.work/api/policy/auto-approve`。要看到 `enabled` 为 `false`。`effective` 也应为 `false`。
+4. 设置页 `https://dev.myfund.work/settings/policy` 的「自动审批」开关保持关。该开关在环境变量缺省时按关显示。页面说明文字若与开关不一致，以第 3 步的进程值为准。
+
+关闭的取值：未设置，或 `0`、`off`、`false`、`no`、空字符串。其他值都是开。开着时工具不会等满审批时间，调用方的 20 分钟墙钟也挡不住已经执行的工具。是开的就先不要把基址和 `peerId` 交出去，也不要验通。
+
+这一步本文没有代做。
+
+## 4. 创建 bridge 范围令牌
+
+在**同一个** `AGIM_HOME`、同一个运行用户下执行：
+
+```bash
+agim token create --role bridge bridge-caller
+```
+
+终端会打印 `id`、`role`（应为 `bridge`）和 `token`。`token` 只此一次。把它经安全渠道交给调用方，不要写入 `bridge-peers.json`、本文、日志或提示词。下一步只用打印出来的 `id`（形如 `tk_` 加 8 位十六进制，以终端实际输出为准）。
+
+`agim token list` 只显示哈希，找不回原始令牌。管理员令牌调用桥接会被 403，而且不会创建作业。
+
+## 5. 登记对等方
+
+编辑 `~/.agim/bridge-peers.json`（`AGIM_HOME` 下则是 `$AGIM_HOME/bridge-peers.json`），权限 `0600`。文件已存在时，只往 `peers` 加这一条，保留原有的 `outbound`。没有命令行子命令，保存后下次请求就会重读，不必为了这一文件再重启。
+
+`peerId` 在这一步由服务器填写：1–128 个字符，不能含空白或冒号。填好后把这个值发给调用方。下面两个空字符串留空时，这条记录不会被加载。
+
+```json
+{
+  "peers": [
+    {
+      "peerId": "",
+      "tokenId": "",
+      "agents": ["agim"],
+      "workspaceId": "default",
+      "callbackUrl": null,
+      "signingSecret": null,
+      "enabled": true,
+      "maxConcurrent": 1,
+      "callbackPinnedHost": null
+    }
+  ]
+}
+```
+
+- `tokenId` 填第 4 步的 `id`，不是原始令牌。
+- `agents` 必须包含 `agim`。名单为空则全部拒绝。`agim` 还得是这台进程里已注册的 Agent；写文档时健康检查里 `agim` 为可用。未注册或不在名单里都是 403，不创建作业。
+- `callbackUrl` 与 `signingSecret` 保持 `null`。这就是只轮询。不要为了桥接去开 `AGIM_ALLOW_PRIVATE_WEBHOOKS`。
+- `maxConcurrent` 写 `1`。省略时加载也会当成 1。这是该对等方同时在跑的上限，与全局作业槽（默认 3）分开计数；槽满时作业停在 `pending`。
+- `workspaceId`：新的 `peerId` 若不是任何非默认工作区的成员，必须写 `default`。若它已经是别的工作区的成员，就写那个工作区的 id。钉死的 id 必须等于按该 `peerId` 解析出来的工作区，并且工作区要存在，否则 403，不创建作业。
+
+## 6. 作业在 /tasks/jobs 怎么看见
+
+用管理员打开 `https://dev.myfund.work/tasks/jobs`（任务 → 作业）。桥接行的 `creator` 是对等方 id，普通成员的列表里没有。
+
+行会出现在最近的作业里。列是编号、Agent、提示词、状态、创建时间。状态文案：等待中（`pending`，含排队）、运行中（`running`，含等人审批）、已完成、失败、已取消。顶层工具要人点时，卡片在 `https://dev.myfund.work/tasks/approvals`，作业状态仍是运行中。
+
+管理员 `GET /api/jobs/:id` 若有旁路行，响应里带 `bridge`（`run_id`、`peer_id`、`callback_status` 等列）。只轮询时 `callback_status` 为 `none`。这里没有令牌，也没有签名密钥。
+
+尚未部署阶段 4 时，页面没有「来源」筛选。桥接行和普通对话作业在同一个列表里，用 Agent `agim` 和提示词认。
+
+## 7. 阶段 4 的来源筛选
+
+#391 已随这次合并进入 `main`。把该构建部署到这台机器并重启之后，`/tasks/jobs` 才多一个「来源」筛选，选项为「全部来源」和「桥接」。选「桥接」时地址是：
+
+`https://dev.myfund.work/tasks/jobs?source=bridge`
+
+默认列表仍包含普通对话作业。该构建尚未部署并重启时，这个筛选项不存在，按第 6 节在默认列表里看。
+
+同一版还会在**登记了回调 URL 和签名密钥**的对等方上推送 `run.waiting_approval` 和 `run.progress`。本对等方回调留空，不入队，调用方只靠 GET。
+
+## 8. 交给调用方什么
+
+自动审批已在该进程上确认关闭之后，才发出：
+
+- 基址 `https://dev.myfund.work`
+- 第 5 步填写的 `peerId`
+- 允许的 Agent 名 `agim`
+
+桥接令牌仍走安全渠道，不写进发给调用方的文档。签名密钥不发。在这三项确认完成前，不要把对接说成已经可以验通。

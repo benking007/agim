@@ -75,6 +75,8 @@ export interface ListJobsQuery extends PageQuery {
   status?: JobStatus
   agent?: string
   kind?: JobKind
+  /** `bridge` keeps only rows that have a bridge side record. */
+  source?: 'bridge'
   /** Portal automation: restrict to the signed-in account, including admins. */
   mine?: boolean
 }

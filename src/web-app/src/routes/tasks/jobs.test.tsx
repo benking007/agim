@@ -123,6 +123,51 @@ describe('/tasks/jobs', () => {
     })
   })
 
+  it('keeps conversation jobs in the default list and can filter to bridge rows', async () => {
+    Element.prototype.scrollIntoView = () => {}
+    if (!HTMLElement.prototype.hasPointerCapture) {
+      HTMLElement.prototype.hasPointerCapture = () => false
+    }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('source=bridge')) {
+        return jsonResponse({
+          jobs: [
+            { id: 9, kind: 'job', agent: 'agim', prompt: 'bridge task', status: 'running', created_at: '2026-05-18T08:02:00Z' },
+          ],
+          stats: { pending: 0, running: 1, completed: 0, failed: 0 },
+        })
+      }
+      if (url.startsWith('/api/jobs')) {
+        return jsonResponse({
+          jobs: [
+            { id: 3, kind: 'inline', agent: 'agim', prompt: 'chat turn', status: 'completed', created_at: '2026-05-18T08:00:00Z' },
+            { id: 9, kind: 'job', agent: 'agim', prompt: 'bridge task', status: 'running', created_at: '2026-05-18T08:02:00Z' },
+          ],
+          stats: { pending: 0, running: 1, completed: 1, failed: 0 },
+        })
+      }
+      return jsonResponse({})
+    })
+    renderPage()
+    await waitFor(() => {
+      const table = screen.getByRole('table')
+      expect(within(table).getByText('chat turn')).toBeInTheDocument()
+      expect(within(table).getByText('bridge task')).toBeInTheDocument()
+    })
+    expect(fetchSpy.mock.calls.some((call) => String(call[0]).includes('source=bridge'))).toBe(false)
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Source' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Bridge' }))
+    await waitFor(() => {
+      expect(fetchSpy.mock.calls.some((call) => String(call[0]).includes('source=bridge'))).toBe(true)
+      const table = screen.getByRole('table')
+      expect(within(table).getByText('bridge task')).toBeInTheDocument()
+      expect(within(table).queryByText('chat turn')).not.toBeInTheDocument()
+    })
+  })
+
   it('Subtasks tab switches the table to /api/subtasks', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     fetchSpy.mockImplementation(async (input) => {

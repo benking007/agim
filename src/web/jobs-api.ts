@@ -165,9 +165,11 @@ async function handleListJobs(req: IncomingMessage, res: ServerResponse, url: UR
     const agent = url.searchParams.get('agent') || undefined
     const kindRaw = url.searchParams.get('kind') || ''
     const kind: JobKind | undefined = (kindRaw === 'inline' || kindRaw === 'job') ? kindRaw : undefined
-    const opts: { agent?: string; kind?: JobKind; creatorId?: string; threadKeys?: string[] } = {}
+    const source = url.searchParams.get('source') === 'bridge' ? 'bridge' as const : undefined
+    const opts: { agent?: string; kind?: JobKind; source?: 'bridge'; creatorId?: string; threadKeys?: string[] } = {}
     if (agent) opts.agent = agent
     if (kind) opts.kind = kind
+    if (source) opts.source = source
     if (mine) {
       const ownerId = requestOwnerId(req)
       if (!ownerId) {

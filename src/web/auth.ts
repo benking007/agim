@@ -17,6 +17,8 @@ export const PUBLIC_EXACT_PATHS = new Set<string>([
   // CR P2c — one-shot exchange of mobile QR code → raw token (no auth yet).
   '/api/auth/exchange-mobile',
   '/api/health',
+  // Production callbacks authenticate with HMAC, not a bearer token.
+  '/api/bridge/callbacks',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use

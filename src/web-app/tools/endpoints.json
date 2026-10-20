@@ -44,7 +44,7 @@
     "src/web/ws-chat.ts",
     "src/web/ws-history-rekey.ts"
   ],
-  "count": 164,
+  "count": 165,
   "endpoints": [
     {
       "method": "DELETE",
@@ -709,6 +709,12 @@
     {
       "method": "POST",
       "path": "/api/auth/register",
+      "source": "exact",
+      "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/bridge/callbacks",
       "source": "exact",
       "authRequired": false
     },

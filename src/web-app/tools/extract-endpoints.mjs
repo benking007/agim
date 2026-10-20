@@ -27,6 +27,7 @@ const publicRoutes = new Set([
   'GET /api/auth/bootstrap-state',
   'POST /api/auth/exchange-mobile',
   'GET /api/health',
+  'POST /api/bridge/callbacks',
   'POST /api/loc',
   'GET /api/loc/info',
 ])

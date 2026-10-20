@@ -50,8 +50,20 @@ export interface BridgePeer {
   callbackPinnedHost: string | null
 }
 
+/** Caller-side record of a remote production bridge. The raw token stays in this file only. */
+export interface BridgeOutboundTarget {
+  peerId: string
+  /** Production bridge origin, no path. Example: https://agim.example */
+  baseUrl: string
+  token: string
+  /** Null when this caller only polls. */
+  signingSecret: string | null
+  agents: string[]
+}
+
 interface PeerFile {
-  peers: BridgePeer[]
+  peers?: BridgePeer[]
+  outbound?: BridgeOutboundTarget[]
 }
 
 export class BridgePeerError extends Error {
@@ -194,6 +206,81 @@ function assertPeerShape(peer: BridgePeer, index: number): void {
   }
 }
 
+function readPeerFile(): PeerFile {
+  const path = bridgePeersFile()
+  if (!existsSync(path)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as PeerFile
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writePeerFile(next: PeerFile): void {
+  const path = bridgePeersFile()
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  const payload = `${JSON.stringify(next, null, 2)}\n`
+  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(tmpPath, payload, { encoding: 'utf-8', mode: 0o600 })
+    renameSync(tmpPath, path)
+  } catch (err) {
+    try { unlinkSync(tmpPath) } catch { /* ignore */ }
+    throw err
+  }
+  try { chmodSync(path, 0o600) } catch { /* ignore non-POSIX */ }
+}
+
+function normalizeOutbound(raw: unknown): BridgeOutboundTarget | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const peerId = typeof row.peerId === 'string' ? row.peerId : ''
+  const baseUrl = typeof row.baseUrl === 'string' ? row.baseUrl.replace(/\/+$/, '') : ''
+  const token = typeof row.token === 'string' ? row.token : ''
+  if (!PEER_ID_RE.test(peerId) || !token || !baseUrl) return null
+  let parsed: URL
+  try { parsed = new URL(baseUrl) } catch { return null }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  const agents = Array.isArray(row.agents)
+    ? row.agents.filter((name): name is string => typeof name === 'string' && name.length > 0)
+    : []
+  const signingSecret = typeof row.signingSecret === 'string' && row.signingSecret
+    ? row.signingSecret
+    : null
+  return { peerId, baseUrl, token, signingSecret, agents }
+}
+
+export function loadOutboundTargets(): BridgeOutboundTarget[] {
+  const rows = readPeerFile().outbound
+  if (!Array.isArray(rows)) return []
+  const targets: BridgeOutboundTarget[] = []
+  for (const row of rows) {
+    const target = normalizeOutbound(row)
+    if (target) targets.push(target)
+  }
+  return targets
+}
+
+export function findOutboundTarget(peerId: string): BridgeOutboundTarget | null {
+  if (!peerId) return null
+  return loadOutboundTargets().find((row) => row.peerId === peerId) ?? null
+}
+
+export function saveOutboundTargets(targets: BridgeOutboundTarget[]): void {
+  const seen = new Set<string>()
+  const normalized: BridgeOutboundTarget[] = []
+  for (const target of targets) {
+    const row = normalizeOutbound(target)
+    if (!row) throw new BridgePeerError('outbound target is missing peerId, baseUrl, or token')
+    if (seen.has(row.peerId)) throw new BridgePeerError(`duplicate outbound peerId ${row.peerId}`)
+    seen.add(row.peerId)
+    normalized.push(row)
+  }
+  const current = readPeerFile()
+  writePeerFile({ peers: Array.isArray(current.peers) ? current.peers : [], outbound: normalized })
+}
+
 export async function saveBridgePeers(peers: BridgePeer[]): Promise<void> {
   const seenPeers = new Set<string>()
   const seenTokens = new Set<string>()
@@ -217,16 +304,9 @@ export async function saveBridgePeers(peers: BridgePeer[]): Promise<void> {
     if (!checked.ok) throw new BridgePeerError(`peer ${peer.peerId} callback URL: ${checked.reason}`)
   }
 
-  const path = bridgePeersFile()
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const payload = `${JSON.stringify({ peers }, null, 2)}\n`
-  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    writeFileSync(tmpPath, payload, { encoding: 'utf-8', mode: 0o600 })
-    renameSync(tmpPath, path)
-  } catch (err) {
-    try { unlinkSync(tmpPath) } catch { /* ignore */ }
-    throw err
-  }
-  try { chmodSync(path, 0o600) } catch { /* ignore non-POSIX */ }
+  const current = readPeerFile()
+  writePeerFile({
+    peers,
+    outbound: Array.isArray(current.outbound) ? current.outbound : [],
+  })
 }

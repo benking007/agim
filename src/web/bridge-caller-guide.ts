@@ -108,7 +108,7 @@ export function bridgeCallerGuideUrl(base: string): string {
 export function buildBridgeCallerPrompt(rawToken: string, baseUrl: string): string {
   const base = baseUrl.replace(/\/+$/, '')
   return [
-    '这是来自云端的Agent，可以通过以下方式连接这个Agent，连接完成后，可以向他发送任务安排，并在完成任务后，把任务执行情况返回给你',
+    '这是来自云端的Agent，该Agent名字叫：Agim，可以通过以下方式连接这个Agent，连接完成后，可以向他发送任务安排，并在完成任务后，把任务执行情况返回给你',
     '',
     `基址：${base}`,
     `对接页：${bridgeCallerGuideUrl(base)}`,

@@ -15,7 +15,8 @@
     "README.md",
     "README.zh-CN.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "docs/bridge-caller-access.md"
   ],
   "scripts": {
     "build:spa": "cd src/web-app && npm run build && cd ../.. && rm -rf src/web/public/assets && cp -r src/web-app/dist/assets src/web/public/assets && cp src/web-app/dist/index.html src/web/public/index.html && cp src/web-app/dist/manifest.webmanifest src/web/public/manifest.webmanifest && cp src/web-app/dist/favicon.svg src/web/public/favicon.svg && rm -rf src/web/public/fonts && mkdir -p src/web/public/fonts && cp -r src/web-app/dist/fonts/. src/web/public/fonts/",

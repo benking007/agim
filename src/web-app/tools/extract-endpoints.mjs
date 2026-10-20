@@ -28,6 +28,7 @@ const publicRoutes = new Set([
   'POST /api/auth/exchange-mobile',
   'GET /api/health',
   'POST /api/bridge/callbacks',
+  'GET /api/bridge/caller-access',
   'POST /api/loc',
   'GET /api/loc/info',
 ])
@@ -64,6 +65,7 @@ const dynamicRoutes = {
   loopIdMatch: [['GET', '/api/loops/:id']],
   loopReportMatch: [['GET', '/api/loops/:id/report']],
   tokenMatch: [['DELETE', '/api/me/tokens/:id']],
+  bridgeAdminTokenMatch: [['DELETE', '/api/admin/bridge/tokens/:id']],
   userMatch: [['PATCH', '/api/admin/users/:id']],
   invMatch: [['DELETE', '/api/admin/invites/:id']],
   quotaMatch: [['PATCH', '/api/admin/users/:id/points']],

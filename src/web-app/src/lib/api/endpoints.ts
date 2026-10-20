@@ -491,4 +491,62 @@ export const api = {
   resolveWorkspacePath: (body: { path: string; agent: string }) =>
     client.post<{ ok: boolean; path: string | null; name?: string }>('/api/workspace-resolve', { body }),
 
+  /** GET /api/admin/bridge/tokens */
+  listBridgeTokens: () =>
+    client.get<{
+      tokens: Array<{ id: string; label: string; created_at: number; revoked: boolean }>
+      publicBaseUrl: string | null
+    }>('/api/admin/bridge/tokens'),
+
+  /** POST /api/admin/bridge/tokens — raw token and handoff exist only in this response */
+  createBridgeToken: (body: { label: string; baseUrl?: string }) =>
+    client.post<{
+      ok: boolean
+      id: string
+      label: string
+      role: 'bridge'
+      raw: string
+      publicBaseUrl: string
+      guideUrl: string
+      callerPrompt: string
+    }>('/api/admin/bridge/tokens', { body }),
+
+  /** DELETE /api/admin/bridge/tokens/:id */
+  revokeBridgeToken: (id: string) =>
+    client.delete<{ ok: boolean }>(`/api/admin/bridge/tokens/${encodeURIComponent(id)}`),
+
+  /** GET /api/admin/bridge/peers */
+  listBridgePeers: () =>
+    client.get<{
+      peers: Array<{
+        peerId: string
+        tokenId: string
+        agents: string[]
+        callbackUrl: string | null
+        enabled: boolean
+        maxConcurrent: number
+        workspaceId: string
+      }>
+    }>('/api/admin/bridge/peers'),
+
+  /** POST /api/admin/bridge/peers */
+  createBridgePeer: (body: {
+    peerId: string
+    tokenId: string
+    agents: string[]
+    maxConcurrent?: number
+    workspaceId?: string
+    enabled?: boolean
+  }) =>
+    client.post<{ ok: boolean }>('/api/admin/bridge/peers', { body }),
+
+  /** PATCH /api/admin/bridge/peers */
+  updateBridgePeer: (body: {
+    peerId: string
+    enabled?: boolean
+    agents?: string[]
+    maxConcurrent?: number
+  }) =>
+    client.patch<{ ok: boolean }>('/api/admin/bridge/peers', { body }),
+
 } as const

@@ -66,6 +66,11 @@ export async function handleAccountApi(
   const p = url.pathname
   const m = (req.method || 'GET').toUpperCase()
 
+  if (p.startsWith('/api/admin/bridge')) {
+    const { handleBridgeAdminApi } = await import('./bridge-admin-api.js')
+    return handleBridgeAdminApi(req, res, url)
+  }
+
   if (p === '/api/auth/bootstrap-state' && m === 'GET') {
     sendJson(res, 200, { hasUsers: hasAnyUser() })
     return true

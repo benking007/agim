@@ -303,6 +303,7 @@ export async function startWebServer(options: {
       || url.pathname.startsWith('/api/admin/points')
       || url.pathname.startsWith('/api/admin/model-prices')
       || url.pathname.startsWith('/api/admin/im-bindings')
+      || url.pathname.startsWith('/api/admin/bridge')
     ) {
       if (await handleAccountApi(req, res, url)) return
     }

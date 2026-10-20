@@ -1,0 +1,145 @@
+# 调用方接入：只轮询 dev.myfund.work
+
+给外部系统照着做。调用方不是 Agim，没有回调端点。生产管理员把回调 URL 留空。终态只看 GET。
+
+基址：`https://dev.myfund.work`
+
+## 先不要验通
+
+| 项 | 本文怎么处理 |
+|---|---|
+| 桥接令牌 | 以后走安全渠道。不写在这里，不进仓库、日志、工单正文或提示词。 |
+| 签名密钥 | 不需要。只轮询不用它发请求。 |
+| `peerId` | 登记对等方时由服务器生成/填写，发给调用方。本文没有真实值。 |
+
+自动审批尚未在 `https://dev.myfund.work` 这台正在跑的进程上确认。`AGIM_AUTO_APPROVE` 未设置时产品按关闭处理，但操作员必须在该进程上再确认一次（未设置，或 `0` / `off` / `false` / `no`）。没确认之前，不要发验通请求。基址写在这里，只说明将来打哪一台；`peerId` 仍等服务器登记后另发。
+
+请求头用 `Authorization: Bearer <桥接令牌>`，或 `X-Agim-Token: <桥接令牌>`。管理员令牌会得到 403，并且不会创建运行。
+
+## 1. 每次创建都带这些
+
+`POST https://dev.myfund.work/api/bridge/runs`
+
+头：
+
+- 上面的桥接令牌
+- `Content-Type: application/json`
+- `Idempotency-Key`：调用方自己生成，1–128 个可见 ASCII（码位 0x20–0x7e）。POST 之前先落库。超时或 5xx 用**同一键**再 POST。要真正再跑一次，换新键。
+
+正文只许这四个字段：
+
+```json
+{
+  "agent": "agim",
+  "prompt": "自包含的任务说明",
+  "timeoutMs": 1200000
+}
+```
+
+- `agent` 必须是 `agim`。白名单里必须有它，否则 403，不创建作业。
+- `prompt` 必填，最多 32000 个 Unicode 码位。
+- `timeoutMs` 每次都带 `1200000`（20 分钟）。这是正整数，低于 6 小时硬顶，会按原值生效。不要传 `0`。
+- `correlationId` 可选，最长 128 字符，只回显，不能用来查询。不需要就不要加别的字段。
+
+`userId`、`workspaceId`、`callbackUrl`、`platform` 出现在正文里会被 400 拒绝。
+
+第一次受理返回 **202**，正文只有：
+
+```json
+{
+  "ok": true,
+  "runId": "<服务器生成的 UUID>",
+  "jobId": "<生产侧数字，以响应为准>",
+  "status": "pending",
+  "agent": "agim"
+}
+```
+
+真实响应里 `jobId` 是数字。立刻把 `runId`、`jobId`、`status` 和幂等键写入自己的工单。同一 HTTP 连接里没有最终正文。
+
+| 状态码 | 结果 |
+|---|---|
+| 202 | 新建一次，`status` 为 `pending` |
+| 200 | 这个幂等键已经有运行。带回原来的 `runId`、`jobId` 和**当前** `status`。没有 `result`。要正文再 GET |
+| 400 | 键、正文或字段不合法。没有新运行 |
+| 401 | 无令牌、令牌无效或已撤销 |
+| 403 | 不是 bridge 范围、对等方停用、Agent 不在白名单、Agent 未注册，或工作区钉死失败。没有新运行 |
+| 404 | 桥接没开。换幂等键也不会创建 |
+
+## 2. 终态以 GET 为准
+
+`GET https://dev.myfund.work/api/bridge/runs/<runId>`
+
+同一把桥接令牌。别人的 `runId` 是 404。
+
+```json
+{
+  "ok": true,
+  "runId": "<创建时保存的值>",
+  "jobId": "<生产侧数字，以响应为准>",
+  "status": "completed",
+  "agent": "agim",
+  "result": "<作业正文>",
+  "error": null,
+  "callbackStatus": "none"
+}
+```
+
+创建时带了 `correlationId`，这里才会多这个字段。
+
+| 字段 | 含义 |
+|---|---|
+| `status` | `pending`、`running`、`completed`、`failed`、`cancelled`。看到后三种再停 |
+| `result` | 成功时的正文，与生产作业行一致。可能在约 1 MiB 处截断，说明在文本末尾 |
+| `error` | 作业行上的字符串，失败时阅读。成功示例为 `null`。不是 `{ code, message }` |
+| `callbackStatus` | 只轮询固定为 `none` |
+
+`pending` 是已受理或还在排队，继续 GET。`running` 是正在执行，或生产侧正在等人审批；仅凭这个值分不出这两种。调用方不能点审批，也没有审批接口。
+
+失败时按字符串认：
+
+- 墙钟到点：`bridge_timeout`，`status` 为 `failed`
+- 生产在 `running` 期间重启：`agim restarted while running`，`status` 为 `failed`
+
+`{ code, message }` 只出现在回调的 `run.failed` 里。这个调用方收不到回调，工单以 GET 的 `status`、`result`、`error` 为准。要重做就换新幂等键；旧键会 200 回原来那条，不会再执行。
+
+轮询间隔由调用方自己掌握：提交后的前 10 分钟每 30 秒一次，之后每 2 分钟一次；超过一小时改用定时例程，直到终态。
+
+## 3. 取消
+
+`POST https://dev.myfund.work/api/bridge/runs/<runId>/cancel`
+
+同一把令牌。没有必填 JSON 字段。响应只有 `{ "ok": true }`。已经是终态时也返回这个，**不改写**原状态。取消后立刻 GET，以 GET 的 `status` 为准。看到 `cancelled` 再把工单标成取消。
+
+## 4. 20 分钟墙钟
+
+每次 POST 的 `timeoutMs: 1200000` 从这次运行开始计，审批等待也算在里面。审批等待默认 30 分钟（`AGIM_APPROVAL_TIMEOUT_MS` 未设置），到点的默认政策是放行。20 分钟更短，所以在自动审批关闭、且没人点审批时，运行会先变成 `failed`，GET 的 `error` 为 `bridge_timeout`。
+
+自动审批若开着，工具不会等满 30 分钟，这 20 分钟挡不住已经执行的工具。该进程上的自动审批还没确认，所以先不要验通。
+
+等审批期间作业一直是 `running`。业务上不能再等，就走第 3 节取消，再 GET。
+
+## 5. 阶段 4 的两则事件：这个调用方不收
+
+`run.waiting_approval` 和 `run.progress` 随这次合并进入 `main`，在含 #391 的构建部署并重启之后才在运行中的进程上存在，而且只在对等方登记了回调 URL 和签名密钥时才会入队推送。本对等方回调 URL 为空，不入队。没收到它们不影响收尾。收尾只看 GET。
+
+这两则事件的实际正文，就是下面这些公共字段，`status` 固定为 `running`：
+
+| 字段 | 值 |
+|---|---|
+| `specVersion` | `1` |
+| `eventId` | UUID |
+| `type` | `run.waiting_approval` 或 `run.progress` |
+| `seq` | 该 `runId` 上的序号 |
+| `emittedAt` | ISO-8601 UTC |
+| `runId` | UUID |
+| `jobId` | 数字 |
+| `peerId` | 登记值 |
+| `idempotencyKey` | 创建时的键 |
+| `agent` | `agim` |
+| `status` | `running` |
+| `correlationId` | 仅当创建请求带了才有 |
+
+没有摘要字段，也没有进度文本、工具名、工具参数、`result`、`error`。实现把可见输出丢弃，不抄进正文；200 字上限和「不含工具参数」是靠只保留这些公共字段做到的，不是另有一个被截断的摘要属性。`run.progress` 同一作业至少间隔 10 秒。丢掉进度事件后，GET 仍返回终态正文。
+
+作业在等人审批时状态保持 `running`。调用方不要为了这两则事件去登记回调。

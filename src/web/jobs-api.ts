@@ -232,7 +232,12 @@ async function handleGetJob(
         return
       }
     }
-    sendJson(res, 200, { job })
+    let bridge: import('../core/bridge-run.js').BridgeJobView | null = null
+    try {
+      const { getBridgeRunByJobId } = await import('../core/bridge-run.js')
+      bridge = getBridgeRunByJobId(id)
+    } catch { /* side table is absent until the bridge module creates it */ }
+    sendJson(res, 200, bridge ? { job, bridge } : { job })
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
   }

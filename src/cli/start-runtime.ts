@@ -680,6 +680,16 @@ export async function runStartForeground(): Promise<void> {
     console.warn('job-recovery module failed to scan:', err instanceof Error ? err.message : String(err))
   }
 
+  // Phase-1 bridge: continue inbound runs that were still pending. No
+  // callback worker — delivery is a later phase, and a disabled bridge
+  // stays on the 404 path inside the HTTP handler.
+  try {
+    const { isBridgeEnabled, resumePendingBridgeRuns } = await import('../core/bridge-run.js')
+    if (isBridgeEnabled()) resumePendingBridgeRuns()
+  } catch (err) {
+    console.warn('bridge resume failed:', err instanceof Error ? err.message : String(err))
+  }
+
   // Reminder confirm notifier — used by reminder-rpc.ts when an agent
   // creates a high-frequency + LLM-polish reminder (those go through a
   // y/n card before landing in the DB). Plain message via the same

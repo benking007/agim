@@ -619,6 +619,15 @@ function getDb(): Database.Database | null {
   return helper.get()
 }
 
+/** Run work against the jobs database. Null when SQLite is unavailable.
+ *  Bridge side rows live in this file; callers must not assume the
+ *  `bridge_runs` table exists until they create it. */
+export function withJobsDatabase<T>(fn: (db: Database.Database) => T): T | null {
+  const d = getDb()
+  if (!d) return null
+  return fn(d)
+}
+
 /**
  * Filter / scoping options accepted by every owner-sensitive job-board API.
  *
@@ -1237,6 +1246,12 @@ export function pruneOldJobs(d: Database.Database | null = getDb(), daysRetentio
           'pruneArtifactsBatch failed (orphaned dirs may remain)',
         ))
     }
+
+    // Bridge side rows share this retention window. The table is created
+    // by the bridge module, so a fresh install has nothing to delete.
+    try {
+      d.prepare(`DELETE FROM bridge_runs WHERE job_id NOT IN (SELECT id FROM jobs)`).run()
+    } catch { /* bridge_runs not created yet */ }
 
     if (total > 0) {
       rootLogger.info({

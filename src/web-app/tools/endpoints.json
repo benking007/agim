@@ -8,6 +8,7 @@
     "src/web/approvals-api.ts",
     "src/web/auth.ts",
     "src/web/background-tasks-api.ts",
+    "src/web/bridge-api.ts",
     "src/web/chat-media-api.ts",
     "src/web/config-api.ts",
     "src/web/env-api.ts",
@@ -43,7 +44,7 @@
     "src/web/ws-chat.ts",
     "src/web/ws-history-rekey.ts"
   ],
-  "count": 161,
+  "count": 164,
   "endpoints": [
     {
       "method": "DELETE",
@@ -276,6 +277,12 @@
     {
       "method": "GET",
       "path": "/api/bgjobs/:id",
+      "source": "dynamic",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/bridge/runs/:runId",
       "source": "dynamic",
       "authRequired": true
     },
@@ -704,6 +711,18 @@
       "path": "/api/auth/register",
       "source": "exact",
       "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/bridge/runs",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/bridge/runs/:runId/cancel",
+      "source": "dynamic",
+      "authRequired": true
     },
     {
       "method": "POST",

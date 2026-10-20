@@ -4,13 +4,14 @@
 
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Globe2, Mail, Mic, Eye } from 'lucide-react'
+import { Cable, Eye, Globe2, Mail, Mic } from 'lucide-react'
 
 const ITEMS = [
   { to: 'search', icon: Globe2, titleKey: 'tabs.search', descKey: 'advanced.searchDesc' },
   { to: 'stt',    icon: Mic,    titleKey: 'tabs.stt',    descKey: 'advanced.sttDesc' },
   { to: 'email',  icon: Mail,   titleKey: 'tabs.email',  descKey: 'advanced.emailDesc' },
   { to: 'viewer', icon: Eye,    titleKey: 'tabs.viewer', descKey: 'advanced.viewerDesc' },
+  { to: 'bridge', icon: Cable,  titleKey: 'tabs.bridge', descKey: 'advanced.bridgeDesc' },
 ] as const
 
 export default function SettingsAdvancedHub(): JSX.Element {

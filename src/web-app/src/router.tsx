@@ -207,6 +207,7 @@ const router = createBrowserRouter([
           { path: 'stt',    lazy: lazy(() => import('@/routes/settings/stt')) },
           { path: 'email',  lazy: lazy(() => import('@/routes/settings/email')) },
           { path: 'viewer', lazy: lazy(() => import('@/routes/settings/viewer')) },
+          { path: 'bridge', lazy: lazy(() => import('@/routes/settings/advanced/bridge')) },
         ],
       },
       {

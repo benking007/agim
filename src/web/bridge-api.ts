@@ -29,6 +29,7 @@ import {
   type BridgeRunRow,
 } from '../core/bridge-run.js'
 import { extractToken } from './auth.js'
+import { serveBridgeCallerGuide } from './bridge-caller-guide.js'
 import { readBody, sendError, sendJson } from './http-utils.js'
 
 const ALLOWED_FIELDS = new Set(['agent', 'prompt', 'timeoutMs', 'correlationId'])
@@ -101,11 +102,15 @@ export async function handleBridgeApi(
 ): Promise<boolean> {
   const p = url.pathname
   if (p !== '/api/bridge' && !p.startsWith('/api/bridge/')) return false
+  const m = req.method ?? 'GET'
+  if (p === '/api/bridge/caller-access' && m === 'GET') {
+    serveBridgeCallerGuide(res)
+    return true
+  }
   if (!isBridgeEnabled()) {
     notFound(res)
     return true
   }
-  const m = req.method ?? 'GET'
   if (p === '/api/bridge/runs' && m === 'POST') {
     await handleCreateRun(req, res, url)
     return true

@@ -15,6 +15,7 @@ const TABS = [
   { to: 'stt',    i18nKey: 'tabs.stt' },
   { to: 'email',  i18nKey: 'tabs.email' },
   { to: 'viewer', i18nKey: 'tabs.viewer' },
+  { to: 'bridge', i18nKey: 'tabs.bridge' },
 ] as const
 
 export default function SettingsAdvancedLayout(): JSX.Element {

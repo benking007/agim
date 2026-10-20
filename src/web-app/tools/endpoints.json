@@ -8,7 +8,9 @@
     "src/web/approvals-api.ts",
     "src/web/auth.ts",
     "src/web/background-tasks-api.ts",
+    "src/web/bridge-admin-api.ts",
     "src/web/bridge-api.ts",
+    "src/web/bridge-caller-guide.ts",
     "src/web/chat-media-api.ts",
     "src/web/config-api.ts",
     "src/web/env-api.ts",
@@ -44,12 +46,18 @@
     "src/web/ws-chat.ts",
     "src/web/ws-history-rekey.ts"
   ],
-  "count": 165,
+  "count": 172,
   "endpoints": [
     {
       "method": "DELETE",
       "path": "/api/admin-allowlist",
       "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/bridge/tokens/:id",
+      "source": "dynamic",
       "authRequired": true
     },
     {
@@ -151,6 +159,18 @@
     {
       "method": "GET",
       "path": "/api/admin-allowlist",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/bridge/peers",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/bridge/tokens",
       "source": "exact",
       "authRequired": true
     },
@@ -279,6 +299,12 @@
       "path": "/api/bgjobs/:id",
       "source": "dynamic",
       "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/bridge/caller-access",
+      "source": "exact",
+      "authRequired": false
     },
     {
       "method": "GET",
@@ -606,6 +632,12 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/admin/bridge/peers",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "PATCH",
       "path": "/api/admin/points",
       "source": "exact",
       "authRequired": true
@@ -649,6 +681,18 @@
     {
       "method": "POST",
       "path": "/api/admin-allowlist",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/bridge/peers",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/bridge/tokens",
       "source": "exact",
       "authRequired": true
     },

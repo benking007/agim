@@ -19,6 +19,8 @@ export const PUBLIC_EXACT_PATHS = new Set<string>([
   '/api/health',
   // Production callbacks authenticate with HMAC, not a bearer token.
   '/api/bridge/callbacks',
+  // Caller contract. No token, no admin session. The body is the markdown file.
+  '/api/bridge/caller-access',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use

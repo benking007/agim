@@ -73,6 +73,10 @@ export interface TokenRow {
   /** Owning local account. Missing on pre-account tokens; the first
    *  admin inherit/skip step revokes those leftovers. */
   user_id?: string
+  /** Set when an operator retires a bridge token from the settings page.
+   *  The hash is cleared in the same write, so the raw value cannot be
+   *  recovered or used. CLI revoke still deletes the row. */
+  revoked_at?: number
 }
 
 interface TokenFile {
@@ -173,7 +177,7 @@ export function getTokenUserId(id: string): string | undefined {
 
 export function listTokensForUser(userId: string): Array<Omit<TokenRow, 'hash'>> {
   return readFile().tokens
-    .filter((t) => t.user_id === userId)
+    .filter((t) => t.user_id === userId && !t.revoked_at)
     .map((t) => ({
       id: t.id,
       label: t.label,
@@ -187,7 +191,7 @@ export function listTokensForUser(userId: string): Array<Omit<TokenRow, 'hash'>>
 /** Tokens created before accounts (no user_id). */
 export function listUnownedTokens(): Array<Omit<TokenRow, 'hash'>> {
   return readFile().tokens
-    .filter((t) => !t.user_id)
+    .filter((t) => !t.user_id && !t.revoked_at)
     .map((t) => ({
       id: t.id,
       label: t.label,
@@ -214,7 +218,7 @@ export function attachOrphanTokens(userId: string): number {
 
 /** List tokens with secrets stripped. */
 export function listTokens(): Array<Omit<TokenRow, 'hash'>> {
-  return readFile().tokens.map((t) => ({
+  return readFile().tokens.filter((t) => !t.revoked_at).map((t) => ({
     id: t.id,
     label: t.label,
     created_at: t.created_at,
@@ -262,6 +266,51 @@ export function setTokenRole(id: string, role: TokenRole, opts?: { actor?: strin
   return true
 }
 
+export interface BridgeTokenView {
+  id: string
+  label: string
+  created_at: number
+  revoked: boolean
+}
+
+/** Bridge-role tokens for the settings page. No hash and no raw value. */
+export function listBridgeTokens(): BridgeTokenView[] {
+  return readFile().tokens
+    .filter((t) => t.role === 'bridge')
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      created_at: t.created_at,
+      revoked: typeof t.revoked_at === 'number',
+    }))
+}
+
+/** Retire a bridge token in place. The raw value is not recoverable. */
+export function revokeBridgeToken(id: string, opts?: { actor?: string; traceId?: string }): boolean {
+  const data = readFile()
+  const row = data.tokens.find((t) => t.id === id && t.role === 'bridge')
+  if (!row) return false
+  if (typeof row.revoked_at !== 'number') {
+    row.revoked_at = Math.floor(Date.now() / 1000)
+    row.hash = ''
+    writeFile(data)
+    void (async () => {
+      try {
+        const { logAuditEvent } = await import('./audit-log.js')
+        logAuditEvent({
+          traceId: opts?.traceId,
+          eventType: 'token.revoke',
+          actor: opts?.actor ?? 'system',
+          target: id,
+          outcome: 'ok',
+          details: { role: 'bridge' },
+        })
+      } catch { /* best-effort */ }
+    })()
+  }
+  return true
+}
+
 /** Revoke (delete) a token by id. Returns true if a row was removed. */
 export function revokeToken(id: string, opts?: { actor?: string; traceId?: string }): boolean {
   const data = readFile()
@@ -295,6 +344,7 @@ export function verifyToken(raw: string): string | null {
   const data = readFile()
   const cBuf = Buffer.from(candidate, 'hex')
   for (const row of data.tokens) {
+    if (!row.hash || typeof row.revoked_at === 'number') continue
     let stored: Buffer
     try {
       stored = Buffer.from(row.hash, 'hex')

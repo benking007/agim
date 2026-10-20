@@ -352,8 +352,9 @@ describe('production bridge phase 2 callbacks', () => {
     await waitJob(created.body.jobId as number, 'completed')
     const before = recorded.length
     await deliverAll()
-    expect(recorded.length).toBe(before + 2)
-    expect(recorded.slice(before).every((row) => row.status === 401)).toBe(true)
+    const sent = recorded.slice(before)
+    expect(sent.map((row) => row.type).sort()).toEqual(['run.completed', 'run.progress', 'run.started'])
+    expect(sent.every((row) => row.status === 401)).toBe(true)
     const again = recorded.length
     await deliverAll()
     expect(recorded.length).toBe(again)

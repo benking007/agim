@@ -106,7 +106,10 @@
       "agent": "Agent",
       "agentAny": "全部 Agent",
       "kind": "类型",
-      "kindAny": "全部类型"
+      "kindAny": "全部类型",
+      "source": "来源",
+      "sourceAny": "全部来源",
+      "sourceBridge": "桥接"
     },
     "col": {
       "id": "ID",

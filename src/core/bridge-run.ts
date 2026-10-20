@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto'
 import type { Logger } from 'pino'
 import { A2A_TIMEOUT_MS_DEFAULT, A2A_TIMEOUT_MS_MAX } from './a2a.js'
 import { logInvocation } from './audit-log.js'
-import { enqueueBridgeStarted, enqueueBridgeTerminal } from './bridge-callback.js'
+import { enqueueBridgeStarted, enqueueBridgeTerminal, noteBridgeProgress } from './bridge-callback.js'
 import { findPeerById, type BridgePeer } from './bridge-peers.js'
 import { createLogger, generateTraceId } from './logger.js'
 import {
@@ -355,6 +355,9 @@ async function* executeBridgeJob(
     for await (const chunk of iterateRoute(routed)) {
       if (signal.aborted || timedOut) break
       responseLen += chunk.length
+      if (chunk.trim()) {
+        try { noteBridgeProgress(job.id) } catch { /* progress must not change the job */ }
+      }
       yield chunk
     }
     if (signal.aborted || timedOut) {

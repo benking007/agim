@@ -651,6 +651,8 @@ export interface OwnerOpts {
    *  Web /tasks Jobs tab uses this to give the operator a clean
    *  explicit-only vs inline-only view. */
   kind?: JobKind
+  /** When `bridge`, only rows that have a bridge_runs side row. */
+  source?: 'bridge'
   /**
    * Web-member visibility: `(creator_id = creatorId OR thread_key IN keys)`.
    * Passing this array (even empty) disables the legacy "ownerless
@@ -788,6 +790,13 @@ export function listJobs(limit = 20, status?: JobStatus, opts: OwnerOpts = {}): 
   appendOwnerConditions(conditions, params, opts)
   if (opts.agent) { conditions.push('agent = ?'); params.push(opts.agent) }
   if (opts.kind) { conditions.push('kind = ?'); params.push(opts.kind) }
+  if (opts.source === 'bridge') {
+    const table = d.prepare(
+      `SELECT 1 AS n FROM sqlite_master WHERE type = 'table' AND name = 'bridge_runs'`,
+    ).get()
+    if (!table) return []
+    conditions.push('id IN (SELECT job_id FROM bridge_runs)')
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   return d.prepare(`SELECT * FROM jobs ${where} ORDER BY created_at DESC LIMIT ?`)
     .all(...params, safeLimit) as Job[]

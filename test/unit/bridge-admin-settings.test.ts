@@ -148,6 +148,7 @@ describe('bridge connection settings', () => {
     expect(body.callerPrompt.includes(body.raw)).toBe(true)
     expect(body.callerPrompt.includes('https://calls.example')).toBe(true)
     expect(body.callerPrompt.includes('这是来自云端的Agent，该Agent名字叫：Agim，可以通过以下方式连接这个Agent，连接完成后，可以向他发送任务安排，并在完成任务后，把任务执行情况返回给你')).toBe(true)
+    expect(body.callerPrompt.includes('请把本提示中的连接方式和对接页做成一个 skill，之后都通过这个 skill 连接 Agim、发送任务，并在任务完成后把执行情况返回。')).toBe(true)
     expect(body.callerPrompt.includes('按对接页实现，不要等更多说明')).toBe(false)
     expect(body.callerPrompt.includes('【含密钥，只此一次】')).toBe(false)
     expect(contract.includes(body.raw)).toBe(false)

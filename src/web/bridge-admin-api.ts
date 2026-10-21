@@ -2,7 +2,8 @@
 //
 // The raw token and the handoff prompt exist only in the create response.
 // Listing never returns them. Signing secrets are not accepted or returned.
-// Poll-only peers keep a null callback URL and a null secret.
+// A null callback URL means poll only. A blank webhookKey on edit keeps
+// the stored key. webhookKey null removes it.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -101,7 +102,11 @@ function liveBridgeToken(tokenId: string): boolean {
   return listBridgeTokens().some((row) => row.id === tokenId && !row.revoked)
 }
 
-/** Page fields are callbackUrl and webhookKey. The stored field stays signingSecret. */
+/**
+ * Page fields are callbackUrl and webhookKey. The stored field stays signingSecret.
+ * On edit, an omitted or blank webhookKey keeps the stored key. null clears it.
+ * Both a URL and a key are required before a caller is notified.
+ */
 function readWebhook(
   body: Record<string, unknown>,
   existing: { callbackUrl: string | null; signingSecret: string | null } | null,
@@ -110,15 +115,29 @@ function readWebhook(
   const hasUrl = Object.hasOwn(body, 'callbackUrl')
   const hasKey = Object.hasOwn(body, 'webhookKey')
   if (mode === 'patch' && !hasUrl && !hasKey) return 'keep'
+  if (hasKey && body.webhookKey !== null && typeof body.webhookKey !== 'string') {
+    return { error: 'webhook key must be a string or null' }
+  }
+  if (mode === 'create' && body.webhookKey === null) {
+    return { error: 'webhook key must be a string' }
+  }
+
   const url = hasUrl
     ? (typeof body.callbackUrl === 'string' ? body.callbackUrl.trim() : '')
     : (existing?.callbackUrl || '')
   const typedKey = hasKey && typeof body.webhookKey === 'string' ? body.webhookKey.trim() : ''
-  const secret = typedKey || existing?.signingSecret || ''
-  if (!url && !typedKey) return { callbackUrl: null, signingSecret: null }
-  if (!url) return { error: 'webhook URL is required when a key is set' }
-  if (!secret) return { error: 'webhook key is required when a URL is set' }
-  return { callbackUrl: url, signingSecret: secret }
+  const clearKey = mode === 'patch' && hasKey && body.webhookKey === null
+  const secret = clearKey ? '' : (typedKey || existing?.signingSecret || '')
+
+  if (mode === 'create') {
+    if (!url && !typedKey) return { callbackUrl: null, signingSecret: null }
+    if (!url) return { error: 'webhook URL is required when a key is set' }
+    if (!typedKey) return { error: 'webhook key is required when a URL is set' }
+    return { callbackUrl: url, signingSecret: typedKey }
+  }
+  if (typedKey && !url) return { error: 'webhook URL is required when a key is set' }
+  if (url && !secret) return { error: 'webhook key is required when a URL is set' }
+  return { callbackUrl: url || null, signingSecret: secret || null }
 }
 
 async function handleListTokens(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -264,6 +283,14 @@ async function handlePatchPeer(req: IncomingMessage, res: ServerResponse): Promi
       return
     }
     next.maxConcurrent = maxConcurrent
+  }
+  if (body.workspaceId !== undefined) {
+    const workspaceId = typeof body.workspaceId === 'string' ? body.workspaceId.trim() : ''
+    if (!workspaceId || /\s/.test(workspaceId)) {
+      sendError(res, 400, 'VALIDATION', { message: 'workspaceId is required' })
+      return
+    }
+    next.workspaceId = workspaceId
   }
   peers[index] = next
   try {

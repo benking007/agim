@@ -14,6 +14,7 @@ function peer(overrides: Partial<BridgePeer> = {}): BridgePeer {
     tokenId: 'tk_peer',
     agents: ['agim'],
     workspaceId: 'default',
+    callbackMode: 'poll',
     callbackUrl: null,
     signingSecret: null,
     enabled: true,

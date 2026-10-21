@@ -530,4 +530,64 @@ describe('bridge connection settings', () => {
     expect(again.body.includes(key)).toBe(false)
     expect(again.body.includes('signingSecret')).toBe(false)
   })
+
+  it('keeps the key when an existing caller switches to poll', async () => {
+    const token = tokens.createToken('mode-caller', { role: 'bridge' })
+    const key = `whk-${Date.now().toString(16)}`
+    const created = await callAdmin({
+      method: 'POST',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+      body: JSON.stringify({
+        peerId: 'modeful',
+        tokenId: token.id,
+        agents: ['agim'],
+        callbackUrl: 'https://1.1.1.1/hook',
+        webhookKey: key,
+      }),
+    })
+    expect(created.statusCode).toBe(201)
+    const createdBody = JSON.parse(created.body) as { peer: { callbackMode: string; webhookKeySet: boolean } }
+    expect(createdBody.peer.callbackMode).toBe('webhook')
+    expect(createdBody.peer.webhookKeySet).toBe(true)
+    expect(created.body.includes(key)).toBe(false)
+
+    const polled = await callAdmin({
+      method: 'PATCH',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+      body: JSON.stringify({ peerId: 'modeful', callbackMode: 'poll' }),
+    })
+    expect(polled.statusCode).toBe(200)
+    expect(polled.body.includes(key)).toBe(false)
+    expect(polled.body.includes('signingSecret')).toBe(false)
+    const stored = peers.loadBridgePeers().find((peer) => peer.peerId === 'modeful')
+    expect(stored?.callbackMode).toBe('poll')
+    expect(stored?.signingSecret).toBe(key)
+    expect(stored?.callbackUrl).toBe('https://1.1.1.1/hook')
+
+    const listed = await callAdmin({
+      method: 'GET',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+    })
+    expect(listed.body.includes(key)).toBe(false)
+    const row = (JSON.parse(listed.body) as { peers: Array<{ peerId: string; callbackMode: string; webhookKeySet: boolean }> })
+      .peers.find((peer) => peer.peerId === 'modeful')
+    expect(row?.callbackMode).toBe('poll')
+    expect(row?.webhookKeySet).toBe(true)
+
+    const restored = await callAdmin({
+      method: 'PATCH',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+      body: JSON.stringify({ peerId: 'modeful', callbackMode: 'webhook' }),
+    })
+    expect(restored.statusCode).toBe(200)
+    expect(restored.body.includes(key)).toBe(false)
+    const again = peers.loadBridgePeers().find((peer) => peer.peerId === 'modeful')
+    expect(again?.callbackMode).toBe('webhook')
+    expect(again?.signingSecret).toBe(key)
+    expect(again?.callbackUrl).toBe('https://1.1.1.1/hook')
+  })
 })

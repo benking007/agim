@@ -1,6 +1,6 @@
-# 调用方接入：只轮询
+# 调用方接入
 
-这一页就是全部对接合同。按本页实现，不要再等第二份说明。调用方不是 Agim，没有回调端点。生产侧回调 URL 留空。终态只看 GET。
+这一页就是全部对接合同。按本页实现，不要再等第二份说明。调用方不是 Agim。终态只看 GET。操作员在连接设置里选择轮询或 Webhook。不要在 `POST /api/bridge/runs` 里带 `callbackUrl`。
 
 本页没有桥接令牌。令牌原文、这一次的访问基址、以及本页地址，只在创建令牌时交给你一次。基址以那次提示为准。下面的示例写成 `https://dev.myfund.work`；若提示里的基址不同，以提示为准。`peerId` 不由调用方发送，令牌已经对应到对等方。
 
@@ -115,12 +115,11 @@
 
 业务上不能再等，就走第 3 节取消，再 GET。
 
-## 5. 可选：主动通知
+## 5. 回调方式
 
-轮询仍然够用。终态以 GET 为准。没填 webhook 时不会发送，只靠 GET。
+操作员给每个调用方选一种。终态以 GET 为准。
 
-若操作员在连接设置里填了 Webhook URL 和 Key，调用方还会收到 POST。不要在 `POST /api/bridge/runs` 里带 `callbackUrl`。
+- **轮询**：不主动通知。这时只轮询。即使保存了 Webhook URL 和 Key，也不会 POST。
+- **Webhook**：URL 和 Key 都有值时，生产把事件 POST 到那个 URL。校验 `Authorization` 的值是 `Bearer <Key>`，Key 与连接设置里配置的 Key 一致。不一致就拒绝。缺一则不发。
 
-生产把事件 POST 到那个 URL。校验 `Authorization` 的值是 `Bearer <Key>`，Key 与连接设置里配置的 Key 一致。不一致就拒绝。
-
-`Content-Type` 为 `application/json`。返回 **2xx** 表示收下。终态仍以 GET 为准。
+`Content-Type` 为 `application/json`。返回 **2xx** 表示收下。从轮询改回 Webhook 时，原来的 URL 和 Key 还在，除非操作员改过它们。终态仍以 GET 为准。

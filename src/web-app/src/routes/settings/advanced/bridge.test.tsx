@@ -73,6 +73,7 @@ describe('/settings/advanced/bridge', () => {
             peerId: 'caller-1',
             tokenId: 'tok',
             agents: ['agim'],
+            callbackMode: 'webhook',
             callbackUrl: 'https://1.1.1.1/hook',
             webhookKeySet: true,
             enabled: true,
@@ -94,7 +95,9 @@ describe('/settings/advanced/bridge', () => {
       </QueryClientProvider>,
     )
     const user = userEvent.setup()
+    expect(await screen.findByRole('cell', { name: 'Webhook' })).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: '编辑' }))
+    expect(screen.getByLabelText('回调方式', { selector: '#bridge-edit-callback-mode' })).toHaveValue('webhook')
     const url = screen.getByLabelText('Webhook URL', { selector: '#bridge-edit-webhook-url' })
     expect(url).toHaveValue('https://1.1.1.1/hook')
     expect(screen.getByLabelText('Key', { selector: '#bridge-edit-webhook-key' })).toHaveValue('')

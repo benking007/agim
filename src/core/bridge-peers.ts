@@ -35,9 +35,15 @@ export interface BridgePeer {
   /** Empty means deny every agent. */
   agents: string[]
   workspaceId: string
-  /** Null means poll only. No callback is queued or sent. */
+  /**
+   * poll does not notify, even when a URL and key are stored.
+   * webhook notifies only when both are present.
+   * Omitted on old files: both present means webhook, otherwise poll.
+   */
+  callbackMode?: 'poll' | 'webhook'
+  /** Stored webhook target. Ignored while callbackMode is poll. */
   callbackUrl: string | null
-  /** Raw HMAC secret. Null when the peer does not use callbacks. */
+  /** Raw key for Authorization: Bearer. Ignored while callbackMode is poll. */
   signingSecret: string | null
   enabled: boolean
   /** In-flight inbound runs for this peer. Default 1. */
@@ -103,11 +109,15 @@ function normalizeLoaded(raw: unknown): BridgePeer | null {
   const maxConcurrent = typeof maxRaw === 'number' && Number.isInteger(maxRaw) && maxRaw >= 1
     ? maxRaw
     : 1
+  const callbackMode = row.callbackMode === 'poll' || row.callbackMode === 'webhook'
+    ? row.callbackMode
+    : (callbackUrl && signingSecret ? 'webhook' : 'poll')
   return {
     peerId,
     tokenId,
     agents,
     workspaceId,
+    callbackMode,
     callbackUrl,
     signingSecret,
     enabled: row.enabled !== false,
@@ -138,6 +148,20 @@ export function loadBridgePeers(): BridgePeer[] {
 export function findPeerByTokenId(tokenId: string): BridgePeer | null {
   if (!tokenId) return null
   return loadBridgePeers().find((peer) => peer.tokenId === tokenId) ?? null
+}
+
+/** How this caller is notified. Old files with both a URL and a key are webhook. */
+export function effectiveCallbackMode(peer: {
+  callbackMode?: string | null
+  callbackUrl?: string | null
+  signingSecret?: string | null
+}): 'poll' | 'webhook' {
+  if (peer.callbackMode === 'poll') return 'poll'
+  if (peer.callbackMode === 'webhook') return 'webhook'
+  if (peer.callbackMode == null || peer.callbackMode === '') {
+    return peer.callbackUrl && peer.signingSecret ? 'webhook' : 'poll'
+  }
+  return 'poll'
 }
 
 export function findPeerById(peerId: string): BridgePeer | null {
@@ -203,6 +227,9 @@ function assertPeerShape(peer: BridgePeer, index: number): void {
   }
   if (typeof peer.enabled !== 'boolean') {
     throw new BridgePeerError(`peer ${peer.peerId} enabled must be a boolean`)
+  }
+  if (peer.callbackMode != null && peer.callbackMode !== 'poll' && peer.callbackMode !== 'webhook') {
+    throw new BridgePeerError(`peer ${peer.peerId} callbackMode must be poll or webhook`)
   }
 }
 

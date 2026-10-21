@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import http from 'node:http'
 import https from 'node:https'
 import { eventBus } from './event-bus.js'
-import { findPeerById, validateBridgeCallbackUrl } from './bridge-peers.js'
+import { effectiveCallbackMode, findPeerById, validateBridgeCallbackUrl } from './bridge-peers.js'
 import { getJob, withJobsDatabase, type Job } from './job-board.js'
 import { logger as rootLogger } from './logger.js'
 import { scrubOutboundText } from './sensitive-paths.js'
@@ -184,7 +184,7 @@ function insertEvent(
   eventType: BridgeCallbackType,
 ): void {
   const peer = findPeerById(run.peer_id)
-  if (!peer?.enabled || !peer.callbackUrl || !peer.signingSecret) return
+  if (!peer?.enabled || effectiveCallbackMode(peer) !== 'webhook' || !peer.callbackUrl || !peer.signingSecret) return
   const once = eventType !== 'run.progress' && eventType !== 'run.waiting_approval'
   if (once) {
     const existing = db.prepare(
@@ -476,8 +476,11 @@ export async function deliverDueCallbacks(opts: DeliverOptions = {}): Promise<nu
   const picked = withCallbackDb((db) => dueRows(db, opts.limit ?? 20).filter((row) => claim(db, row.id))) ?? []
   for (const row of picked) {
     const peer = findPeerById(row.peer_id)
-    if (!peer?.callbackUrl || !peer.signingSecret) {
-      withCallbackDb((db) => giveUpWithoutSend(db, row, 'callback peer unavailable'))
+    if (!peer || effectiveCallbackMode(peer) !== 'webhook' || !peer.callbackUrl || !peer.signingSecret) {
+      const reason = peer && effectiveCallbackMode(peer) === 'poll'
+        ? 'callback mode is poll'
+        : 'callback peer unavailable'
+      withCallbackDb((db) => giveUpWithoutSend(db, row, reason))
       continue
     }
     const allowed = await validateBridgeCallbackUrl(peer.callbackUrl, peer.callbackPinnedHost)

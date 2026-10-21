@@ -120,4 +120,61 @@ describe('/settings/advanced/bridge', () => {
     expect(body.callbackUrl).toBe('')
     expect(body.webhookKey).toBeNull()
   })
+
+  it('does not call an empty MCP Events URL poll-only', async () => {
+    await i18n.changeLanguage('zh')
+    const longUrl = 'https://api2.cursor.sh/automations/webhook/very-long-path-that-should-not-stretch-the-column'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('/api/admin/bridge/enabled')) return jsonResponse({ enabled: true })
+      if (url.startsWith('/api/admin/bridge/tokens')) {
+        return jsonResponse({ tokens: [], publicBaseUrl: 'https://calls.example' })
+      }
+      if (url.startsWith('/api/admin/bridge/peers')) {
+        return jsonResponse({
+          peers: [
+            {
+              peerId: 'mcp-1',
+              tokenId: 'tok-mcp',
+              agents: ['agim'],
+              callbackMode: 'mcp_events',
+              callbackUrl: null,
+              webhookKeySet: false,
+              enabled: true,
+              maxConcurrent: 1,
+              workspaceId: 'default',
+            },
+            {
+              peerId: 'hook-1',
+              tokenId: 'tok-hook',
+              agents: ['agim'],
+              callbackMode: 'webhook',
+              callbackUrl: longUrl,
+              webhookKeySet: true,
+              enabled: true,
+              maxConcurrent: 1,
+              workspaceId: 'default',
+            },
+          ],
+        })
+      }
+      return jsonResponse({})
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <SettingsBridgeRoute />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByRole('cell', { name: 'MCP Events' })).toBeInTheDocument()
+    expect(screen.getByText('空（订阅自带地址）')).toBeInTheDocument()
+    expect(screen.queryByText(/只轮询/)).not.toBeInTheDocument()
+    const shown = screen.getByTitle(longUrl)
+    expect(shown).toHaveClass('truncate')
+    expect(shown).toHaveTextContent(longUrl)
+  })
 })

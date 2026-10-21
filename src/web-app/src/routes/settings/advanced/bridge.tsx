@@ -57,6 +57,12 @@ function modeLabelKey(mode: string | undefined): 'bridge.callbackModePoll' | 'br
   return 'bridge.callbackModePoll'
 }
 
+function emptyUrlKey(mode: string | undefined): 'bridge.callbackEmptyPoll' | 'bridge.callbackEmptyWebhook' | 'bridge.callbackEmptyMcp' {
+  if (mode === 'webhook') return 'bridge.callbackEmptyWebhook'
+  if (mode === 'mcp_events') return 'bridge.callbackEmptyMcp'
+  return 'bridge.callbackEmptyPoll'
+}
+
 function splitAgents(value: string): string[] {
   const names: string[] = []
   for (const part of value.split(/[,，]/)) {
@@ -442,13 +448,13 @@ export default function SettingsBridgeRoute(): JSX.Element {
           <p className="text-sm text-text-dim">{t('bridge.noPeers')}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="text-left text-text-dim">
                   <th className="py-1 pr-3 font-medium">{t('bridge.peerId')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.callbackMode')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.agents')}</th>
-                  <th className="py-1 pr-3 font-medium">{t('bridge.webhookUrl')}</th>
+                  <th className="w-48 py-1 pr-3 font-medium">{t('bridge.webhookUrl')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.webhookKey')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.enabled')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.maxConcurrent')}</th>
@@ -464,7 +470,11 @@ export default function SettingsBridgeRoute(): JSX.Element {
                         {t(modeLabelKey(peer.callbackMode))}
                       </td>
                       <td className="py-2 pr-3">{peer.agents.join(', ') || '—'}</td>
-                      <td className="py-2 pr-3">{peer.callbackUrl || t('bridge.callbackEmpty')}</td>
+                      <td className="overflow-hidden py-2 pr-3">
+                        {peer.callbackUrl ? (
+                          <span className="block truncate" title={peer.callbackUrl}>{peer.callbackUrl}</span>
+                        ) : t(emptyUrlKey(peer.callbackMode))}
+                      </td>
                       <td className="py-2 pr-3">{peer.webhookKeySet ? t('bridge.webhookKeySet') : t('bridge.webhookKeyEmpty')}</td>
                       <td className="py-2 pr-3">{peer.enabled ? t('bridge.active') : t('bridge.disable')}</td>
                       <td className="py-2 pr-3 tabular-nums">{peer.maxConcurrent}</td>

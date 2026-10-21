@@ -34,7 +34,7 @@ interface PublicPeer {
   peerId: string
   tokenId: string
   agents: string[]
-  callbackMode: 'poll' | 'webhook'
+  callbackMode: 'poll' | 'webhook' | 'mcp_events'
   callbackUrl: string | null
   /** True when a signing key is stored. The key itself is never returned. */
   webhookKeySet: boolean
@@ -105,8 +105,8 @@ function liveBridgeToken(tokenId: string): boolean {
   return listBridgeTokens().some((row) => row.id === tokenId && !row.revoked)
 }
 
-function asCallbackMode(value: unknown): 'poll' | 'webhook' | null {
-  if (value === 'poll' || value === 'webhook') return value
+function asCallbackMode(value: unknown): 'poll' | 'webhook' | 'mcp_events' | null {
+  if (value === 'poll' || value === 'webhook' || value === 'mcp_events') return value
   return null
 }
 
@@ -227,11 +227,11 @@ async function handleCreatePeer(req: IncomingMessage, res: ServerResponse): Prom
     sendError(res, 400, 'VALIDATION', { message: 'tokenId must be an active bridge token' })
     return
   }
-  let callbackMode: 'poll' | 'webhook'
+  let callbackMode: 'poll' | 'webhook' | 'mcp_events'
   if (Object.hasOwn(body, 'callbackMode')) {
     const parsed = asCallbackMode(body.callbackMode)
     if (!parsed) {
-      sendError(res, 400, 'VALIDATION', { message: 'callbackMode must be poll or webhook' })
+      sendError(res, 400, 'VALIDATION', { message: 'callbackMode must be poll, webhook, or mcp_events' })
       return
     }
     callbackMode = parsed
@@ -315,7 +315,7 @@ async function handlePatchPeer(req: IncomingMessage, res: ServerResponse): Promi
   if (Object.hasOwn(body, 'callbackMode')) {
     const callbackMode = asCallbackMode(body.callbackMode)
     if (!callbackMode) {
-      sendError(res, 400, 'VALIDATION', { message: 'callbackMode must be poll or webhook' })
+      sendError(res, 400, 'VALIDATION', { message: 'callbackMode must be poll, webhook, or mcp_events' })
       return
     }
     next.callbackMode = callbackMode

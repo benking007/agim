@@ -21,7 +21,7 @@ import { describeError } from '@/lib/api/errors'
 import { cn } from '@/lib/utils'
 
 type Issued = { raw: string; callerPrompt: string }
-type CallbackMode = 'poll' | 'webhook'
+type CallbackMode = 'poll' | 'webhook' | 'mcp_events'
 type Peer = {
   peerId: string
   tokenId: string
@@ -44,6 +44,17 @@ type PeerDraft = {
   webhookUrl: string
   webhookKey: string
   clearKey: boolean
+}
+
+function readMode(value: string): CallbackMode {
+  if (value === 'webhook' || value === 'mcp_events') return value
+  return 'poll'
+}
+
+function modeLabelKey(mode: string | undefined): 'bridge.callbackModePoll' | 'bridge.callbackModeWebhook' | 'bridge.callbackModeMcp' {
+  if (mode === 'webhook') return 'bridge.callbackModeWebhook'
+  if (mode === 'mcp_events') return 'bridge.callbackModeMcp'
+  return 'bridge.callbackModePoll'
 }
 
 function splitAgents(value: string): string[] {
@@ -169,7 +180,7 @@ export default function SettingsBridgeRoute(): JSX.Element {
       maxConcurrent: String(peer.maxConcurrent),
       workspaceId: peer.workspaceId,
       enabled: peer.enabled,
-      callbackMode: peer.callbackMode === 'webhook' ? 'webhook' : 'poll',
+      callbackMode: readMode(peer.callbackMode ?? 'poll'),
       webhookUrl: peer.callbackUrl || '',
       webhookKey: '',
       clearKey: false,
@@ -395,11 +406,12 @@ export default function SettingsBridgeRoute(): JSX.Element {
             <select
               id="bridge-callback-mode"
               value={callbackMode}
-              onChange={(event) => setCallbackMode(event.target.value === 'webhook' ? 'webhook' : 'poll')}
+              onChange={(event) => setCallbackMode(readMode(event.target.value))}
               className="h-8 w-full rounded-md border border-border bg-bg px-2 text-sm"
             >
               <option value="poll">{t('bridge.callbackModePoll')}</option>
               <option value="webhook">{t('bridge.callbackModeWebhook')}</option>
+              <option value="mcp_events">{t('bridge.callbackModeMcp')}</option>
             </select>
           </div>
           <div className="space-y-1">
@@ -449,7 +461,7 @@ export default function SettingsBridgeRoute(): JSX.Element {
                     <tr className="border-t border-border align-top">
                       <td className="py-2 pr-3 font-mono">{peer.peerId}</td>
                       <td className="py-2 pr-3">
-                        {peer.callbackMode === 'webhook' ? t('bridge.callbackModeWebhook') : t('bridge.callbackModePoll')}
+                        {t(modeLabelKey(peer.callbackMode))}
                       </td>
                       <td className="py-2 pr-3">{peer.agents.join(', ') || '—'}</td>
                       <td className="py-2 pr-3">{peer.callbackUrl || t('bridge.callbackEmpty')}</td>
@@ -522,12 +534,13 @@ export default function SettingsBridgeRoute(): JSX.Element {
                                 value={draft.callbackMode}
                                 onChange={(event) => setDraft({
                                   ...draft,
-                                  callbackMode: event.target.value === 'webhook' ? 'webhook' : 'poll',
+                                  callbackMode: readMode(event.target.value),
                                 })}
                                 className="h-8 w-full rounded-md border border-border bg-bg px-2 text-sm"
                               >
                                 <option value="poll">{t('bridge.callbackModePoll')}</option>
                                 <option value="webhook">{t('bridge.callbackModeWebhook')}</option>
+                                <option value="mcp_events">{t('bridge.callbackModeMcp')}</option>
                               </select>
                             </div>
                             <div className="space-y-1">

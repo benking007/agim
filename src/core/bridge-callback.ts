@@ -15,6 +15,7 @@ import { eventBus } from './event-bus.js'
 import { effectiveCallbackMode, findPeerById, validateBridgeCallbackUrl } from './bridge-peers.js'
 import { getJob, withJobsDatabase, type Job } from './job-board.js'
 import { logger as rootLogger } from './logger.js'
+import { scheduleBridgeMcpFinished } from './bridge-mcp-events.js'
 import { scrubOutboundText } from './sensitive-paths.js'
 
 const log = rootLogger.child({ component: 'bridge-callback' })
@@ -270,6 +271,7 @@ export function enqueueBridgeStarted(jobId: number): void {
 
 /** Queue the terminal event that matches the job row. Does not change the job. */
 export function enqueueBridgeTerminal(jobId: number): void {
+  const flag = { terminal: false }
   try {
     withCallbackDb((db) => {
       const run = loadRun(db, jobId)
@@ -277,12 +279,14 @@ export function enqueueBridgeTerminal(jobId: number): void {
       if (!run || !job) return
       const eventType = eventTypeForStatus(job.status)
       if (!eventType) return
+      flag.terminal = true
       insertEvent(db, run, job, eventType)
     })
   } catch (err) {
     log.warn({ event: 'bridge-callback.enqueue_terminal_failed', jobId, err: String(err) },
       'failed to enqueue terminal callback')
   }
+  if (flag.terminal) scheduleBridgeMcpFinished(jobId)
 }
 
 /** Startup: a reaped running bridge job becomes run.failed / bridge_restarted. */

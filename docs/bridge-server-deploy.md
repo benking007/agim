@@ -92,7 +92,7 @@ agim token create --role bridge bridge-caller
 
 ## 5. 登记对等方
 
-优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。每个调用方选「回调方式」。轮询不主动通知，URL 和 Key 即使还在也不参与发送。Webhook 要 URL 和 Key 都有值才 POST，请求头是 `Authorization: Bearer <Key>`，缺一则不发。已经同时有 URL 和 Key、又没有写 `callbackMode` 的旧记录，加载后视为 Webhook；否则视为轮询。页面不回显 Key，保存后只显示「已设置」或空。已有调用方点「编辑」后可以改回调方式、允许的 Agent、并发上限、工作区、启用状态、Webhook URL 和 Key。改成轮询不会清掉已存的 Key。Key 留空不改已有 Key；勾选去掉 Key 并保存才会清除。也可以直接停用或启用。列表能看到 peerId、回调方式、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
+优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。每个调用方选「回调方式」。轮询不主动通知，URL 和 Key 即使还在也不参与发送。Webhook 要 URL 和 Key 都有值才 POST，请求头是 `Authorization: Bearer <Key>`，缺一则不发。MCP Events 不使用这一行的 URL 和 Key；订阅自己带回调地址和签名密钥。MCP OAuth 还没接，不能把桥接令牌当成 ChatGPT 插件登录。已经同时有 URL 和 Key、又没有写 `callbackMode` 的旧记录，加载后视为 Webhook；否则视为轮询。页面不回显 Key，保存后只显示「已设置」或空。已有调用方点「编辑」后可以改回调方式、允许的 Agent、并发上限、工作区、启用状态、Webhook URL 和 Key。改成轮询不会清掉已存的 Key。Key 留空不改已有 Key；勾选去掉 Key 并保存才会清除。也可以直接停用或启用。列表能看到 peerId、回调方式、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
 
 同机备用是编辑 `~/.agim/bridge-peers.json`（`AGIM_HOME` 下则是 `$AGIM_HOME/bridge-peers.json`），权限 `0600`。文件已存在时，只往 `peers` 加这一条，保留原有的 `outbound`。没有命令行子命令，保存后下次请求就会重读，不必为了这一文件再重启。
 
@@ -119,7 +119,7 @@ agim token create --role bridge bridge-caller
 
 - `tokenId` 填第 4 步的 `id`，不是原始令牌。
 - `agents` 必须包含 `agim`。名单为空则全部拒绝。`agim` 还得是这台进程里已注册的 Agent；写文档时健康检查里 `agim` 为可用。未注册或不在名单里都是 403，不创建作业。
-- `callbackMode` 写 `poll` 或 `webhook`。省略时：URL 和 `signingSecret` 都有值视为 `webhook`，否则视为 `poll`。`poll` 不入队、不发送，已存的 URL 和 Key 可以留着。`webhook` 且两者都有值才 POST，请求头是 `Authorization: Bearer <Key>`。URL 必须是公网地址，不跟随重定向。不要为了桥接去开 `AGIM_ALLOW_PRIVATE_WEBHOOKS`。Key 原文不要写入本文。
+- `callbackMode` 写 `poll`、`webhook` 或 `mcp_events`。省略时：URL 和 `signingSecret` 都有值视为 `webhook`，否则视为 `poll`。`poll` 不入队、不发送，已存的 URL 和 Key 可以留着。`webhook` 且两者都有值才 POST，请求头是 `Authorization: Bearer <Key>`。`mcp_events` 不读这一行的 URL 和 Key。URL 必须是公网地址，不跟随重定向。不要为了桥接去开 `AGIM_ALLOW_PRIVATE_WEBHOOKS`。Key 原文不要写入本文。
 - `maxConcurrent` 写 `1`。省略时加载也会当成 1。这是该对等方同时在跑的上限，与全局作业槽（默认 3）分开计数；槽满时作业停在 `pending`。
 - `workspaceId`：新的 `peerId` 若不是任何非默认工作区的成员，必须写 `default`。若它已经是别的工作区的成员，就写那个工作区的 id。钉死的 id 必须等于按该 `peerId` 解析出来的工作区，并且工作区要存在，否则 403，不创建作业。
 

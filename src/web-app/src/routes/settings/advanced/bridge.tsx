@@ -6,7 +6,7 @@
  * success only. Reloading the page cannot rebuild them.
  */
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -30,6 +30,17 @@ type Peer = {
   enabled: boolean
   maxConcurrent: number
   workspaceId: string
+}
+
+type PeerDraft = {
+  peerId: string
+  agents: string
+  maxConcurrent: string
+  workspaceId: string
+  enabled: boolean
+  webhookUrl: string
+  webhookKey: string
+  clearKey: boolean
 }
 
 function splitAgents(value: string): string[] {
@@ -72,8 +83,7 @@ export default function SettingsBridgeRoute(): JSX.Element {
   const [workspaceId, setWorkspaceId] = useState('default')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [webhookKey, setWebhookKey] = useState('')
-  const [editing, setEditing] = useState<string | null>(null)
-  const [allowlist, setAllowlist] = useState('')
+  const [draft, setDraft] = useState<PeerDraft | null>(null)
 
   const knownBase = tokensQuery.data?.publicBaseUrl ?? null
   const tokens = tokensQuery.data?.tokens ?? []
@@ -131,7 +141,7 @@ export default function SettingsBridgeRoute(): JSX.Element {
   const patchPeer = useMutation({
     mutationFn: (body: Parameters<typeof api.updateBridgePeer>[0]) => api.updateBridgePeer(body),
     onSuccess: async () => {
-      setEditing(null)
+      setDraft(null)
       toast.success(t('bridge.peerSaved'))
       await qc.invalidateQueries({ queryKey: ['bridge-admin', 'peers'] })
     },
@@ -145,6 +155,37 @@ export default function SettingsBridgeRoute(): JSX.Element {
     } catch {
       toast.error(t('bridge.copyFailed'))
     }
+  }
+
+  function openEdit(peer: Peer): void {
+    setDraft({
+      peerId: peer.peerId,
+      agents: peer.agents.join(', '),
+      maxConcurrent: String(peer.maxConcurrent),
+      workspaceId: peer.workspaceId,
+      enabled: peer.enabled,
+      webhookUrl: peer.callbackUrl || '',
+      webhookKey: '',
+      clearKey: false,
+    })
+  }
+
+  function onSaveEdit(): void {
+    if (!draft) return
+    const current = peers.find((peer) => peer.peerId === draft.peerId)
+    const parsed = Number(draft.maxConcurrent)
+    const nextUrl = draft.webhookUrl.trim()
+    const nextKey = draft.webhookKey.trim()
+    const urlChanged = nextUrl !== (current?.callbackUrl || '')
+    patchPeer.mutate({
+      peerId: draft.peerId,
+      agents: splitAgents(draft.agents),
+      maxConcurrent: Number.isInteger(parsed) ? parsed : 1,
+      workspaceId: draft.workspaceId.trim() || 'default',
+      enabled: draft.enabled,
+      ...(urlChanged ? { callbackUrl: nextUrl } : {}),
+      ...(nextKey ? { webhookKey: nextKey } : draft.clearKey ? { webhookKey: null } : {}),
+    })
   }
 
   function onAddPeer(): void {
@@ -383,54 +424,125 @@ export default function SettingsBridgeRoute(): JSX.Element {
               </thead>
               <tbody>
                 {peers.map((peer: Peer) => (
-                  <tr key={peer.peerId} className="border-t border-border align-top">
-                    <td className="py-2 pr-3 font-mono">{peer.peerId}</td>
-                    <td className="py-2 pr-3">{peer.agents.join(', ') || '—'}</td>
-                    <td className="py-2 pr-3">{peer.callbackUrl || t('bridge.callbackEmpty')}</td>
-                    <td className="py-2 pr-3">{peer.webhookKeySet ? t('bridge.webhookKeySet') : t('bridge.webhookKeyEmpty')}</td>
-                    <td className="py-2 pr-3">{peer.enabled ? t('bridge.active') : t('bridge.disable')}</td>
-                    <td className="py-2 pr-3 tabular-nums">{peer.maxConcurrent}</td>
-                    <td className="space-y-2 py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => patchPeer.mutate({ peerId: peer.peerId, enabled: !peer.enabled })}
-                        >
-                          {peer.enabled ? t('bridge.disable') : t('bridge.enable')}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditing(peer.peerId)
-                            setAllowlist(peer.agents.join(', '))
-                          }}
-                        >
-                          {t('bridge.allowlist')}
-                        </Button>
-                      </div>
-                      {editing === peer.peerId && (
+                  <Fragment key={peer.peerId}>
+                    <tr className="border-t border-border align-top">
+                      <td className="py-2 pr-3 font-mono">{peer.peerId}</td>
+                      <td className="py-2 pr-3">{peer.agents.join(', ') || '—'}</td>
+                      <td className="py-2 pr-3">{peer.callbackUrl || t('bridge.callbackEmpty')}</td>
+                      <td className="py-2 pr-3">{peer.webhookKeySet ? t('bridge.webhookKeySet') : t('bridge.webhookKeyEmpty')}</td>
+                      <td className="py-2 pr-3">{peer.enabled ? t('bridge.active') : t('bridge.disable')}</td>
+                      <td className="py-2 pr-3 tabular-nums">{peer.maxConcurrent}</td>
+                      <td className="py-2 text-right">
                         <div className="flex justify-end gap-2">
-                          <Input
-                            aria-label={t('bridge.allowlist')}
-                            value={allowlist}
-                            onChange={(event) => setAllowlist(event.target.value)}
-                            className="max-w-xs"
-                          />
                           <Button
                             size="sm"
-                            onClick={() => patchPeer.mutate({
-                              peerId: peer.peerId,
-                              agents: splitAgents(allowlist),
-                            })}
+                            variant="outline"
+                            onClick={() => patchPeer.mutate({ peerId: peer.peerId, enabled: !peer.enabled })}
                           >
-                            {t('bridge.saveAllowlist')}
+                            {peer.enabled ? t('bridge.disable') : t('bridge.enable')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            aria-expanded={draft?.peerId === peer.peerId}
+                            onClick={() => openEdit(peer)}
+                          >
+                            {t('bridge.edit')}
                           </Button>
                         </div>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    {draft?.peerId === peer.peerId && (
+                      <tr className="border-b border-border">
+                        <td colSpan={7} className="pb-3">
+                          <div className="grid gap-2 rounded-lg border border-border bg-bg p-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label htmlFor="bridge-edit-agents">{t('bridge.agents')}</Label>
+                              <Input
+                                id="bridge-edit-agents"
+                                value={draft.agents}
+                                onChange={(event) => setDraft({ ...draft, agents: event.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="bridge-edit-max">{t('bridge.maxConcurrent')}</Label>
+                              <Input
+                                id="bridge-edit-max"
+                                value={draft.maxConcurrent}
+                                onChange={(event) => setDraft({ ...draft, maxConcurrent: event.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="bridge-edit-workspace">{t('bridge.workspace')}</Label>
+                              <Input
+                                id="bridge-edit-workspace"
+                                value={draft.workspaceId}
+                                onChange={(event) => setDraft({ ...draft, workspaceId: event.target.value })}
+                              />
+                            </div>
+                            <div className="flex items-end">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  id="bridge-edit-enabled"
+                                  type="checkbox"
+                                  checked={draft.enabled}
+                                  onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+                                />
+                                {t('bridge.enabled')}
+                              </label>
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="bridge-edit-webhook-url">{t('bridge.webhookUrl')}</Label>
+                              <Input
+                                id="bridge-edit-webhook-url"
+                                value={draft.webhookUrl}
+                                placeholder="https://"
+                                onChange={(event) => setDraft({ ...draft, webhookUrl: event.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="bridge-edit-webhook-key">{t('bridge.webhookKey')}</Label>
+                              <Input
+                                id="bridge-edit-webhook-key"
+                                type="password"
+                                autoComplete="new-password"
+                                value={draft.webhookKey}
+                                onChange={(event) => setDraft({
+                                  ...draft,
+                                  webhookKey: event.target.value,
+                                  clearKey: event.target.value.trim() ? false : draft.clearKey,
+                                })}
+                              />
+                              <p className="text-xs text-text-dim">{t('bridge.keyKeepHint')}</p>
+                            </div>
+                            {peer.webhookKeySet && (
+                              <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                                <input
+                                  id="bridge-edit-clear-key"
+                                  type="checkbox"
+                                  checked={draft.clearKey}
+                                  disabled={draft.webhookKey.trim().length > 0}
+                                  onChange={(event) => setDraft({ ...draft, clearKey: event.target.checked })}
+                                />
+                                <span>
+                                  {t('bridge.clearKey')}
+                                  <span className="mt-0.5 block text-xs text-text-dim">{t('bridge.clearKeyHint')}</span>
+                                </span>
+                              </label>
+                            )}
+                            <div className="flex gap-2 sm:col-span-2">
+                              <Button size="sm" onClick={onSaveEdit} disabled={patchPeer.isPending}>
+                                {t('bridge.save')}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setDraft(null)}>
+                                {t('bridge.cancel')}
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

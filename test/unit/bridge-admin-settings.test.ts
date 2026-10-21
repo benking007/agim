@@ -440,4 +440,94 @@ describe('bridge connection settings', () => {
     expect(peers.loadBridgePeers().find((row) => row.peerId === 'hooked')?.signingSecret).toBe(key)
     delete process.env.AGIM_BRIDGE_ENABLED
   })
+
+  it('updates an existing caller URL without wiping a blank key', async () => {
+    const token = tokens.createToken('edit-caller', { role: 'bridge' })
+    const key = `whk-${Date.now().toString(16)}`
+    const created = await callAdmin({
+      method: 'POST',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+      body: JSON.stringify({
+        peerId: 'editable',
+        tokenId: token.id,
+        agents: ['agim'],
+        maxConcurrent: 1,
+        workspaceId: 'default',
+        callbackUrl: 'https://1.1.1.1/hook',
+        webhookKey: key,
+      }),
+    })
+    expect(created.statusCode).toBe(201)
+
+    const moved = await callAdmin({
+      method: 'PATCH',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+      body: JSON.stringify({
+        peerId: 'editable',
+        callbackUrl: 'https://8.8.8.8/hook',
+        webhookKey: '',
+        agents: ['agim', 'claude-code'],
+        maxConcurrent: 2,
+        workspaceId: 'desk',
+        enabled: false,
+      }),
+    })
+    expect(moved.statusCode).toBe(200)
+    expect(moved.body.includes(key)).toBe(false)
+    expect(moved.body.includes('signingSecret')).toBe(false)
+    const stored = peers.loadBridgePeers().find((row) => row.peerId === 'editable')
+    expect(stored?.callbackUrl).toBe('https://8.8.8.8/hook')
+    expect(stored?.signingSecret).toBe(key)
+    expect(stored?.agents).toEqual(['agim', 'claude-code'])
+    expect(stored?.maxConcurrent).toBe(2)
+    expect(stored?.workspaceId).toBe('desk')
+    expect(stored?.enabled).toBe(false)
+
+    const listed = await callAdmin({
+      method: 'GET',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.body.includes(key)).toBe(false)
+    expect(listed.body.includes('signingSecret')).toBe(false)
+    const row = (JSON.parse(listed.body) as { peers: Array<{ peerId: string; webhookKeySet: boolean; callbackUrl: string | null }> })
+      .peers.find((peer) => peer.peerId === 'editable')
+    expect(row?.webhookKeySet).toBe(true)
+    expect(row?.callbackUrl).toBe('https://8.8.8.8/hook')
+
+    const denied = await callAdmin({
+      method: 'PATCH',
+      path: '/api/admin/bridge/peers',
+      token: userRaw,
+      body: JSON.stringify({ peerId: 'editable', callbackUrl: 'https://1.1.1.1/hook' }),
+    })
+    expect(denied.statusCode).toBe(403)
+    expect(peers.loadBridgePeers().find((peer) => peer.peerId === 'editable')?.callbackUrl).toBe('https://8.8.8.8/hook')
+
+    const cleared = await callAdmin({
+      method: 'PATCH',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+      body: JSON.stringify({
+        peerId: 'editable',
+        callbackUrl: '',
+        webhookKey: null,
+      }),
+    })
+    expect(cleared.statusCode).toBe(200)
+    expect(cleared.body.includes(key)).toBe(false)
+    const after = peers.loadBridgePeers().find((peer) => peer.peerId === 'editable')
+    expect(after?.callbackUrl).toBeNull()
+    expect(after?.signingSecret).toBeNull()
+    const again = await callAdmin({
+      method: 'GET',
+      path: '/api/admin/bridge/peers',
+      token: adminRaw,
+    })
+    expect(again.body.includes(key)).toBe(false)
+    expect(again.body.includes('signingSecret')).toBe(false)
+  })
 })

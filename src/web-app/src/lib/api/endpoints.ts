@@ -557,8 +557,10 @@ export const api = {
     enabled?: boolean
     agents?: string[]
     maxConcurrent?: number
+    workspaceId?: string
     callbackUrl?: string | null
-    webhookKey?: string
+    /** Omit or send "" to keep the stored key. null removes it. */
+    webhookKey?: string | null
   }) =>
     client.patch<{ ok: boolean }>('/api/admin/bridge/peers', { body }),
 

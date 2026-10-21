@@ -92,7 +92,7 @@ agim token create --role bridge bridge-caller
 
 ## 5. 登记对等方
 
-优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。需要主动通知时再填 Webhook URL 和 Key；两栏都留空就是只轮询，不入队、不发送。页面不回显 Key，保存后只显示「已设置」或空。保存后可以停用、启用或改白名单。列表能看到 peerId、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
+优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。需要主动通知时再填 Webhook URL 和 Key；两栏都留空就是只轮询，不入队、不发送。页面不回显 Key，保存后只显示「已设置」或空。已有调用方点「编辑」后可以改允许的 Agent、并发上限、工作区、启用状态、Webhook URL 和 Key。Key 留空不改已有 Key；勾选去掉 Key 并保存才会清除，不再主动通知。URL 清空则只轮询。也可以直接停用或启用。列表能看到 peerId、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
 
 同机备用是编辑 `~/.agim/bridge-peers.json`（`AGIM_HOME` 下则是 `$AGIM_HOME/bridge-peers.json`），权限 `0600`。文件已存在时，只往 `peers` 加这一条，保留原有的 `outbound`。没有命令行子命令，保存后下次请求就会重读，不必为了这一文件再重启。
 

@@ -1,6 +1,6 @@
 # 在 dev.myfund.work 上打开桥接
 
-操作员按顺序做。桥接挂在已经在跑的这台 Agim 上，对外基址是 `https://dev.myfund.work`（路径前不要再加斜杠）。调用方不是另一套 Agim，只轮询，回调 URL 留空。
+操作员按顺序做。桥接挂在已经在跑的这台 Agim 上，对外基址是 `https://dev.myfund.work`（路径前不要再加斜杠）。调用方可以是 ChatGPT 或 Codex。执行 Agent 仍是 `agim`。Webhook URL 和 Key 留空时只轮询；在连接设置里填了才会主动通知。
 
 ## 现在还不能验通
 
@@ -92,7 +92,7 @@ agim token create --role bridge bridge-caller
 
 ## 5. 登记对等方
 
-优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。回调 URL 留空。页面不填写、也不回显签名密钥；只轮询的对等方密钥为空。保存后可以停用、启用或改白名单。列表能看到 peerId、允许的 Agent、回调 URL（可空）、是否启用、并发上限。
+优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。需要主动通知时再填 Webhook URL 和 Key；两栏都留空就是只轮询，不入队、不发送。页面不回显 Key，保存后只显示「已设置」或空。保存后可以停用、启用或改白名单。列表能看到 peerId、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
 
 同机备用是编辑 `~/.agim/bridge-peers.json`（`AGIM_HOME` 下则是 `$AGIM_HOME/bridge-peers.json`），权限 `0600`。文件已存在时，只往 `peers` 加这一条，保留原有的 `outbound`。没有命令行子命令，保存后下次请求就会重读，不必为了这一文件再重启。
 
@@ -118,7 +118,7 @@ agim token create --role bridge bridge-caller
 
 - `tokenId` 填第 4 步的 `id`，不是原始令牌。
 - `agents` 必须包含 `agim`。名单为空则全部拒绝。`agim` 还得是这台进程里已注册的 Agent；写文档时健康检查里 `agim` 为可用。未注册或不在名单里都是 403，不创建作业。
-- `callbackUrl` 与 `signingSecret` 保持 `null`。这就是只轮询。不要为了桥接去开 `AGIM_ALLOW_PRIVATE_WEBHOOKS`。
+- Webhook URL 与 Key 都留空时，`callbackUrl` 与 `signingSecret` 为 `null`，只轮询。填了则会向该 URL POST，请求头是 `Authorization: Bearer <Key>`。URL 必须是公网地址，不跟随重定向。不要为了桥接去开 `AGIM_ALLOW_PRIVATE_WEBHOOKS`。Key 原文不要写入本文。
 - `maxConcurrent` 写 `1`。省略时加载也会当成 1。这是该对等方同时在跑的上限，与全局作业槽（默认 3）分开计数；槽满时作业停在 `pending`。
 - `workspaceId`：新的 `peerId` 若不是任何非默认工作区的成员，必须写 `default`。若它已经是别的工作区的成员，就写那个工作区的 id。钉死的 id 必须等于按该 `peerId` 解析出来的工作区，并且工作区要存在，否则 403，不创建作业。
 
@@ -140,7 +140,7 @@ agim token create --role bridge bridge-caller
 
 默认列表仍包含普通对话作业。该构建尚未部署并重启时，这个筛选项不存在，按第 6 节在默认列表里看。
 
-同一版还会在**登记了回调 URL 和签名密钥**的对等方上推送 `run.waiting_approval` 和 `run.progress`。本对等方回调留空，不入队，调用方只靠 GET。
+同一版还会在**登记了 Webhook URL 和 Key** 的对等方上推送 `run.waiting_approval` 和 `run.progress`。本对等方回调留空，不入队，调用方只靠 GET。
 
 ## 8. 交给调用方什么
 

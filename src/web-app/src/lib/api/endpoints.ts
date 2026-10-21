@@ -531,6 +531,7 @@ export const api = {
         tokenId: string
         agents: string[]
         callbackUrl: string | null
+        webhookKeySet: boolean
         enabled: boolean
         maxConcurrent: number
         workspaceId: string
@@ -545,6 +546,8 @@ export const api = {
     maxConcurrent?: number
     workspaceId?: string
     enabled?: boolean
+    callbackUrl?: string
+    webhookKey?: string
   }) =>
     client.post<{ ok: boolean }>('/api/admin/bridge/peers', { body }),
 
@@ -554,6 +557,8 @@ export const api = {
     enabled?: boolean
     agents?: string[]
     maxConcurrent?: number
+    callbackUrl?: string | null
+    webhookKey?: string
   }) =>
     client.patch<{ ok: boolean }>('/api/admin/bridge/peers', { body }),
 

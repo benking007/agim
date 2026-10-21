@@ -33,6 +33,8 @@ interface PublicPeer {
   tokenId: string
   agents: string[]
   callbackUrl: string | null
+  /** True when a signing key is stored. The key itself is never returned. */
+  webhookKeySet: boolean
   enabled: boolean
   maxConcurrent: number
   workspaceId: string
@@ -49,6 +51,7 @@ function publicPeer(peer: BridgePeer): PublicPeer {
     tokenId: peer.tokenId,
     agents: peer.agents,
     callbackUrl: peer.callbackUrl,
+    webhookKeySet: Boolean(peer.signingSecret),
     enabled: peer.enabled,
     maxConcurrent: peer.maxConcurrent,
     workspaceId: peer.workspaceId,
@@ -96,6 +99,26 @@ async function readJson(req: IncomingMessage, res: ServerResponse): Promise<Reco
 
 function liveBridgeToken(tokenId: string): boolean {
   return listBridgeTokens().some((row) => row.id === tokenId && !row.revoked)
+}
+
+/** Page fields are callbackUrl and webhookKey. The stored field stays signingSecret. */
+function readWebhook(
+  body: Record<string, unknown>,
+  existing: { callbackUrl: string | null; signingSecret: string | null } | null,
+  mode: 'create' | 'patch',
+): { callbackUrl: string | null; signingSecret: string | null } | { error: string } | 'keep' {
+  const hasUrl = Object.hasOwn(body, 'callbackUrl')
+  const hasKey = Object.hasOwn(body, 'webhookKey')
+  if (mode === 'patch' && !hasUrl && !hasKey) return 'keep'
+  const url = hasUrl
+    ? (typeof body.callbackUrl === 'string' ? body.callbackUrl.trim() : '')
+    : (existing?.callbackUrl || '')
+  const typedKey = hasKey && typeof body.webhookKey === 'string' ? body.webhookKey.trim() : ''
+  const secret = typedKey || existing?.signingSecret || ''
+  if (!url && !typedKey) return { callbackUrl: null, signingSecret: null }
+  if (!url) return { error: 'webhook URL is required when a key is set' }
+  if (!secret) return { error: 'webhook key is required when a URL is set' }
+  return { callbackUrl: url, signingSecret: secret }
 }
 
 async function handleListTokens(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -153,12 +176,13 @@ function handleListPeers(res: ServerResponse): void {
 async function handleCreatePeer(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readJson(req, res)
   if (!body) return
-  if (hasSecretField(body)) {
+  if (hasSecretField(body) || 'callbackPinnedHost' in body) {
     sendError(res, 400, 'VALIDATION', { message: 'signing secret is not accepted' })
     return
   }
-  if (typeof body.callbackUrl === 'string' && body.callbackUrl.trim()) {
-    sendError(res, 400, 'VALIDATION', { message: 'this page registers poll-only peers' })
+  const webhook = readWebhook(body, null, 'create')
+  if (webhook === 'keep' || 'error' in webhook) {
+    sendError(res, 400, 'VALIDATION', { message: webhook === 'keep' ? 'webhook rejected' : webhook.error })
     return
   }
   const peerId = typeof body.peerId === 'string' ? body.peerId.trim() : ''
@@ -181,8 +205,8 @@ async function handleCreatePeer(req: IncomingMessage, res: ServerResponse): Prom
     tokenId,
     agents,
     workspaceId,
-    callbackUrl: null,
-    signingSecret: null,
+    callbackUrl: webhook.callbackUrl,
+    signingSecret: webhook.signingSecret,
     enabled: body.enabled !== false,
     maxConcurrent,
     callbackPinnedHost: null,
@@ -200,7 +224,7 @@ async function handleCreatePeer(req: IncomingMessage, res: ServerResponse): Prom
 async function handlePatchPeer(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readJson(req, res)
   if (!body) return
-  if (hasSecretField(body) || 'callbackUrl' in body || 'callbackPinnedHost' in body) {
+  if (hasSecretField(body) || 'callbackPinnedHost' in body) {
     sendError(res, 400, 'VALIDATION', { message: 'signing secret is not accepted' })
     return
   }
@@ -214,6 +238,16 @@ async function handlePatchPeer(req: IncomingMessage, res: ServerResponse): Promi
   const current = peers[index]
   if (!current) return
   const next: BridgePeer = { ...current }
+  const webhook = readWebhook(body, current, 'patch')
+  if (webhook !== 'keep') {
+    if ('error' in webhook) {
+      sendError(res, 400, 'VALIDATION', { message: webhook.error })
+      return
+    }
+    next.callbackUrl = webhook.callbackUrl
+    next.signingSecret = webhook.signingSecret
+    next.callbackPinnedHost = null
+  }
   if (typeof body.enabled === 'boolean') next.enabled = body.enabled
   if (body.agents !== undefined) {
     const agents = asAgents(body.agents)

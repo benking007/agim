@@ -26,6 +26,7 @@ type Peer = {
   tokenId: string
   agents: string[]
   callbackUrl: string | null
+  webhookKeySet: boolean
   enabled: boolean
   maxConcurrent: number
   workspaceId: string
@@ -69,6 +70,8 @@ export default function SettingsBridgeRoute(): JSX.Element {
   const [agents, setAgents] = useState('agim')
   const [maxConcurrent, setMaxConcurrent] = useState('1')
   const [workspaceId, setWorkspaceId] = useState('default')
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookKey, setWebhookKey] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [allowlist, setAllowlist] = useState('')
 
@@ -117,6 +120,8 @@ export default function SettingsBridgeRoute(): JSX.Element {
     onSuccess: async () => {
       setPeerId('')
       setAgents('agim')
+      setWebhookUrl('')
+      setWebhookKey('')
       toast.success(t('bridge.peerSaved'))
       await qc.invalidateQueries({ queryKey: ['bridge-admin', 'peers'] })
     },
@@ -151,6 +156,8 @@ export default function SettingsBridgeRoute(): JSX.Element {
       maxConcurrent: Number.isInteger(parsed) ? parsed : 1,
       workspaceId: workspaceId.trim() || 'default',
       enabled: true,
+      callbackUrl: webhookUrl.trim(),
+      webhookKey: webhookKey.trim(),
     })
   }
 
@@ -334,6 +341,25 @@ export default function SettingsBridgeRoute(): JSX.Element {
             <Label htmlFor="bridge-peer-workspace">{t('bridge.workspace')}</Label>
             <Input id="bridge-peer-workspace" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} />
           </div>
+          <div className="space-y-1">
+            <Label htmlFor="bridge-webhook-url">{t('bridge.webhookUrl')}</Label>
+            <Input
+              id="bridge-webhook-url"
+              value={webhookUrl}
+              onChange={(event) => setWebhookUrl(event.target.value)}
+              placeholder="https://"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="bridge-webhook-key">{t('bridge.webhookKey')}</Label>
+            <Input
+              id="bridge-webhook-key"
+              type="password"
+              autoComplete="new-password"
+              value={webhookKey}
+              onChange={(event) => setWebhookKey(event.target.value)}
+            />
+          </div>
         </div>
         <Button onClick={onAddPeer} disabled={savePeer.isPending || !peerId.trim() || !tokenId}>
           {t('bridge.addPeer')}
@@ -348,7 +374,8 @@ export default function SettingsBridgeRoute(): JSX.Element {
                 <tr className="text-left text-text-dim">
                   <th className="py-1 pr-3 font-medium">{t('bridge.peerId')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.agents')}</th>
-                  <th className="py-1 pr-3 font-medium">{t('bridge.callback')}</th>
+                  <th className="py-1 pr-3 font-medium">{t('bridge.webhookUrl')}</th>
+                  <th className="py-1 pr-3 font-medium">{t('bridge.webhookKey')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.enabled')}</th>
                   <th className="py-1 pr-3 font-medium">{t('bridge.maxConcurrent')}</th>
                   <th className="py-1 font-medium" />
@@ -360,6 +387,7 @@ export default function SettingsBridgeRoute(): JSX.Element {
                     <td className="py-2 pr-3 font-mono">{peer.peerId}</td>
                     <td className="py-2 pr-3">{peer.agents.join(', ') || '—'}</td>
                     <td className="py-2 pr-3">{peer.callbackUrl || t('bridge.callbackEmpty')}</td>
+                    <td className="py-2 pr-3">{peer.webhookKeySet ? t('bridge.webhookKeySet') : t('bridge.webhookKeyEmpty')}</td>
                     <td className="py-2 pr-3">{peer.enabled ? t('bridge.active') : t('bridge.disable')}</td>
                     <td className="py-2 pr-3 tabular-nums">{peer.maxConcurrent}</td>
                     <td className="space-y-2 py-2 text-right">

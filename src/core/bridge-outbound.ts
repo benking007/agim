@@ -10,7 +10,6 @@ import {
   findOutboundTarget,
   type BridgeOutboundTarget,
 } from './bridge-peers.js'
-import { signBridgePayload } from './bridge-callback.js'
 import {
   cancelJob,
   createJob,
@@ -24,7 +23,6 @@ import { logger as rootLogger } from './logger.js'
 
 const log = rootLogger.child({ component: 'bridge-outbound' })
 
-const TIMESTAMP_WINDOW_SEC = 300
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS bridge_runs (
     job_id            INTEGER PRIMARY KEY,
@@ -314,10 +312,12 @@ export async function pollOutboundRuns(): Promise<number> {
   return n
 }
 
-function signaturesMatch(secret: string, timestamp: string, rawBody: string, signature: string): boolean {
-  const expected = signBridgePayload(secret, timestamp, rawBody)
-  const a = Buffer.from(expected)
-  const b = Buffer.from(signature)
+function bearerMatches(secret: string, authorization: string): boolean {
+  const prefix = 'Bearer '
+  if (!secret || !authorization.startsWith(prefix)) return false
+  const token = authorization.slice(prefix.length)
+  const a = Buffer.from(secret)
+  const b = Buffer.from(token)
   if (a.length !== b.length) return false
   return timingSafeEqual(a, b)
 }
@@ -328,21 +328,15 @@ function headerValue(headers: Record<string, string | string[] | undefined>, nam
 }
 
 /**
- * Caller callback endpoint. 401 on a bad timestamp or signature.
- * Terminal state is copied from GET, not from the event body.
- * Returns 204 when the notice is accepted, including duplicates.
+ * Caller callback endpoint. 401 when Authorization Bearer does not match
+ * the key configured for that peer. Terminal state is copied from GET,
+ * not from the event body. Returns 204 when the notice is accepted,
+ * including duplicates.
  */
 export async function applyOutboundCallback(
   rawBody: string,
   headers: Record<string, string | string[] | undefined>,
 ): Promise<204 | 401 | 500> {
-  const timestamp = headerValue(headers, 'x-agim-bridge-timestamp')
-  const signature = headerValue(headers, 'x-agim-bridge-signature')
-  const eventHeader = headerValue(headers, 'x-agim-bridge-event')
-  const stamp = Number(timestamp)
-  if (!Number.isFinite(stamp) || Math.abs(Math.floor(Date.now() / 1000) - stamp) > TIMESTAMP_WINDOW_SEC) {
-    return 401
-  }
   let parsed: {
     specVersion?: number
     eventId?: string
@@ -355,11 +349,12 @@ export async function applyOutboundCallback(
   try {
     parsed = JSON.parse(rawBody) as typeof parsed
   } catch {
-    return 204
+    return 401
   }
   const peer = parsed.peerId ? findOutboundTarget(parsed.peerId) : null
-  if (!peer?.signingSecret || !signaturesMatch(peer.signingSecret, timestamp, rawBody, signature)) return 401
-  if (parsed.specVersion !== 1 || !parsed.eventId || !parsed.runId || eventHeader !== parsed.type) return 204
+  const authorization = headerValue(headers, 'authorization')
+  if (!peer?.signingSecret || !bearerMatches(peer.signingSecret, authorization)) return 401
+  if (parsed.specVersion !== 1 || !parsed.eventId || !parsed.runId || !parsed.type) return 204
   const eventId = parsed.eventId
   const runId = parsed.runId
   const seq = Number(parsed.seq) || 0

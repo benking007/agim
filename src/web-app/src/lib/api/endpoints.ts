@@ -530,6 +530,7 @@ export const api = {
         peerId: string
         tokenId: string
         agents: string[]
+        callbackMode: 'poll' | 'webhook'
         callbackUrl: string | null
         webhookKeySet: boolean
         enabled: boolean
@@ -546,6 +547,7 @@ export const api = {
     maxConcurrent?: number
     workspaceId?: string
     enabled?: boolean
+    callbackMode?: 'poll' | 'webhook'
     callbackUrl?: string
     webhookKey?: string
   }) =>
@@ -558,6 +560,7 @@ export const api = {
     agents?: string[]
     maxConcurrent?: number
     workspaceId?: string
+    callbackMode?: 'poll' | 'webhook'
     callbackUrl?: string | null
     /** Omit or send "" to keep the stored key. null removes it. */
     webhookKey?: string | null

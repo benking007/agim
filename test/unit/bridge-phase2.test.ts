@@ -264,6 +264,7 @@ describe('production bridge phase 2 callbacks', () => {
       workspaceId: 'default',
       callbackUrl: withCallback ? `https://127.0.0.1:${port}/hook` : null,
       signingSecret: withCallback ? secret : null,
+      callbackMode: withCallback ? 'webhook' : 'poll',
       enabled: true,
       maxConcurrent: 1,
       callbackPinnedHost: withCallback ? '127.0.0.1' : null,
@@ -302,6 +303,36 @@ describe('production bridge phase 2 callbacks', () => {
       if (n === 0) return
     }
   }
+
+  it('does not post when callback mode is poll even if URL and key are set', async () => {
+    if (skip()) return
+    const mod = api
+    if (!mod) return
+    const token = mod.tokens.createToken('poll-mode', { role: 'bridge' })
+    await mod.peers.saveBridgePeers([{
+      peerId: 'poll-keeps',
+      tokenId: token.id,
+      agents: ['agim'],
+      workspaceId: 'default',
+      callbackUrl: `https://127.0.0.1:${port}/hook`,
+      signingSecret: secret,
+      callbackMode: 'poll',
+      enabled: true,
+      maxConcurrent: 1,
+      callbackPinnedHost: '127.0.0.1',
+    }])
+    const before = recorded.length
+    const created = await postRun(token.raw, { agent: 'agim', prompt: '方式是轮询' }, 'cb-poll-mode-1')
+    expect(created.status).toBe(202)
+    await waitJob(created.body.jobId as number, 'completed')
+    await deliverAll()
+    expect(recorded.length).toBe(before)
+    const stored = mod.peers.loadBridgePeers().find((peer) => peer.peerId === 'poll-keeps')
+    expect(stored?.signingSecret).toBe(secret)
+    expect(stored?.callbackUrl).toBe(`https://127.0.0.1:${port}/hook`)
+    expect(stored?.callbackMode).toBe('poll')
+    expect(mod.runs.getBridgeRunByRunId(String(created.body.runId))?.callback_status).toBe('none')
+  }, { timeout: 20_000 })
 
   it('delivers a bearer-authenticated terminal event and run.started over HTTPS', async () => {
     if (skip()) return

@@ -13,6 +13,7 @@ import {
 } from '../core/access-token.js'
 import {
   BridgePeerError,
+  effectiveCallbackMode,
   loadBridgePeers,
   saveBridgePeers,
   type BridgePeer,
@@ -33,6 +34,7 @@ interface PublicPeer {
   peerId: string
   tokenId: string
   agents: string[]
+  callbackMode: 'poll' | 'webhook'
   callbackUrl: string | null
   /** True when a signing key is stored. The key itself is never returned. */
   webhookKeySet: boolean
@@ -51,6 +53,7 @@ function publicPeer(peer: BridgePeer): PublicPeer {
     peerId: peer.peerId,
     tokenId: peer.tokenId,
     agents: peer.agents,
+    callbackMode: effectiveCallbackMode(peer),
     callbackUrl: peer.callbackUrl,
     webhookKeySet: Boolean(peer.signingSecret),
     enabled: peer.enabled,
@@ -100,6 +103,11 @@ async function readJson(req: IncomingMessage, res: ServerResponse): Promise<Reco
 
 function liveBridgeToken(tokenId: string): boolean {
   return listBridgeTokens().some((row) => row.id === tokenId && !row.revoked)
+}
+
+function asCallbackMode(value: unknown): 'poll' | 'webhook' | null {
+  if (value === 'poll' || value === 'webhook') return value
+  return null
 }
 
 /**
@@ -219,11 +227,23 @@ async function handleCreatePeer(req: IncomingMessage, res: ServerResponse): Prom
     sendError(res, 400, 'VALIDATION', { message: 'tokenId must be an active bridge token' })
     return
   }
+  let callbackMode: 'poll' | 'webhook'
+  if (Object.hasOwn(body, 'callbackMode')) {
+    const parsed = asCallbackMode(body.callbackMode)
+    if (!parsed) {
+      sendError(res, 400, 'VALIDATION', { message: 'callbackMode must be poll or webhook' })
+      return
+    }
+    callbackMode = parsed
+  } else {
+    callbackMode = webhook.callbackUrl && webhook.signingSecret ? 'webhook' : 'poll'
+  }
   const peer: BridgePeer = {
     peerId,
     tokenId,
     agents,
     workspaceId,
+    callbackMode,
     callbackUrl: webhook.callbackUrl,
     signingSecret: webhook.signingSecret,
     enabled: body.enabled !== false,
@@ -291,6 +311,14 @@ async function handlePatchPeer(req: IncomingMessage, res: ServerResponse): Promi
       return
     }
     next.workspaceId = workspaceId
+  }
+  if (Object.hasOwn(body, 'callbackMode')) {
+    const callbackMode = asCallbackMode(body.callbackMode)
+    if (!callbackMode) {
+      sendError(res, 400, 'VALIDATION', { message: 'callbackMode must be poll or webhook' })
+      return
+    }
+    next.callbackMode = callbackMode
   }
   peers[index] = next
   try {

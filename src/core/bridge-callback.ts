@@ -15,7 +15,7 @@ import { eventBus } from './event-bus.js'
 import { effectiveCallbackMode, findPeerById, validateBridgeCallbackUrl } from './bridge-peers.js'
 import { getJob, withJobsDatabase, type Job } from './job-board.js'
 import { logger as rootLogger } from './logger.js'
-import { scheduleBridgeMcpFinished } from './bridge-mcp-events.js'
+import { resumePendingMcpDeliveries, scheduleBridgeMcpFinished } from './bridge-mcp-events.js'
 import { scrubOutboundText } from './sensitive-paths.js'
 
 const log = rootLogger.child({ component: 'bridge-callback' })
@@ -583,8 +583,13 @@ export function startBridgeCallbackWorker(): void {
   void deliverDueCallbacks().catch((err) => {
     log.warn({ event: 'bridge-callback.tick_failed', err: String(err) }, 'callback tick failed')
   })
+  void resumePendingMcpDeliveries().catch((err) => {
+    log.warn({ event: 'bridge-mcp.resume_failed', err: err instanceof Error ? err.message : 'resume' },
+      'mcp delivery resume failed')
+  })
   workerTimer = setInterval(() => {
     void deliverDueCallbacks().catch(() => { /* logged above on the next explicit call */ })
+    void resumePendingMcpDeliveries().catch(() => { /* logged on the boot resume */ })
   }, 1000)
   if (typeof workerTimer === 'object' && workerTimer && 'unref' in workerTimer) workerTimer.unref()
 }

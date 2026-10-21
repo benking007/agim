@@ -87,6 +87,8 @@ describe('bridge mcp events', () => {
   const hits: Hit[] = []
   let server: https.Server | null = null
   let port = 0
+  let eventStatus = 204
+  let failuresLeft = 0
 
   afterAll(() => {
     server?.close()
@@ -119,7 +121,12 @@ describe('bridge mcp events', () => {
           res.end(JSON.stringify({ challenge }))
           return
         }
-        res.writeHead(204)
+        let status = 204
+        if (failuresLeft > 0) {
+          failuresLeft -= 1
+          status = eventStatus
+        }
+        res.writeHead(status)
         res.end()
       })
     })
@@ -312,6 +319,107 @@ describe('bridge mcp events', () => {
     expect(callbackCount(polled.jobId)).toBe(0)
     expect(eventsFor().length).toBe(mcpBefore)
     expect(eventsFor().some((hit) => hit.raw.includes(unusedKey))).toBe(false)
+  }, { timeout: 20_000 })
+
+  it('retries 5xx after restart, stops on 410, expiry, and unsubscribe', async () => {
+    if (skip() || !peers || !callbacks || !mcp || !jobs) return
+    await listen()
+    mcp.setMcpRetryBackoffForTests([0, 0, 0])
+    jobs.withJobsDatabase((db) => {
+      const table = db.prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'bridge_mcp_subscriptions'`,
+      ).get()
+      if (table) db.prepare('UPDATE bridge_mcp_subscriptions SET active = 0').run()
+    })
+    const postOpts = { caPem: certPem, pinnedHost: '127.0.0.1' as const }
+    await peers.saveBridgePeers([{
+      peerId: 'mcp-retry',
+      tokenId: 'tk_retry',
+      agents: ['agim'],
+      workspaceId: 'default',
+      callbackMode: 'mcp_events',
+      callbackUrl: null,
+      signingSecret: null,
+      enabled: true,
+      maxConcurrent: 1,
+      callbackPinnedHost: null,
+    }])
+    eventStatus = 500
+    failuresLeft = 1
+    const subscribed = await mcp.subscribeMcpEvent({
+      name: 'agim.run.finished',
+      arguments: {},
+      delivery: { mode: 'webhook', url: `https://127.0.0.1:${port}/retry`, secret },
+    }, postOpts)
+    expect(subscribed.ok).toBe(true)
+    if (!subscribed.ok) return
+    const job = seed('mcp-retry', 'completed')
+    callbacks.enqueueBridgeTerminal(job.jobId)
+    await mcp.flushBridgeMcpDeliveries()
+    const first = eventsFor().filter((row) => row.data.runId === job.runId)
+    expect(first).toHaveLength(1)
+    expect(jobs.getJob(job.jobId)?.status).toBe('completed')
+    eventStatus = 204
+    failuresLeft = 0
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    await mcp.resumePendingMcpDeliveries()
+    const again = eventsFor().filter((row) => row.data.runId === job.runId)
+    expect(again).toHaveLength(2)
+    expect(again[0]?.eventId).toBe(again[1]?.eventId)
+    expect(again[0]?.headers['webhook-timestamp']).not.toBe(again[1]?.headers['webhook-timestamp'])
+
+    eventStatus = 410
+    failuresLeft = 5
+    const gone = seed('mcp-retry', 'failed')
+    callbacks.enqueueBridgeTerminal(gone.jobId)
+    await mcp.flushBridgeMcpDeliveries()
+    const goneHits = eventsFor().filter((row) => row.data.runId === gone.runId)
+    expect(goneHits).toHaveLength(1)
+    await mcp.resumePendingMcpDeliveries()
+    expect(eventsFor().filter((row) => row.data.runId === gone.runId)).toHaveLength(1)
+    expect(jobs.getJob(gone.jobId)?.status).toBe('failed')
+    failuresLeft = 0
+
+    jobs.withJobsDatabase((db) => {
+      db.prepare('UPDATE bridge_mcp_subscriptions SET refresh_before = ? WHERE id = ?').run(
+        new Date(Date.now() - 60_000).toISOString(),
+        subscribed.id,
+      )
+    })
+    const expired = seed('mcp-retry', 'cancelled')
+    const beforeExpired = eventsFor().length
+    callbacks.enqueueBridgeTerminal(expired.jobId)
+    await mcp.flushBridgeMcpDeliveries()
+    expect(eventsFor().filter((row) => row.data.runId === expired.runId)).toHaveLength(0)
+    expect(eventsFor().length).toBe(beforeExpired)
+    expect(jobs.getJob(expired.jobId)?.status).toBe('cancelled')
+
+    jobs.withJobsDatabase((db) => {
+      db.prepare('UPDATE bridge_mcp_subscriptions SET refresh_before = ? WHERE id = ?').run(
+        new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        subscribed.id,
+      )
+    })
+    const running = seed('mcp-retry', 'completed')
+    jobs.withJobsDatabase((db) => {
+      db.prepare(`UPDATE jobs SET status = 'running' WHERE id = ?`).run(running.jobId)
+    })
+    const removed = mcp.unsubscribeMcpEvent({
+      name: 'agim.run.finished',
+      arguments: {},
+      delivery: { mode: 'webhook', url: `https://127.0.0.1:${port}/retry` },
+    })
+    expect(removed.ok).toBe(true)
+    expect(jobs.getJob(running.jobId)?.status).toBe('running')
+    jobs.markJobCompleted(running.jobId, 'still complete')
+    const beforeStop = eventsFor().length
+    callbacks.enqueueBridgeTerminal(running.jobId)
+    await mcp.flushBridgeMcpDeliveries()
+    expect(eventsFor().length).toBe(beforeStop)
+    expect(jobs.getJob(running.jobId)?.status).toBe('completed')
+    mcp.setMcpRetryBackoffForTests(null)
+    eventStatus = 204
+    failuresLeft = 0
   }, { timeout: 20_000 })
 })
 

@@ -115,6 +115,18 @@
 
 业务上不能再等，就走第 3 节取消，再 GET。
 
-## 5. 这个调用方只轮询
+## 5. 可选：签名通知
 
-本对等方回调 URL 为空，不接收推送。没收到推送不影响收尾。收尾只看 GET。不要为了推送去登记回调。
+轮询仍然够用。终态以 GET 为准。没填 webhook 时不会发送，只靠 GET。
+
+若操作员在连接设置里填了 Webhook URL 和 Key，调用方还会收到签名 POST。不要在 `POST /api/bridge/runs` 里带 `callbackUrl`。
+
+生产把事件 POST 到那个 URL。验签头是：
+
+| 头 | 值 |
+|---|---|
+| `X-Agim-Bridge-Timestamp` | Unix 秒 |
+| `X-Agim-Bridge-Event` | 事件类型，与 body 的 `type` 相同 |
+| `X-Agim-Bridge-Signature` | 小写十六进制 HMAC-SHA256。密钥是连接设置里的 Key。消息是 `时间戳字符串 + "." + 原始 body` |
+
+时间戳与当前时间相差超过 300 秒应拒绝。返回 **2xx** 表示收下。终态仍以 GET 为准。

@@ -7,7 +7,7 @@
 | 项 | 本文怎么处理 |
 |---|---|
 | 桥接令牌 | 不写在本页。用交给你的那一次提示里的原文。不要写进仓库、日志或工单正文。 |
-| 签名密钥 | 不需要。只轮询不用它发请求。 |
+| Key | 不写在创建请求里。主动通知用 `Authorization: Bearer <Key>`，Key 与连接设置里配置的一致。没配 webhook 时不会收到通知。 |
 | `peerId` | 调用方不发送。不需要再向管理员要一份协议说明。 |
 
 请把本提示中的连接方式和对接页做成一个 skill，之后都通过这个 skill 连接 Agim、发送任务，并在任务完成后把执行情况返回。
@@ -115,18 +115,12 @@
 
 业务上不能再等，就走第 3 节取消，再 GET。
 
-## 5. 可选：签名通知
+## 5. 可选：主动通知
 
 轮询仍然够用。终态以 GET 为准。没填 webhook 时不会发送，只靠 GET。
 
-若操作员在连接设置里填了 Webhook URL 和 Key，调用方还会收到签名 POST。不要在 `POST /api/bridge/runs` 里带 `callbackUrl`。
+若操作员在连接设置里填了 Webhook URL 和 Key，调用方还会收到 POST。不要在 `POST /api/bridge/runs` 里带 `callbackUrl`。
 
-生产把事件 POST 到那个 URL。验签头是：
+生产把事件 POST 到那个 URL。校验 `Authorization` 的值是 `Bearer <Key>`，Key 与连接设置里配置的 Key 一致。不一致就拒绝。
 
-| 头 | 值 |
-|---|---|
-| `X-Agim-Bridge-Timestamp` | Unix 秒 |
-| `X-Agim-Bridge-Event` | 事件类型，与 body 的 `type` 相同 |
-| `X-Agim-Bridge-Signature` | 小写十六进制 HMAC-SHA256。密钥是连接设置里的 Key。消息是 `时间戳字符串 + "." + 原始 body` |
-
-时间戳与当前时间相差超过 300 秒应拒绝。返回 **2xx** 表示收下。终态仍以 GET 为准。
+`Content-Type` 为 `application/json`。返回 **2xx** 表示收下。终态仍以 GET 为准。

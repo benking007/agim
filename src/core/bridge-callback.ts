@@ -1,14 +1,14 @@
-// Signed callbacks for inbound bridge runs (phase 2).
+// Callbacks for inbound bridge runs (phase 2).
 //
 // The queue lives in jobs.db, not outbox.db. Delivery copies the outbox
 // lease and backoff: pending → sending → delivered, or giving_up.
 // A poll-only peer (no callback URL) never gets a row. The job's own
 // status is not changed when delivery gives up.
 //
-// The signed bytes are the stored body. Retries reuse that body and the
-// same eventId; only the timestamp and signature are minted per attempt.
+// Each POST authenticates with Authorization: Bearer <peer key>.
+// Retries reuse the stored body and the same eventId.
 
-import { createHmac, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import http from 'node:http'
 import https from 'node:https'
 import { eventBus } from './event-bus.js'
@@ -94,10 +94,6 @@ function sliceCodePoints(text: string, max: number): { text: string; truncated: 
     index += ch.length
   }
   return { text, truncated: false }
-}
-
-export function signBridgePayload(secret: string, timestampSec: string, rawBody: string): string {
-  return createHmac('sha256', secret).update(`${timestampSec}.${rawBody}`, 'utf8').digest('hex')
 }
 
 function parseJobTime(value: string | null): number | null {
@@ -489,12 +485,8 @@ export async function deliverDueCallbacks(opts: DeliverOptions = {}): Promise<nu
       withCallbackDb((db) => giveUpWithoutSend(db, row, 'callback target is not public'))
       continue
     }
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    const signature = signBridgePayload(peer.signingSecret, timestamp, row.body)
     const result = await postCallback(peer.callbackUrl, row.body, {
-      'X-Agim-Bridge-Timestamp': timestamp,
-      'X-Agim-Bridge-Event': row.event_type,
-      'X-Agim-Bridge-Signature': signature,
+      Authorization: `Bearer ${peer.signingSecret}`,
     }, opts.caPem)
     if ('networkError' in result) {
       withCallbackDb((db) => markRetryOrGiveUp(db, row, result.networkError, backoff, false))

@@ -10,8 +10,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { signBridgePayload } from '../../src/core/bridge-callback.js'
-
 const home = mkdtempSync(join(tmpdir(), 'agim-bridge-phase3-'))
 process.env.AGIM_HOME = home
 process.env.AGIM_BRIDGE_ENABLED = '1'
@@ -219,13 +217,8 @@ describe('dev Agim outbound bridge', () => {
     })
   }
 
-  function sign(body: string): Record<string, string> {
-    const timestamp = String(Math.floor(Date.now() / 1000))
-    return {
-      'x-agim-bridge-timestamp': timestamp,
-      'x-agim-bridge-event': JSON.parse(body).type as string,
-      'x-agim-bridge-signature': signBridgePayload(signingSecret, timestamp, body),
-    }
+  function authHeaders(): Record<string, string> {
+    return { authorization: `Bearer ${signingSecret}` }
   }
 
   async function postCallback(body: string, headers: Record<string, string>) {
@@ -344,10 +337,10 @@ describe('dev Agim outbound bridge', () => {
       agent: 'agim',
       status: 'running',
     })
-    expect(await postCallback(startedBody, sign(startedBody))).toBe(204)
+    expect(await postCallback(startedBody, authHeaders())).toBe(204)
     expect(mod.jobs.getJob(started.jobId)?.status).toBe('running')
     expect(gets).toBe(0)
-    expect(await postCallback(startedBody, sign(startedBody))).toBe(204)
+    expect(await postCallback(startedBody, authHeaders())).toBe(204)
     expect(gets).toBe(0)
 
     if (remote) {
@@ -370,11 +363,11 @@ describe('dev Agim outbound bridge', () => {
       resultTruncated: false,
     })
     const getsBefore = gets
-    expect(await postCallback(doneBody, sign(doneBody))).toBe(204)
+    expect(await postCallback(doneBody, authHeaders())).toBe(204)
     expect(gets).toBe(getsBefore + 1)
     expect(mod.jobs.getJob(started.jobId)?.status).toBe('completed')
     expect(mod.jobs.getJob(started.jobId)?.result).toBe('回调结果')
-    expect(await postCallback(doneBody, sign(doneBody))).toBe(204)
+    expect(await postCallback(doneBody, authHeaders())).toBe(204)
     expect(gets).toBe(getsBefore + 1)
 
     const late = JSON.stringify({
@@ -390,12 +383,12 @@ describe('dev Agim outbound bridge', () => {
       agent: 'agim',
       status: 'running',
     })
-    expect(await postCallback(late, sign(late))).toBe(204)
+    expect(await postCallback(late, authHeaders())).toBe(204)
     expect(mod.jobs.getJob(started.jobId)?.status).toBe('completed')
     expect(mod.jobs.getJob(started.jobId)?.result).toBe('回调结果')
   }, { timeout: 20_000 })
 
-  it('rejects a bad callback signature and keeps the bridge flag gate', async () => {
+  it('rejects a bad callback bearer token and keeps the bridge flag gate', async () => {
     if (skip()) return
     const mod = api
     if (!mod) return
@@ -408,12 +401,12 @@ describe('dev Agim outbound bridge', () => {
       peerId: 'prod',
       status: 'running',
     })
-    const headers = sign(body)
-    headers['x-agim-bridge-signature'] = '00'
+    const headers = authHeaders()
+    headers.authorization = 'Bearer wrong'
     expect(await postCallback(body, headers)).toBe(401)
     process.env.AGIM_BRIDGE_ENABLED = '0'
     try {
-      expect(await postCallback(body, sign(body))).toBe(404)
+      expect(await postCallback(body, authHeaders())).toBe(404)
     } finally {
       process.env.AGIM_BRIDGE_ENABLED = '1'
     }

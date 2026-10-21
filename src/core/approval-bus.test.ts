@@ -1,6 +1,7 @@
 // approval-bus tests — 用真实 unix socket 模拟 sidecar 端，验证协议与 pending 生命周期。
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { type Socket, createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -306,33 +307,39 @@ describe('ApprovalBus', () => {
   })
 
   it('native_tool gates PI agim_bash through approval before execution', async () => {
-    bus.registerRun('run-1', { ...RUN_CTX, cwd: tmpdir() })
+    // os.tmpdir() is often "/tmp". bwrap tmpfs-masks the parent of cwd, and
+    // masking "/" hides /usr/bin/sh, so the workspace must be a subdirectory.
+    const cwd = mkdtempSync(join(tmpdir(), 'agim-bash-'))
+    bus.registerRun('run-1', { ...RUN_CTX, cwd })
     let notified: ApprovalNotification | null = null
     bus.setNotifier(async (n) => { notified = n })
 
     const client = await connectClient(path)
-    client.send({
-      v: 1, type: 'native_tool', runId: 'run-1', reqId: 'nt-3',
-      payload: { name: 'agim_bash', arguments: { command: 'printf hi' } },
-    })
+    try {
+      client.send({
+        v: 1, type: 'native_tool', runId: 'run-1', reqId: 'nt-3',
+        payload: { name: 'agim_bash', arguments: { command: 'printf hi' } },
+      })
 
-    for (let i = 0; i < 50 && !notified; i++) await sleep(10)
-    const delivered = notified as ApprovalNotification | null
-    expect(delivered).not.toBeNull()
-    if (!delivered) throw new Error('native_tool approval did not fire')
-    expect(delivered.toolName).toBe('Bash')
-    expect(delivered.input.command).toBe('printf hi')
-    expect(bus.hasPendingFor(KEY)).toBe(true)
+      for (let i = 0; i < 50 && !notified; i++) await sleep(10)
+      const delivered = notified as ApprovalNotification | null
+      expect(delivered).not.toBeNull()
+      if (!delivered) throw new Error('native_tool approval did not fire')
+      expect(delivered.toolName).toBe('Bash')
+      expect(delivered.input.command).toBe('printf hi')
+      expect(bus.hasPendingFor(KEY)).toBe(true)
 
-    bus.resolvePending(KEY, { behavior: 'allow' })
-    const res = await client.next()
-    expect(res.type).toBe('native_tool.result')
-    expect(res.reqId).toBe('nt-3')
-    expect(res.ok).toBe(true)
-    expect(res.source).toBe('exec')
-    expect(res.result).toContain('hi')
-
-    await client.close()
+      bus.resolvePending(KEY, { behavior: 'allow' })
+      const res = await client.next()
+      expect(res.type).toBe('native_tool.result')
+      expect(res.reqId).toBe('nt-3')
+      expect(res.ok).toBe(true)
+      expect(res.source).toBe('exec')
+      expect(res.result).toContain('hi')
+    } finally {
+      await client.close()
+      rmSync(cwd, { recursive: true, force: true })
+    }
   })
 
   it('no notifier installed → instant deny', async () => {

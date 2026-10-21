@@ -2,7 +2,7 @@
  * Phase 2 signed callbacks. SQLite cases run under the Node vitest suite;
  * Bun skips them because better-sqlite3 does not load there.
  */
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { IncomingHttpHeaders } from 'node:http'
@@ -86,13 +86,14 @@ if (api) {
 type Ticket = { status: string; maxSeq: number; seen: Set<string>; applied: number }
 type Recorded = {
   raw: Buffer
-  event: string
   eventId: string
   seq: number
   type: string
   status: number
-  timestamp: string
-  signature: string
+  authorization: string
+  bridgeTimestamp: string
+  bridgeEvent: string
+  bridgeSignature: string
 }
 
 let mode: 'verify' | 'fail' = 'verify'
@@ -102,17 +103,18 @@ const recorded: Recorded[] = []
 let server: https.Server | null = null
 let port = 0
 
+function bearerMatches(key: string, authorization: string): boolean {
+  const prefix = 'Bearer '
+  if (!key || !authorization.startsWith(prefix)) return false
+  const token = authorization.slice(prefix.length)
+  const a = Buffer.from(key)
+  const b = Buffer.from(token)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
 function verifyAndApply(raw: Buffer, headers: IncomingHttpHeaders, key: string, state: Ticket): number {
-  const timestamp = String(headers['x-agim-bridge-timestamp'] || '')
-  const signature = String(headers['x-agim-bridge-signature'] || '')
-  const eventHeader = String(headers['x-agim-bridge-event'] || '')
-  const now = Math.floor(Date.now() / 1000)
-  const stamp = Number(timestamp)
-  if (!Number.isFinite(stamp) || Math.abs(now - stamp) > 300) return 401
-  const expected = createHmac('sha256', key).update(`${timestamp}.${raw.toString('utf8')}`).digest('hex')
-  const a = Buffer.from(expected)
-  const b = Buffer.from(signature)
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return 401
+  const authorization = String(headers.authorization || headers.Authorization || '')
+  if (!bearerMatches(key, authorization)) return 401
   const body = JSON.parse(raw.toString('utf8')) as {
     specVersion: number
     eventId: string
@@ -120,7 +122,7 @@ function verifyAndApply(raw: Buffer, headers: IncomingHttpHeaders, key: string, 
     seq: number
     status: string
   }
-  if (body.specVersion !== 1 || eventHeader !== body.type) return 204
+  if (body.specVersion !== 1 || typeof body.type !== 'string') return 204
   if (state.seen.has(body.eventId)) return 204
   state.seen.add(body.eventId)
   const terminal = state.status === 'completed' || state.status === 'failed' || state.status === 'cancelled'
@@ -212,13 +214,14 @@ describe('production bridge phase 2 callbacks', () => {
         } catch { /* unsigned or empty */ }
         recorded.push({
           raw,
-          event: String(req.headers['x-agim-bridge-event'] || ''),
           eventId,
           seq,
           type,
           status,
-          timestamp: String(req.headers['x-agim-bridge-timestamp'] || ''),
-          signature: String(req.headers['x-agim-bridge-signature'] || ''),
+          authorization: String(req.headers.authorization || ''),
+          bridgeTimestamp: String(req.headers['x-agim-bridge-timestamp'] || ''),
+          bridgeEvent: String(req.headers['x-agim-bridge-event'] || ''),
+          bridgeSignature: String(req.headers['x-agim-bridge-signature'] || ''),
         })
         res.writeHead(status)
         res.end()
@@ -300,7 +303,7 @@ describe('production bridge phase 2 callbacks', () => {
     }
   }
 
-  it('delivers a signed terminal event and run.started over HTTPS', async () => {
+  it('delivers a bearer-authenticated terminal event and run.started over HTTPS', async () => {
     if (skip()) return
     const mod = api
     if (!mod) return
@@ -312,6 +315,8 @@ describe('production bridge phase 2 callbacks', () => {
     await deliverAll()
     expect(recorded.length).toBeGreaterThanOrEqual(2)
     expect(recorded.every((row) => row.status === 204)).toBe(true)
+    expect(recorded.every((row) => row.authorization === `Bearer ${secret}`)).toBe(true)
+    expect(recorded.every((row) => row.bridgeTimestamp === '' && row.bridgeEvent === '' && row.bridgeSignature === '')).toBe(true)
     const types = recorded.map((row) => row.type)
     expect(types).toContain('run.started')
     expect(types).toContain('run.completed')
@@ -332,16 +337,12 @@ describe('production bridge phase 2 callbacks', () => {
     expect(side?.callback_status).toBe('delivered')
   }, { timeout: 20_000 })
 
-  it('returns 401 for a bad signature and gives up instead of retrying', async () => {
+  it('returns 401 for a bad bearer token and gives up instead of retrying', async () => {
     if (skip()) return
     const mod = api
     if (!mod) return
     const raw = Buffer.from('{"specVersion":1}')
-    const bad = verifyAndApply(raw, {
-      'x-agim-bridge-timestamp': String(Math.floor(Date.now() / 1000)),
-      'x-agim-bridge-signature': 'aa',
-      'x-agim-bridge-event': 'run.completed',
-    }, secret, ticket)
+    const bad = verifyAndApply(raw, { authorization: 'Bearer nope' }, secret, ticket)
     expect(bad).toBe(401)
 
     const signingKey = randomBytes(24).toString('hex')
@@ -394,15 +395,11 @@ describe('production bridge phase 2 callbacks', () => {
     if (!completed || !started) throw new Error('missing callback events')
     const late: Ticket = { status: 'pending', maxSeq: 0, seen: new Set(), applied: 0 }
     expect(verifyAndApply(completed.raw, {
-      'x-agim-bridge-timestamp': completed.timestamp,
-      'x-agim-bridge-signature': completed.signature,
-      'x-agim-bridge-event': 'run.completed',
+      authorization: completed.authorization,
     }, secret, late)).toBe(204)
     expect(late.status).toBe('completed')
     expect(verifyAndApply(started.raw, {
-      'x-agim-bridge-timestamp': started.timestamp,
-      'x-agim-bridge-signature': started.signature,
-      'x-agim-bridge-event': 'run.started',
+      authorization: started.authorization,
     }, secret, late)).toBe(204)
     expect(late.status).toBe('completed')
   }, { timeout: 20_000 })
@@ -464,7 +461,7 @@ describe('production bridge phase 2 callbacks', () => {
     expect(mod.jobs.getJob(created.body.jobId as number)?.status).toBe('completed')
   }, { timeout: 20_000 })
 
-  it('scrubs outbound secrets before signing the callback body', async () => {
+  it('scrubs outbound secrets before sending the callback body', async () => {
     if (skip()) return
     const mod = api
     if (!mod) return

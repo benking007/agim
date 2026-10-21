@@ -18,9 +18,11 @@ const log = rootLogger.child({ component: 'bridge-mcp-events' })
 export const MCP_EVENT_NAME = 'agim.run.finished'
 /** No authenticated plugin subject until MCP OAuth exists. */
 export const MCP_EVENTS_PRINCIPAL = 'oauth-not-configured'
-const REFRESH_MS = 24 * 60 * 60 * 1000
+const REFRESH_MS = 2 * 60 * 60 * 1000
+const SECRET_GRACE_MS = 10 * 60 * 1000
 const VERIFY_CACHE_MS = 10 * 60 * 1000
 const POST_TIMEOUT_MS = 10_000
+const DEFAULT_BACKOFF_SECONDS = [60, 300, 900, 1800] as const
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS bridge_mcp_subscriptions (
@@ -62,6 +64,8 @@ interface SubscriptionRow {
   delivery_secret: string
   active: number
   refresh_before: string | null
+  previous_secret: string | null
+  previous_secret_until: string | null
 }
 
 const verifiedUntil = new Map<string, number>()
@@ -69,8 +73,29 @@ const verifiedUntil = new Map<string, number>()
 function withMcpDb<T>(fn: (db: import('better-sqlite3').Database) => T): T | null {
   return withJobsDatabase((db) => {
     db.exec(SCHEMA)
+    ensureDeliveryColumns(db)
     return fn(db)
   })
+}
+
+function ensureDeliveryColumns(db: import('better-sqlite3').Database): void {
+  const names = (table: string) => new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((col) => col.name),
+  )
+  const delivery = names('bridge_mcp_deliveries')
+  if (!delivery.has('attempts')) db.exec('ALTER TABLE bridge_mcp_deliveries ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0')
+  if (!delivery.has('next_attempt_at')) db.exec('ALTER TABLE bridge_mcp_deliveries ADD COLUMN next_attempt_at TEXT')
+  if (!delivery.has('last_error')) db.exec('ALTER TABLE bridge_mcp_deliveries ADD COLUMN last_error TEXT')
+  const subs = names('bridge_mcp_subscriptions')
+  if (!subs.has('previous_secret')) db.exec('ALTER TABLE bridge_mcp_subscriptions ADD COLUMN previous_secret TEXT')
+  if (!subs.has('previous_secret_until')) db.exec('ALTER TABLE bridge_mcp_subscriptions ADD COLUMN previous_secret_until TEXT')
+}
+
+let retryBackoffSeconds: number[] = [...DEFAULT_BACKOFF_SECONDS]
+
+/** Test hook. Production uses a bounded minute-scale window. */
+export function setMcpRetryBackoffForTests(seconds: readonly number[] | null): void {
+  retryBackoffSeconds = seconds ? [...seconds] : [...DEFAULT_BACKOFF_SECONDS]
 }
 
 export function canonicalJson(value: unknown): string {
@@ -166,9 +191,28 @@ async function assertPublicHttps(url: string, pinnedHost: string | null): Promis
   return validateBridgeCallbackUrl(url, pinnedHost)
 }
 
+function signatureHeader(
+  secret: string,
+  previous: string | null,
+  previousUntil: string | null,
+  webhookId: string,
+  timestamp: string,
+  body: string,
+): string | null {
+  const current = signStandardWebhook(secret, webhookId, timestamp, body)
+  if (!current) return null
+  if (previous && previousUntil && Date.parse(previousUntil) > Date.now()) {
+    const older = signStandardWebhook(previous, webhookId, timestamp, body)
+    if (older) return `${current} ${older}`
+  }
+  return current
+}
+
 async function signedPost(
   url: string,
   secret: string,
+  previous: string | null,
+  previousUntil: string | null,
   subscriptionIdValue: string,
   webhookId: string,
   body: string,
@@ -177,7 +221,7 @@ async function signedPost(
   const allowed = await assertPublicHttps(url, opts.pinnedHost ?? null)
   if (!allowed.ok) return { networkError: allowed.reason }
   const timestamp = String(Math.floor(Date.now() / 1000))
-  const signature = signStandardWebhook(secret, webhookId, timestamp, body)
+  const signature = signatureHeader(secret, previous, previousUntil, webhookId, timestamp, body)
   if (!signature) return { networkError: 'invalid signing secret' }
   return postHttps(url, body, {
     'webhook-id': webhookId,
@@ -240,7 +284,16 @@ async function verifyCallback(row: SubscriptionRow, opts: McpPostOptions): Promi
   const challenge = randomBytes(24).toString('hex')
   const webhookId = `msg_verification_${randomBytes(8).toString('hex')}`
   const body = JSON.stringify({ type: 'verification', challenge })
-  const sent = await signedPost(row.delivery_url, row.delivery_secret, row.id, webhookId, body, opts)
+  const sent = await signedPost(
+    row.delivery_url,
+    row.delivery_secret,
+    row.previous_secret,
+    row.previous_secret_until,
+    row.id,
+    webhookId,
+    body,
+    opts,
+  )
   if ('networkError' in sent) return { ok: false, reason: sent.networkError }
   if (sent.status < 200 || sent.status >= 300) return { ok: false, reason: 'challenge_failed' }
   let echoed = ''
@@ -285,23 +338,44 @@ export async function subscribeMcpEvent(
   const refresh = refreshBeforeIso(input.ttlMs)
   if (typeof refresh !== 'string') return { ok: false, code: -32602, message: refresh.error }
   const id = subscriptionId(MCP_EVENTS_PRINCIPAL, url, MCP_EVENT_NAME, filter.canonical)
+  const existing = withMcpDb((db) => db.prepare(
+    'SELECT * FROM bridge_mcp_subscriptions WHERE id = ?',
+  ).get(id) as SubscriptionRow | undefined) ?? null
+  const rotatedUntil = new Date(Date.now() + SECRET_GRACE_MS).toISOString()
   const saved = withMcpDb((db) => {
-    db.prepare(
-      `INSERT INTO bridge_mcp_subscriptions (
-         id, principal, name, arguments_json, run_id, delivery_url, delivery_secret, active, refresh_before
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         delivery_secret = excluded.delivery_secret,
-         refresh_before = excluded.refresh_before,
-         active = 0`,
-    ).run(id, MCP_EVENTS_PRINCIPAL, MCP_EVENT_NAME, filter.canonical, filter.runId, url, rec.secret, refresh)
+    if (!existing) {
+      db.prepare(
+        `INSERT INTO bridge_mcp_subscriptions (
+           id, principal, name, arguments_json, run_id, delivery_url, delivery_secret, active, refresh_before
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      ).run(id, MCP_EVENTS_PRINCIPAL, MCP_EVENT_NAME, filter.canonical, filter.runId, url, rec.secret, refresh)
+    } else if (existing.delivery_secret !== rec.secret) {
+      db.prepare(
+        `UPDATE bridge_mcp_subscriptions
+            SET previous_secret = delivery_secret,
+                previous_secret_until = ?,
+                delivery_secret = ?,
+                refresh_before = ?
+          WHERE id = ?`,
+      ).run(rotatedUntil, rec.secret, refresh, id)
+    } else {
+      db.prepare('UPDATE bridge_mcp_subscriptions SET refresh_before = ? WHERE id = ?').run(refresh, id)
+    }
     return db.prepare('SELECT * FROM bridge_mcp_subscriptions WHERE id = ?').get(id) as SubscriptionRow
   })
   if (!saved) return { ok: false, code: -32015, message: 'subscription store unavailable', reason: 'timeout' }
   const verified = await verifyCallback(saved, opts)
   if (!verified.ok) {
     withMcpDb((db) => {
-      db.prepare('DELETE FROM bridge_mcp_subscriptions WHERE id = ? AND active = 0').run(id)
+      if (existing?.active) {
+        db.prepare(
+          `UPDATE bridge_mcp_subscriptions
+              SET delivery_secret = ?, previous_secret = NULL, previous_secret_until = NULL
+            WHERE id = ?`,
+        ).run(existing.delivery_secret, id)
+      } else {
+        db.prepare('DELETE FROM bridge_mcp_subscriptions WHERE id = ? AND active = 0').run(id)
+      }
     })
     return { ok: false, code: -32015, message: 'callback verification failed', reason: verified.reason }
   }
@@ -324,7 +398,12 @@ export function unsubscribeMcpEvent(input: SubscribeInput): { ok: true } | { ok:
   if (!url) return { ok: false, code: -32602, message: 'delivery.url is required' }
   const id = subscriptionId(MCP_EVENTS_PRINCIPAL, url, MCP_EVENT_NAME, filter.canonical)
   withMcpDb((db) => {
-    db.prepare('DELETE FROM bridge_mcp_subscriptions WHERE id = ?').run(id)
+    db.prepare('UPDATE bridge_mcp_subscriptions SET active = 0 WHERE id = ?').run(id)
+    db.prepare(
+      `UPDATE bridge_mcp_deliveries
+          SET status = 'stopped', next_attempt_at = NULL
+        WHERE subscription_id = ? AND status = 'pending'`,
+    ).run(id)
   })
   return { ok: true }
 }
@@ -341,11 +420,46 @@ function finishedBody(runId: string, jobId: number, status: string): { eventId: 
   return { eventId, body }
 }
 
-async function postDelivery(row: SubscriptionRow, eventId: string, body: string, opts: McpPostOptions): Promise<'delivered' | 'failed'> {
-  const sent = await signedPost(row.delivery_url, row.delivery_secret, row.id, eventId, body, opts)
-  if ('networkError' in sent) return 'failed'
-  if (sent.status >= 200 && sent.status < 300) return 'delivered'
-  return 'failed'
+type AttemptKind = 'delivered' | 'retry' | 'give_up'
+
+function classifyAttempt(result: SendResult): { kind: AttemptKind; error: string } {
+  if ('networkError' in result) return { kind: 'retry', error: result.networkError }
+  if (result.status >= 200 && result.status < 300) return { kind: 'delivered', error: '' }
+  if (result.status === 429 || result.status >= 500) return { kind: 'retry', error: `HTTP ${result.status}` }
+  return { kind: 'give_up', error: `HTTP ${result.status}` }
+}
+
+function recordAttempt(
+  db: import('better-sqlite3').Database,
+  subscriptionIdValue: string,
+  eventId: string,
+  attempts: number,
+  classified: { kind: AttemptKind; error: string },
+): void {
+  if (classified.kind === 'delivered') {
+    db.prepare(
+      `UPDATE bridge_mcp_deliveries
+          SET status = 'delivered', attempts = ?, next_attempt_at = NULL, last_error = NULL
+        WHERE subscription_id = ? AND event_id = ?`,
+    ).run(attempts, subscriptionIdValue, eventId)
+    return
+  }
+  const exhausted = classified.kind === 'give_up' || attempts >= retryBackoffSeconds.length
+  if (exhausted) {
+    db.prepare(
+      `UPDATE bridge_mcp_deliveries
+          SET status = 'failed', attempts = ?, next_attempt_at = NULL, last_error = ?
+        WHERE subscription_id = ? AND event_id = ?`,
+    ).run(attempts, classified.error.slice(0, 500), subscriptionIdValue, eventId)
+    return
+  }
+  const wait = retryBackoffSeconds[attempts - 1] ?? retryBackoffSeconds[retryBackoffSeconds.length - 1] ?? 60
+  const next = new Date(Date.now() + wait * 1000).toISOString()
+  db.prepare(
+    `UPDATE bridge_mcp_deliveries
+        SET status = 'pending', attempts = ?, next_attempt_at = ?, last_error = ?
+      WHERE subscription_id = ? AND event_id = ?`,
+  ).run(attempts, next, classified.error.slice(0, 500), subscriptionIdValue, eventId)
 }
 
 /** Deliver agim.run.finished for one run when it is already terminal. */
@@ -360,7 +474,10 @@ export async function deliverFinishedRun(runId: string, opts: McpPostOptions = t
   })
   if (!loaded) return
   const peer = findPeerById(loaded.peer_id)
-  if (!peer || effectiveCallbackMode(peer) !== 'mcp_events') return
+  if (!peer?.enabled || effectiveCallbackMode(peer) !== 'mcp_events') {
+    stopDeliveriesForRun(loaded.run_id)
+    return
+  }
   const job = getJob(loaded.job_id)
   if (!job) return
   if (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled') return
@@ -374,32 +491,128 @@ export async function deliverFinishedRun(runId: string, opts: McpPostOptions = t
     if (sub.refresh_before && Date.parse(sub.refresh_before) <= now) continue
     const gate = withMcpDb((db) => {
       db.prepare(
-        `INSERT INTO bridge_mcp_deliveries (subscription_id, event_id, status, body)
-         VALUES (?, ?, 'pending', ?)
+        `INSERT INTO bridge_mcp_deliveries (subscription_id, event_id, status, body, attempts)
+         VALUES (?, ?, 'pending', ?, 0)
          ON CONFLICT(subscription_id, event_id) DO NOTHING`,
       ).run(sub.id, built.eventId, built.body)
       return db.prepare(
-        'SELECT status, body FROM bridge_mcp_deliveries WHERE subscription_id = ? AND event_id = ?',
-      ).get(sub.id, built.eventId) as { status: string; body: string } | undefined
+        `SELECT status, body, attempts, next_attempt_at,
+                CASE WHEN next_attempt_at IS NULL OR next_attempt_at <= ? THEN 1 ELSE 0 END AS due
+           FROM bridge_mcp_deliveries
+          WHERE subscription_id = ? AND event_id = ?`,
+      ).get(new Date().toISOString(), sub.id, built.eventId) as {
+        status: string
+        body: string
+        attempts: number
+        due: number
+      } | undefined
     })
-    if (!gate || gate.status === 'delivered') continue
-    let outcome: 'delivered' | 'failed' = 'failed'
-    try {
-      outcome = await postDelivery(sub, built.eventId, gate.body, opts)
-    } catch (err) {
-      log.warn({ event: 'bridge-mcp.post_failed', subscriptionId: sub.id, err: err instanceof Error ? err.message : 'post' },
-        'mcp event post failed')
-    }
-    withMcpDb((db) => {
-      db.prepare(
-        'UPDATE bridge_mcp_deliveries SET status = ? WHERE subscription_id = ? AND event_id = ?',
-      ).run(outcome, sub.id, built.eventId)
-    })
-    if (outcome === 'failed') {
-      log.warn({ event: 'bridge-mcp.delivery_failed', subscriptionId: sub.id, runId: loaded.run_id },
-        'mcp event was not accepted')
-    }
+    if (gate?.status !== 'pending' || gate?.due !== 1) continue
+    await attemptDelivery(sub, built.eventId, gate.body, gate.attempts, opts)
   }
+}
+
+async function attemptDelivery(
+  sub: SubscriptionRow,
+  eventId: string,
+  body: string,
+  attemptsSoFar: number,
+  opts: McpPostOptions,
+): Promise<void> {
+  let classified = { kind: 'retry' as AttemptKind, error: 'post failed' }
+  try {
+    const sent = await signedPost(
+      sub.delivery_url,
+      sub.delivery_secret,
+      sub.previous_secret,
+      sub.previous_secret_until,
+      sub.id,
+      eventId,
+      body,
+      opts,
+    )
+    classified = classifyAttempt(sent)
+  } catch (err) {
+    classified = { kind: 'retry', error: err instanceof Error ? err.message : 'post failed' }
+  }
+  withMcpDb((db) => recordAttempt(db, sub.id, eventId, attemptsSoFar + 1, classified))
+  if (classified.kind !== 'delivered') {
+    log.warn({ event: 'bridge-mcp.delivery_failed', subscriptionId: sub.id, error: classified.error },
+      'mcp event was not accepted')
+  }
+}
+
+function stopDeliveriesForRun(runId: string): void {
+  withMcpDb((db) => {
+    const rows = db.prepare(
+      `SELECT subscription_id, event_id, body FROM bridge_mcp_deliveries WHERE status = 'pending'`,
+    ).all() as Array<{ subscription_id: string; event_id: string; body: string }>
+    for (const row of rows) {
+      if (!row.body.includes(`"runId":${JSON.stringify(runId)}`)) continue
+      db.prepare(
+        `UPDATE bridge_mcp_deliveries
+            SET status = 'stopped', next_attempt_at = NULL
+          WHERE subscription_id = ? AND event_id = ? AND status = 'pending'`,
+      ).run(row.subscription_id, row.event_id)
+    }
+  })
+}
+
+/** Continue deliveries that were still pending when the process stopped. */
+export async function resumePendingMcpDeliveries(opts: McpPostOptions = testPostOpts ?? {}): Promise<number> {
+  const due = withMcpDb((db) => {
+    db.prepare(
+      `UPDATE bridge_mcp_deliveries
+          SET status = 'stopped', next_attempt_at = NULL
+        WHERE status = 'pending'
+          AND subscription_id NOT IN (SELECT id FROM bridge_mcp_subscriptions WHERE active = 1)`,
+    ).run()
+    return db.prepare(
+      `SELECT d.event_id, d.body, d.attempts, d.next_attempt_at, s.*
+         FROM bridge_mcp_deliveries d
+         JOIN bridge_mcp_subscriptions s ON s.id = d.subscription_id
+        WHERE d.status = 'pending' AND s.active = 1`,
+    ).all() as Array<SubscriptionRow & { event_id: string; body: string; attempts: number; next_attempt_at: string | null }>
+  }) ?? []
+  const now = Date.now()
+  let n = 0
+  for (const row of due) {
+    if (row.next_attempt_at && Date.parse(row.next_attempt_at) > now) continue
+    if (row.refresh_before && Date.parse(row.refresh_before) <= now) {
+      withMcpDb((db) => {
+        db.prepare(
+          `UPDATE bridge_mcp_deliveries
+              SET status = 'stopped', next_attempt_at = NULL, last_error = 'subscription expired'
+            WHERE subscription_id = ? AND event_id = ? AND status = 'pending'`,
+        ).run(row.id, row.event_id)
+      })
+      continue
+    }
+    let runId = ''
+    try {
+      const parsed = JSON.parse(row.body) as { data?: { runId?: string } }
+      runId = parsed.data?.runId || ''
+    } catch { /* stored body stays */ }
+    if (runId) {
+      const run = withMcpDb((db) => db.prepare(
+        `SELECT peer_id FROM bridge_runs WHERE run_id = ? AND direction = 'inbound'`,
+      ).get(runId) as { peer_id: string } | undefined)
+      const peer = run ? findPeerById(run.peer_id) : null
+      if (!peer?.enabled || effectiveCallbackMode(peer) !== 'mcp_events') {
+        withMcpDb((db) => {
+          db.prepare(
+            `UPDATE bridge_mcp_deliveries
+                SET status = 'stopped', next_attempt_at = NULL
+              WHERE subscription_id = ? AND event_id = ? AND status = 'pending'`,
+          ).run(row.id, row.event_id)
+        })
+        continue
+      }
+    }
+    await attemptDelivery(row, row.event_id, row.body, row.attempts, opts)
+    n += 1
+  }
+  return n
 }
 
 let chain: Promise<void> = Promise.resolve()

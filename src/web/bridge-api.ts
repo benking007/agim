@@ -107,6 +107,14 @@ export async function handleBridgeApi(
     serveBridgeCallerGuide(res)
     return true
   }
+  // MCP Events methods exist in-process. This route is not a plugin login:
+  // the bridge token is not accepted as OAuth.
+  if (p === '/api/bridge/mcp') {
+    sendError(res, 401, 'MCP_OAUTH_REQUIRED', {
+      message: 'MCP OAuth is not configured; the bridge token is not a plugin login',
+    })
+    return true
+  }
   if (!isBridgeEnabled()) {
     notFound(res)
     return true

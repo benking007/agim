@@ -40,7 +40,7 @@ export interface BridgePeer {
    * webhook notifies only when both are present.
    * Omitted on old files: both present means webhook, otherwise poll.
    */
-  callbackMode?: 'poll' | 'webhook'
+  callbackMode?: 'poll' | 'webhook' | 'mcp_events'
   /** Stored webhook target. Ignored while callbackMode is poll. */
   callbackUrl: string | null
   /** Raw key for Authorization: Bearer. Ignored while callbackMode is poll. */
@@ -109,7 +109,7 @@ function normalizeLoaded(raw: unknown): BridgePeer | null {
   const maxConcurrent = typeof maxRaw === 'number' && Number.isInteger(maxRaw) && maxRaw >= 1
     ? maxRaw
     : 1
-  const callbackMode = row.callbackMode === 'poll' || row.callbackMode === 'webhook'
+  const callbackMode = row.callbackMode === 'poll' || row.callbackMode === 'webhook' || row.callbackMode === 'mcp_events'
     ? row.callbackMode
     : (callbackUrl && signingSecret ? 'webhook' : 'poll')
   return {
@@ -155,9 +155,10 @@ export function effectiveCallbackMode(peer: {
   callbackMode?: string | null
   callbackUrl?: string | null
   signingSecret?: string | null
-}): 'poll' | 'webhook' {
+}): 'poll' | 'webhook' | 'mcp_events' {
   if (peer.callbackMode === 'poll') return 'poll'
   if (peer.callbackMode === 'webhook') return 'webhook'
+  if (peer.callbackMode === 'mcp_events') return 'mcp_events'
   if (peer.callbackMode == null || peer.callbackMode === '') {
     return peer.callbackUrl && peer.signingSecret ? 'webhook' : 'poll'
   }
@@ -228,7 +229,7 @@ function assertPeerShape(peer: BridgePeer, index: number): void {
   if (typeof peer.enabled !== 'boolean') {
     throw new BridgePeerError(`peer ${peer.peerId} enabled must be a boolean`)
   }
-  if (peer.callbackMode != null && peer.callbackMode !== 'poll' && peer.callbackMode !== 'webhook') {
+  if (peer.callbackMode != null && peer.callbackMode !== 'poll' && peer.callbackMode !== 'webhook' && peer.callbackMode !== 'mcp_events') {
     throw new BridgePeerError(`peer ${peer.peerId} callbackMode must be poll or webhook`)
   }
 }

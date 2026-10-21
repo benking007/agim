@@ -128,6 +128,7 @@
     "callbackMode": "回调方式",
     "callbackModePoll": "轮询",
     "callbackModeWebhook": "Webhook",
+    "callbackModeMcp": "MCP Events",
     "webhookUrl": "Webhook URL",
     "webhookKey": "Key",
     "webhookKeySet": "已设置",

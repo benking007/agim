@@ -35,6 +35,7 @@
     "src/web/serial-queue.ts",
     "src/web/server.ts",
     "src/web/service-api.ts",
+    "src/web/spa-fallback.ts",
     "src/web/static-serve.ts",
     "src/web/unregister-client.ts",
     "src/web/viewer-api.ts",

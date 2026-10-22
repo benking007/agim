@@ -102,6 +102,19 @@ describe('MCP OAuth', () => {
     expect(auth.isPublicPath('/.well-known/oauth-authorization-server', 'GET')).toBe(true)
     expect(auth.isPublicPath('/api/bridge/oauth/token', 'POST')).toBe(true)
     expect(auth.isPublicPath('/api/bridge/runs', 'POST')).toBe(false)
+    const spa = await import('../../src/web/spa-fallback.js')
+    expect(spa.shouldServeSpaIndex('/bridge/oauth/authorize')).toBe(false)
+    expect(spa.shouldServeSpaIndex('/settings/advanced/bridge')).toBe(true)
+    const authorizeUrl = new URL('https://dev.myfund.work/bridge/oauth/authorize?response_type=code')
+    const authorizeRes = mockRes()
+    const authorizeHandled = await http.handleBridgeOauthHttp(
+      mockReq('GET', `${authorizeUrl.pathname}${authorizeUrl.search}`),
+      authorizeRes,
+      authorizeUrl,
+    )
+    expect(authorizeHandled).toBe(true)
+    expect(authorizeRes.statusCode).not.toBe(404)
+    expect(authorizeRes.body.includes('什么也没找到')).toBe(false)
   })
 
   it('rejects authorization without PKCE S256', async () => {

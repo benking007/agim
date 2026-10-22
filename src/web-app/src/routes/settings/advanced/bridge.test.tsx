@@ -48,6 +48,8 @@ describe('/settings/advanced/bridge', () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByRole('heading', { name: '连接设置' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '允许的回跳地址' })).toBeInTheDocument()
+    expect(screen.getByText('对外基址还没有。MCP 地址是基址加上 /api/bridge/mcp。')).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: '打开桥接' })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('heading', { name: '桥接令牌' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '已连接的调用方' })).toBeInTheDocument()

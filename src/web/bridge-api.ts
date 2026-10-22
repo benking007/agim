@@ -30,6 +30,7 @@ import {
 } from '../core/bridge-run.js'
 import { extractToken } from './auth.js'
 import { serveBridgeCallerGuide } from './bridge-caller-guide.js'
+import { handleBridgeOauthHttp } from './bridge-mcp-oauth-http.js'
 import { readBody, sendError, sendJson } from './http-utils.js'
 
 const ALLOWED_FIELDS = new Set(['agent', 'prompt', 'timeoutMs', 'correlationId'])
@@ -100,19 +101,12 @@ export async function handleBridgeApi(
   res: ServerResponse,
   url: URL,
 ): Promise<boolean> {
+  if (await handleBridgeOauthHttp(req, res, url)) return true
   const p = url.pathname
   if (p !== '/api/bridge' && !p.startsWith('/api/bridge/')) return false
   const m = req.method ?? 'GET'
   if (p === '/api/bridge/caller-access' && m === 'GET') {
     serveBridgeCallerGuide(res)
-    return true
-  }
-  // MCP Events methods exist in-process. This route is not a plugin login:
-  // the bridge token is not accepted as OAuth.
-  if (p === '/api/bridge/mcp') {
-    sendError(res, 401, 'MCP_OAUTH_REQUIRED', {
-      message: 'MCP OAuth is not configured; the bridge token is not a plugin login',
-    })
     return true
   }
   if (!isBridgeEnabled()) {

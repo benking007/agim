@@ -11,6 +11,7 @@
     "src/web/bridge-admin-api.ts",
     "src/web/bridge-api.ts",
     "src/web/bridge-caller-guide.ts",
+    "src/web/bridge-mcp-oauth-http.ts",
     "src/web/chat-media-api.ts",
     "src/web/config-api.ts",
     "src/web/env-api.ts",
@@ -46,11 +47,17 @@
     "src/web/ws-chat.ts",
     "src/web/ws-history-rekey.ts"
   ],
-  "count": 174,
+  "count": 179,
   "endpoints": [
     {
       "method": "DELETE",
       "path": "/api/admin-allowlist",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/bridge/oauth-redirects",
       "source": "exact",
       "authRequired": true
     },
@@ -165,6 +172,12 @@
     {
       "method": "GET",
       "path": "/api/admin/bridge/enabled",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/bridge/oauth-redirects",
       "source": "exact",
       "authRequired": true
     },
@@ -692,6 +705,12 @@
     },
     {
       "method": "POST",
+      "path": "/api/admin/bridge/oauth-redirects",
+      "source": "exact",
+      "authRequired": true
+    },
+    {
+      "method": "POST",
       "path": "/api/admin/bridge/peers",
       "source": "exact",
       "authRequired": true
@@ -765,6 +784,18 @@
     {
       "method": "POST",
       "path": "/api/bridge/callbacks",
+      "source": "exact",
+      "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/bridge/mcp",
+      "source": "exact",
+      "authRequired": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/bridge/oauth/token",
       "source": "exact",
       "authRequired": false
     },

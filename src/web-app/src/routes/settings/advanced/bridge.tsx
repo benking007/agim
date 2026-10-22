@@ -91,6 +91,10 @@ export default function SettingsBridgeRoute(): JSX.Element {
     queryKey: ['bridge-admin', 'peers'],
     queryFn: () => api.listBridgePeers(),
   })
+  const redirectsQuery = useQuery({
+    queryKey: ['bridge-admin', 'oauth-redirects'],
+    queryFn: () => api.listBridgeOauthRedirects(),
+  })
 
   const [label, setLabel] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
@@ -105,11 +109,32 @@ export default function SettingsBridgeRoute(): JSX.Element {
   const [webhookKey, setWebhookKey] = useState('')
   const [callbackMode, setCallbackMode] = useState<CallbackMode>('poll')
   const [draft, setDraft] = useState<PeerDraft | null>(null)
+  const [redirectDraft, setRedirectDraft] = useState('')
 
   const knownBase = tokensQuery.data?.publicBaseUrl ?? null
   const tokens = tokensQuery.data?.tokens ?? []
   const peers = peersQuery.data?.peers ?? []
+  const redirectUris = redirectsQuery.data?.redirectUris ?? []
   const activeTokens = tokens.filter((row) => !row.revoked)
+  const mcpUrl = knownBase ? `${knownBase.replace(/\/+$/, '')}/api/bridge/mcp` : ''
+
+  const addRedirect = useMutation({
+    mutationFn: (redirectUri: string) => api.addBridgeOauthRedirect({ redirectUri }),
+    onSuccess: async () => {
+      setRedirectDraft('')
+      toast.success(t('states.saved', { ns: 'common' }))
+      await qc.invalidateQueries({ queryKey: ['bridge-admin', 'oauth-redirects'] })
+    },
+    onError: (err) => toast.error(describeError(err, t).message),
+  })
+  const removeRedirect = useMutation({
+    mutationFn: (redirectUri: string) => api.removeBridgeOauthRedirect(redirectUri),
+    onSuccess: async () => {
+      toast.success(t('states.saved', { ns: 'common' }))
+      await qc.invalidateQueries({ queryKey: ['bridge-admin', 'oauth-redirects'] })
+    },
+    onError: (err) => toast.error(describeError(err, t).message),
+  })
 
   const setEnabled = useMutation({
     mutationFn: (enabled: boolean) => api.setBridgeEnabled({ enabled }),
@@ -257,6 +282,57 @@ export default function SettingsBridgeRoute(): JSX.Element {
             )}
           />
         </button>
+      </section>
+
+      <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
+        <h2 className="text-sm font-semibold">{t('bridge.oauthRedirectsTitle')}</h2>
+        <p className="text-sm text-text-dim">{t('bridge.oauthRedirectsHint')}</p>
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{t('bridge.mcpUrlLabel')}</p>
+          {mcpUrl ? (
+            <p className="break-all font-mono text-sm" data-testid="bridge-mcp-url">{mcpUrl}</p>
+          ) : (
+            <p className="text-sm text-text-dim">{t('bridge.mcpUrlNeedsBase')}</p>
+          )}
+          <p className="text-xs text-text-dim">{t('bridge.mcpUrlHint')}</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label htmlFor="bridge-oauth-redirect">{t('bridge.oauthRedirectLabel')}</Label>
+            <Input
+              id="bridge-oauth-redirect"
+              value={redirectDraft}
+              placeholder="https://"
+              onChange={(event) => setRedirectDraft(event.target.value)}
+              className="w-80"
+            />
+          </div>
+          <Button
+            onClick={() => addRedirect.mutate(redirectDraft.trim())}
+            disabled={addRedirect.isPending || !redirectDraft.trim()}
+          >
+            {t('bridge.oauthRedirectAdd')}
+          </Button>
+        </div>
+        {redirectUris.length === 0 ? (
+          <p className="text-sm text-text-dim">{t('bridge.oauthRedirectEmpty')}</p>
+        ) : (
+          <ul className="space-y-2">
+            {redirectUris.map((uri) => (
+              <li key={uri} className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs" title={uri}>{uri}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => removeRedirect.mutate(uri)}
+                  disabled={removeRedirect.isPending}
+                >
+                  {t('bridge.oauthRedirectRemove')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="space-y-3 rounded-xl border border-border bg-surface p-4">

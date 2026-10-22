@@ -18,6 +18,11 @@ import {
   saveBridgePeers,
   type BridgePeer,
 } from '../core/bridge-peers.js'
+import {
+  addOauthRedirectUri,
+  listOauthRedirectUris,
+  removeOauthRedirectUri,
+} from '../core/bridge-mcp-oauth.js'
 import { isBridgeEnabled, setBridgeEnabled } from '../core/bridge-switch.js'
 import { getRequestUserId, requireAdmin } from './auth.js'
 import {
@@ -379,6 +384,28 @@ export async function handleBridgeAdminApi(
   }
   if (p === '/api/admin/bridge/peers' && m === 'PATCH') {
     await handlePatchPeer(req, res)
+    return true
+  }
+  if (p === '/api/admin/bridge/oauth-redirects' && m === 'GET') {
+    sendJson(res, 200, { redirectUris: listOauthRedirectUris() })
+    return true
+  }
+  if (p === '/api/admin/bridge/oauth-redirects' && m === 'POST') {
+    const body = await readJson(req, res)
+    if (!body) return true
+    const saved = await addOauthRedirectUri(typeof body.redirectUri === 'string' ? body.redirectUri : '')
+    if (!saved.ok) {
+      sendError(res, 400, 'VALIDATION', { message: saved.error })
+      return true
+    }
+    sendJson(res, 200, { redirectUris: saved.redirectUris })
+    return true
+  }
+  if (p === '/api/admin/bridge/oauth-redirects' && m === 'DELETE') {
+    const body = await readJson(req, res)
+    if (!body) return true
+    const redirectUris = await removeOauthRedirectUri(typeof body.redirectUri === 'string' ? body.redirectUri : '')
+    sendJson(res, 200, { redirectUris })
     return true
   }
   sendError(res, 404, 'NOT_FOUND', { message: 'not found' })

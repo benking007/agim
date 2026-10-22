@@ -20,6 +20,7 @@ import { handleChatMediaApi } from './chat-media-api.js'
 import { handleServiceApi } from './service-api.js'
 import { handleJobsApi } from './jobs-api.js'
 import { handleBridgeApi } from './bridge-api.js'
+import { shouldServeSpaIndex } from './spa-fallback.js'
 import { handleScheduleApi } from './schedule-api.js'
 import { handleEnvApi } from './env-api.js'
 import { createSerialQueue } from './serial-queue.js'
@@ -241,46 +242,36 @@ export async function startWebServer(options: {
     //
     // Without it a fresh install hits a white screen because
     // `<script src="/assets/…js">` 404s — no other handler claims that path.
-    if (req.method === 'GET') {
+    if (req.method === 'GET' && shouldServeSpaIndex(url.pathname)) {
       const p = url.pathname
-      const isApi = p.startsWith('/api/')
-      const isWs = p.startsWith('/ws')
-      const isSse = p === '/events'
-      const isVendor = p.startsWith('/vendor/')
-      const isPublicSsr = p === '/loc' || p === '/loc.html' || p.startsWith('/l/') || p.startsWith('/v/')
-      // v1.2.129 — /m/login is a static HTML handed back below; don't let
-      // the SPA fallback swallow it (the SPA can't auto-submit the token).
-      const isMobileLogin = p === '/m/login' || p === '/m/login.html'
-      const isOauthDiscovery = p.startsWith('/.well-known/oauth-') || p === '/bridge/oauth/authorize'
-      if (!isApi && !isWs && !isSse && !isVendor && !isPublicSsr && !isMobileLogin && !isOauthDiscovery) {
-        // SPA static asset (assets/index-xxx.js, /manifest.webmanifest,
-        // /favicon.svg) → return the file if it exists in PUBLIC_DIR.
-        // Otherwise fall back to /index.html so the router handles it.
-        const trimmed = p.replace(/^\//, '')
-        const candidate = join(PUBLIC_DIR, trimmed)
-        if (trimmed && existsSync(candidate) && !candidate.endsWith('.html')) {
-          // Best-effort content-type guess; serveStatic handles binary
-          // + sets cache headers.
-          const ct =
-            candidate.endsWith('.js')    ? 'application/javascript; charset=utf-8' :
-            candidate.endsWith('.css')   ? 'text/css; charset=utf-8' :
-            candidate.endsWith('.svg')   ? 'image/svg+xml' :
-            candidate.endsWith('.webmanifest') ? 'application/manifest+json' :
-            candidate.endsWith('.json')  ? 'application/json; charset=utf-8' :
-            candidate.endsWith('.woff2') ? 'font/woff2' :
-            candidate.endsWith('.woff')  ? 'font/woff' :
-            candidate.endsWith('.ttf')   ? 'font/ttf' :
-            candidate.endsWith('.otf')   ? 'font/otf' :
-            'application/octet-stream'
-          const isFont = candidate.endsWith('.woff2') || candidate.endsWith('.woff')
-            || candidate.endsWith('.ttf') || candidate.endsWith('.otf')
-          return serveStatic(res, candidate, ct, isFont
-            ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
-            : undefined)
-        }
-        return servePageHtml(res, join(PUBLIC_DIR, 'index.html'))
+      // SPA static asset (assets/index-xxx.js, /manifest.webmanifest,
+      // /favicon.svg) → return the file if it exists in PUBLIC_DIR.
+      // Otherwise fall back to /index.html so the router handles it.
+      // /bridge/oauth/authorize is not in this branch; the server consent
+      // page handles it below.
+      const trimmed = p.replace(/^\//, '')
+      const candidate = join(PUBLIC_DIR, trimmed)
+      if (trimmed && existsSync(candidate) && !candidate.endsWith('.html')) {
+        // Best-effort content-type guess; serveStatic handles binary
+        // + sets cache headers.
+        const ct =
+          candidate.endsWith('.js')    ? 'application/javascript; charset=utf-8' :
+          candidate.endsWith('.css')   ? 'text/css; charset=utf-8' :
+          candidate.endsWith('.svg')   ? 'image/svg+xml' :
+          candidate.endsWith('.webmanifest') ? 'application/manifest+json' :
+          candidate.endsWith('.json')  ? 'application/json; charset=utf-8' :
+          candidate.endsWith('.woff2') ? 'font/woff2' :
+          candidate.endsWith('.woff')  ? 'font/woff' :
+          candidate.endsWith('.ttf')   ? 'font/ttf' :
+          candidate.endsWith('.otf')   ? 'font/otf' :
+          'application/octet-stream'
+        const isFont = candidate.endsWith('.woff2') || candidate.endsWith('.woff')
+          || candidate.endsWith('.ttf') || candidate.endsWith('.otf')
+        return serveStatic(res, candidate, ct, isFont
+          ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
+          : undefined)
       }
-      // Falls through to API / WS / SSR-page handlers below.
+      return servePageHtml(res, join(PUBLIC_DIR, 'index.html'))
     }
 
     // M4: /api/health is intentionally public (k8s liveness probe friendly)

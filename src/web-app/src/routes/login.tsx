@@ -9,6 +9,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { reconnectChatWs } from '@/lib/api/ws'
+import { followNext, isOAuthAuthorizeNext, reloadServerPage } from '@/lib/full-navigation'
 import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,7 +43,7 @@ async function loadCaptcha(): Promise<CaptchaState | null> {
   return res.json() as Promise<CaptchaState>
 }
 
-export default function LoginRoute(): JSX.Element {
+export default function LoginRoute(): JSX.Element | null {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -69,7 +70,12 @@ export default function LoginRoute(): JSX.Element {
     if (hasUsers === false) navigate(`/register?next=${encodeURIComponent(next)}`, { replace: true })
   }, [hasUsers, navigate, next, ready, signedIn])
 
+  useEffect(() => {
+    if (ready && signedIn && isOAuthAuthorizeNext(next)) reloadServerPage(next)
+  }, [next, ready, signedIn])
+
   if (ready && signedIn) {
+    if (isOAuthAuthorizeNext(next)) return null
     return <Navigate to={next} replace />
   }
 
@@ -100,7 +106,7 @@ export default function LoginRoute(): JSX.Element {
       if (body.user) setUser(body.user)
       reconnectChatWs()
       toast.success(t('states.saved'))
-      navigate(next, { replace: true })
+      followNext(next, (to, options) => navigate(to, options))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     } finally {

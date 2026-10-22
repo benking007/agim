@@ -20,6 +20,7 @@ import { RequireAdmin } from '@/components/shell/require-admin'
 import { ErrorBoundary } from '@/components/shell/error-boundary'
 
 import LoginRoute from '@/routes/login'
+import OauthAuthorizeHandoff from '@/routes/oauth-authorize-handoff'
 import RegisterRoute from '@/routes/register'
 import UpgradeLegacyRoute from '@/routes/upgrade-legacy'
 import ChatRoute from '@/routes/chat'
@@ -74,6 +75,8 @@ function lazy(factory: () => Promise<{ default: React.ComponentType }>) {
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
+  // Server consent page. A client-side next must reload, not the SPA 404.
+  { path: '/bridge/oauth/authorize', element: <OauthAuthorizeHandoff /> },
   { path: '/register', element: <RegisterRoute /> },
   {
     path: '/upgrade-legacy',

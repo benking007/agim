@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
+import { followNext } from '@/lib/full-navigation'
 import { Button } from '@/components/ui/button'
 
 interface LegacySession {
@@ -59,12 +60,12 @@ export default function UpgradeLegacyRoute(): JSX.Element {
     void (async () => {
       const res = await fetch('/api/auth/legacy-upgrade', { credentials: 'same-origin' })
       if (!res.ok) {
-        navigate(next, { replace: true })
+        followNext(next, (to, options) => navigate(to, options))
         return
       }
       const body = await res.json() as Preview
       if (!body.pending) {
-        navigate(next, { replace: true })
+        followNext(next, (to, options) => navigate(to, options))
         return
       }
       setPreview(body)
@@ -85,7 +86,7 @@ export default function UpgradeLegacyRoute(): JSX.Element {
         toast.error(json.message || json.error || 'failed')
         return
       }
-      navigate(next, { replace: true })
+      followNext(next, (to, options) => navigate(to, options))
     } finally {
       setBusy(false)
     }

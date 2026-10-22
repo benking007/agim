@@ -32,6 +32,17 @@ export interface AssertSafeOptions {
 
 type LookupHost = (hostname: string) => Promise<{ address: string; family: number }>
 
+/**
+ * Test preload (`test/setup.ts`) replaces DNS so unit tests never wait on
+ * live resolvers. Production callers leave this unset.
+ */
+let testLookupHost: LookupHost | undefined
+
+/** @internal Test-only DNS stub. Not a public API. */
+export function setDnsLookupForTests(lookupHost: LookupHost | undefined): void {
+  testLookupHost = lookupHost
+}
+
 export class UnsafeUrlError extends Error {
   constructor(message: string, public readonly reason: string) {
     super(message)
@@ -45,7 +56,7 @@ export const UnsafeAcpUrlError = UnsafeUrlError
 export async function assertSafeUrl(
   raw: string,
   opts: AssertSafeOptions,
-  lookupHost: LookupHost = lookup,
+  lookupHost: LookupHost = testLookupHost ?? lookup,
 ): Promise<URL> {
   let u: URL
   try {

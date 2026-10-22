@@ -122,18 +122,24 @@ export async function quickEnableLlmPreset(input: QuickEnableInput): Promise<Qui
     throw new QuickEnableError('validation', 'baseUrl must be an http(s) URL')
   }
   const strictTools = preset.key === 'deepseek' && input.strictTools === true
-  try {
-    const { assertSafeUrl } = await import('../url-guard.js')
-    await assertSafeUrl(baseUrl, { forwardsCredentials: false })
-  } catch (err) {
-    const { UnsafeUrlError } = await import('../url-guard.js')
-    if (err instanceof UnsafeUrlError) {
-      throw new QuickEnableError('validation', `baseUrl blocked: ${err.message}`)
-    }
-    throw err
-  }
-
   const isCustom = preset.key === 'custom'
+  // Catalog URLs are first-party constants, not operator-supplied. Skip the
+  // DNS SSRF probe so a resolver timeout on e.g. api.moonshot.cn cannot
+  // block writing a known-good vendor preset. Custom / overridden URLs
+  // still go through assertSafeUrl.
+  const userSuppliedUrl = isCustom || Boolean(input.baseUrl?.trim())
+  if (userSuppliedUrl) {
+    try {
+      const { assertSafeUrl } = await import('../url-guard.js')
+      await assertSafeUrl(baseUrl, { forwardsCredentials: false })
+    } catch (err) {
+      const { UnsafeUrlError } = await import('../url-guard.js')
+      if (err instanceof UnsafeUrlError) {
+        throw new QuickEnableError('validation', `baseUrl blocked: ${err.message}`)
+      }
+      throw err
+    }
+  }
   let models = isCustom
     ? [(input.model?.trim() || preset.model).trim()].filter(Boolean)
     : presetModels(preset)

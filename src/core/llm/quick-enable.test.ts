@@ -269,4 +269,12 @@ describe('quickEnableLlmPreset', () => {
   it('rejects empty api keys', async () => {
     await expect(quickEnableLlmPreset({ apiKey: '  ' })).rejects.toBeInstanceOf(QuickEnableError)
   })
+
+  it('still SSRF-checks a user-supplied baseUrl override', async () => {
+    await expect(quickEnableLlmPreset({
+      preset: 'moonshot',
+      apiKey: 'sk-test-kimi',
+      baseUrl: 'http://127.0.0.1:9/v1',
+    })).rejects.toMatchObject({ name: 'QuickEnableError', code: 'validation' })
+  })
 })

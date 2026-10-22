@@ -21,6 +21,9 @@ export const PUBLIC_EXACT_PATHS = new Set<string>([
   '/api/bridge/callbacks',
   // Caller contract. No token, no admin session. The body is the markdown file.
   '/api/bridge/caller-access',
+  // MCP OAuth: ChatGPT discovers and calls this without an Agim web session.
+  // The handler still requires an OAuth access token. A bridge token is not one.
+  '/api/bridge/mcp',
   '/loc', '/loc.html',
   // POST /api/loc (the bare path, no trailing slash) is the H5 page's
   // "submit my coordinates" endpoint. It's authenticated by the single-use
@@ -46,7 +49,12 @@ export const PUBLIC_EXACT_PATHS = new Set<string>([
 // 302's to /login (HTML), WKWebView silently fails the webfont and
 // Chinese paints as tofu / [?]. Fonts are OFL-licensed static files
 // with no secrets — same trust model as /assets/.
-export const PUBLIC_PREFIX_PATHS: string[] = ['/l/', '/v/', '/api/loc/', '/vendor/', '/assets/', '/fonts/']
+export const PUBLIC_PREFIX_PATHS: string[] = [
+  '/l/', '/v/', '/api/loc/', '/vendor/', '/assets/', '/fonts/',
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/oauth-authorization-server',
+  '/api/bridge/oauth/',
+]
 
 export function isPublicPath(pathname: string, _method: string): boolean {
   if (PUBLIC_EXACT_PATHS.has(pathname)) return true

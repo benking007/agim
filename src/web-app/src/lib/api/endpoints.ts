@@ -553,6 +553,18 @@ export const api = {
   }) =>
     client.post<{ ok: boolean }>('/api/admin/bridge/peers', { body }),
 
+  /** GET /api/admin/bridge/oauth-redirects */
+  listBridgeOauthRedirects: () =>
+    client.get<{ redirectUris: string[] }>('/api/admin/bridge/oauth-redirects'),
+
+  /** POST /api/admin/bridge/oauth-redirects */
+  addBridgeOauthRedirect: (body: { redirectUri: string }) =>
+    client.post<{ redirectUris: string[] }>('/api/admin/bridge/oauth-redirects', { body }),
+
+  /** DELETE /api/admin/bridge/oauth-redirects */
+  removeBridgeOauthRedirect: (redirectUri: string) =>
+    client.delete<{ redirectUris: string[] }>('/api/admin/bridge/oauth-redirects', { body: { redirectUri } }),
+
   /** PATCH /api/admin/bridge/peers */
   updateBridgePeer: (body: {
     peerId: string

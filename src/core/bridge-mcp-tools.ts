@@ -1,8 +1,8 @@
 // In-process MCP adapter for bridge runs.
 //
 // The three tools call the existing bridge run path. events/* manage
-// subscriptions. There is no OAuth here: tests pass the mcp_events peer.
-// The HTTP route refuses the bridge token.
+// subscriptions. HTTP OAuth is enforced outside this adapter. Tests pass
+// the mcp_events peer. A bridge token is not an access token.
 
 import type { BridgePeer } from './bridge-peers.js'
 import {

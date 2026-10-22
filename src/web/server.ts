@@ -251,7 +251,8 @@ export async function startWebServer(options: {
       // v1.2.129 — /m/login is a static HTML handed back below; don't let
       // the SPA fallback swallow it (the SPA can't auto-submit the token).
       const isMobileLogin = p === '/m/login' || p === '/m/login.html'
-      if (!isApi && !isWs && !isSse && !isVendor && !isPublicSsr && !isMobileLogin) {
+      const isOauthDiscovery = p.startsWith('/.well-known/oauth-') || p === '/bridge/oauth/authorize'
+      if (!isApi && !isWs && !isSse && !isVendor && !isPublicSsr && !isMobileLogin && !isOauthDiscovery) {
         // SPA static asset (assets/index-xxx.js, /manifest.webmanifest,
         // /favicon.svg) → return the file if it exists in PUBLIC_DIR.
         // Otherwise fall back to /index.html so the router handles it.
@@ -397,8 +398,10 @@ export async function startWebServer(options: {
       if (handled) return
     }
 
-    // Production bridge. The handler returns 404 while the feature is off.
-    if (url.pathname === '/api/bridge' || url.pathname.startsWith('/api/bridge/')) {
+    // Production bridge, plus MCP OAuth discovery and the browser consent page.
+    if (url.pathname === '/api/bridge' || url.pathname.startsWith('/api/bridge/')
+        || url.pathname.startsWith('/.well-known/oauth-')
+        || url.pathname === '/bridge/oauth/authorize') {
       if (await handleBridgeApi(req, res, url)) return
     }
 

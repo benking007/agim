@@ -1,8 +1,8 @@
 // MCP Events for bridge runs.
 //
 // Subscriptions keep ChatGPT's delivery URL and secret on their own rows.
-// They never write the caller's Webhook URL or Key. OAuth is not wired:
-// nothing here accepts the bridge token as a plugin login.
+// They never write the caller's Webhook URL or Key. HTTP OAuth does not
+// land here, and a bridge token is not a plugin login.
 //
 // A finished run emits one agim.run.finished event. Delivery failure is
 // recorded here and does not change the job.

@@ -92,7 +92,7 @@ agim token create --role bridge bridge-caller
 
 ## 5. 登记对等方
 
-优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。每个调用方选「回调方式」。轮询不主动通知，URL 和 Key 即使还在也不参与发送。Webhook 要 URL 和 Key 都有值才 POST，请求头是 `Authorization: Bearer <Key>`，缺一则不发。MCP Events 不使用这一行的 URL 和 Key；订阅自己带回调地址和签名密钥，默认 2 小时，刷新保持同一个订阅 id。未完成的投递记在本机，重启后用原来的 eventId 继续。网络错误、超时、429 和 5xx 会退避重试；410 和 413 不重试。投递失败不改变任务成败。取消订阅只停通知。MCP OAuth 还没接，不能把桥接令牌当成 ChatGPT 插件登录。已经同时有 URL 和 Key、又没有写 `callbackMode` 的旧记录，加载后视为 Webhook；否则视为轮询。页面不回显 Key，保存后只显示「已设置」或空。已有调用方点「编辑」后可以改回调方式、允许的 Agent、并发上限、工作区、启用状态、Webhook URL 和 Key。改成轮询不会清掉已存的 Key。Key 留空不改已有 Key；勾选去掉 Key 并保存才会清除。也可以直接停用或启用。列表能看到 peerId、回调方式、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
+优先在同一页「已连接的调用方」新增：填写 `peerId`，选择第 4 步的令牌 id，Agent 白名单包含 `agim`，并发上限填 `1`，工作区默认 `default`。每个调用方选「回调方式」。轮询不主动通知，URL 和 Key 即使还在也不参与发送。Webhook 要 URL 和 Key 都有值才 POST，请求头是 `Authorization: Bearer <Key>`，缺一则不发。MCP Events 不使用这一行的 URL 和 Key；订阅自己带回调地址和签名密钥，默认 2 小时，刷新保持同一个订阅 id。未完成的投递记在本机，重启后用原来的 eventId 继续。网络错误、超时、429 和 5xx 会退避重试；410 和 413 不重试。投递失败不改变任务成败。取消订阅只停通知。ChatGPT 插件走 OAuth，不能把桥接令牌当成插件登录。回跳地址填在同一页「允许的回跳地址」。已经同时有 URL 和 Key、又没有写 `callbackMode` 的旧记录，加载后视为 Webhook；否则视为轮询。页面不回显 Key，保存后只显示「已设置」或空。已有调用方点「编辑」后可以改回调方式、允许的 Agent、并发上限、工作区、启用状态、Webhook URL 和 Key。改成轮询不会清掉已存的 Key。Key 留空不改已有 Key；勾选去掉 Key 并保存才会清除。也可以直接停用或启用。列表能看到 peerId、回调方式、允许的 Agent、Webhook URL（可空）、Key 是否已设置、是否启用、并发上限。
 
 同机备用是编辑 `~/.agim/bridge-peers.json`（`AGIM_HOME` 下则是 `$AGIM_HOME/bridge-peers.json`），权限 `0600`。文件已存在时，只往 `peers` 加这一条，保留原有的 `outbound`。没有命令行子命令，保存后下次请求就会重读，不必为了这一文件再重启。
 
@@ -146,3 +146,13 @@ agim token create --role bridge bridge-caller
 ## 8. 交给调用方什么
 
 自动审批已在该进程上确认关闭之后，才把第 4 步那次提示交给调用方。提示里已有基址、对接页地址和令牌原文。签名密钥不发。`peerId` 不由调用方发送。在自动审批确认关闭之前，不要把对接说成已经可以验通。对接页本身不含令牌，可以事先公开。
+
+## 9. ChatGPT 插件
+
+MCP 地址填 `https://dev.myfund.work/api/bridge/mcp`。代码路径就是 `/api/bridge/mcp`，主机用这台机器的公开基址，不写进程序。
+
+认证选 OAuth。没有合法访问令牌时，这个地址返回 401，并在 `WWW-Authenticate` 里带上发现地址。ChatGPT 按 OAuth 2.1 授权码和 PKCE S256 登录。桥接令牌不能当作这次登录。REST 轮询和 Webhook 的 `Authorization: Bearer <Key>` 不变。
+
+回跳地址从 ChatGPT 插件配置页原样复制，填到设置 → 高级 → 连接设置的「允许的回跳地址」。可以增删。不在列表里的 `redirect_uri` 会被拒绝。
+
+订阅仍由 ChatGPT 在 `events/subscribe` 时带 `delivery.url` 和 `delivery.secret`。不要在调用方那一行预填固定 webhook。调用工具时，需要有一条已启用、回调方式为 MCP Events 的调用方。

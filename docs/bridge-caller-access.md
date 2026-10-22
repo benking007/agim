@@ -121,6 +121,6 @@
 
 - **轮询**：不主动通知。这时只轮询。即使保存了 Webhook URL 和 Key，也不会 POST。
 - **Webhook**：URL 和 Key 都有值时，生产把事件 POST 到那个 URL。校验 `Authorization` 的值是 `Bearer <Key>`，Key 与连接设置里配置的 Key 一致。不一致就拒绝。缺一则不发。
-- **MCP Events**：不使用这一行的 Webhook URL 和 Key，也不发 Bearer POST。全文仍用 GET。这还不能当作 ChatGPT 插件登录。
+- **MCP Events**：不使用这一行的 Webhook URL 和 Key，也不发 Bearer POST。全文仍用 GET。ChatGPT 插件登录是 OAuth，不能用桥接令牌。订阅的回调地址和签名密钥由 ChatGPT 在订阅时带来，不用在这一行预填。
 
 `Content-Type` 为 `application/json`。返回 **2xx** 表示收下。从轮询改回 Webhook 时，原来的 URL 和 Key 还在，除非操作员改过它们。终态仍以 GET 为准。

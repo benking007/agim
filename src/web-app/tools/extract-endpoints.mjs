@@ -29,6 +29,8 @@ const publicRoutes = new Set([
   'GET /api/health',
   'POST /api/bridge/callbacks',
   'GET /api/bridge/caller-access',
+  'POST /api/bridge/mcp',
+  'POST /api/bridge/oauth/token',
   'POST /api/loc',
   'GET /api/loc/info',
 ])

@@ -114,20 +114,158 @@ async function readForm(req: IncomingMessage, res: ServerResponse): Promise<URLS
   }
 }
 
+const CONSENT_CSS = `
+@font-face {
+  font-family: "Agim CJK";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2") format("woff2");
+  unicode-range: U+3000-303F, U+4E00-9FFF, U+FF00-FFEF;
+}
+@font-face {
+  font-family: "Agim CJK";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/noto-sans-sc-chinese-simplified-700-normal.woff2") format("woff2");
+  unicode-range: U+3000-303F, U+4E00-9FFF, U+FF00-FFEF;
+}
+:root {
+  --ag-bg: 210 40% 98%;
+  --ag-surface: 0 0% 100%;
+  --ag-surface-2: 220 14% 94%;
+  --ag-surface-hover: 220 14% 92%;
+  --ag-border: 220 13% 90%;
+  --ag-text: 220 13% 13%;
+  --ag-text-dim: 220 6% 38%;
+  --ag-accent: 246 80% 60%;
+  --ag-accent-fg: 0 0% 100%;
+  --ag-accent-hover: 246 80% 52%;
+  --ag-shadow-sm: 0 1px 2px hsl(220 13% 13% / 0.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ag-bg: 220 10% 7%;
+    --ag-surface: 220 12% 11%;
+    --ag-surface-2: 220 12% 14%;
+    --ag-surface-hover: 220 12% 16%;
+    --ag-border: 220 10% 20%;
+    --ag-text: 220 14% 91%;
+    --ag-text-dim: 220 8% 68%;
+    --ag-accent: 246 90% 72%;
+    --ag-accent-fg: 220 30% 5%;
+    --ag-accent-hover: 246 90% 80%;
+    --ag-shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  background: hsl(var(--ag-bg));
+  color: hsl(var(--ag-text));
+  font-family: "Agim CJK", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.card {
+  width: 100%;
+  max-width: 28rem;
+  padding: 1.25rem 1.25rem 1rem;
+  background: hsl(var(--ag-surface));
+  border: 1px solid hsl(var(--ag-border));
+  border-radius: 0.75rem;
+  box-shadow: var(--ag-shadow-sm);
+}
+h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.lead {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: hsl(var(--ag-text-dim));
+}
+.label {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  color: hsl(var(--ag-text-dim));
+}
+.value {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.625rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  border-radius: 0.375rem;
+  background: hsl(var(--ag-surface-2));
+  font-family: "Agim CJK", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+button {
+  min-height: 2.25rem;
+  padding: 0 1.25rem;
+  border-radius: 0.375rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid hsl(var(--ag-accent));
+  outline-offset: 2px;
+}
+.primary {
+  border: 1px solid transparent;
+  background: hsl(var(--ag-accent));
+  color: hsl(var(--ag-accent-fg));
+}
+.primary:hover { background: hsl(var(--ag-accent-hover)); }
+.secondary {
+  border: 1px solid hsl(var(--ag-border));
+  background: hsl(var(--ag-surface));
+  color: hsl(var(--ag-text));
+}
+.secondary:hover { background: hsl(var(--ag-surface-hover)); }
+`
+
 function consentPage(url: URL, redirectUri: string, clientId: string): string {
   const action = esc(url.pathname + url.search)
   return `<!DOCTYPE html>
 <html lang="zh">
-<head><meta charset="utf-8"><title>允许 ChatGPT 连接 Agim</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>允许 ChatGPT 连接 Agim</title>
+<style>${CONSENT_CSS}</style>
+</head>
 <body>
-  <h1>允许 ChatGPT 连接 Agim</h1>
-  <p>允许后，这个插件可以用当前管理员账号调用桥接。桥接令牌不是这次登录。</p>
-  <p>回跳地址：<code>${esc(redirectUri)}</code></p>
-  <p>客户端：<code>${esc(clientId)}</code></p>
-  <form method="post" action="${action}">
-    <button type="submit" name="consent" value="allow">允许</button>
-    <button type="submit" name="consent" value="deny">拒绝</button>
-  </form>
+  <main class="card">
+    <h1>允许 ChatGPT 连接 Agim</h1>
+    <p class="lead">允许后，这个插件可以用当前管理员账号调用桥接。桥接令牌不是这次登录。</p>
+    <p class="label">回跳地址</p>
+    <p class="value">${esc(redirectUri)}</p>
+    <p class="label">客户端</p>
+    <p class="value">${esc(clientId)}</p>
+    <form method="post" action="${action}">
+      <button class="primary" type="submit" name="consent" value="allow">允许</button>
+      <button class="secondary" type="submit" name="consent" value="deny">拒绝</button>
+    </form>
+  </main>
 </body>
 </html>`
 }

@@ -210,7 +210,10 @@ describe('MCP OAuth', () => {
       const page = mockRes()
       await http.handleBridgeOauthHttp(mockReq('GET', `${url.pathname}${url.search}`), page, url)
       expect(page.statusCode).toBe(200)
-      expect(page.body).toContain('允许')
+      expect(page.body).toContain('允许 ChatGPT 连接 Agim')
+      expect(page.body).toContain('name="consent" value="allow">允许')
+      expect(page.body).toContain('name="consent" value="deny">拒绝')
+      expect(page.body).toContain('overflow-wrap: anywhere')
 
       const approved = mockRes()
       await http.handleBridgeOauthHttp(

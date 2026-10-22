@@ -1041,11 +1041,9 @@ export function isLoopWallExceeded(run: LoopRun, now = Date.now()): boolean {
   return now - run.createdAt >= wall
 }
 
-export type LoopExitEnforceResult = {
-  ended: boolean
-  run: LoopRun | null
-  reason?: NonNullable<LoopRun['endReason']>
-}
+export type LoopExitEnforceResult =
+  | { ended: true; run: LoopRun; reason?: NonNullable<LoopRun['endReason']> }
+  | { ended: false; run: LoopRun | null; reason?: NonNullable<LoopRun['endReason']> }
 
 /** Test-only override for exit-gate unit tests (null = use job board). */
 let _testLiveSubagents: boolean | null = null
